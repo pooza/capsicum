@@ -367,10 +367,28 @@ void main() {
       expect(masked, contains('_redraftReplyDropped = true'));
     });
 
+    // ⚠ **照合の歯 (#1117-D)。**「潰さないと当たる」ことを実物の形で示す。
+    test('⚠ 文字列の中のコード片を「読んでいる」と数えない', () {
+      const source = "final note = 'redraft.language を引き継ぎます';";
+
+      expect(
+        source.contains('redraft.language'),
+        isTrue,
+        reason: '潰さないと当たってしまう（これが旧実装）',
+      );
+      expect(maskStrings(source).contains('redraft.language'), isFalse);
+    });
+
     test('⚠ carry と宣言した項目を compose が読んでいる', () {
+      // ⚠⚠ **文字列リテラルを潰してから照合する (#1117-D)。**潰さないと、
+      // 説明文やエラーメッセージの中に `redraft.language` のような**コード片が
+      // 書かれているだけ**で「読んでいる」と判定してしまう。この検査は
+      // 「実際に読んでいるか」を見るものなので、他の検査（`maskStrings` を
+      // 通している側）と同じ扱いに揃える。
+      final masked = maskStrings(code);
       final missing = <String>[];
       readSites.forEach((field, marker) {
-        if (!code.contains(marker)) missing.add('$field ($marker)');
+        if (!masked.contains(marker)) missing.add('$field ($marker)');
       });
       expect(
         missing,

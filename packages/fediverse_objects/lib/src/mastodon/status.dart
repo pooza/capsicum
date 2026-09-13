@@ -34,6 +34,13 @@ class MastodonStatus {
   final String? language;
   final String? url;
 
+  /// 投稿が最後に編集された時刻 (#1054)。編集されていなければ null。
+  ///
+  /// ⚠ **これは「読む側」の情報**で、capsicum が投稿を編集する話ではない
+  /// （`docs/CLAUDE.md`「実装しない機能: 投稿の更新」とは別物）。連合先で
+  /// 編集された投稿は、自サーバーの設定に関わらず編集済みとして届く。
+  final DateTime? editedAt;
+
   const MastodonStatus({
     required this.id,
     required this.createdAt,
@@ -60,6 +67,7 @@ class MastodonStatus {
     this.quoteApproval,
     this.language,
     this.url,
+    this.editedAt,
   });
 
   factory MastodonStatus.fromJson(Map<String, dynamic> json) =>

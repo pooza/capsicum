@@ -66,9 +66,9 @@ void main() {
   MenuActionEntry action(List<MenuEntry> entries, String label) =>
       entries.whereType<MenuActionEntry>().firstWhere((e) => e.label == label);
 
-  test('項目はリプライ / 引用 / ブースト / 取り消し / お気に入り / ブックマーク', () {
+  test('項目は返信 / 引用 / ブースト / 取り消し / お気に入り / ブックマーク', () {
     expect(build().whereType<MenuActionEntry>().map((e) => e.label), [
-      'リプライ',
+      '返信',
       '引用',
       'ブースト',
       'ブーストを取り消す',
@@ -81,7 +81,7 @@ void main() {
     final entries = build(boostLabel: 'リノート', bookmarkLabel: 'お気に入り');
 
     expect(entries.whereType<MenuActionEntry>().map((e) => e.label), [
-      'リプライ',
+      '返信',
       '引用',
       'リノート',
       'リノートを取り消す',
@@ -116,7 +116,7 @@ void main() {
     test('条件を満たす操作だけが有効', () {
       final entries = build(a: availability());
 
-      expect(action(entries, 'リプライ').onSelected, isNotNull);
+      expect(action(entries, '返信').onSelected, isNotNull);
       expect(action(entries, '引用').onSelected, isNotNull);
       expect(action(entries, 'ブースト').onSelected, isNotNull);
       expect(action(entries, 'お気に入り').onSelected, isNotNull);
@@ -130,7 +130,7 @@ void main() {
       final entries = build(a: availability(canBoost: false));
 
       expect(action(entries, 'ブースト').onSelected, isNull);
-      expect(action(entries, 'リプライ').onSelected, isNotNull);
+      expect(action(entries, '返信').onSelected, isNotNull);
     });
 
     test('ブースト済みなら取り消しが有効', () {
@@ -167,7 +167,7 @@ void main() {
       final entries = build(a: availability(canUnrepeat: true), log: log);
 
       for (final label in [
-        'リプライ',
+        '返信',
         '引用',
         'ブースト',
         'ブーストを取り消す',

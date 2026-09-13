@@ -48,7 +48,7 @@ class TouchActionSettingsScreen extends ConsumerWidget {
 
   String _label(PostTouchAction action) {
     return switch (action) {
-      PostTouchAction.reply => 'リプライ',
+      PostTouchAction.reply => '返信',
       PostTouchAction.favorite => 'お気に入り',
       PostTouchAction.reaction => 'リアクション',
       PostTouchAction.bookmark => 'ブックマーク',

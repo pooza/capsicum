@@ -101,6 +101,20 @@ class SecretServiceProbe {
     if (_cached == false) _cached = null;
   }
 
+  /// **触ったら固まった**ことを覚える (#1117-C)。
+  ///
+  /// ⚠⚠ **確認が true でも、その後の読み書きは固まりうる。**確認と実際の呼び出し
+  /// の間に落ちた場合がそれで、以前は**キャッシュが true のまま**だったため、
+  /// **後続のアカウントが 1 件ごとに [kSecureStorageReadTimeout]（5 秒）を払って
+  /// いた**（10 アカウントで 50 秒）。1 件でも固まったら、その 1 周は触らない。
+  ///
+  /// ⚠ **false は [forgetUnresponsive] が次の 1 周の頭で捨てる**ので、復旧の
+  /// 妨げにはならない。
+  static void markUnresponsive() {
+    if (!usesSecretService) return;
+    _cached = false;
+  }
+
   /// secure storage に触ってよいか。
   ///
   /// ⚠ **Secret Service を使わない OS では常に true。**Apple の Keychain /

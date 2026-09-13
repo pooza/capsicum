@@ -59,10 +59,28 @@ class OAuthKeepAliveService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        reached = true
+        // ⚠⚠ **必ず先に startForeground を通す (#1117-A)。**startForegroundService で
+        // 予約された service が startForeground を呼ばないまま死ぬと、OS が
+        // ForegroundServiceDidNotStartInTimeException でアプリを落とす。止める
+        // 要求が先に来ていても、順序は「上げてから下ろす」でなければならない。
         startInForeground()
+        if (stopPending) {
+            // start の往復中に stop が来ていた（launchUrl が即 false を返した /
+            // その間に画面を離れた）。窓は ms 単位だが実際に踏みうる。
+            stopPending = false
+            Log.i(TAG, "stop arrived before start; stopping right after startForeground")
+            stopSelf()
+        }
         // 再作成しない。認可待ちは画面の都合で始まるものなので、プロセスが死んだ
         // 後に OS が勝手に上げ直しても待つ相手が居ない。
         return START_NOT_STICKY
+    }
+
+    override fun onDestroy() {
+        reached = false
+        stopPending = false
+        super.onDestroy()
     }
 
     private fun startInForeground() {
@@ -153,9 +171,20 @@ class OAuthKeepAliveService : Service() {
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+        // ⚠ **承認前にタップする人も想定する (#1111)。**当初の文面は「もう承認した
+        // のに戻れない人」だけを想定していたが、実機検証では**まだ承認していない
+        // 人**もタップした。その場合ログイン画面で待機に戻るだけなので、何をすれば
+        // いいか分からない画面になる。⚠ **タップで前面に出れば凍結は解ける**ので、
+        // ブラウザに戻って承認すればそのまま完了する——それを書いておく。
+        //
+        // ⚠ **BigTextStyle を付ける。**折りたたみ表示では 1 行に切られるので、
+        // 2 つ目の案内（まだの人向け）が読めるのは展開したときだけになる。
+        val hint = "承認が済んでいたら、ここをタップしてログインを完了してください。" +
+            "まだ承認していない場合は、ブラウザに戻って承認してください。"
         val notification: Notification = Notification.Builder(this, HINT_CHANNEL_ID)
             .setContentTitle("ブラウザでの承認は終わりましたか？")
-            .setContentText("承認が済んでいたら、ここをタップしてログインを完了してください。")
+            .setContentText(hint)
+            .setStyle(Notification.BigTextStyle().bigText(hint))
             .setSmallIcon(R.drawable.ic_stat_oauth)
             .setContentIntent(pending)
             .setAutoCancel(true)
@@ -169,6 +198,21 @@ class OAuthKeepAliveService : Service() {
         private const val HINT_CHANNEL_ID = "oauth_return_hint"
         private const val HINT_NOTIFICATION_ID = 4109
         private const val TAG = "OAuthKeepAlive"
+
+        /**
+         * `onStartCommand` まで到達したか (#1117-A)。
+         *
+         * ⚠⚠ **`startForegroundService` は予約であって起動ではない。**予約した
+         * service が `startForeground` を呼ぶ前に `stopService` で消されると、OS は
+         * ForegroundServiceDidNotStartInTimeException でアプリを落とす。到達したか
+         * どうかを見て、未到達なら stop を**サービス側へ持ち越す**。
+         */
+        @Volatile
+        private var reached = false
+
+        /** 未到達のあいだに来た stop 要求 (#1117-A)。`onStartCommand` が消化する。 */
+        @Volatile
+        private var stopPending = false
 
         /**
          * この端末で keep-alive を上げる意味があるか。
@@ -188,6 +232,8 @@ class OAuthKeepAliveService : Service() {
          */
         fun start(context: Context) {
             if (!shouldKeepAlive()) return
+            // ⚠ 前回の持ち越しを引き継がない（引き継ぐと上げた直後に落ちる）。
+            stopPending = false
             val intent = Intent(context, OAuthKeepAliveService::class.java)
             context.startForegroundService(intent)
         }
@@ -195,6 +241,18 @@ class OAuthKeepAliveService : Service() {
         /** 認可待ちを終える。認可完了・中断・タイムアウトのいずれでも呼ぶ。 */
         fun stop(context: Context) {
             if (!shouldKeepAlive()) return
+            if (!reached) {
+                // ⚠⚠ **ここで stopService を呼ばない (#1117-A)。**まだ
+                // `startForeground` を通っていない service を消すと、OS が
+                // ForegroundServiceDidNotStartInTimeException でアプリを落とす。
+                // 持ち越して `onStartCommand` に「上げてすぐ下ろす」をさせる。
+                stopPending = true
+                Log.i(TAG, "stop requested before the service started; deferring")
+                // 案内通知だけは先に消してよい（service とは独立）。
+                context.getSystemService(NotificationManager::class.java)
+                    ?.cancel(HINT_NOTIFICATION_ID)
+                return
+            }
             context.stopService(Intent(context, OAuthKeepAliveService::class.java))
             // ⚠ 3 分の打ち切りで出した案内も一緒に消す。ログインが終わった／
             // 画面を離れたあとに「承認は終わりましたか？」が残っていると、

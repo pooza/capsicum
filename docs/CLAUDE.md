@@ -77,6 +77,7 @@ capsicum は「最新版を対象にする」方針で開発しており、UI �
 | インスタンス | サーバー | 廃止語 | Mastodon / Misskey 共通で廃止 |
 | ノート | 投稿 | 統一 | Misskey では現役用語。capsicum では「投稿」に統一 |
 | チャット | メッセージ | 統一 | Misskey の `/api/chat/*` 由来。capsicum では UI 表記を「メッセージ」に統一（コード識別子は `Chat*` のまま API 命名に追従） |
+| リプライ | 返信 | 統一 | 両上流とも**操作名は「返信」**（Mastodon `status.reply` / Misskey `_actions.reply`）。⚠ **Misskey が「リプライ」を使うのは通知の種別ラベル**（`_notification._types.reply`）だけで、capsicum はその種別を `mention` に畳んでいるので出番が無い。アクションメニュー・投稿フォームの AppBar・タッチ操作の設定はすべて「返信」（#1117-E） |
 | Flash | Play | 統一 | Misskey は **UI 表記が「Play」**（`navbar.ts` / `_play:` ロケール）で、**エンティティ・API 名が `Flash`**（`/api/flash/*`）という食い違いがある。capsicum も同じ使い分けをする（UI は「Play」・コード識別子は `Flash*`） |
 
 「廃止語」は最新版で廃止された用語であり、capsicum でも一切使わない。「統一」は他方の SNS では現役だが、capsicum では UI 一貫性のためにどちらか片方に寄せている用語を指す。
@@ -207,7 +208,7 @@ probing の結果、基本的な機能が欠けているサーバーに対して
 
 これで **1 PR あたり最大 2 回**に収まる。青天井にしないのは、#1021 が 6 巡かかった一方で**実コードの違反は初回で出尽くしており**、以降は検査そのものの網の細かさを上げる作業だったため（費用対効果が落ちる）。
 
-各コメントは**返信 + 👍 の両方が揃って「完了」**（片方だけでは同期時に未完了と判定される）。判定手順は [sync-procedure.md](sync-procedure.md) の Codex セクションを参照。
+各コメントは**返信 + 👍 の両方が揃って「完了」**（片方だけでは同期時に未完了と判定される）。判定手順は [sync-procedure スキル](../.claude/skills/sync-procedure/SKILL.md) の Codex セクションを参照。
 
 ### PR マージ後の確認事項
 
@@ -217,6 +218,16 @@ probing の結果、基本的な機能が欠けているサーバーに対して
 
 ```text
 capsicum/
+  .claude/                # Claude Code の設定（settings.local.json だけ gitignore）
+    skills/               # 名前付き手順の正本（#1114。⚠ docs 側はポインタ）
+      sync-procedure/     # セッション開始時の同期
+      resume-work/        # 作業中断からの復帰
+      milestone-transition/  # マイルストーン完了→次着手の移行
+      doc-maintenance/    # docs / メモリの棚卸し（⚠ 配置の原則は docs 側）
+      login-troubleshooting/  # 「ログインできない」報告の切り分け
+      release-review/     # リリース前レビュー（5 観点・赤黄緑の送り分け）
+      store-release/      # 毎回のリリース手順（⚠ 工程ごとの補助ファイルつき）
+    hooks/                # 守らせたいものの機械化（deny-shell-loops.sh）
   docs/                   # 開発ドキュメント
     CLAUDE.md             # 本ファイル
     architecture.md       # アーキテクチャ設計
@@ -230,17 +241,17 @@ capsicum/
     server-settings-gap-inventory.md  # 棚卸し: サーバー側に保存された設定の反映漏れ（#992 の成果物・誤爆 0 件の実測記録。⚠ 送らない = サーバー既定が効く、の設計を壊さないための正本）
     mastodon-capsicum-api-watch.md  # Mastodon 新バージョンの API 変更を client 影響でトリアージ（フォーク diff 手順つき・4.6 / 4.7 追従済み）
     misskey-capsicum-api-watch.md  # Misskey 新バージョンの API 変更を client 影響でトリアージ（マイナー毎・daisskey SHA アンカー）
-    sync-procedure.md     # セッション開始時の同期手順
+    sync-procedure.md     # ⚠ ポインタのみ（本文は .claude/skills/sync-procedure / resume-work へ移した・#1114）
     roadmap.md            # 枠の数・各枠の主題・1.x と 2.x の境界（2026-09-04 策定・含有 Issue は Milestones が正本）
     deck-ui-plan.md       # #720 デッキ表示の設計スパイク（2026-09-06・現アーキの前提棚卸し / 壊れる境界 / 段階性。⚠ 詳細 UI 仕様ではない）
     paid-relay-plan.md    # #597 有償プッシュリレーの設計書（2026-09-06。⚠ #596 は記録層で判定層ではない・認可を新規に作る話）
-    milestone-transition.md  # マイルストーン完了→次着手の移行手順（トリアージ・スコープ確定・サイト更新・バンプ）
-    doc-maintenance.md    # ドキュメント/メモリの棚卸し手順（不定期・陳腐化改善・memory↔docs 移送・インフラ記述の infra-note 移設・アーカイブ）
-    store-release-guide.md  # ストアリリース手順書（運用正本）
+    milestone-transition.md  # ⚠ ポインタのみ（本文は .claude/skills/milestone-transition/）
+    doc-maintenance.md    # 配置の原則（公開境界・二重管理禁止・メモリは status を持たない）。⚠ 回す手順は .claude/skills/doc-maintenance/
+    store-release-guide.md  # 初回セットアップ（署名・fastlane）とストア掲載情報・配布方針。⚠ 毎回の手順は .claude/skills/store-release/
     store-listing.md      # 各ストアの掲載文（提出のたびに参照する現役ドキュメント）
     supporter-subscription-plan.md  # 投げ銭サブスクの商品設計（審査ノートの英文もここ）
     msstore-review-notes-login.md   # Microsoft Store 審査向けのログイン説明（提出のたびに再利用）
-    login-troubleshooting.md  # ログインできない報告の切り分け手順
+    login-troubleshooting.md  # ⚠ ポインタのみ（本文は .claude/skills/login-troubleshooting/）
     brand/                # ブランドアセット（アイコン・ロゴ等。v1.53 でルート assets/ から移設）
     archive/              # 過去の記録（現役運用では参照しない。release-log.md / release-pipeline.md 等）
   packages/               # モノレポ構成（Melos）
@@ -269,7 +280,7 @@ capsicum/
 
 ### マイルストーン運用
 
-マイルストーン完了→次着手の移行時に毎回回す一連の手順（未割り当て Issue のトリアージ・次スコープ確定・ロードマップ調整・capsicum-site 更新・バージョンバンプ）は [milestone-transition.md](milestone-transition.md) に手順化。**枠の数・各枠の主題・1.x と 2.x の境界は [roadmap.md](roadmap.md) が正本**（2026-09-04 策定）。以下は判断規約の正本。
+マイルストーン完了→次着手の移行時に毎回回す一連の手順（未割り当て Issue のトリアージ・次スコープ確定・ロードマップ調整・capsicum-site 更新・バージョンバンプ）は **`/milestone-transition`** スキル（[SKILL.md](../.claude/skills/milestone-transition/SKILL.md)）。**枠の数・各枠の主題・1.x と 2.x の境界は [roadmap.md](roadmap.md) が正本**（2026-09-04 策定）。以下は判断規約の正本。
 
 ⚠ **1.x と 2.x は並走系列で、境界は「時期」でも「技術的な線」でもない。****メジャーに何を載せるかは製品判断（売りの束ね方）**で、pooza が決める。`v2.0` は [#720](https://github.com/pooza/capsicum/issues/720) デッキ UI + [#597](https://github.com/pooza/capsicum/issues/597) 有償リレー + [#884](https://github.com/pooza/capsicum/issues/884) 画像編集レイヤの **3 本を束ねるメジャーリリース**。⚠ **この枠には「大更新 0〜1 件」の目安を当てない**（容量は通常枠の数倍。実績の最大は v1.0 の 46 件に対し直近の平均は 13 件）。技術規模が決めるのは「点リリースで単独配置するか」と「万一入りきらないとき何から逃がすか（＝ #884）」だけ。⚠ **2026-08-17〜 の「外部要因の発生ベース」運用は v1.65 をもって終了**した。
 
@@ -313,7 +324,7 @@ v2.0 に集めたメジャー級の大玉と、その種を見つける棚卸し
 
 capsicum には「ソースを文字列で走査して規約違反を落とす」テストが多い（`test/*_guard_test.dart` 系。ウィジェットツリーを組み立てず静的に見るのは、対象が数十ファイルに散っていて pump の足場を用意するコストに見合わないため）。
 
-⚠⚠ **この形の検査は、判定が壊れても緑になる。**`expect(offenders, isEmpty)` は**何も見ていなくても通る**。v1.61 → v1.62 → v1.63 と **3 リリース続けて「ガードが壊れていても CI が緑」**が出ており（[#1036](https://github.com/pooza/capsicum/issues/1036) / [#1061](https://github.com/pooza/capsicum/issues/1061) / [#1063](https://github.com/pooza/capsicum/issues/1063) / [#1035](https://github.com/pooza/capsicum/issues/1035) の C 群）、**検査を足す / 直すときは以下を必ずセットで入れる**。
+⚠⚠ **この形の検査は、判定が壊れても緑になる。**`expect(offenders, isEmpty)` は**何も見ていなくても通る**。v1.61 → v1.62 → v1.63 → v1.64 と **4 リリース続けて「ガードが壊れていても CI が緑」**が出ており（[#1036](https://github.com/pooza/capsicum/issues/1036) / [#1061](https://github.com/pooza/capsicum/issues/1061) / [#1063](https://github.com/pooza/capsicum/issues/1063) / [#1035](https://github.com/pooza/capsicum/issues/1035) の C 群、v1.64 は `exception_scrub_guard_test` が `cause` を見ておらず secret 入りの例外を見逃した件と、carry-over のガードが**アダプターの層だけ見ていなかった**件 [#1113](https://github.com/pooza/capsicum/issues/1113)）、**検査を足す / 直すときは以下を必ずセットで入れる**。
 
 1. **走査が空振りしていないことを別テストで固定する** — 対象ファイル数、既知の対象が列挙に含まれること、置き換え後の形が実在すること。⚠ **「旧形が無い」だけを見ると、「どちらも無い」で緑になる。**
 2. **判定ロジックに合成ソースを直接食わせる** — 当たるべき書き方ごとに 1 件、**当ててはいけない形**（コメント・文字列リテラル・真偽判定）にも 1 件。
@@ -334,6 +345,31 @@ capsicum には「ソースを文字列で走査して規約違反を落とす�
 ### コミットの分割方針
 
 コミットはなるべく Issue ごとに分ける。レビュー・revert・cherry-pick の粒度を保つため。同じファイルに複数 Issue の変更が混在して分離できない場合のみ、まとめてよい。
+
+### push 前のローカル整形・解析
+
+⚠⚠ **push する前にリポジトリルートで 1 回通す。**`develop` への push でも `analyze.yml` は走るので（v1.48 で drift が溜まった反省から `branches: [main, develop]` になった）赤は必ず見えるが、**push してから踏むと同期のたびに「赤ならその場で直す」手戻りが乗る**（2026-09-01 に #1058 の修正で実際に踏んだ。`786d47cf` → `2561b020`）。
+
+```bash
+# format はバージョン管理対象の .dart だけにスコープする（build/ を巻き込まない）
+git ls-files '*.dart' | xargs -n 40 dart format --output=none --set-exit-if-changed
+dart analyze --fatal-infos
+```
+
+⚠ **`dart format .`（カレント全体）は使わない。**SwiftPM 併存移行（#836）以降、`build/` 配下に他パッケージの SwiftPM checkout（`.dart` を含む）が展開されるため、`.` で流すとバージョン管理外のファイルまで整形対象に拾って drift 判定が誤爆する（v1.51 で誤爆・`3e2783ad`）。
+
+⚠⚠ **`-n 40` を外さない。Windows では 1 本のコマンドに畳むと整形が走らないまま緑に見える**（2026-09-13 実測）。`.dart` は 160 本超あるので cmd の ~8191 文字上限に当たり、`The command line is too long.` を出して**何も整形せずに終わる**。macOS / Linux では上限が高く畳んでも通ってしまうため、**通る端末で書いた形が通らない端末で黙って空振りする**。バッチを割るのは全 OS 共通の書き方にするため。
+
+⚠⚠ **結果を `| tail` 等へ繋がない。**`$?` がパイプ末尾のコマンドのものになり、**整形が失敗していても `0` が返る**（同日に踏んだ）。出力を見たいならファイルへ落として終了コードを先に確かめる:
+
+```bash
+git ls-files '*.dart' | xargs -n 40 dart format --output=none --set-exit-if-changed > /tmp/fmt.log 2>&1; echo "FORMAT_EXIT=$?"
+dart analyze --fatal-infos > /tmp/analyze.log 2>&1; echo "ANALYZE_EXIT=$?"
+```
+
+⚠ これは「[ソース検査ガードの書き方](#ソース検査ガードの書き方)」と同じ形の failure — **検査そのものが動いていないのに緑**。CI で最後は捕まるが、手元で捕まえる意味が消える。
+
+⚠ **これは毎コミットの話で、リリース手順の一部ではない**（#1114 の棚卸しで、`store-release-guide.md` §4.0 の中＝リリース時しか読まれない場所に置かれていたのを移した）。
 
 ### クロスリファレンス
 
@@ -391,21 +427,21 @@ v1.27 マイルストーンに単独配置し（大更新のため他項目と�
 
 ## リリース計画
 
-リリース手順・ストア設定の詳細は [store-release-guide.md](store-release-guide.md) を参照。
+毎回のリリース手順は **`/store-release`** スキル（[SKILL.md](../.claude/skills/store-release/SKILL.md)）、初回セットアップとストア設定は [store-release-guide.md](store-release-guide.md)。
 
 [GitHub Milestones](https://github.com/pooza/capsicum/milestones) が正本。各マイルストーンの概要・スコープはマイルストーンの description に記載し、CLAUDE.md には複写しない。個別 Issue の一覧・ステータスも同様。
 
-最新リリース: **v1.63.0**（2026-09-04 タグ、build 179、pubspec 1.63.0+179、リリース PR [#1069](https://github.com/pooza/capsicum/pull/1069)、merge `d99b3b53`）。**大更新なし — 棚卸し 3 本（#993 / #991 / #992）の成果を消化する枠**。**全 5 プラットフォーム公開済み**（2026-09-05 実測）: iOS / macOS とも 1.63.0 が `READY_FOR_SALE`（ASC API のプラットフォーム別 `appStoreState`）/ Android は production track の versionCode 179 が `completed`（Play API）/ Windows は Microsoft Store の現行パッケージが `9AFBB08E.capsicum_1.63.179.0_x64`（displaycatalog）/ Linux AppImage は [GitHub Release v1.63.0](https://github.com/pooza/capsicum/releases/tag/v1.63.0)（Latest）。マイルストーン [#77](https://github.com/pooza/capsicum/milestone/77)。消化（11 件）: [#1039](https://github.com/pooza/capsicum/issues/1039) ブロック・ミュートの一覧と解除（**この枠の主役**）/ [#1040](https://github.com/pooza/capsicum/issues/1040) フォローリクエストの承認・拒否 / [#1041](https://github.com/pooza/capsicum/issues/1041) Misskey の本文検索 / [#1043](https://github.com/pooza/capsicum/issues/1043) 「指名」を選択肢から外す / [#1044](https://github.com/pooza/capsicum/issues/1044) リアクションが黙って ❤️ へ差し替えられる / [#1045](https://github.com/pooza/capsicum/issues/1045) 通知取得でサーバー側の未読が消える / [#1068](https://github.com/pooza/capsicum/issues/1068) CW 内のハッシュタグをクリッカブルに / [#1070](https://github.com/pooza/capsicum/issues/1070) フォロー中のハッシュタグの一覧 / [#1071](https://github.com/pooza/capsicum/issues/1071) お気に入りの一覧 / [#1072](https://github.com/pooza/capsicum/issues/1072) 引用の一覧 / [#1080](https://github.com/pooza/capsicum/issues/1080) 通知の取得が異常に遅い（**ユーザー報告由来**）。**relay は v1.63 で触っていない**（open Issue 0 件・同名マイルストーン無し）。⚠ [#1076](https://github.com/pooza/capsicum/issues/1076) は**起票時点で実装済み**と判明して close、[#1042](https://github.com/pooza/capsicum/issues/1042) は**前提が誤り**（絞る UI がそもそも無い）で v2.0 へ移送。
+最新リリース: **v1.64.0**（2026-09-12 タグ、build 183、pubspec 1.64.0+183、リリース PR [#1102](https://github.com/pooza/capsicum/pull/1102)、merge `a1e9e5e4`）。**大更新なし — ユーザー報告と実機検証で出た不具合を消化する枠**（Android のログイン復帰と Linux のキーリングが中心）。**全 5 プラットフォーム公開済み**（2026-09-12 実測）: iOS / macOS とも 1.64.0 が `READY_FOR_SALE`（ASC API のプラットフォーム別 `appStoreState`）/ Android は production track の versionCode 183 が `completed`（Play API）/ Windows は Microsoft Store の現行パッケージが `9AFBB08E.capsicum_1.64.183.0_x64`（displaycatalog）/ Linux AppImage は [GitHub Release v1.64.0](https://github.com/pooza/capsicum/releases/tag/v1.64.0)（Latest）。⚠ **build 180〜182 はナイトリーで報告者に渡した番号なので、製品版は 183 から**。マイルストーン [#78](https://github.com/pooza/capsicum/milestone/78)。消化（18 件）: [#1085](https://github.com/pooza/capsicum/issues/1085) Linux: Secret Service が応答しないと起動が真っ黒なまま返らない（**この枠の主役**・ユーザー報告由来）/ [#1104](https://github.com/pooza/capsicum/issues/1104) Linux: キーリングの解錠に失敗すると secret を消してしまう / [#1115](https://github.com/pooza/capsicum/issues/1115) Linux: キーリングが戻っても「今すぐ再試行」で復帰しない / [#1108](https://github.com/pooza/capsicum/issues/1108) Android: 「承認」を押してもブラウザが固まったまま戻らない / [#1057](https://github.com/pooza/capsicum/issues/1057) Android: OAuth は成功しているのにログイン画面から遷移しない / [#1105](https://github.com/pooza/capsicum/issues/1105) ログイン済みアカウントを足し直すと赤画面 / [#1113](https://github.com/pooza/capsicum/issues/1113) 「削除して再編集」の引き継ぎ漏れ（**ユーザー報告由来**）/ [#1064](https://github.com/pooza/capsicum/issues/1064) await を跨いだ `ref.read` が成功を「失敗」に化けさせる / [#1082](https://github.com/pooza/capsicum/issues/1082) isCat のキャッシュが 2 系統ある / [#1038](https://github.com/pooza/capsicum/issues/1038) 絵文字画像が差し替わるとアスペクト比が古いまま / [#1062](https://github.com/pooza/capsicum/issues/1062) モーダルボトムシートの下端が潜り込む / [#1061](https://github.com/pooza/capsicum/issues/1061) 下端 inset のガードが粗い / [#1063](https://github.com/pooza/capsicum/issues/1063) lock ガードが入力未配線のとき fail-open / [#1067](https://github.com/pooza/capsicum/issues/1067) `Package.resolved` の形式が端末ごとに往復する / [#1035](https://github.com/pooza/capsicum/issues/1035) v1.61 レビューの送り分 / [#1083](https://github.com/pooza/capsicum/issues/1083) v1.63 レビューの送り分 / [#1065](https://github.com/pooza/capsicum/issues/1065) 小粒 2 件 / [#1116](https://github.com/pooza/capsicum/issues/1116) リリース前レビューでリリース前に直すもの。送り分は [#1117](https://github.com/pooza/capsicum/issues/1117)（v1.65）。**relay は v1.64 で触っていない**（同名マイルストーン無し）。⚠ **ただし relay の open は 3 件ある**（[relay#54](https://github.com/pooza/capsicum-relay/issues/54) WNS 接続の再利用 = **relay v1.65** / [relay#55](https://github.com/pooza/capsicum-relay/issues/55) 配送の非同期化 = #597 と同じ回 / [relay#56](https://github.com/pooza/capsicum-relay/issues/56) `dropped` 端末へのバックオフ = on-hold）。
 
-⚠⚠ **リリース前レビューで 🔴 5 件、うち 4 件がその日に入れた変更由来だった。**5 観点を独立に並列で回した効果が出た回で、**3 件は複数観点が独立に同じ結論**に達している（単一視点なら取りこぼしていた）。逆に**私が「いちばん怪しい」と名指しした箇所は無罪**で、実際の 🔴 は名指ししていなかった箇所から出た。**当たりの見当は外れてよく、母数を広く取るほうが効く。**
+⚠⚠ **実機で検証するまで、報告者のサーバーだけが直っていなかった**（#1113）。carry-over の「宣言」と「compose が読む」はガードで固定してあったのに、**アダプターが `Post` へ実際に入れているか**は誰も見ていなかった。Misskey の `Note → Post` 変換が `inReplyToId` を落としており、**報告元がダイスキー（Misskey）なので報告の本丸が未修正のまま**だった。⚠ **ガードの層が 1 つ抜けると、通っているテストの数は増えても守られていない。**同じ原因で Misskey の TL に「返信」の印も出ていなかった。
 
-⚠⚠ **サーバーの挙動を推測で語らない。**#1043 で「Misskey の指名投稿は `visibleUserIds` を送らないと誰にも届かない」を前提に丸めを実装し、レビューで否定された。サーバーは**返信のときだけ返信先の作者を `visibleUsers` へ自動補完する**ので、**返信は従来どおり届いていた**。しかも `reply.visibility === 'specified'` と異なる visibility の返信は 400 で拒否されるため、**動いていた返信を壊していた**。さらに redraft では**サーバーが弾かないまま DM がフォロワー全員へ出る**形だった。⚠ **`~/repos/misskey` を開けば 5 分で否定できた**（[reference: フォークは運用中のサーバーソフトそのもの](#関連リポジトリ)）。
+⚠⚠ **Play の foreground service（#1108 の `shortService`）の用途申告は求められなかった**（2026-09-12 実測）。「アプリのコンテンツ」に項目が出ず、production への昇格も止められず公開された。⚠ **この件は「不要」→「必要」→「実測では求められなかった」と 2 回ひっくり返っている**ので、**次に触るときは実測を優先する**（型固有の権限 `FOREGROUND_SERVICE_<型>` を足すと話が変わる）。撮影した説明動画は使わずに済んだ。
 
-⚠⚠ **テストが「バグの側」を固定していた事例が 2 件**（is_cat の「通信例外もキャッシュに載る」/ 検索の「rethrow する」）。**テストがあることは正しさの証明にならない。**バグごとテストで固めると、次に直す人がテストを根拠に戻す。
+⚠⚠ **「手元は緑・CI は赤」を 2 回目に踏んだ**（`widget_test`）。`Platform.isLinux` でだけ通る疎通確認を足したため、macOS の手元は分岐を素通りし、Linux の CI だけ 800ms のタイマーが残って落ちた。⚠ **直し方を「macOS では skip」にしない**——守っている本体（Linux）を手元で一度も踏まなくなる。**テストは「その OS のふり」をして通す**（`debugSecretServiceOverride` 等の `debug*Override` はそのために置いてある）。同じ罠はソース検査で機械的に止めた。
 
-⚠ **Codex は 5 観点レビューが見落とした P1 を出した**（リアクション判定の経路取りこぼし。ピッカーの入口 2 箇所にしか入れておらず、既存チップ・カスタム絵文字・通知タイルが素通しだった）。2 巡目の P1 は誤検出（`following/requests/list` の戻り値の形）で、**フォークのソースを引いて否定した**。⚠ **実在の P1 が出たときだけ再依頼**し、P2 のみなら直すだけにする。
+⚠ **リリース前レビュー（5 観点・1 巡）の赤は、この枠で入れた変更からは出なかった**（v1.59〜v1.63 と逆の出方で、赤 1 件は既存の Misskey フォロー一覧のページング）。代わりに**セキュリティが 3 件**出ている: 細工した設定バックアップで UI が長時間固まる（#1035 で入れた深さガードが引用符 1 個で回避できた）/ secret を含む例外が breadcrumb に載りうる（`exception_scrub_guard_test` が `cause` を見ていなかった）/ **外部の deep link からコールドスタートで任意ホストのログイン画面を開ける**（`/login` の引数をクエリへ移した副作用）。⚠ **いずれも「前の版で入れた対策の隣」から出ている。**
 
-⚠ **ビルドが 22 分かかった原因は DerivedData の肥大**（14G）。内蔵ディスクの空きが 8.7GB まで落ち、`xcodebuild clean` が 502 秒かかっていた。⚠ **Xcode は作業ディレクトリのパスごとに別エントリを作り、古いものを消さない**（6〜8 月のものが 13 個残っていた）。消したら 66M・空き 22G に回復。⚠ **外部ボリュームが遅いせいではない**（小ファイル 5000 件の作成・削除を実測したところ内蔵と差が無かった）。
+⚠⚠ **#1085 は最初「ハング」しか塞いでいなかった**。libsecret が**例外で断る**経路は残っており、Sentry（`CAPSICUM-53`）で実発生して #1104 になった。⚠ **報告どおりの症状が消えても、同じ入口の別の分岐は開いている**ことがある。⚠ 根本原因は `flutter_secure_storage_linux` が**プラットフォームスレッドで同期呼び出しする**こと（Dart のタイマーは発火しても描くスレッドが居ない）で、純 Dart の D-Bus で先に疎通確認する形にした（正本は `secret_service_probe.dart` の doc）。
 
 過去リリースの詳細ログは [archive/release-log.md](archive/release-log.md) に退避した（正本は [GitHub Releases](https://github.com/pooza/capsicum/releases) / Milestones）。マイルストーン移行時のログトリム手順は [milestone-transition.md](milestone-transition.md) を参照。
 
@@ -454,15 +490,15 @@ v1.24 リリース直前の Linux 実機検証で判明・対応した、他プ�
 
 運用ルール:
 
-- リリース前レビューは各マイルストーンの Issue をすべて消化した後、リリース直前に毎度実施する。[#27](https://github.com/pooza/capsicum/issues/27) の「セキュリティレビュー」だけでは実害バグを取りこぼすため、以下 5 観点をサブエージェントで並列に走らせる（詳細は [store-release-guide.md](store-release-guide.md) の「リリース前レビュー」節）:
+- リリース前レビューは各マイルストーンの Issue をすべて消化した後、リリース直前に毎度実施する。[#27](https://github.com/pooza/capsicum/issues/27) の「セキュリティレビュー」だけでは実害バグを取りこぼすため、以下 5 観点をサブエージェントで並列に走らせる（手順の正本は **`/release-review`** スキル: [SKILL.md](../.claude/skills/release-review/SKILL.md)）:
   - セキュリティ（`/security-review` スキル）
   - API 契約（Mastodon / Misskey / モロヘイヤの REST 正確性、アダプター interface 整合）
   - 並行性・ライフサイクル（async 連鎖、Riverpod provider 寿命、dispose、race）
   - エラー処理・観測性（try/catch カバレッジ、Sentry 計装、secrets scrub、UX）
   - コーディングスタイル・規約整合性（用語統一、ハードコーディング、命名の揺れ、重複ロジック、規約違反）
 - **レビュー指摘の起票閾値**: コメント書き直し・既に触っている関数内のリネーム・型変更（`Map<String,bool>` → `Set<String>` 等）・隣接ファイルでの軽微な追従等、起票 + ラベル + マイルストーン + 移動 + close の往復コストが修正コストと拮抗する粒度のものは、issue を起こさず P1 修正の commit に直接含めて消化する。本文に「今は緊急性なし」「必要性が顕在化してから対応」と書きたくなる粒度のものは、起票せずレビュー報告内の note として残す（未来に必要になった時点で起票する）
-- **マイルストーンに載らない集約 Issue を作らない**: 「切り出す価値が出たら切り出す」形のアンブレラは、**マイルストーンが付かないので誰も着手せず放置される**（v1.52 / v1.53 の緑まとめ [#905](https://github.com/pooza/capsicum/issues/905) / [#915](https://github.com/pooza/capsicum/issues/915) で 37 項目が滞留し、2026-08-02 に解体）。束ねること自体は可だが、**束ねたら必ずマイルストーンを付け、「その枠で全部やる」チェックリストとして扱う**。行き先の判断基準は [store-release-guide.md](store-release-guide.md) の「リリース前レビュー」節を正本とする
-- **2 回目レビュー（差分レビュー）**: プラットフォーム追加・大更新独立配置マイルストーンに限り、1 回目の修正 commit に起因する新規問題を拾うため 2 回目を回す。対象は 1 回目以降の差分と新規サーフェスのみ。リリース 1 週間前までに完了させ、直前に出た P1 はホットフィックス前提で次リリースに送ってよい（詳細は [store-release-guide.md](store-release-guide.md) §4.0）
+- **マイルストーンに載らない集約 Issue を作らない**: 「切り出す価値が出たら切り出す」形のアンブレラは、**マイルストーンが付かないので誰も着手せず放置される**（v1.52 / v1.53 の緑まとめ [#905](https://github.com/pooza/capsicum/issues/905) / [#915](https://github.com/pooza/capsicum/issues/915) で 37 項目が滞留し、2026-08-02 に解体）。束ねること自体は可だが、**束ねたら必ずマイルストーンを付け、「その枠で全部やる」チェックリストとして扱う**。行き先の判断基準は [release-review スキル](../.claude/skills/release-review/SKILL.md)を正本とする
+- **2 回目レビュー（差分レビュー）**: プラットフォーム追加・大更新独立配置マイルストーンに限り、1 回目の修正 commit に起因する新規問題を拾うため 2 回目を回す。対象は 1 回目以降の差分と新規サーフェスのみ。リリース 1 週間前までに完了させ、直前に出た P1 はホットフィックス前提で次リリースに送ってよい（詳細は [release-review スキル](../.claude/skills/release-review/SKILL.md)）
 - ATOK 二重入力（[#54](https://github.com/pooza/capsicum/issues/54)）は Flutter 側の対応待ち。リリースごとにリリースノートの「既知の不具合」に記載し、Flutter 側の関連 issue の動向を確認する。記載時は回避策も併記する: (1) ATOK の「インライン入力」を OFF にする、(2) インライン入力 ON のままでも ATOK の「従来のカーソル位置入力を使用」を ON にすれば回避可（インライン入力を活かせる分こちらが実用的）、(3) 標準キーボードに切り替える
 - マイルストーン未設定の Issue は `no:milestone` フィルタで確認する
 - **`Windows` / `Linux` ラベルは「その実機でないと進まない」の目印**（再現確認が起点・修正案の選択が実機の挙動次第）。開発のメインは macOS なので、着手できる端末が限られることを一目で分かるようにするためのもの。3 OS 共通のデスクトップ機能に付ける `desktop` とは別で、`desktop` は macOS でも進められる。拾い方は [dev-environment.md](dev-environment.md) の「その端末で拾う作業の探し方」
@@ -474,9 +510,12 @@ v1.24 リリース直前の Linux 実機検証で判明・対応した、他プ�
 
 ## セッション開始時の同期手順
 
-会話の最初に「進捗を同期してください」等の指示があった場合、[sync-procedure.md](sync-procedure.md) の手順に従う。
+⚠⚠ **手順は Claude Code のスキルにある（#1114）。**docs の側は持たない。
 
-作業中にセッションが切れて「続きをやって」と指示された場合は、同期手順は回さず [sync-procedure.md](sync-procedure.md) の「作業中断からの復帰」に従う。
+- 会話の最初に「進捗を同期してください」等の指示があった場合 → **`/sync-procedure`**（[.claude/skills/sync-procedure/SKILL.md](../.claude/skills/sync-procedure/SKILL.md)）
+- 作業中にセッションが切れて「続きをやって」と指示された場合 → **`/resume-work`**（[.claude/skills/resume-work/SKILL.md](../.claude/skills/resume-work/SKILL.md)）。⚠ **同期手順は回さない**
+
+⚠ **スキルは「確実に呼ぶ」ための仕組みで、「守らせる」仕組みではない。**守らせたいものは従来どおり `.claude/hooks/` でフック化する。
 
 ## ドキュメント表記規約
 
@@ -487,4 +526,4 @@ v1.24 リリース直前の Linux 実機検証で判明・対応した、他プ�
 
 ### CLAUDE.md の定期見直し
 
-CLAUDE.md はセッション開始時に全文読み込むため、完了済みの情報や歴史的経緯が蓄積するとノイズとなり、重要な設計方針の認識精度が下がる。マイルストーン数回ごとに CLAUDE.md を見直し、完了済み・陳腐化した情報を削除するか外部参照に集約する。具体的な棚卸し手順（陳腐化改善・memory↔docs の移送・インフラ記述の infra-note 移設・役目を終えた docs のアーカイブ）は [doc-maintenance.md](doc-maintenance.md) に手順化してある（不定期・オンデマンド実施）。
+CLAUDE.md はセッション開始時に全文読み込むため、完了済みの情報や歴史的経緯が蓄積するとノイズとなり、重要な設計方針の認識精度が下がる。マイルストーン数回ごとに CLAUDE.md を見直し、完了済み・陳腐化した情報を削除するか外部参照に集約する。具体的な棚卸し手順（陳腐化改善・memory↔docs の移送・インフラ記述の infra-note 移設・役目を終えた docs のアーカイブ）は **`/doc-maintenance`** スキル（[SKILL.md](../.claude/skills/doc-maintenance/SKILL.md)・不定期／オンデマンド）。⚠ **どこに何を置くかの判断規約は [doc-maintenance.md](doc-maintenance.md)** に残してある（棚卸しのときだけ効くルールではないため）。

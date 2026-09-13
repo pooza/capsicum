@@ -39,13 +39,13 @@ void main() {
   tearDown(() {
     SecureStorageHealth.resetForTest();
     debugMayDeleteSecretOnReadFailureOverride = null;
-    debugUsesSecretServiceKeyringOverride = null;
+    debugSecretServiceOverride = null;
   });
 
   group('permanent を判別できないプラットフォーム（Linux / Android / Windows）', () {
     setUp(() {
       debugMayDeleteSecretOnReadFailureOverride = false;
-      debugUsesSecretServiceKeyringOverride = true;
+      debugSecretServiceOverride = true;
     });
 
     test('⚠ キーリングの解錠に失敗しても secret を消さない', () async {
@@ -87,7 +87,7 @@ void main() {
     test('⚠ Secret Service を使わない backend では案内を出さない', () async {
       // Android の Keystore 失敗で「キーリングが読めません」と出すと、
       // ユーザーは存在しないものを探すことになる。
-      debugUsesSecretServiceKeyringOverride = false;
+      debugSecretServiceOverride = false;
       final storage = _MockSecureStorage();
       when(
         () => storage.read(key: any(named: 'key')),
@@ -142,7 +142,7 @@ void main() {
   group('permanent を判別できるプラットフォーム（Apple）', () {
     setUp(() {
       debugMayDeleteSecretOnReadFailureOverride = true;
-      debugUsesSecretServiceKeyringOverride = false;
+      debugSecretServiceOverride = false;
     });
 
     test('⚠ 従来どおり、判別できない失敗は permanent として消す', () async {
@@ -195,7 +195,7 @@ void main() {
       // テストだけだと、`mayDeleteSecretOnReadFailure` の**既定の実装が
       // 逆になっていても全部緑になる**。
       debugMayDeleteSecretOnReadFailureOverride = null;
-      debugUsesSecretServiceKeyringOverride = null;
+      debugSecretServiceOverride = null;
 
       expect(
         mayDeleteSecretOnReadFailure,

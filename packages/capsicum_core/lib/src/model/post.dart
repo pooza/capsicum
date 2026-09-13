@@ -82,6 +82,15 @@ class Post {
   /// リアクションの受付条件 (#1044)。Misskey のみ。null は制限なし。
   final ReactionAcceptance? reactionAcceptance;
 
+  /// 投稿が最後に編集された時刻 (#1054)。編集されていなければ null。
+  ///
+  /// ⚠ **読む側の情報**。「投稿の更新」（自分の投稿を書き換える・実装しない方針）
+  /// とは別物で、混同して消さないこと。
+  ///
+  /// ⚠ **Mastodon のみ非 null になる。**Misskey に投稿の編集機能は無く、Note の
+  /// `updatedAt` は別の意味なので流用しない。
+  final DateTime? editedAt;
+
   const Post({
     required this.id,
     required this.postedAt,
@@ -121,6 +130,7 @@ class Post {
     this.language,
     this.url,
     this.reactionAcceptance,
+    this.editedAt,
   });
 
   /// 派生オブジェクトを生成する。enrich パイプライン（IsCatEnricher 等）の
@@ -134,6 +144,8 @@ class Post {
     int? reblogCount,
     List<Attachment>? attachments,
     bool? bookmarked,
+    FilterAction? filterAction,
+    String? filterTitle,
   }) => Post(
     id: id,
     postedAt: postedAt,
@@ -162,8 +174,11 @@ class Post {
     emojiHost: emojiHost,
     card: card,
     poll: poll,
-    filterAction: filterAction,
-    filterTitle: filterTitle,
+    // ⚠ ワードミュートの判定結果を後から載せる (#1117-B)。⚠⚠ **これが無いと
+    // Misskey adapter が `Post(...)` を手で組み直すしかなく、**quote / poll /
+    // channel / localOnly / language 等を軒並み捨てていた**（再編集で消える）。
+    filterAction: filterAction ?? this.filterAction,
+    filterTitle: filterTitle ?? this.filterTitle,
     pinned: pinned,
     channelId: channelId,
     channelName: channelName,
@@ -173,6 +188,7 @@ class Post {
     language: language,
     url: url,
     reactionAcceptance: reactionAcceptance,
+    editedAt: editedAt,
   );
 }
 
