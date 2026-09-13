@@ -226,6 +226,7 @@ capsicum/
       doc-maintenance/    # docs / メモリの棚卸し（⚠ 配置の原則は docs 側）
       login-troubleshooting/  # 「ログインできない」報告の切り分け
       release-review/     # リリース前レビュー（5 観点・赤黄緑の送り分け）
+      store-release/      # 毎回のリリース手順（⚠ 工程ごとの補助ファイルつき）
     hooks/                # 守らせたいものの機械化（deny-shell-loops.sh）
   docs/                   # 開発ドキュメント
     CLAUDE.md             # 本ファイル
@@ -246,7 +247,7 @@ capsicum/
     paid-relay-plan.md    # #597 有償プッシュリレーの設計書（2026-09-06。⚠ #596 は記録層で判定層ではない・認可を新規に作る話）
     milestone-transition.md  # ⚠ ポインタのみ（本文は .claude/skills/milestone-transition/）
     doc-maintenance.md    # 配置の原則（公開境界・二重管理禁止・メモリは status を持たない）。⚠ 回す手順は .claude/skills/doc-maintenance/
-    store-release-guide.md  # ストアリリース手順書（運用正本）
+    store-release-guide.md  # 初回セットアップ（署名・fastlane）とストア掲載情報・配布方針。⚠ 毎回の手順は .claude/skills/store-release/
     store-listing.md      # 各ストアの掲載文（提出のたびに参照する現役ドキュメント）
     supporter-subscription-plan.md  # 投げ銭サブスクの商品設計（審査ノートの英文もここ）
     msstore-review-notes-login.md   # Microsoft Store 審査向けのログイン説明（提出のたびに再利用）
@@ -415,7 +416,7 @@ v1.27 マイルストーンに単独配置し（大更新のため他項目と�
 
 ## リリース計画
 
-リリース手順・ストア設定の詳細は [store-release-guide.md](store-release-guide.md) を参照。
+毎回のリリース手順は **`/store-release`** スキル（[SKILL.md](../.claude/skills/store-release/SKILL.md)）、初回セットアップとストア設定は [store-release-guide.md](store-release-guide.md)。
 
 [GitHub Milestones](https://github.com/pooza/capsicum/milestones) が正本。各マイルストーンの概要・スコープはマイルストーンの description に記載し、CLAUDE.md には複写しない。個別 Issue の一覧・ステータスも同様。
 

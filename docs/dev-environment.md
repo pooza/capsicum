@@ -77,7 +77,7 @@ flutter run -d <device-id> --dart-define=RELAY_SECRET=$RELAY_SECRET
 - 端末: 設定 → プッシュ通知 の各アカウントが **401**
 - relay: **何も残らない**。401 はログを 1 行も出さない（[capsicum-relay#47](https://github.com/pooza/capsicum-relay/issues/47)）。サーバー側の journald が空なのを見て「リクエストが届いていない」と誤診しやすい
 
-⚠ **`export` 文と `flutter run` 文は必ず別の行にする。** `RELAY_SECRET="..." flutter run ...` と 1 行に前置すると `$RELAY_SECRET` は**親シェルで空に展開される**。同じ罠を release ビルドで踏んで `v1.21.0+50` の全アカウント push 不達を起こしている（[store-release-guide.md](store-release-guide.md) §4.2）。2026-08-18 には run 側で同じことが起き、「debug 版でプッシュ通知を見たことがない」という長期の状態になっていた（[#994](https://github.com/pooza/capsicum/issues/994)）。
+⚠ **`export` 文と `flutter run` 文は必ず別の行にする。** `RELAY_SECRET="..." flutter run ...` と 1 行に前置すると `$RELAY_SECRET` は**親シェルで空に展開される**。同じ罠を release ビルドで踏んで `v1.21.0+50` の全アカウント push 不達を起こしている（[store-release スキル](../.claude/skills/store-release/build-upload.md) §4.2）。2026-08-18 には run 側で同じことが起き、「debug 版でプッシュ通知を見たことがない」という長期の状態になっていた（[#994](https://github.com/pooza/capsicum/issues/994)）。
 
 `SENTRY_DSN` は debug では**渡さない**のが既定。渡すと開発中の例外が本番プロジェクトへ流れる。
 
@@ -223,7 +223,7 @@ xcodebuild -allowProvisioningUpdates -workspace Runner.xcworkspace -scheme Runne
 
 Xcode でワークスペースを一度開いて自動署名させてもよい。なお `keychain-access-groups` を `$(AppIdentifierPrefix)group.<App Group id>` の App Group 形式で書く場合、Apple Developer Portal 側に専用の「Keychain Sharing」capability を追加する必要はない（App Groups 配下で動く）。
 
-詳細なリリース手順は [store-release-guide.md](store-release-guide.md) を参照。
+詳細なリリース手順は [store-release スキル](../.claude/skills/store-release/SKILL.md)（初回セットアップは [store-release-guide.md](store-release-guide.md)）。
 
 ## 補助機（Linux / Windows）セットアップ
 
@@ -283,7 +283,7 @@ sudo apt install -y \
 - Visual Studio 2022 Build Tools（"Desktop development with C++" workload）
 - MSIX packaging tool（[#423](https://github.com/pooza/capsicum/issues/423) の MSIX 生成用）
 - Microsoft Partner Center アカウント（Microsoft Store 登録用）
-- 内部ベータ検証経路: GitHub Actions の `Windows Release` workflow を develop で `workflow_dispatch` 起動 → artifact (`capsicum.msix` + `capsicum-signing.cer`) を Parallels VM 内で [install-internal-beta.ps1](../distribution/windows/install-internal-beta.ps1)（`gh run download` + `Import-Certificate` + `Add-AppxPackage` を管理者昇格つき 1 コマンドに畳んだもの）で導入。タグ駆動の draft Release ([store-release-guide.md §4.6](store-release-guide.md)) と同じ MSIX が出るため、本番判定にも流用できる。**自己署名 MSIX 直配はあくまで内部ベータ / 開発検証用**でエンドユーザーには案内しない（Windows の公式配布は Microsoft Store 単独・[#760](https://github.com/pooza/capsicum/issues/760)）
+- 内部ベータ検証経路: GitHub Actions の `Windows Release` workflow を develop で `workflow_dispatch` 起動 → artifact (`capsicum.msix` + `capsicum-signing.cer`) を Parallels VM 内で [install-internal-beta.ps1](../distribution/windows/install-internal-beta.ps1)（`gh run download` + `Import-Certificate` + `Add-AppxPackage` を管理者昇格つき 1 コマンドに畳んだもの）で導入。タグ駆動の draft Release ([store-release スキル §4.6](../.claude/skills/store-release/windows.md)) と同じ MSIX が出るため、本番判定にも流用できる。**自己署名 MSIX 直配はあくまで内部ベータ / 開発検証用**でエンドユーザーには案内しない（Windows の公式配布は Microsoft Store 単独・[#760](https://github.com/pooza/capsicum/issues/760)）
 - **ローカルソースビルドは ARM Windows（上記 VM）では通らない**ため、ARM 環境での検証は上記 CI artifact の MSIX で行う。ARM で詰まる箇所: `flutter_secure_storage_windows` / `flutter_local_notifications_windows` が ATL ヘッダ（`atlstr.h` / `atlbase.h`、VS Build Tools に「C++ ATL for v143」追加が必要）、`jni` が `jni.h`（JDK 未導入）、`sentry-native`（crashpad）が x64 ターゲットビルド中に ARM64 専用 marmasm targets を踏む。前 2 つは追加導入で解決余地があるが crashpad の ARM/x64 不整合が残るため深追いしない
 - **x64 実機では `flutter build windows --release` が通る**（2026-06-12 確認。crashpad の ARM/x64 不整合は x64 ネイティブでは発生しない）。必要なツールチェーン: VS Build Tools 2022 の「C++ によるデスクトップ開発」ワークロード + **C++ ATL** + **C++ CMake tools** + **Windows 11 SDK**（`Microsoft.VisualStudio.Workload.VCTools --includeRecommended` で一括導入可。GUI が白画面で開けない場合は `setup.exe modify ... --quiet` で CLI 導入。`--wait` は modify では不可）、`jni.h` 用の **JDK**（`JAVA_HOME` 設定）、**Windows 開発者モード ON**（無効だとシンボリックリンク作成で失敗）、`melos bootstrap` + コード生成（`build_runner` が必要なのは `fediverse_objects` のみ。`melos run build_runner` は Pub Cache bin が PATH 外だと内部の `melos` 解決に失敗するため、当該パッケージで直接 `dart run build_runner build` する）
 - MSIX は release build なので、debug では確認できない OS 連携系（`window_manager` の位置・サイズ復元 #559 / OAuth の OS デフォルトブラウザ起動 #382 系 / OS スキーム・ネイティブダイアログ）も artifact MSIX 経由で内部ベータ同等に先行検証できる（x64 MSIX は ARM Windows 上でエミュレーション動作する）
