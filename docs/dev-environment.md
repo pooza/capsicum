@@ -160,6 +160,7 @@ flutter run -d <device-id> --dart-define=RELAY_SECRET=$RELAY_SECRET
 | 絶対パスでコマンドを呼ぶ | **素の名前で呼ぶ**。`Bash(sentry-cli *)` は `/Users/…/.local/bin/sentry-cli` には**当たらない**（別コマンド扱い）。絶対パスが要る環境では settings.local.json に実パスで足す |
 | `curl -sL` / `curl -sX` のように短縮を連結 | **`curl -s -L` / `curl -s -X`**。allowlist は `curl -s ` の後ろに空白を要求する |
 | `TOKEN=$(...)` の変数代入から始める | トークンは**単独のコマンドで 1 回読んで**、以降のコマンドへ直接埋める |
+| `pgrep -f <パターン>` / `pkill -f <パターン>` をそのまま叩く | **`ps -u "$(id -u)" -o pid=,cmd=` + `grep '[p]attern'`**（bracket trick）。⚠⚠ **`-f` は全コマンドラインを見るので、そのパターン文字列を含む自分のシェルにも一致する** —— `pgrep` は毎回違う PID を返して「プロセスが増殖している」ように見え、`pkill` は**自分を殺す**（2026-09-13 に両方踏んだ）。対象を絞るときは**プロセス名（`pgrep -x`）と併せて二重に**当てる。⚠ `comm` は **15 文字で切り詰められる**（`gnome-keyring-daemon` は `gnome-keyring-d`）ので、`-x` には切り詰め後の名前を渡す |
 
 ### ⚠⚠ `cd` は次のツール呼び出しにも残る（外部リポジトリへの誤爆を起こした）
 
