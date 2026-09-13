@@ -3,7 +3,7 @@
 #
 # なぜ機械で止めるのか:
 #   ループや関数定義が入った Bash は allowlist に当たらず、中身が全部許可済みでも
-#   必ず許可確認になる。docs/sync-procedure.md §0 に「使わない」と明記してあるが、
+#   必ず許可確認になる。docs/dev-environment.md の「コマンドの書き方」に「使わない」と明記してあるが、
 #   規約を書いた翌セッションに筆者自身が 3 回使った実績がある。読んで守る仕組みでは
 #   止まらないと判断し、ハーネス側の拒否に移した（2026-08-25）。
 #
@@ -73,13 +73,13 @@ flat=$(printf '%s' "$scrubbed" | tr '\n\t' '  ')
 # `for` と `done` の有無だけで見ると、それらを含む散文 (コミットメッセージ等) を誤爆する。
 if printf '%s\n' "$flat" | grep -qE '(^|[;&|(]|[[:space:]])(for|while|until)[[:space:]][^;&|]*[;[:space:]][[:space:]]*do([[:space:]]|$)' &&
   printf '%s\n' "$flat" | grep -qE '(^|[;&|]|[[:space:]])done([[:space:]]|[;&|)]|$)'; then
-  deny 'シェルのループは許可確認になるため拒否した (docs/sync-procedure.md §0)。1 対象 1 ツール呼び出しに展開し、同一メッセージ内で並列に投げ直すこと。'
+  deny 'シェルのループは許可確認になるため拒否した (docs/dev-environment.md「コマンドの書き方」)。1 対象 1 ツール呼び出しに展開し、同一メッセージ内で並列に投げ直すこと。'
 fi
 
 # name() { ... }  /  function name { ... }
 if printf '%s\n' "$scrubbed" | grep -qE '(^|[;&|]|[[:space:]])[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\(\)[[:space:]]*\{' ||
   printf '%s\n' "$scrubbed" | grep -qE '(^|[;&|]|[[:space:]])function[[:space:]]+[A-Za-z_][A-Za-z0-9_]*'; then
-  deny 'シェルの関数定義は許可確認になるため拒否した (docs/sync-procedure.md §0)。定義せずに済む形へ展開すること。なお、コードファイルの作成・編集は Bash ではなく Write / Edit ツールで行うこと。'
+  deny 'シェルの関数定義は許可確認になるため拒否した (docs/dev-environment.md「コマンドの書き方」)。定義せずに済む形へ展開すること。なお、コードファイルの作成・編集は Bash ではなく Write / Edit ツールで行うこと。'
 fi
 
 exit 0
