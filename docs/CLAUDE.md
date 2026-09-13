@@ -222,6 +222,9 @@ capsicum/
     skills/               # 名前付き手順の正本（#1114。⚠ docs 側はポインタ）
       sync-procedure/     # セッション開始時の同期
       resume-work/        # 作業中断からの復帰
+      milestone-transition/  # マイルストーン完了→次着手の移行
+      doc-maintenance/    # docs / メモリの棚卸し（⚠ 配置の原則は docs 側）
+      login-troubleshooting/  # 「ログインできない」報告の切り分け
     hooks/                # 守らせたいものの機械化（deny-shell-loops.sh）
   docs/                   # 開発ドキュメント
     CLAUDE.md             # 本ファイル
@@ -240,13 +243,13 @@ capsicum/
     roadmap.md            # 枠の数・各枠の主題・1.x と 2.x の境界（2026-09-04 策定・含有 Issue は Milestones が正本）
     deck-ui-plan.md       # #720 デッキ表示の設計スパイク（2026-09-06・現アーキの前提棚卸し / 壊れる境界 / 段階性。⚠ 詳細 UI 仕様ではない）
     paid-relay-plan.md    # #597 有償プッシュリレーの設計書（2026-09-06。⚠ #596 は記録層で判定層ではない・認可を新規に作る話）
-    milestone-transition.md  # マイルストーン完了→次着手の移行手順（トリアージ・スコープ確定・サイト更新・バンプ）
-    doc-maintenance.md    # ドキュメント/メモリの棚卸し手順（不定期・陳腐化改善・memory↔docs 移送・インフラ記述の infra-note 移設・アーカイブ）
+    milestone-transition.md  # ⚠ ポインタのみ（本文は .claude/skills/milestone-transition/）
+    doc-maintenance.md    # 配置の原則（公開境界・二重管理禁止・メモリは status を持たない）。⚠ 回す手順は .claude/skills/doc-maintenance/
     store-release-guide.md  # ストアリリース手順書（運用正本）
     store-listing.md      # 各ストアの掲載文（提出のたびに参照する現役ドキュメント）
     supporter-subscription-plan.md  # 投げ銭サブスクの商品設計（審査ノートの英文もここ）
     msstore-review-notes-login.md   # Microsoft Store 審査向けのログイン説明（提出のたびに再利用）
-    login-troubleshooting.md  # ログインできない報告の切り分け手順
+    login-troubleshooting.md  # ⚠ ポインタのみ（本文は .claude/skills/login-troubleshooting/）
     brand/                # ブランドアセット（アイコン・ロゴ等。v1.53 でルート assets/ から移設）
     archive/              # 過去の記録（現役運用では参照しない。release-log.md / release-pipeline.md 等）
   packages/               # モノレポ構成（Melos）
@@ -275,7 +278,7 @@ capsicum/
 
 ### マイルストーン運用
 
-マイルストーン完了→次着手の移行時に毎回回す一連の手順（未割り当て Issue のトリアージ・次スコープ確定・ロードマップ調整・capsicum-site 更新・バージョンバンプ）は [milestone-transition.md](milestone-transition.md) に手順化。**枠の数・各枠の主題・1.x と 2.x の境界は [roadmap.md](roadmap.md) が正本**（2026-09-04 策定）。以下は判断規約の正本。
+マイルストーン完了→次着手の移行時に毎回回す一連の手順（未割り当て Issue のトリアージ・次スコープ確定・ロードマップ調整・capsicum-site 更新・バージョンバンプ）は **`/milestone-transition`** スキル（[SKILL.md](../.claude/skills/milestone-transition/SKILL.md)）。**枠の数・各枠の主題・1.x と 2.x の境界は [roadmap.md](roadmap.md) が正本**（2026-09-04 策定）。以下は判断規約の正本。
 
 ⚠ **1.x と 2.x は並走系列で、境界は「時期」でも「技術的な線」でもない。****メジャーに何を載せるかは製品判断（売りの束ね方）**で、pooza が決める。`v2.0` は [#720](https://github.com/pooza/capsicum/issues/720) デッキ UI + [#597](https://github.com/pooza/capsicum/issues/597) 有償リレー + [#884](https://github.com/pooza/capsicum/issues/884) 画像編集レイヤの **3 本を束ねるメジャーリリース**。⚠ **この枠には「大更新 0〜1 件」の目安を当てない**（容量は通常枠の数倍。実績の最大は v1.0 の 46 件に対し直近の平均は 13 件）。技術規模が決めるのは「点リリースで単独配置するか」と「万一入りきらないとき何から逃がすか（＝ #884）」だけ。⚠ **2026-08-17〜 の「外部要因の発生ベース」運用は v1.65 をもって終了**した。
 
@@ -496,4 +499,4 @@ v1.24 リリース直前の Linux 実機検証で判明・対応した、他プ�
 
 ### CLAUDE.md の定期見直し
 
-CLAUDE.md はセッション開始時に全文読み込むため、完了済みの情報や歴史的経緯が蓄積するとノイズとなり、重要な設計方針の認識精度が下がる。マイルストーン数回ごとに CLAUDE.md を見直し、完了済み・陳腐化した情報を削除するか外部参照に集約する。具体的な棚卸し手順（陳腐化改善・memory↔docs の移送・インフラ記述の infra-note 移設・役目を終えた docs のアーカイブ）は [doc-maintenance.md](doc-maintenance.md) に手順化してある（不定期・オンデマンド実施）。
+CLAUDE.md はセッション開始時に全文読み込むため、完了済みの情報や歴史的経緯が蓄積するとノイズとなり、重要な設計方針の認識精度が下がる。マイルストーン数回ごとに CLAUDE.md を見直し、完了済み・陳腐化した情報を削除するか外部参照に集約する。具体的な棚卸し手順（陳腐化改善・memory↔docs の移送・インフラ記述の infra-note 移設・役目を終えた docs のアーカイブ）は **`/doc-maintenance`** スキル（[SKILL.md](../.claude/skills/doc-maintenance/SKILL.md)・不定期／オンデマンド）。⚠ **どこに何を置くかの判断規約は [doc-maintenance.md](doc-maintenance.md)** に残してある（棚卸しのときだけ効くルールではないため）。
