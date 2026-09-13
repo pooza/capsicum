@@ -82,6 +82,15 @@ class Post {
   /// リアクションの受付条件 (#1044)。Misskey のみ。null は制限なし。
   final ReactionAcceptance? reactionAcceptance;
 
+  /// 投稿が最後に編集された時刻 (#1054)。編集されていなければ null。
+  ///
+  /// ⚠ **読む側の情報**。「投稿の更新」（自分の投稿を書き換える・実装しない方針）
+  /// とは別物で、混同して消さないこと。
+  ///
+  /// ⚠ **Mastodon のみ非 null になる。**Misskey に投稿の編集機能は無く、Note の
+  /// `updatedAt` は別の意味なので流用しない。
+  final DateTime? editedAt;
+
   const Post({
     required this.id,
     required this.postedAt,
@@ -121,6 +130,7 @@ class Post {
     this.language,
     this.url,
     this.reactionAcceptance,
+    this.editedAt,
   });
 
   /// 派生オブジェクトを生成する。enrich パイプライン（IsCatEnricher 等）の
@@ -173,6 +183,7 @@ class Post {
     language: language,
     url: url,
     reactionAcceptance: reactionAcceptance,
+    editedAt: editedAt,
   );
 }
 

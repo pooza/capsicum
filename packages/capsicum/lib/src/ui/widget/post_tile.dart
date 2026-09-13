@@ -620,6 +620,19 @@ class _PostTileState extends ConsumerState<PostTile> {
                                       ).textTheme.bodySmall,
                                     ),
                                   ),
+                                  if (displayPost.editedAt != null) ...[
+                                    const SizedBox(width: 2),
+                                    _maybeDesktopTooltip(
+                                      _editedTooltip(displayPost.editedAt!),
+                                      Icon(
+                                        Icons.edit,
+                                        size: 14,
+                                        color: Theme.of(
+                                          context,
+                                        ).textTheme.bodySmall?.color,
+                                      ),
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),
@@ -2227,6 +2240,13 @@ class _PostTileState extends ConsumerState<PostTile> {
     if (ref.watch(absoluteTimeProvider)) return null;
     return formatAbsoluteTime(postedAt);
   }
+
+  /// 編集済みの印に添えるツールチップ (#1054)。
+  ///
+  /// ⚠ **相対日時表示のときも常に返す。**[_absoluteTimeTooltip] と違い、絶対日時
+  /// を表示していても「いつ編集されたか」は画面に出ていないため省略できない。
+  String _editedTooltip(DateTime editedAt) =>
+      '編集済み ${formatAbsoluteTime(editedAt)}';
 
   /// デスクトップでのみ [child] をツールチップで包む（#753 / #754）。
   /// モバイルは投稿の長押しでアクションシートを出すため、Tooltip の長押し

@@ -140,6 +140,7 @@ extension CapsicumMastodonStatusExtension on MastodonStatus {
       quoteApprovalPolicy: parseMastodonQuoteApprovalPolicy(quoteApproval),
       language: language,
       url: url,
+      editedAt: editedAt,
     );
   }
 }
