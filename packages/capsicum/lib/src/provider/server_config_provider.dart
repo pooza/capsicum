@@ -113,6 +113,25 @@ final maxPostLengthProvider = Provider<int?>((ref) {
   return mulukhiya?.maxPostLength ?? adapter?.capabilities.maxPostContentLength;
 });
 
+/// 本文カウンタの**数え方** (#1034)。
+///
+/// ⚠⚠ **上限 ([maxPostLengthProvider]) と対で使う。**上限だけサーバー由来に
+/// しても、何を 1 文字と数えるかが違えばカウンタは嘘をつく（#1035-A3 と同型の
+/// 失敗）。Mastodon は書記素 + URL 23 文字 + メンション短縮 + CW 同枠、Misskey は
+/// コードポイント。
+///
+/// ⚠ **上限はモロヘイヤが上書きするが、数え方は adapter が持つ。**モロヘイヤは
+/// Mastodon の前に立つプロキシなので、`maxPostLength` を差し替えても数えるのは
+/// 後ろの Mastodon。ここで `mulukhiya` を見ない理由。
+///
+/// adapter 不在（未ログイン）では [maxPostLengthProvider] も null になり
+/// カウンタ自体が出ないので、既定はどちらでも実害がない。従来の挙動
+/// （コードポイント）に合わせておく。
+final postLengthRuleProvider = Provider<PostLengthRule>((ref) {
+  final adapter = ref.watch(currentAdapterProvider);
+  return adapter?.capabilities.postLengthRule ?? PostLengthRule.codePoints;
+});
+
 /// Theme seed color: user override > mulukhiya > default green.
 final themeSeedColorProvider = Provider<Color>((ref) {
   final account = ref.watch(currentAccountProvider);

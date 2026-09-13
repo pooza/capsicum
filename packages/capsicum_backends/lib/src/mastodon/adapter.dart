@@ -88,6 +88,11 @@ class MastodonCapabilities extends AdapterCapabilities {
 
   @override
   int? get maxPostContentLength => 500;
+
+  /// `StatusLengthValidator` は書記素で数え、URL を 23 文字・メンションを
+  /// ドメイン部なしへ短縮し、CW も同じ枠に含める (#1034)。
+  @override
+  PostLengthRule get postLengthRule => PostLengthRule.shortenedGraphemes;
 }
 
 class MastodonAdapter extends DecentralizedBackendAdapter

@@ -91,6 +91,11 @@ class MisskeyCapabilities extends AdapterCapabilities {
 
   @override
   int? get maxPostContentLength => 3000;
+
+  /// `notes/create` の JSON Schema `maxLength`（ajv）と DB の型はどちらも
+  /// コードポイント。CW は `text` とは別枠の 500 (#1034)。
+  @override
+  PostLengthRule get postLengthRule => PostLengthRule.codePoints;
 }
 
 class MisskeyAdapter extends DecentralizedBackendAdapter

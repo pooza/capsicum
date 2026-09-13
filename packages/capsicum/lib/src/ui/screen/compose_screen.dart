@@ -29,6 +29,7 @@ import '../../url_helper.dart';
 import '../../util/exception_scrub.dart';
 import '../../util/misskey_api_error.dart';
 import '../../util/now_playing_formatter.dart';
+import '../../util/post_text_length.dart';
 import '../../util/reentrancy_guard.dart';
 import '../../util/reply_target_gone.dart';
 import '../../util/text_length.dart';
@@ -3933,9 +3934,30 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     ];
   }
 
+  /// 本文カウンタに出す数 (#1034)。
+  ///
+  /// ⚠⚠ **CW も渡す。**Mastodon の `StatusLengthValidator` は
+  /// `spoiler_text + countable_text(text)` を**ひとつの枠**で数えるので、
+  /// 渡さないと CW 付きの長文が**カウンタが緑のままサーバーに弾かれる**。
+  /// Misskey は CW が別枠なので [postTextLength] 側が捨てる。
+  ///
+  /// ⚠ 渡す CW は [_submit] が送るのと同じ形（`_cwEnabled` のときだけ・trim 済み）
+  /// に揃える。表示だけ増えて実際には送らない、の逆を作らない。判定は
+  /// [composePostLength]（この画面は widget test を持てないので、数える側を
+  /// 純関数へ出して単体で押さえる）。
+  int _countedLength(PostLengthRule rule) => composePostLength(
+    rule,
+    text: _controller.text,
+    cwEnabled: _cwEnabled,
+    cw: _cwController.text,
+  );
+
   @override
   Widget build(BuildContext context) {
     final maxLength = ref.watch(maxPostLengthProvider);
+    // 数え方はサーバー（adapter）が持つ (#1034)。上限だけ揃えて数え方を
+    // 揃えないのが #1035-A3 の形。
+    final lengthRule = ref.watch(postLengthRuleProvider);
     // 本文入力に使うフォント (#892)。空 = 既定。誤入力・未インストールは OS の
     // フォント解決が黙って既定へフォールバックする。
     final composeFontFamily = ref.watch(composeFontFamilyProvider);
@@ -4150,10 +4172,16 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                             right: 4,
                             bottom: 4,
                             child: IgnorePointer(
-                              child: ValueListenableBuilder<TextEditingValue>(
-                                valueListenable: _controller,
-                                builder: (context, value, _) {
-                                  final len = serverTextLength(value.text);
+                              // ⚠ **本文だけを見張っていると数が古くなる
+                              // (#1034)。**Mastodon は CW も同じ枠で数えるので、
+                              // CW 欄の変更でも引き直す。
+                              child: AnimatedBuilder(
+                                animation: Listenable.merge([
+                                  _controller,
+                                  _cwController,
+                                ]),
+                                builder: (context, _) {
+                                  final len = _countedLength(lengthRule);
                                   return Text(
                                     '$len / $maxLength',
                                     style: TextStyle(
