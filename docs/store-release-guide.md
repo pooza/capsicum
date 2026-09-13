@@ -220,74 +220,15 @@ curl -s https://relay.capsicum.shrieker.net/health   # revision が origin/main 
 
 ⚠ **relay に実装が入っているのにデプロイしていない状態でリリースしない。** relay は tag / GitHub Release を持たないため、デプロイし忘れても GitHub 上のどこにも「未出荷」と出ない。判定は `/health` の revision 1 回で済む（relay#37）。
 
-規約の背景と `## relay` 節の書式は `docs/milestone-transition.md` §3-2、同期時の点検は `docs/sync-procedure.md` ステップ 5。
+規約の背景と `## relay` 節の書式は `milestone-transition` スキル §3-2、同期時の点検は `sync-procedure` スキルのステップ 5。
 
 ### 4.0 リリース前レビュー
 
-各マイルストーンの Issue が消化済みになった後、ビルドに入る前に実施する。**単一のセキュリティレビューだけでは実用上の問題が取りこぼされる**ため、以下 5 観点を独立したサブエージェントで並列に走らせ、指摘を合流させる。
+⚠⚠ **本文はスキルへ移した（#1114）→ [.claude/skills/release-review/SKILL.md](../.claude/skills/release-review/SKILL.md)（`/release-review`）。**5 観点の並列レビュー・赤黄緑の分類と緑の送り先・2 回目を回す条件はそちらが正本。
 
-| 観点 | 焦点 |
-| --- | --- |
-| セキュリティ | `/security-review` スキル。認証・暗号・シークレット管理・入力検証 |
-| API 契約 | Mastodon / Misskey / モロヘイヤの REST 正確性、アダプター interface の整合 |
-| 並行性・ライフサイクル | async 連鎖、Riverpod provider 寿命、dispose / cancellation、race |
-| エラー処理・観測性 | try/catch カバレッジ、Sentry 計装、例外の scrub、UX の可視化 |
-| コーディングスタイル・規約整合性 | 用語統一（廃止語）、ハードコーディング、命名の揺れ、重複ロジック、規約違反（UI 層の Platform 分岐など） |
+**Issue を消化しきったらビルドに入る前に回す。**⚠ ここを飛ばしてビルドに入らない。
 
-対象範囲は `v前リリース..HEAD` の差分。Codex（`chatgpt-codex-connector[bot]`）は PR ready 時に走るので併走させ、重複しない指摘だけを拾う。
-
-#### 「横断的に揃える」変更は、揃える対象の判定条件を疑う
-
-**そのマイルストーンで入れた「統一」「絞り込み」系の変更は、当てる経路が正しいかを分岐まで辿って確かめる。** 差分だけ見ると「定数に置き換えた」「ガードを足した」に見えて通ってしまう。
-
-v1.56 のレビューで出た 🔴 2 件は、どちらもこの型だった:
-
-- **[#924](https://github.com/pooza/capsicum/issues/924)** 絵文字 fallback 倍率の統一が、本来の fallback（`Image.network` の `errorBuilder`）ではなく **Unicode 絵文字をそのまま描く通常表示**に当たっていた。メッセージのリアクションが 3 割縮み、本来の fallback は素通しのまま
-- **[#958](https://github.com/pooza/capsicum/issues/958)** キャッシュを `chmod 600` に絞る処理が `!await file.exists()` ガード付きで、**ファイル名・保存先が前版と同じ**なため更新してきたユーザーには一度も当たらなかった（＝守りたかったデータが既存ユーザーだけ無防備）
-
-いずれも「やったこと」は正しく、**「どれに対してやるか」の判定式が間違っていた**。レビュー時は定数・ガードの導入箇所そのものではなく、**その条件が真になるのは実際どの経路か**を確認する。
-
-指摘は以下の基準で分類し、必要最小限のみリリース前に対応、残りは Issue 起票して次リリース以降に送る:
-
-- **赤（必修）**: データ破損・セキュリティ・ユーザー可視の機能不全
-- **黄（余力があれば）**: 単一の edge case、観測性ギャップ
-- **緑（送り）**: 将来の拡張時に顕在化しうる構造改善
-
-> ⚠️ **緑を「マイルストーン未割り当てのまとめ Issue」に積まない**。v1.52 / v1.53 で「切り出す価値が出たら本 issue から切り出す」アンブレラ（[#905](https://github.com/pooza/capsicum/issues/905) / [#915](https://github.com/pooza/capsicum/issues/915)）を作ったが、**マイルストーンに載らないため誰も着手せず、37 項目が放置されたまま溜まった**（2026-08-02 に解体）。緑も送り先は「次のマイルストーン」であって「未割り当ての箱」ではない。
->
-> 緑の行き先は次の 3 つのいずれかにし、**どれにも当てはまらないものは起票しない**:
->
-> 1. **個別 Issue に切り出してマイルストーンを付ける** — 単独で着手判断ができる粒度のもの
-> 2. **既に開いている Issue へ統合する** — 同じファイル・同じ面を触る Issue があるなら、そこにコメントで足す（着手時に併せて片付く）
-> 3. **横断的な小粒をまとめた消化 Issue にして、マイルストーンを付ける** — 1 件ずつは数行で往復コストが見合わないもの。チェックリスト形式にし、**「切り出し待ち」ではなく「この枠で全部やる」Issue として扱う**
-
-#### 差分レビュー（プラットフォーム追加・大更新マイルストーンのみ 2 回目）
-
-新サーフェス導入時（macOS native v1.21・push relay v1.18・Misskey messages v1.22・Linux v1.24 等）は、1 回目で見つけた問題への修正 commit 自体が新しい問題を入れることがあり、平場のマイルストーンより 2 回目を回す価値が高い。以下のルールで実施する:
-
-- **対象**: 1 回目以降の差分（`git diff <1回目時点のSHA>..HEAD`）と、新規追加されたサーフェスのみ。全文再走査はしない
-- **タイミング**: リリース 1 週間前までに完了させる。直前に出た P1 は焦って広げず **ホットフィックス前提で次リリースに送ってよい**
-- **何回目のマイルストーンでも対象になる**: 「大更新独立配置」のマイルストーンは定義上対象。それ以外は実施しない（issue 累積を避けるため）
-
-v1.18 のレビューでは、この 5 観点でセキュリティ単独では見つからなかった実害バグを複数検出した（例: [#325](https://github.com/pooza/capsicum/issues/325) の enrichNotifications で unread フラグが失われるデータ破損）。残課題は [#337](https://github.com/pooza/capsicum/issues/337)-[#343](https://github.com/pooza/capsicum/issues/343) に集約。
-
-#### リリース PR 前のローカル整形・解析チェック
-
-⚠ **この節の前提は 2026-09-01 に古くなった。**`analyze.yml` の push トリガーは現在 `branches: [main, develop]` で、**`develop` への push でも走る**（v1.48 で 6 ファイルぶんの drift が溜まりリリース PR の CI が落ちた反省から追加された。理由はワークフローのコメントに残っている）。
-
-したがって「develop は CI 未検出でノーガード」ではない。ただし**コミット前のローカルチェックは引き続き要る** — develop へ push してから赤を踏むと、[sync-procedure.md](sync-procedure.md) の同期ステップで「赤ならその場で直す」対応が要るぶん手戻りになる（2026-09-01 に #1058 の修正で実際に踏んだ。`786d47cf` → `2561b020`）。
-
-リポジトリルートで一度全体をチェックしてから push すること:
-
-```bash
-# format はバージョン管理対象の .dart だけにスコープする（build/ を巻き込まない）
-git ls-files '*.dart' | xargs dart format --output=none --set-exit-if-changed
-dart analyze --fatal-infos
-```
-
-> ⚠️ **`dart format .`（カレント全体）は使わない**。SwiftPM 併存移行（#836）以降、`build/` 配下に他パッケージの SwiftPM checkout（`.dart` を含む）が展開されるため、`.` で流すとバージョン管理外のファイルまで整形対象に拾い、drift 判定が誤爆する。`git ls-files '*.dart' | xargs dart format` でトラッキング対象のみに絞る（v1.51 で誤爆・commit `3e2783ad`）。
-
-v1.27 では `timeline_provider.dart` / `preferences_provider.dart` が `dart format` 未追従のまま `develop` に積まれており、リリース直前のレビューで検出して整形した（commit `e377c5f`）。
+⚠ **「push 前のローカル整形・解析」はこの節から出した**（[CLAUDE.md](CLAUDE.md#push-前のローカル整形解析)）。リリース時だけの話ではなく毎コミットの話だったため。
 
 ### 4.1 バージョン更新・依存関係の更新
 

@@ -225,6 +225,7 @@ capsicum/
       milestone-transition/  # マイルストーン完了→次着手の移行
       doc-maintenance/    # docs / メモリの棚卸し（⚠ 配置の原則は docs 側）
       login-troubleshooting/  # 「ログインできない」報告の切り分け
+      release-review/     # リリース前レビュー（5 観点・赤黄緑の送り分け）
     hooks/                # 守らせたいものの機械化（deny-shell-loops.sh）
   docs/                   # 開発ドキュメント
     CLAUDE.md             # 本ファイル
@@ -343,6 +344,20 @@ capsicum には「ソースを文字列で走査して規約違反を落とす�
 ### コミットの分割方針
 
 コミットはなるべく Issue ごとに分ける。レビュー・revert・cherry-pick の粒度を保つため。同じファイルに複数 Issue の変更が混在して分離できない場合のみ、まとめてよい。
+
+### push 前のローカル整形・解析
+
+⚠⚠ **push する前にリポジトリルートで 1 回通す。**`develop` への push でも `analyze.yml` は走るので（v1.48 で drift が溜まった反省から `branches: [main, develop]` になった）赤は必ず見えるが、**push してから踏むと同期のたびに「赤ならその場で直す」手戻りが乗る**（2026-09-01 に #1058 の修正で実際に踏んだ。`786d47cf` → `2561b020`）。
+
+```bash
+# format はバージョン管理対象の .dart だけにスコープする（build/ を巻き込まない）
+git ls-files '*.dart' | xargs dart format --output=none --set-exit-if-changed
+dart analyze --fatal-infos
+```
+
+⚠ **`dart format .`（カレント全体）は使わない。**SwiftPM 併存移行（#836）以降、`build/` 配下に他パッケージの SwiftPM checkout（`.dart` を含む）が展開されるため、`.` で流すとバージョン管理外のファイルまで整形対象に拾って drift 判定が誤爆する（v1.51 で誤爆・`3e2783ad`）。
+
+⚠ **これは毎コミットの話で、リリース手順の一部ではない**（#1114 の棚卸しで、`store-release-guide.md` §4.0 の中＝リリース時しか読まれない場所に置かれていたのを移した）。
 
 ### クロスリファレンス
 
@@ -463,15 +478,15 @@ v1.24 リリース直前の Linux 実機検証で判明・対応した、他プ�
 
 運用ルール:
 
-- リリース前レビューは各マイルストーンの Issue をすべて消化した後、リリース直前に毎度実施する。[#27](https://github.com/pooza/capsicum/issues/27) の「セキュリティレビュー」だけでは実害バグを取りこぼすため、以下 5 観点をサブエージェントで並列に走らせる（詳細は [store-release-guide.md](store-release-guide.md) の「リリース前レビュー」節）:
+- リリース前レビューは各マイルストーンの Issue をすべて消化した後、リリース直前に毎度実施する。[#27](https://github.com/pooza/capsicum/issues/27) の「セキュリティレビュー」だけでは実害バグを取りこぼすため、以下 5 観点をサブエージェントで並列に走らせる（手順の正本は **`/release-review`** スキル: [SKILL.md](../.claude/skills/release-review/SKILL.md)）:
   - セキュリティ（`/security-review` スキル）
   - API 契約（Mastodon / Misskey / モロヘイヤの REST 正確性、アダプター interface 整合）
   - 並行性・ライフサイクル（async 連鎖、Riverpod provider 寿命、dispose、race）
   - エラー処理・観測性（try/catch カバレッジ、Sentry 計装、secrets scrub、UX）
   - コーディングスタイル・規約整合性（用語統一、ハードコーディング、命名の揺れ、重複ロジック、規約違反）
 - **レビュー指摘の起票閾値**: コメント書き直し・既に触っている関数内のリネーム・型変更（`Map<String,bool>` → `Set<String>` 等）・隣接ファイルでの軽微な追従等、起票 + ラベル + マイルストーン + 移動 + close の往復コストが修正コストと拮抗する粒度のものは、issue を起こさず P1 修正の commit に直接含めて消化する。本文に「今は緊急性なし」「必要性が顕在化してから対応」と書きたくなる粒度のものは、起票せずレビュー報告内の note として残す（未来に必要になった時点で起票する）
-- **マイルストーンに載らない集約 Issue を作らない**: 「切り出す価値が出たら切り出す」形のアンブレラは、**マイルストーンが付かないので誰も着手せず放置される**（v1.52 / v1.53 の緑まとめ [#905](https://github.com/pooza/capsicum/issues/905) / [#915](https://github.com/pooza/capsicum/issues/915) で 37 項目が滞留し、2026-08-02 に解体）。束ねること自体は可だが、**束ねたら必ずマイルストーンを付け、「その枠で全部やる」チェックリストとして扱う**。行き先の判断基準は [store-release-guide.md](store-release-guide.md) の「リリース前レビュー」節を正本とする
-- **2 回目レビュー（差分レビュー）**: プラットフォーム追加・大更新独立配置マイルストーンに限り、1 回目の修正 commit に起因する新規問題を拾うため 2 回目を回す。対象は 1 回目以降の差分と新規サーフェスのみ。リリース 1 週間前までに完了させ、直前に出た P1 はホットフィックス前提で次リリースに送ってよい（詳細は [store-release-guide.md](store-release-guide.md) §4.0）
+- **マイルストーンに載らない集約 Issue を作らない**: 「切り出す価値が出たら切り出す」形のアンブレラは、**マイルストーンが付かないので誰も着手せず放置される**（v1.52 / v1.53 の緑まとめ [#905](https://github.com/pooza/capsicum/issues/905) / [#915](https://github.com/pooza/capsicum/issues/915) で 37 項目が滞留し、2026-08-02 に解体）。束ねること自体は可だが、**束ねたら必ずマイルストーンを付け、「その枠で全部やる」チェックリストとして扱う**。行き先の判断基準は [release-review スキル](../.claude/skills/release-review/SKILL.md)を正本とする
+- **2 回目レビュー（差分レビュー）**: プラットフォーム追加・大更新独立配置マイルストーンに限り、1 回目の修正 commit に起因する新規問題を拾うため 2 回目を回す。対象は 1 回目以降の差分と新規サーフェスのみ。リリース 1 週間前までに完了させ、直前に出た P1 はホットフィックス前提で次リリースに送ってよい（詳細は [release-review スキル](../.claude/skills/release-review/SKILL.md)）
 - ATOK 二重入力（[#54](https://github.com/pooza/capsicum/issues/54)）は Flutter 側の対応待ち。リリースごとにリリースノートの「既知の不具合」に記載し、Flutter 側の関連 issue の動向を確認する。記載時は回避策も併記する: (1) ATOK の「インライン入力」を OFF にする、(2) インライン入力 ON のままでも ATOK の「従来のカーソル位置入力を使用」を ON にすれば回避可（インライン入力を活かせる分こちらが実用的）、(3) 標準キーボードに切り替える
 - マイルストーン未設定の Issue は `no:milestone` フィルタで確認する
 - **`Windows` / `Linux` ラベルは「その実機でないと進まない」の目印**（再現確認が起点・修正案の選択が実機の挙動次第）。開発のメインは macOS なので、着手できる端末が限られることを一目で分かるようにするためのもの。3 OS 共通のデスクトップ機能に付ける `desktop` とは別で、`desktop` は macOS でも進められる。拾い方は [dev-environment.md](dev-environment.md) の「その端末で拾う作業の探し方」
