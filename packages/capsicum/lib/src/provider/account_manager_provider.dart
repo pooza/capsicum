@@ -19,6 +19,7 @@ import '../service/compose_draft_store.dart';
 import '../service/notification_label_cache.dart';
 import '../service/push_registration_service.dart';
 import '../service/secret_service_probe.dart';
+import '../service/secure_storage_health.dart';
 import '../service/sentry_op_failure.dart';
 import '../service/server_metadata_cache.dart';
 import '../service/timeline_cache.dart';
@@ -595,6 +596,9 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
   /// after OS update / device reset).
   Future<int> restoreSessions() async {
     final storage = ref.read(accountStorageProvider);
+    // ⚠ 起動時の復元も「1 周」(#1117-C)。ここを切らないと、前の周の失敗が残った
+    // まま案内の上げ下げを判断することになる。
+    SecureStorageHealth.beginSweep();
     final keys = await storage.getAccountKeys();
     var skippedCount = 0;
     // 一時的な到達不能で落ちたアカウント（secret は有効）。オフライン保持し
@@ -1147,7 +1151,12 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     // 判明）。背景ループも同じ理由で再起動まで復帰しなかった。
     // ⚠ **1 周で 1 回。**アカウントごとに捨てると、応答しない環境でアカウントの
     // 数だけ Ping の上限を払う。
-    if (targets.isNotEmpty) SecretServiceProbe.forgetUnresponsive();
+    if (targets.isNotEmpty) {
+      SecretServiceProbe.forgetUnresponsive();
+      // ⚠ **1 周の定義を 2 つ持たない (#1117-C)。**案内を下ろしてよいかは
+      // 「この 1 周で 1 件も落ちていないか」で決めるので、同じ場所で頭を切る。
+      SecureStorageHealth.beginSweep();
+    }
     for (final offline in targets) {
       final keyStr = offline.key.toStorageKey();
       if (state.accounts.any((a) => a.key == offline.key)) {

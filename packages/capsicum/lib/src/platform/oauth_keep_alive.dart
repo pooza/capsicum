@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
+import '../util/exception_scrub.dart';
+
 /// OAuth の認可を待つあいだ、Android にプロセスを凍結させないための口 (#1108)。
 ///
 /// Android の OAuth は loopback 方式 (#276) で、`http://localhost:7099/oauth/callback`
@@ -83,7 +85,7 @@ class OAuthKeepAlive {
       // `PlatformException` の仲間ではないので素通りする。素通りすると
       // `_authenticateViaLocalhostServer` の bind まで到達せず、**ポート 7099 を
       // 掴んだまま / 掴む前に**ログインが落ちる。型を絞る意味が無い場所。
-      debugPrint('capsicum: oauth_keepalive: start failed: $e');
+      debugLogException('capsicum: oauth_keepalive: start failed', e);
       _reportStartFailureOnce(e is PlatformException ? e.code : 'unknown');
       return OAuthKeepAliveSession._(token: token, active: false);
     }
@@ -140,7 +142,7 @@ class OAuthKeepAlive {
       // ⚠ [start] と同じ理由で型を絞らない (#1117-A)。⚠⚠ **ここで投げ上げると
       // 呼び出し側の `finally` が途中で切れ、ポート 7099 の解放や案内通知の
       // 掃除が落ちる**（`MissingPluginException` で実際にその順序になる）。
-      debugPrint('capsicum: oauth_keepalive: stop failed: $e');
+      debugLogException('capsicum: oauth_keepalive: stop failed', e);
     }
   }
 }

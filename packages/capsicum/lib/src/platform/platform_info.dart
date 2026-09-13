@@ -126,6 +126,15 @@ bool? debugKeychainAccessibilityOverride;
 /// ⚠ **`usesKeychainAccessibility` の裏返しではない。**あちらは「焼き直す
 /// accessibility があるか」で Apple 系だけ、こちらは「D-Bus 越しか」で Linux
 /// だけ。**両方 false の OS（Android / Windows）がある。**
+///
+/// ## ⚠ 案内の文面で OS の呼び名を名指しできるか、も同じ判定 (#1117-E)
+///
+/// 「キーリング / Secret Service が応答しません」という文面が真になるのは
+/// この旗が立つ OS だけ（Android の Keystore 失敗でそう言うと、ユーザーは存在
+/// しないものを探す）。⚠ **以前は `usesSecretServiceKeyring` として別の旗に
+/// なっていた**が、判定も差し替え口も同じにすべきものだった —— 別々だと
+/// **テストが「触ると固まるがキーリングとは呼ばない」という本番では作れない
+/// 組み合わせ**を作れてしまう。
 bool get usesSecretService =>
     debugSecretServiceOverride ?? (!kIsWeb && Platform.isLinux);
 
@@ -173,19 +182,17 @@ bool get mayDeleteSecretOnReadFailure =>
 @visibleForTesting
 bool? debugMayDeleteSecretOnReadFailureOverride;
 
-/// secure storage の backend が D-Bus の Secret Service（libsecret →
-/// gnome-keyring / kwalletd）かどうか (#1085 / #1104)。Linux のみ true。
+/// [usesSecretService] の旧名 (#1104)。
 ///
-/// ⚠ **案内の文面が「キーリング / Secret Service」と OS の呼び名を名指しする**
-/// ので、その文面が真になるプラットフォームでだけ旗を立てる。Android の
-/// Keystore 失敗で「キーリングが応答しませんでした」と出しても、ユーザーは
-/// 存在しないものを探すことになる。
-bool get usesSecretServiceKeyring =>
-    debugUsesSecretServiceKeyringOverride ?? (!kIsWeb && Platform.isLinux);
-
-/// テスト用の差し替え口 (#1104)。
-@visibleForTesting
-bool? debugUsesSecretServiceKeyringOverride;
+/// ⚠⚠ **同じ判定の旗を 2 本持っていた (#1117-E)。**どちらも
+/// `!kIsWeb && Platform.isLinux` なのに**差し替え口が別々**だったので、テストが
+/// 「触ると固まる OS なのにキーリングとは呼ばない」という**本番では作れない
+/// 組み合わせ**を作れた。旗を 1 本に統合し、こちらは呼び名として残す。
+///
+/// 呼び分けの意図（案内の文面が「キーリング / Secret Service」と OS の呼び名を
+/// 名指しするので、その文面が真になる OS でだけ立てる）は [usesSecretService] の
+/// doc に集約した。
+bool get usesSecretServiceKeyring => usesSecretService;
 
 /// secure storage の backend 名。Sentry の fingerprint 接尾辞に使う (#1104)。
 ///
