@@ -153,9 +153,20 @@ class OAuthKeepAliveService : Service() {
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+        // ⚠ **承認前にタップする人も想定する (#1111)。**当初の文面は「もう承認した
+        // のに戻れない人」だけを想定していたが、実機検証では**まだ承認していない
+        // 人**もタップした。その場合ログイン画面で待機に戻るだけなので、何をすれば
+        // いいか分からない画面になる。⚠ **タップで前面に出れば凍結は解ける**ので、
+        // ブラウザに戻って承認すればそのまま完了する——それを書いておく。
+        //
+        // ⚠ **BigTextStyle を付ける。**折りたたみ表示では 1 行に切られるので、
+        // 2 つ目の案内（まだの人向け）が読めるのは展開したときだけになる。
+        val hint = "承認が済んでいたら、ここをタップしてログインを完了してください。" +
+            "まだ承認していない場合は、ブラウザに戻って承認してください。"
         val notification: Notification = Notification.Builder(this, HINT_CHANNEL_ID)
             .setContentTitle("ブラウザでの承認は終わりましたか？")
-            .setContentText("承認が済んでいたら、ここをタップしてログインを完了してください。")
+            .setContentText(hint)
+            .setStyle(Notification.BigTextStyle().bigText(hint))
             .setSmallIcon(R.drawable.ic_stat_oauth)
             .setContentIntent(pending)
             .setAutoCancel(true)
