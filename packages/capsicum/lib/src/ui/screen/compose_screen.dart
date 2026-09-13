@@ -451,15 +451,27 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// 宛先が無いので**誰にも届かない** — だからといって広い範囲へ倒さず、
   /// ユーザーに選び直してもらう。
   String? get _unsendableScopeReason {
-    if (_scope != PostScope.direct) return null;
     final adapter = ref.read(currentAdapterProvider);
-    if (selectableScopes(adapter).contains(PostScope.direct)) return null;
-    // ⚠ redraft で引き継いだ返信も「宛先がある」側 (#1113)。
-    if (_isReply) return null;
-    final label = postScopeLabel(PostScope.direct, adapter);
-    return '「$label」は宛先を指定する必要がありますが、capsicum には指定する画面が'
-        'ありません。このままでは誰にも届きません。公開範囲を選び直すか、'
-        '「メッセージ」をお使いください。';
+    return unsendableDirectScopeReason(
+      scope: _scope,
+      selectable: selectableScopes(adapter),
+      directLabel: postScopeLabel(PostScope.direct, adapter),
+      // ⚠ redraft で引き継いだ返信も「宛先がある」側 (#1113)。
+      isReply: _isReply,
+      replyTargetIsSelf: _replyTargetIsSelf,
+    );
+  }
+
+  /// 返信先が**自分の投稿だと分かっている**か (#1117-B)。
+  ///
+  /// ⚠ **分からないときは false**（＝送信を止めない）。返信先の取得は redraft で
+  /// 失敗しうるし（`_redraftReplyToUnavailable`）、そこで止めると「他人への返信を
+  /// 送れない」を大量に作る。⚠ **止めるのは確実に困る場合だけ。**
+  bool get _replyTargetIsSelf {
+    final authorId = _replyToPost?.author.id;
+    if (authorId == null) return false;
+    final me = ref.read(currentAccountProvider)?.user.id;
+    return me != null && authorId == me;
   }
 
   bool _cwEnabled = false;

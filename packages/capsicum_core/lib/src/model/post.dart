@@ -144,6 +144,8 @@ class Post {
     int? reblogCount,
     List<Attachment>? attachments,
     bool? bookmarked,
+    FilterAction? filterAction,
+    String? filterTitle,
   }) => Post(
     id: id,
     postedAt: postedAt,
@@ -172,8 +174,11 @@ class Post {
     emojiHost: emojiHost,
     card: card,
     poll: poll,
-    filterAction: filterAction,
-    filterTitle: filterTitle,
+    // ⚠ ワードミュートの判定結果を後から載せる (#1117-B)。⚠⚠ **これが無いと
+    // Misskey adapter が `Post(...)` を手で組み直すしかなく、**quote / poll /
+    // channel / localOnly / language 等を軒並み捨てていた**（再編集で消える）。
+    filterAction: filterAction ?? this.filterAction,
+    filterTitle: filterTitle ?? this.filterTitle,
     pinned: pinned,
     channelId: channelId,
     channelName: channelName,
