@@ -509,11 +509,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         await subscription.cancel();
       }
     } finally {
-      // ⚠ 認可完了・中断・タイムアウトのどれでもここを通る (#1108)。サーバを
-      // 閉じるのと同じ寿命で下ろす。⚠⚠ **自分の世代だけを下ろす** ——
-      // すぐ下の `identical(_oauthServer, server)` と同じ理由で、2 本目の試行が
-      // 始まっていたらここは何もしてはいけない。
-      await OAuthKeepAlive.stop(keepAlive);
+      // ⚠ 認可完了・中断・タイムアウトのどれでもここを通る (#1108)。
+      //
+      // ⚠⚠ **keep-alive はここで下ろさない (#1117-A)。**callback を受けた時点では
+      // まだ**トークン交換・`addAccount`・モロヘイヤ検出**が残っており、通信が
+      // 複数回ある。ブラウザが `capsicumauth://` でアプリを前面へ戻すまでは
+      // キャッシュ状態なので、ここで下ろすと**戻らなかった場合に途中で凍結され
+      // うる**（＝トークンだけ取って保存できていない状態）。下ろすのは
+      // [_login] の `finally`（`_finishLogin` の後）に移した。
+      //
+      // ⚠ サーバは**ここで閉じる**（callback は受け終わっており、ポート 7099 を
+      // 掴み続ける理由が無い）。⚠⚠ **自分の世代だけ** —— 2 本目の試行が始まって
+      // いたら `identical` で弾く。
       await server.close(force: true);
       if (identical(_oauthServer, server)) _oauthServer = null;
     }
@@ -1039,6 +1046,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       }
     } finally {
       if (mounted) setState(() => _isLoggingIn = false);
+      // ⚠⚠ **keep-alive を下ろすのはここ (#1117-A)。**callback を受けた直後では
+      // なく、トークン交換と `addAccount`（＋モロヘイヤ検出）まで終わってから。
+      // ⚠ `stop` は世代を見るので、2 本目が始まっていれば何もしない。
+      await OAuthKeepAlive.stop(_keepAlive);
       // ⚠ **mounted に関わらず降りる (#1112)。**画面が消えていても登録簿は
       // プロセスに残るので、降りないと次の試行が毎回「重なった」と記録され、
       // 死んだ State の後片づけを呼びに行くことになる。
