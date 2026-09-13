@@ -43,6 +43,29 @@ class AvatarDecoration {
   });
 }
 
+/// 引っ越し先のアカウント (#1055)。
+///
+/// ⚠ **サーバーによって分かる粒度が違う。**Mastodon の `moved` は Account
+/// オブジェクトそのものなので [userId] / [handle] まで分かるが、Misskey の
+/// `movedTo` は **ActivityPub の URI 1 本**しか来ない。したがって画面は
+/// 「[handle] があれば handle、無ければ [url]」で出し、遷移は常に [url] を
+/// `openFediverseLink` へ渡す形にする（どちらの粒度でも同じ導線になる）。
+class MovedTo {
+  /// 引っ越し先の URL。Mastodon は `moved.url`、Misskey は `movedTo`（AP URI）。
+  final String url;
+
+  /// `@user@host`。Mastodon のみ分かる。Misskey は null。
+  final String? handle;
+
+  /// 引っ越し先のアカウント ID（このサーバーから見た ID）。Mastodon のみ。
+  ///
+  /// ⚠ **今は使っていない。**遷移は [url] 経由に統一してあるが、将来
+  /// resolve を省いて直接プロフィールを開くときに使える。
+  final String? userId;
+
+  const MovedTo({required this.url, this.handle, this.userId});
+}
+
 class User {
   final String id;
   final String username;
@@ -99,6 +122,25 @@ class User {
   /// `isExplorable`（#865）。未取得・未対応では null。
   final bool? discoverable;
 
+  /// 引っ越し先 (#1055)。引っ越していなければ null。
+  ///
+  /// ⚠ **読む側だけの情報。**引っ越しを「する」側（`i/move` /
+  /// `accounts/:id/move`）はアカウントの生死に関わるのでクライアントに持たせない
+  /// （棚卸しの分類 C）。
+  final MovedTo? movedTo;
+
+  /// 凍結されている (#1055)。Misskey の `isSuspended`。
+  ///
+  /// ⚠ **Mastodon では常に false。**REST の Account に相当フィールドが無い
+  /// （`suspended` はモデレーション文脈でしか返らない）。
+  final bool suspended;
+
+  /// サイレンスされている (#1055)。Misskey の `isSilenced`。Mastodon では false。
+  final bool silenced;
+
+  /// 削除済み (#1055)。Misskey の `isDeleted`。Mastodon では false。
+  final bool deleted;
+
   const User({
     required this.id,
     required this.username,
@@ -130,6 +172,10 @@ class User {
     this.featureApproval,
     this.locked,
     this.discoverable,
+    this.movedTo,
+    this.suspended = false,
+    this.silenced = false,
+    this.deleted = false,
   });
 
   User copyWithIsCat(bool isCat) => User(
@@ -163,5 +209,9 @@ class User {
     featureApproval: featureApproval,
     locked: locked,
     discoverable: discoverable,
+    movedTo: movedTo,
+    suspended: suspended,
+    silenced: silenced,
+    deleted: deleted,
   );
 }

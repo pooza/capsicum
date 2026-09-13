@@ -75,8 +75,21 @@ extension CapsicumMastodonAccountExtension on MastodonAccount {
       featureApproval: _parseFeatureApproval(featureApproval),
       locked: locked,
       discoverable: discoverable,
+      movedTo: _movedTo(moved),
     );
   }
+}
+
+/// `moved`（入れ子の Account）から引っ越し先を組む (#1055)。
+///
+/// ⚠ **`url` が無い `moved` は捨てる。**遷移先が作れず、画面に出しても「引っ越し
+/// ました」だけで行き先が示せないため。`acct` があれば `@user@host` を作る
+/// （`acct` はリモートなら既に `user@host` の形）。
+MovedTo? _movedTo(MastodonAccount? moved) {
+  if (moved == null) return null;
+  final url = moved.url;
+  if (url == null || url.isEmpty) return null;
+  return MovedTo(url: url, handle: '@${moved.acct}', userId: moved.id);
 }
 
 FeatureApproval? _parseFeatureApproval(Map<String, dynamic>? raw) {
