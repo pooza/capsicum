@@ -352,11 +352,22 @@ capsicum には「ソースを文字列で走査して規約違反を落とす�
 
 ```bash
 # format はバージョン管理対象の .dart だけにスコープする（build/ を巻き込まない）
-git ls-files '*.dart' | xargs dart format --output=none --set-exit-if-changed
+git ls-files '*.dart' | xargs -n 40 dart format --output=none --set-exit-if-changed
 dart analyze --fatal-infos
 ```
 
 ⚠ **`dart format .`（カレント全体）は使わない。**SwiftPM 併存移行（#836）以降、`build/` 配下に他パッケージの SwiftPM checkout（`.dart` を含む）が展開されるため、`.` で流すとバージョン管理外のファイルまで整形対象に拾って drift 判定が誤爆する（v1.51 で誤爆・`3e2783ad`）。
+
+⚠⚠ **`-n 40` を外さない。Windows では 1 本のコマンドに畳むと整形が走らないまま緑に見える**（2026-09-13 実測）。`.dart` は 160 本超あるので cmd の ~8191 文字上限に当たり、`The command line is too long.` を出して**何も整形せずに終わる**。macOS / Linux では上限が高く畳んでも通ってしまうため、**通る端末で書いた形が通らない端末で黙って空振りする**。バッチを割るのは全 OS 共通の書き方にするため。
+
+⚠⚠ **結果を `| tail` 等へ繋がない。**`$?` がパイプ末尾のコマンドのものになり、**整形が失敗していても `0` が返る**（同日に踏んだ）。出力を見たいならファイルへ落として終了コードを先に確かめる:
+
+```bash
+git ls-files '*.dart' | xargs -n 40 dart format --output=none --set-exit-if-changed > /tmp/fmt.log 2>&1; echo "FORMAT_EXIT=$?"
+dart analyze --fatal-infos > /tmp/analyze.log 2>&1; echo "ANALYZE_EXIT=$?"
+```
+
+⚠ これは「[ソース検査ガードの書き方](#ソース検査ガードの書き方)」と同じ形の failure — **検査そのものが動いていないのに緑**。CI で最後は捕まるが、手元で捕まえる意味が消える。
 
 ⚠ **これは毎コミットの話で、リリース手順の一部ではない**（#1114 の棚卸しで、`store-release-guide.md` §4.0 の中＝リリース時しか読まれない場所に置かれていたのを移した）。
 
