@@ -28,6 +28,42 @@ import 'support/dart_source.dart';
 /// `reportOpFailure` を呼ぶ人が `ref.read(currentAccountProvider)` と書いたら
 /// 同じ穴が開く。**しかも**開いたことは症状に出ない**（報告が消えるだけ）ので、
 /// 機械で止めるしかない。
+/// `account:` の直後に素の `ref.read` を渡している形 (#1117-D)。
+///
+/// ⚠ **完全一致で見ていた**ので、`account:` と `ref.read` の間の改行や空白、
+/// `currentAccountProvider` の内側の空白で素通りしていた。`dart format` の改行位置
+/// は行の長さで変わるので、**完全一致は「たまたま当たっていた」に近い**。
+final directRead = RegExp(
+  r'account:\s*ref\s*\.\s*read\s*\(\s*currentAccountProvider\s*\)',
+);
+
+/// 素の `ref.read(currentAccountProvider)`（渡し方は問わない）。
+final rawRead = RegExp(r'ref\s*\.\s*read\s*\(\s*currentAccountProvider\s*\)');
+
+/// `catch` 節の本体（`{ … }` の中）を取り出す。
+///
+/// ⚠ **コメントを潰したソースを渡すこと。**本体に `// … }` があると括弧の対応が
+/// 狂う（`support/dart_source.dart` の doc と同じ罠）。
+///
+/// ⚠ 入れ子のブロックは本体に含める（`if (mounted) { … }` の中で読んでいても
+/// 潰れる形は同じ）。
+List<String> catchBodies(String code) {
+  final out = <String>[];
+  for (final m in RegExp(r'catch\s*\([^)]*\)\s*\{').allMatches(code)) {
+    var depth = 1;
+    final start = m.end;
+    var i = start;
+    while (i < code.length && depth > 0) {
+      final c = code[i];
+      if (c == '{') depth++;
+      if (c == '}') depth--;
+      i++;
+    }
+    out.add(code.substring(start, i > start ? i - 1 : start));
+  }
+  return out;
+}
+
 void main() {
   group('挙動: dispose 済みでも投げない', () {
     late Ref captured;
@@ -104,9 +140,7 @@ void main() {
       for (final file in dartFiles()) {
         if (file.path == declarationFile) continue;
         final source = maskComments(file.readAsStringSync());
-        if (source.contains('account: ref.read(currentAccountProvider)')) {
-          offenders.add(file.path);
-        }
+        if (directRead.hasMatch(source)) offenders.add(file.path);
       }
       expect(
         offenders,
@@ -117,6 +151,106 @@ void main() {
             '使うか、await の前に account を捕まえて渡すこと'
             '\n${offenders.join('\n')}',
       );
+    });
+
+    // ⚠⚠ **こちらが本命 (#1117-D)。**上の検査は「`account:` の直後に書いてある」
+    // 形しか見ないので、**一度変数で受ければ素通り**した:
+    //
+    // ```dart
+    // } catch (e) {
+    //   final account = ref.read(currentAccountProvider); // ← 素通りしていた
+    //   reportOpFailure(account: account, …);
+    // }
+    // ```
+    //
+    // 潰れるのは `ref.read` の時点なので、**catch の中で読んでいること自体**が穴。
+    // 渡し方ではなく読む場所を見る。
+    test('⚠⚠ catch の中で currentAccountProvider を読まない (#1064 / #1117-D)', () {
+      final offenders = <String>[];
+      for (final file in dartFiles()) {
+        if (file.path == declarationFile) continue;
+        final source = maskComments(file.readAsStringSync());
+        for (final body in catchBodies(source)) {
+          if (rawRead.hasMatch(body)) {
+            offenders.add(file.path);
+            break;
+          }
+        }
+      }
+      expect(
+        offenders,
+        isEmpty,
+        reason:
+            'catch の中の ref.read は dispose 済みで StateError を投げ、元の例外を'
+            '潰す (#1064)。`ref.accountForReport` を使うか、try の前に捕まえること'
+            '\n${offenders.join('\n')}',
+      );
+    });
+
+    group('走査に歯がある（合成したソースで確かめる）', () {
+      test('⚠ 空白・改行違いの直接渡しを拾う', () {
+        // 旧実装は完全一致だったので、この 3 つを取りこぼしていた。
+        for (final source in const [
+          'reportOpFailure(account: ref.read(currentAccountProvider));',
+          'reportOpFailure(account:  ref.read( currentAccountProvider ));',
+          'reportOpFailure(\n  account:\n      ref.read(currentAccountProvider),\n);',
+        ]) {
+          expect(directRead.hasMatch(source), isTrue, reason: source);
+        }
+      });
+
+      test('⚠⚠ 一度変数で受ける形を catch の中で拾う', () {
+        const source = '''
+try {
+  await doSomething();
+} catch (e) {
+  final account = ref.read(currentAccountProvider);
+  reportOpFailure(account: account, tagKey: 'chat.op');
+}
+''';
+
+        expect(directRead.hasMatch(source), isFalse, reason: '直接渡しではない');
+        expect(
+          catchBodies(source).any(rawRead.hasMatch),
+          isTrue,
+          reason: 'catch の中で読んでいる＝潰れる形',
+        );
+      });
+
+      test('try の中（catch の外）の読みは拾わない', () {
+        const source = '''
+try {
+  final account = ref.read(currentAccountProvider);
+  await doSomething(account);
+} catch (e) {
+  reportOpFailure(account: ref.accountForReport, tagKey: 'chat.op');
+}
+''';
+
+        expect(catchBodies(source).any(rawRead.hasMatch), isFalse);
+      });
+
+      test('⚠ catch の中の入れ子ブロックも本体として見る', () {
+        const source = '''
+} catch (e) {
+  if (mounted) {
+    final account = ref.read(currentAccountProvider);
+  }
+}
+''';
+
+        expect(catchBodies(source).any(rawRead.hasMatch), isTrue);
+      });
+
+      test('on 型つきの catch も拾う', () {
+        const source = '''
+} on DioException catch (e, st) {
+  final account = ref.read(currentAccountProvider);
+}
+''';
+
+        expect(catchBodies(source).any(rawRead.hasMatch), isTrue);
+      });
     });
 
     test('拡張が WidgetRef と Ref の両方に生えている', () {

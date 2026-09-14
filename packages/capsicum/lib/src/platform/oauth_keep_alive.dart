@@ -1,8 +1,8 @@
-import 'dart:io';
-
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
+
+import '../util/exception_scrub.dart';
+import 'platform_info.dart';
 
 /// OAuth の認可を待つあいだ、Android にプロセスを凍結させないための口 (#1108)。
 ///
@@ -45,9 +45,12 @@ class OAuthKeepAlive {
 
   /// この経路が要るプラットフォームか。
   ///
-  /// ⚠ UI 層に `Platform.isX` を直書きしない指針 (#650) に従い、判定はここに
-  /// 閉じ込めて機能名で公開する。
-  static bool get isSupported => !kIsWeb && Platform.isAndroid;
+  /// ⚠ UI 層に `Platform.isX` を直書きしない指針 (#650) に従い、判定は
+  /// `platform_info` に集めて機能名で公開する。⚠⚠ **ここで
+  /// `Platform.isAndroid` を書き直さない (#1117-E)** —— 以前はそうしていたため、
+  /// `oauthCallbackNeedsAppReturn` と**同じ述語が 2 箇所**にあり、差し替え口も
+  /// 別々だった（テストが本番では作れない組み合わせを作れる）。
+  static bool get isSupported => needsOAuthKeepAlive;
 
   /// 認可待ちを開始する。
   ///
@@ -64,12 +67,18 @@ class OAuthKeepAlive {
     try {
       final active = await _channel.invokeMethod<bool>('start') ?? false;
       return OAuthKeepAliveSession._(token: token, active: active);
-    } on PlatformException catch (e) {
+    } catch (e) {
       // ⚠ **ここで例外を投げ上げないこと。**keep-alive はログインの本筋では
       // なく、上げられなくても #1108 以前と同じ挙動に落ちるだけ。上げ損ねた
       // ことでログインそのものを失敗させるほうが害が大きい。
-      debugPrint('capsicum: oauth_keepalive: start failed: ${e.code}');
-      _reportStartFailureOnce(e.code);
+      //
+      // ⚠⚠ **`PlatformException` だけを捕まえるのでは足りない (#1117-A)。**
+      // plugin が未登録の環境では `MissingPluginException` が飛び、あちらは
+      // `PlatformException` の仲間ではないので素通りする。素通りすると
+      // `_authenticateViaLocalhostServer` の bind まで到達せず、**ポート 7099 を
+      // 掴んだまま / 掴む前に**ログインが落ちる。型を絞る意味が無い場所。
+      debugLogException('capsicum: oauth_keepalive: start failed', e);
+      _reportStartFailureOnce(e is PlatformException ? e.code : 'unknown');
       return OAuthKeepAliveSession._(token: token, active: false);
     }
   }
@@ -110,13 +119,22 @@ class OAuthKeepAlive {
   /// ⚠⚠ **[start] が返したセッションを渡すこと。**世代が進んでいたら（＝別の
   /// ログイン試行が始まっていたら）何もしない。渡さないと、**古い試行の後片づけ
   /// が新しい試行の keep-alive を止め、3 分打ち切りの案内通知まで消す**。
+  /// ⚠⚠ **null を渡したら何もしない (#1117-A)。**以前は「世代が分からないので
+  /// 無条件に止める」側へ倒していたが、**keep-alive を一度も上げていない画面の
+  /// `dispose` が、走っている別の試行の keep-alive を止める**経路になっていた
+  /// （`_keepAlive` は上げるまで null）。⚠ **止めたい相手が居るなら、その
+  /// セッションを持っているはず**という形に寄せる。
   static Future<void> stop(OAuthKeepAliveSession? session) async {
     if (!isSupported) return;
-    if (session != null && session.token != _generation) return;
+    if (session == null) return;
+    if (session.token != _generation) return;
     try {
       await _channel.invokeMethod<void>('stop');
-    } on PlatformException catch (e) {
-      debugPrint('capsicum: oauth_keepalive: stop failed: ${e.code}');
+    } catch (e) {
+      // ⚠ [start] と同じ理由で型を絞らない (#1117-A)。⚠⚠ **ここで投げ上げると
+      // 呼び出し側の `finally` が途中で切れ、ポート 7099 の解放や案内通知の
+      // 掃除が落ちる**（`MissingPluginException` で実際にその順序になる）。
+      debugLogException('capsicum: oauth_keepalive: stop failed', e);
     }
   }
 }

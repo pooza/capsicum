@@ -26,6 +26,34 @@ import 'support/dart_source.dart';
 /// 上限に使いながら、**既定の書記素カウンタ + 既定の enforcement（切り詰め）**
 /// のままだった。Misskey (3000) で絵文字混じりのテンプレ本文が黙って切られ、
 /// compose 画面と数字も食い違っていた。
+/// 数えているのに切り詰めを止めていない (#1117-D)。
+///
+/// ⚠ **判定を関数へ出す。**リポジトリの走査と「修正前のソースを食わせる」検査で
+/// **同じ判定**を通すため。別々に書くと、合成ソースでは当たるのに実物では
+/// 当たらない（＝空振りする検査）になる。
+bool lacksEnforcement(String code) =>
+    code.contains('serverLengthCounter') &&
+    !code.contains('InputCounterWidgetBuilder serverLengthCounter(') &&
+    !code.contains('MaxLengthEnforcement.none');
+
+/// サーバー上限を当てているのに数え方を揃えていない (#1035-A3)。
+bool lacksCounter(String code) =>
+    code.contains('maxPostLengthProvider') &&
+    !code.contains('serverLengthCounter');
+
+/// 上限はサーバー由来なのに、**数え方の backend 差**を見ていない (#1034)。
+///
+/// ⚠⚠ **[lacksCounter] では捕まらない。**`compose_screen` は ALT 欄で
+/// `serverLengthCounter` を使っているので、**本文カウンタが素の
+/// `serverTextLength` のままでも上の検査は緑**だった（同じファイルの別の欄が
+/// アンカーを満たしてしまう）。
+///
+/// Mastodon は書記素 + URL 23 文字 + メンション短縮 + CW 同枠、Misskey は
+/// コードポイント。`postLengthRuleProvider` を読んでいるかで見る。
+bool ignoresPostLengthRule(String code) =>
+    code.contains('maxPostLengthProvider') &&
+    !code.contains('postLengthRuleProvider');
+
 void main() {
   List<File> uiFiles() => Directory('lib/src/ui')
       .listSync(recursive: true)
@@ -48,8 +76,23 @@ void main() {
     return code.contains('serverLengthCounter') && !declaresCounter(code);
   }).toList();
 
+  /// サーバー由来の上限を入力欄へ当てているファイル。
+  List<File> maxLengthAdopters() => uiFiles()
+      .where(
+        (f) => maskComments(
+          f.readAsStringSync(),
+        ).contains('maxPostLengthProvider'),
+      )
+      .toList();
+
   test('探索が空振りしていない', () {
     expect(uiFiles().length, greaterThan(50));
+    // ⚠ ここが 0 だと #1034 の検査が「対象なし」で緑になる。
+    expect(
+      maxLengthAdopters(),
+      hasLength(greaterThanOrEqualTo(2)),
+      reason: 'maxPostLengthProvider の採用箇所が見えていない（compose / テンプレの 2 つ）',
+    );
     // ⚠ 採用箇所が 0 だと、下の 2 本は「どちらも無い」で緑になる。
     expect(
       counterAdopters(),
@@ -70,9 +113,9 @@ void main() {
     // 書記素で切ると、カウンタの数字と実際の挙動が食い違う。
     final offenders = <String>[];
     for (final file in counterAdopters()) {
-      final code = maskComments(file.readAsStringSync());
-      if (code.contains('MaxLengthEnforcement.none')) continue;
-      offenders.add(file.path);
+      if (lacksEnforcement(maskComments(file.readAsStringSync()))) {
+        offenders.add(file.path);
+      }
     }
     expect(
       offenders,
@@ -89,10 +132,9 @@ void main() {
     // `maxPostLengthProvider` を上限にしながら、片方が書記素で数えていた。
     final offenders = <String>[];
     for (final file in uiFiles()) {
-      final code = maskComments(file.readAsStringSync());
-      if (!code.contains('maxPostLengthProvider')) continue;
-      if (code.contains('serverLengthCounter')) continue;
-      offenders.add(file.path);
+      if (lacksCounter(maskComments(file.readAsStringSync()))) {
+        offenders.add(file.path);
+      }
     }
     expect(
       offenders,
@@ -102,5 +144,129 @@ void main() {
           '（書記素）のまま。compose と数字が食い違い、超過分が黙って切られる'
           '\n${offenders.join('\n')}',
     );
+  });
+
+  test('サーバー上限を当てている画面は、数え方の backend 差も見る (#1034)', () {
+    final offenders = <String>[];
+    for (final file in maxLengthAdopters()) {
+      if (ignoresPostLengthRule(maskComments(file.readAsStringSync()))) {
+        offenders.add(file.path);
+      }
+    }
+    expect(
+      offenders,
+      isEmpty,
+      reason:
+          '上限はサーバー由来なのに、数え方が backend 共通のまま。Mastodon は'
+          '書記素 + URL 23 文字 + メンション短縮 + CW 同枠で数えるので、'
+          'URL 1 本で 77 文字ぶん過大に出る / CW 付き長文が緑のまま弾かれる'
+          '\n${offenders.join('\n')}',
+    );
+  });
+
+  group('走査に歯がある', () {
+    test('合成したソースで両方の判定が当たる', () {
+      const missingCounter = '''
+TextField(maxLength: ref.watch(maxPostLengthProvider));
+''';
+      expect(lacksCounter(missingCounter), isTrue);
+      expect(
+        lacksCounter('TextField(buildCounter: serverLengthCounter(ref));'),
+        isFalse,
+        reason: 'maxPostLengthProvider が無ければ対象外',
+      );
+
+      const countsButTrims = '''
+TextField(buildCounter: serverLengthCounter(ref));
+''';
+      expect(lacksEnforcement(countsButTrims), isTrue);
+      expect(
+        lacksEnforcement('''
+TextField(
+  buildCounter: serverLengthCounter(ref),
+  maxLengthEnforcement: MaxLengthEnforcement.none,
+);
+'''),
+        isFalse,
+      );
+    });
+
+    test('合成したソースで #1034 の判定が当たる', () {
+      expect(
+        ignoresPostLengthRule('final max = ref.watch(maxPostLengthProvider);'),
+        isTrue,
+      );
+      expect(
+        ignoresPostLengthRule('''
+final max = ref.watch(maxPostLengthProvider);
+final rule = ref.watch(postLengthRuleProvider);
+'''),
+        isFalse,
+      );
+      expect(
+        ignoresPostLengthRule(
+          'final rule = ref.watch(postLengthRuleProvider);',
+        ),
+        isFalse,
+        reason: 'サーバー上限を当てていない欄は対象外',
+      );
+    });
+
+    // ⚠⚠ **修正前の compose_screen を食わせる (#1034)。**ALT 欄が
+    // `serverLengthCounter` を満たしていたので、**本文カウンタが素の
+    // `serverTextLength` でも既存 2 本は緑**だった。この 1 本だけが当たる。
+    test('⚠⚠ 修正前の compose_screen は #1034 の判定だけに当たる', () {
+      // #1034 を直した commit の親。
+      const preFix = '94808c91';
+      const path = 'packages/capsicum/lib/src/ui/screen/compose_screen.dart';
+      final shown = Process.runSync('git', [
+        '-C',
+        '../..',
+        'show',
+        '$preFix:$path',
+      ]);
+      if (shown.exitCode != 0) {
+        markTestSkipped('git show が使えない: ${shown.stderr}');
+        return;
+      }
+      final code = maskComments(shown.stdout as String);
+
+      expect(
+        ignoresPostLengthRule(code),
+        isTrue,
+        reason: '修正前は maxPostLengthProvider を当てながら数え方が backend 共通だった',
+      );
+      expect(
+        lacksCounter(code),
+        isFalse,
+        reason: '⚠ 既存の検査は ALT 欄の serverLengthCounter で満たされていた',
+      );
+    });
+
+    // ⚠⚠ **修正前のソースを実際に食わせる (#1117-D)。**合成ソースは「想定した
+    // 書き方」しか並べられない。**実物で当たることを確かめる**のが 3 点セットの 3。
+    test('⚠⚠ 修正前の templates_manage_screen を食わせると当たる', () {
+      // #1035-A を直した commit の親。
+      const preFix = '111583ea^';
+      const path =
+          'packages/capsicum/lib/src/ui/screen/templates_manage_screen.dart';
+      final shown = Process.runSync('git', [
+        '-C',
+        '../..',
+        'show',
+        '$preFix:$path',
+      ]);
+      if (shown.exitCode != 0) {
+        markTestSkipped('git show が使えない: ${shown.stderr}');
+        return;
+      }
+      final code = maskComments(shown.stdout as String);
+
+      expect(
+        lacksCounter(code),
+        isTrue,
+        reason: '修正前は maxPostLengthProvider を当てながら既定の書記素カウンタだった',
+      );
+    });
   });
 }

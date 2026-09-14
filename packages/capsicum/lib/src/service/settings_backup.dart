@@ -64,7 +64,11 @@ const maxSettingsBackupNestingDepth = 32;
 const maxBackupAccounts = 200;
 
 /// 設定値の型。SharedPreferences の格納型に対応する。
-enum BackupValueType { boolean, number, text, textList }
+///
+/// ⚠ **[integer] と [number] を分けるのは格納型が違うから** (#1119)。`setInt` で
+/// 書かれた値を `getDouble` で読むと**取り出せない**（型が合わず null になる）。
+/// 現状 [integer] を使うのは [accountScopedSettings] の `theme_color_`（ARGB）だけ。
+enum BackupValueType { boolean, number, integer, text, textList }
 
 /// バックアップ対象の設定 1 件。
 class BackupSetting {
@@ -148,38 +152,55 @@ const deviceLocalKeys = <String>{
   'launch_at_login',
 };
 
-/// **意図的に**書き出さない、アカウントごとの設定 (#857)。
+/// **意図的に**書き出さない、アカウントごとの設定 (#857 / #1119)。
 ///
-/// アカウントを含まないバックアップ（冒頭 doc）では復元先が決まらないため、
-/// 端末固有値と同じく対象外にする。[deviceLocalKeys] と分けているのは、外した
-/// 理由が違う（あちらは「他端末に存在しない」、こちらは「どのアカウントへ
-/// 入れるか決められない」）ため。アカウントごと復元する話は #967。
+/// ⚠⚠ **「どのアカウントへ入れるか決められない」はもう除外の理由ではない**
+/// （#1119）。バックアップにはアカウント索引が入る（#967 / #1001・v1.59 出荷）ので
+/// 復元先は決まる。アカウント別設定の本体は [accountScopedSettings] として
+/// 書き出すようになり、ここに残るのは**別の理由で外すもの 2 つ**だけ。
 ///
-/// `background_opacity` は実際の保存先が `background_opacity_<アカウント>` で、
-/// 素のキーは旧版から移行するためだけに読まれる（`setOpacity` は二度と書か
-/// ない）。ここへ入れる前は [exportableSettings] にいたが、**書き出しは常に
-/// 空振りし、読み込みは移行キーへ書くので per-account 値をまだ持たない全
-/// アカウントへ染み出す**という壊れ方をしていた。名前が同じでも実体が別キー
-/// なら対象にできない。
-const accountScopedKeys = <String>{
-  'background_opacity',
-  // 以下はアカウント別設定の **プレフィックス**（実体は `<prefix><アカウント>`）。
-  // preferences_provider.dart に `_…Prefix` として定義され、素のプレフィックスが
-  // 保存キーになることはない。どのアカウントへ復元するか決められないため対象外で、
-  // アカウント込みの復元は #967。カバレッジ検査 (settings_backup_coverage_test) が
-  // `_…Prefix` も拾うようになったので、`background_opacity` と同じく「意図的な除外」
-  // として明示する（列挙漏れを黙って通さないため）。
-  'theme_color_',
-  'tab_order_',
-  'last_tab_',
-  'emoji_palette_',
-  'emoji_reaction_palette_',
-  'pinned_hashtags_',
-  'hidden_list_ids_',
-  'list_order_',
-  'hidden_timeline_types_',
-  'tab_config_',
-};
+/// - `background_opacity` … 実際の保存先が `background_opacity_<アカウント>` で、
+///   素のキーは旧版から移行するためだけに読まれる（`setOpacity` は二度と書か
+///   ない）。**素のキーを対象にすると、per-account 値をまだ持たない全アカウント
+///   へ染み出す**（f331cb53 の壊れ方）。⚠ per-account 側も [accountScopedSettings]
+///   へは入れていない —— 背景**画像**が端末固有（ファイルパス・[deviceLocalKeys]）で
+///   移らないので、不透明度だけ移しても効く相手が居ない。
+/// - `last_tab_` … 「最後に見ていたタブ」で、設定ではなく一時状態。移行先で復元
+///   する意味が無く、`addAccount` がログイン直後に上書きする（#1057）。
+const accountScopedKeys = <String>{'background_opacity', 'last_tab_'};
+
+/// アカウントごとの設定 1 件 (#1119)。実体の保存キーは `<prefix><アカウント>`。
+class AccountScopedSetting {
+  const AccountScopedSetting(this.prefix, this.type);
+
+  /// `preferences_provider.dart` の `_…Prefix` と一致させる（末尾の `_` を含む）。
+  final String prefix;
+
+  final BackupValueType type;
+
+  /// YAML 上のキー。⚠ **末尾の `_` を落としたもの**（`tab_order_` → `tab_order`）。
+  /// アカウントの下にぶら下がるので、キー側にアカウントを書く必要がない。
+  String get yamlKey => prefix.substring(0, prefix.length - 1);
+}
+
+/// 書き出すアカウント別設定 (#1119)。
+///
+/// ⚠ **索引（`accounts:`）に載っているアカウントのぶんだけ書く。**片方だけある
+/// ファイルを作らないため。読み込み側も索引に無いアカウントのぶんは取り込まない。
+///
+/// ⚠ **足し忘れは `settings_backup_coverage_test` が落とす**（`_…Prefix` を拾って
+/// [accountScopedKeys] との和集合で突き合わせる）。
+const accountScopedSettings = <AccountScopedSetting>[
+  AccountScopedSetting('theme_color_', BackupValueType.integer),
+  AccountScopedSetting('tab_order_', BackupValueType.textList),
+  AccountScopedSetting('tab_config_', BackupValueType.textList),
+  AccountScopedSetting('hidden_timeline_types_', BackupValueType.textList),
+  AccountScopedSetting('list_order_', BackupValueType.textList),
+  AccountScopedSetting('hidden_list_ids_', BackupValueType.textList),
+  AccountScopedSetting('pinned_hashtags_', BackupValueType.textList),
+  AccountScopedSetting('emoji_palette_', BackupValueType.textList),
+  AccountScopedSetting('emoji_reaction_palette_', BackupValueType.textList),
+];
 
 /// 読み込み結果。
 class SettingsImportResult {
@@ -273,6 +294,71 @@ void _writeAccounts(StringBuffer buffer, SharedPreferences prefs) {
   }
 }
 
+/// アカウント別設定を `account_settings:` へ書く (#1119)。
+///
+/// ```yaml
+/// account_settings:
+///   "mastodon://alice@mstdn.example":
+///     tab_order:
+///       - home
+///     theme_color: 4291681337
+/// ```
+///
+/// ⚠ **索引に載っているアカウントのぶんだけ書く。**`accounts:` に無いアカウントの
+/// 設定が載ったファイルを自分で作らない（読み込み側も取り込まない）。
+///
+/// ⚠ **未設定のキーは書かない**（[buildSettingsBackupYaml] と同じ理由）。既定値を
+/// 焼き込むと、後で既定が変わったときに古い既定値が復活する。
+void _writeAccountSettings(StringBuffer buffer, SharedPreferences prefs) {
+  final accounts = readAccountKeysForBackup(prefs);
+  if (accounts.isEmpty) return;
+
+  final sections = <String, List<String>>{};
+  for (final account in accounts) {
+    final lines = <String>[];
+    for (final setting in accountScopedSettings) {
+      final key = '${setting.prefix}$account';
+      switch (setting.type) {
+        case BackupValueType.textList:
+          final list = prefs.getStringList(key);
+          if (list == null) continue;
+          if (list.isEmpty) {
+            lines.add('    ${setting.yamlKey}: []');
+          } else {
+            lines.add('    ${setting.yamlKey}:');
+            for (final item in list) {
+              lines.add('      - ${_yamlString(item)}');
+            }
+          }
+        case BackupValueType.integer:
+          final value = prefs.getInt(key);
+          if (value == null) continue;
+          lines.add('    ${setting.yamlKey}: $value');
+        case BackupValueType.number:
+          final value = prefs.getDouble(key);
+          if (value == null) continue;
+          lines.add('    ${setting.yamlKey}: $value');
+        case BackupValueType.text:
+          final value = prefs.getString(key);
+          if (value == null) continue;
+          lines.add('    ${setting.yamlKey}: ${_yamlString(value)}');
+        case BackupValueType.boolean:
+          final value = prefs.getBool(key);
+          if (value == null) continue;
+          lines.add('    ${setting.yamlKey}: $value');
+      }
+    }
+    if (lines.isNotEmpty) sections[account] = lines;
+  }
+  if (sections.isEmpty) return;
+
+  buffer.writeln('account_settings:');
+  for (final entry in sections.entries) {
+    buffer.writeln('  ${_yamlString(entry.key)}:');
+    entry.value.forEach(buffer.writeln);
+  }
+}
+
 /// 未設定（既定値のまま）のキーは**書かない**。既定値を焼き込むと、後で既定が
 /// 変わったときに古い既定値が復活してしまう。
 String buildSettingsBackupYaml(
@@ -289,35 +375,44 @@ String buildSettingsBackupYaml(
     ..writeln('exported_at: ${_yamlString(exportedAt)}');
 
   _writeAccounts(buffer, prefs);
-  buffer.writeln('settings:');
+  _writeAccountSettings(buffer, prefs);
 
-  var wrote = false;
+  // ⚠⚠ **本文を先に組んでから見出しを書く (#1119)。**以前は `settings:` を先に
+  // 書き、1 件も書かなかったときだけ `replaceFirst('settings:\n', …)` で空マップに
+  // 差し替えていた。**`account_settings:\n` がその部分文字列に一致する**ので、
+  // アカウント別設定があって共通設定が全部既定のままだと
+  // `account_settings: {}` に書き換わり、**自分で読めない YAML を書き出していた**。
+  // 見出しと本文を組み立て順で結び付ける形にして、部分一致の余地を消す。
+  final lines = <String>[];
   for (final setting in exportableSettings) {
     final value = _readValue(prefs, setting);
     if (value == null) continue;
-    wrote = true;
     switch (setting.type) {
       case BackupValueType.textList:
         final list = value as List<String>;
         if (list.isEmpty) {
-          buffer.writeln('  ${setting.key}: []');
+          lines.add('  ${setting.key}: []');
         } else {
-          buffer.writeln('  ${setting.key}:');
+          lines.add('  ${setting.key}:');
           for (final item in list) {
-            buffer.writeln('    - ${_yamlString(item)}');
+            lines.add('    - ${_yamlString(item)}');
           }
         }
       case BackupValueType.text:
-        buffer.writeln('  ${setting.key}: ${_yamlString(value as String)}');
+        lines.add('  ${setting.key}: ${_yamlString(value as String)}');
       case BackupValueType.boolean:
       case BackupValueType.number:
-        buffer.writeln('  ${setting.key}: $value');
+      case BackupValueType.integer:
+        lines.add('  ${setting.key}: $value');
     }
   }
   // 空マップは `settings:` だけになり YAML 上は null になる。読み込み側で
   // 「壊れたファイル」と区別できるよう明示的に空マップを書く。
-  if (!wrote) {
-    return buffer.toString().replaceFirst('settings:\n', 'settings: {}\n');
+  if (lines.isEmpty) {
+    buffer.writeln('settings: {}');
+  } else {
+    buffer.writeln('settings:');
+    lines.forEach(buffer.writeln);
   }
   return buffer.toString();
 }
@@ -543,6 +638,11 @@ Future<SettingsImportResult> applySettingsBackupYaml(
     skipped,
     accountStorage ?? AccountStorage(),
   );
+  // ⚠ **アカウントのマージより後に呼ぶ (#1119)。**取り込み先の判定に「このファイル
+  // で足したアカウント」も含める必要がある（移行では索引ごと空の端末に入る）。
+  applied.addAll(
+    await _mergeAccountSettings(prefs, parsed['account_settings'], skipped),
+  );
 
   for (final entry in settings.nodes.entries) {
     final key = entry.key.toString();
@@ -572,6 +672,124 @@ Future<SettingsImportResult> applySettingsBackupYaml(
     skipped: skipped,
     addedAccountKeys: addedAccountKeys,
   );
+}
+
+/// バックアップの `account_settings:` を取り込む (#1119)。返り値は書き込んだ
+/// SharedPreferences キー（[SettingsImportResult.applied] へ積む）。
+///
+/// ⚠⚠ **索引にあるアカウントのぶんだけ取り込む。**索引に無いアカウントの設定を
+/// 書くと、**画面から触れない設定が SharedPreferences に溜まる**（そのアカウントは
+/// 一覧に出ないので、消す導線も無い）。手編集されたファイルが持ち込みうるので、
+/// ここで止める。⚠ **アカウントを作る側には回さない** —— 索引を増やすのは
+/// [_mergeAccounts] の仕事で、上限（[maxBackupAccounts]）も残骸 secret の掃除も
+/// あちらが持っている。
+///
+/// ⚠ **落ちたぶんは件数だけを 1 行にまとめる。**アカウント別に理由を積むと、
+/// `skipped` のキーが**ファイル由来の文字列**（＝任意の入力）になる。#1012 で
+/// 「キー名の側から素通し」を塞いだのと同じ穴を開け直すことになるので、キーは
+/// 定数 `account_settings` に固定する。
+Future<List<String>> _mergeAccountSettings(
+  SharedPreferences prefs,
+  Object? node,
+  Map<String, String> skipped,
+) async {
+  if (node == null) return const [];
+  if (node is! YamlMap) {
+    skipped['account_settings'] = 'アカウント別の設定が読めませんでした';
+    return const [];
+  }
+
+  // ⚠ 索引は _mergeAccounts のマージ後の状態を読む（このファイルで足したぶんを
+  // 含める）。突き合わせは正規形どうしで行う（#1011 と同じ理由）。
+  final known = readAccountKeysForBackup(
+    prefs,
+  ).map(_canonicalAccountKey).whereType<String>().toSet();
+  final byYamlKey = {for (final s in accountScopedSettings) s.yamlKey: s};
+
+  final applied = <String>[];
+  var unknownAccounts = 0;
+  var rejected = 0;
+  for (final entry in node.nodes.entries) {
+    final rawAccount = entry.key.toString();
+    final account = _canonicalAccountKey(rawAccount);
+    if (account == null || !known.contains(account)) {
+      unknownAccounts++;
+      continue;
+    }
+    final values = entry.value;
+    if (values is! YamlMap) {
+      rejected++;
+      continue;
+    }
+    for (final setting in values.nodes.entries) {
+      final scoped = byYamlKey[setting.key.toString()];
+      if (scoped == null) {
+        rejected++;
+        continue;
+      }
+      // ⚠ **保存キーは索引に入っている生の key で組む。**正規形へ寄せると、
+      // 非正規形で索引に入っている端末で「画面が読むキー」とずれる（#1011 が
+      // 索引そのものを直さないのと同じ理由）。
+      final storageKey = '${scoped.prefix}$rawAccount';
+      final reason = await _writeAccountValue(
+        prefs,
+        scoped,
+        storageKey,
+        setting.value.value,
+      );
+      if (reason != null) {
+        rejected++;
+        continue;
+      }
+      applied.add(storageKey);
+    }
+  }
+
+  final reasons = <String>[
+    if (unknownAccounts > 0) '$unknownAccounts 件はこの端末に無いアカウントの設定でした',
+    if (rejected > 0) '$rejected 件は設定の形式が合いませんでした',
+  ];
+  if (reasons.isNotEmpty) skipped['account_settings'] = reasons.join(' / ');
+  return applied;
+}
+
+/// アカウント別設定 1 件を書く。書けたら null、書かなかったら理由 (#1119)。
+///
+/// ⚠ **setter の戻り値を捨てない**（[_writeValue] と同じ理由）。
+Future<String?> _writeAccountValue(
+  SharedPreferences prefs,
+  AccountScopedSetting setting,
+  String storageKey,
+  Object? value,
+) async {
+  const typeMismatch = '値の形式が設定と合いません';
+  const writeFailed = '設定を保存できませんでした';
+  switch (setting.type) {
+    case BackupValueType.boolean:
+      if (value is! bool) return typeMismatch;
+      if (!await prefs.setBool(storageKey, value)) return writeFailed;
+    case BackupValueType.integer:
+      // ⚠ **`num` ではなく `int` を要求する。**`setInt` で書かれる値なので、
+      // 小数を丸めて通すと「書いた値と読める値が違う」状態を作る。
+      if (value is! int) return typeMismatch;
+      if (!await prefs.setInt(storageKey, value)) return writeFailed;
+    case BackupValueType.number:
+      if (value is! num) return typeMismatch;
+      final number = value.toDouble();
+      if (!number.isFinite) return typeMismatch;
+      if (!await prefs.setDouble(storageKey, number)) return writeFailed;
+    case BackupValueType.text:
+      if (value is! String) return typeMismatch;
+      if (!await prefs.setString(storageKey, value)) return writeFailed;
+    case BackupValueType.textList:
+      if (value is! List) return typeMismatch;
+      if (value.any((e) => e is! String)) return typeMismatch;
+      final ok = await prefs.setStringList(storageKey, [
+        for (final e in value) e as String,
+      ]);
+      if (!ok) return writeFailed;
+  }
+  return null;
 }
 
 /// バックアップの `accounts:` を索引へ**マージ**する (#1001)。返り値は新しく
@@ -681,6 +899,7 @@ Object? _readValue(SharedPreferences prefs, BackupSetting setting) =>
     switch (setting.type) {
       BackupValueType.boolean => prefs.getBool(setting.key),
       BackupValueType.number => prefs.getDouble(setting.key),
+      BackupValueType.integer => prefs.getInt(setting.key),
       BackupValueType.text => prefs.getString(setting.key),
       BackupValueType.textList => prefs.getStringList(setting.key),
     };
@@ -704,6 +923,11 @@ Future<String?> _writeValue(
     case BackupValueType.boolean:
       if (value is! bool) return typeMismatch;
       if (!await prefs.setBool(setting.key, value)) return writeFailed;
+    case BackupValueType.integer:
+      // ⚠ `setInt` で書かれる値。小数を丸めて通すと「書いた値と読める値が違う」
+      // 状態を作るので、`int` を要求する（[_writeAccountValue] と同じ判断）。
+      if (value is! int) return typeMismatch;
+      if (!await prefs.setInt(setting.key, value)) return writeFailed;
     case BackupValueType.number:
       // YAML の `1` は int になる。整数で書かれた倍率を弾かない。
       if (value is! num) return typeMismatch;

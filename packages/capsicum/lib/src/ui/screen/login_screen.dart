@@ -24,6 +24,7 @@ import '../../util/login_error.dart';
 import '../util/launch_url_toast.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/content_parser.dart';
+import 'login_attempts.dart';
 
 /// OAuth コールバック受信後にシステムブラウザへ表示する完了ページ (#654)。
 const _oauthCallbackHtml =
@@ -142,6 +143,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   bool _isLoggingIn = false;
   bool _loginCompleted = false;
   String? _error;
+
+  /// この試行で `force_login` を付けるか (#1109)。⚠ **往復の前に決めて持っておく**。
+  ///
+  /// OOB 手貼りのダイアログ（往復の**後**）でも同じ値を使うが、あちらで
+  /// `ref` を読むのは #955 の不変条件（この画面で往復後に ref を使わない）に
+  /// 反するため、`_login` の入口で 1 回決めてここへ置く。
+  ///
+  /// ⚠ **既定は true。**画面が作り直されて `_login` を通っていない状態で OOB へ
+  /// 落ちたときは、安全側（＝アカウントを取り違えない側）に倒す。
+  bool _forceLogin = true;
 
   /// ループバック OAuth (#276) の最中に bind した localhost HTTP サーバ。
   /// 認可完了 / タイムアウトで finally が閉じるが、ユーザーが完了前に画面を
@@ -498,11 +509,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         await subscription.cancel();
       }
     } finally {
-      // ⚠ 認可完了・中断・タイムアウトのどれでもここを通る (#1108)。サーバを
-      // 閉じるのと同じ寿命で下ろす。⚠⚠ **自分の世代だけを下ろす** ——
-      // すぐ下の `identical(_oauthServer, server)` と同じ理由で、2 本目の試行が
-      // 始まっていたらここは何もしてはいけない。
-      await OAuthKeepAlive.stop(keepAlive);
+      // ⚠ 認可完了・中断・タイムアウトのどれでもここを通る (#1108)。
+      //
+      // ⚠⚠ **keep-alive はここで下ろさない (#1117-A)。**callback を受けた時点では
+      // まだ**トークン交換・`addAccount`・モロヘイヤ検出**が残っており、通信が
+      // 複数回ある。ブラウザが `capsicumauth://` でアプリを前面へ戻すまでは
+      // キャッシュ状態なので、ここで下ろすと**戻らなかった場合に途中で凍結され
+      // うる**（＝トークンだけ取って保存できていない状態）。下ろすのは
+      // [_login] の `finally`（`_finishLogin` の後）に移した。
+      //
+      // ⚠ サーバは**ここで閉じる**（callback は受け終わっており、ポート 7099 を
+      // 掴み続ける理由が無い）。⚠⚠ **自分の世代だけ** —— 2 本目の試行が始まって
+      // いたら `identical` で弾く。
       await server.close(force: true);
       if (identical(_oauthServer, server)) _oauthServer = null;
     }
@@ -519,6 +537,52 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       _error = null;
     });
 
+    // ⚠ **プロセス全体の試行登録簿 (#1112)。**`isRetry` は同一フローの続行なので
+    // 番号を取らない（#620 silent recovery が 1 操作を 2 試行に数えないため）。
+    final sequence = isRetry ? null : LoginAttempts.nextSequence();
+    if (sequence != null) {
+      final previous = await LoginAttempts.takeOver(sequence, () async {
+        // ⚠ **setState を呼ばない。**この後片づけは、次の試行から（＝別の
+        // State から）呼ばれることがある。
+        final server = _oauthServer;
+        _oauthServer = null;
+        await server?.close(force: true);
+        await OAuthKeepAlive.stop(_keepAlive);
+      });
+      if (previous != null) {
+        // ⚠⚠ **これが #1112 の観測点。**「1 回の操作で 2 回走った」現象は
+        // 1 度しか観測できておらず、logcat も残っていない。次の再発を
+        // logcat 無しで診断できるよう、重なり自体を 1 件上げる。
+        _logLoginStep(
+          'login.attempt_overlap',
+          data: {
+            'sequence': sequence,
+            'previous': previous,
+            'isLoggingIn': _isLoggingIn,
+            'mounted': mounted,
+          },
+        );
+        try {
+          Sentry.captureMessage(
+            'login.attempt_overlap',
+            level: SentryLevel.warning,
+            withScope: (scope) {
+              scope.setTag('service', 'login');
+              scope.setTag('login.host', widget.host);
+              scope.setTag('login.backend', widget.backendType.name);
+              scope.setTag('login.sequence', sequence.toString());
+              scope.setTag('login.previous_sequence', previous.toString());
+              // 画面が作り直されたのか（＝State が別物なのか）を切り分ける。
+              scope.setTag('login.was_logging_in', _isLoggingIn.toString());
+              scope.fingerprint = ['login.attempt_overlap'];
+            },
+          );
+        } catch (_) {
+          // 計装の失敗でログインを止めない（#822 / #828 と同じ方針）。
+        }
+      }
+    }
+
     DecentralizedBackendAdapter? adapter;
     Map<String, String> oauthExtra = {};
     var reachedAuthenticate = false;
@@ -526,7 +590,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     var fallbackAttempted = false;
     var usedCachedCreds = false;
 
-    _logLoginStep('login.start', data: {'isRetry': isRetry});
+    // ⚠ **試行の通し番号を必ず載せる (#1112)。**「1 回の操作で 2 回走った」は
+    // breadcrumb を並べても判別できなかった（同じ形の行が 2 組並ぶだけ）。
+    // 番号があれば、次の再発時に logcat 無しで同定できる。
+    _logLoginStep(
+      'login.start',
+      data: {'isRetry': isRetry, 'sequence': ?sequence},
+    );
 
     try {
       adapter = await widget.backendType.createAdapter(widget.host);
@@ -574,8 +644,28 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         website: AppConstants.websiteUrl,
       );
 
-      _logLoginStep('startLogin.begin');
-      final startResult = await loginSupport.startLogin(application);
+      // ⚠ **`force_login` は「このサーバーに既にアカウントを持っているとき」だけ
+      // 付ける (#1109)。**認可待ちの keep-alive は約 3 分で打ち切られる（#1108）
+      // のに、`force_login=true` は ID / パスワード入力・パスワードマネージャや
+      // 2FA との往復を**毎回**強制するので、その 3 分を確実に削る。
+      //
+      // ⚠ **外せないのは同じサーバーの 2 人目以降。**ブラウザのセッションで 1 人目
+      // が黙って選ばれると、「別のアカウントを足したつもりが同じアカウント」に
+      // なる（#1110 で一覧の重複は消えたが、**意図した相手が入らない**のは残る）。
+      // 「接続し直す」も同じ理由でこちら側＝強制のままにする。
+      //
+      // ⚠ **初回ログインだけ外す形は採らない。**新規ユーザーはそのサーバーの
+      // ブラウザセッションを持っていないことが多く、`force_login` の有無で挙動が
+      // 変わらない＝効かないところで外すことになる（#1109 本文の検討 3）。
+      _forceLogin = ref
+          .read(accountManagerProvider)
+          .accounts
+          .any((a) => a.key.host == widget.host);
+      _logLoginStep('startLogin.begin', data: {'forceLogin': _forceLogin});
+      final startResult = await loginSupport.startLogin(
+        application,
+        forceLogin: _forceLogin,
+      );
       _logLoginStep(
         'startLogin.end',
         data: {'result': startResult.runtimeType.toString()},
@@ -956,6 +1046,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       }
     } finally {
       if (mounted) setState(() => _isLoggingIn = false);
+      // ⚠⚠ **keep-alive を下ろすのはここ (#1117-A)。**callback を受けた直後では
+      // なく、トークン交換と `addAccount`（＋モロヘイヤ検出）まで終わってから。
+      // ⚠ `stop` は世代を見るので、2 本目が始まっていれば何もしない。
+      await OAuthKeepAlive.stop(_keepAlive);
+      // ⚠ **mounted に関わらず降りる (#1112)。**画面が消えていても登録簿は
+      // プロセスに残るので、降りないと次の試行が毎回「重なった」と記録され、
+      // 死んだ State の後片づけを呼びに行くことになる。
+      if (sequence != null) LoginAttempts.release(sequence);
     }
   }
 
@@ -1078,14 +1176,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                 await ensureOobRegistration();
                                 if (!dialogContext.mounted) return;
                                 setDialogState(() => isLoading = false);
-                                final oobUrl =
-                                    Uri.https(widget.host, '/oauth/authorize', {
-                                      'response_type': 'code',
-                                      'client_id': clientId,
-                                      'redirect_uri': oobRedirect,
-                                      'scope': extra['scopes']!,
-                                      'force_login': 'true',
-                                    });
+                                final oobUrl = Uri.https(
+                                  widget.host,
+                                  '/oauth/authorize',
+                                  {
+                                    'response_type': 'code',
+                                    'client_id': clientId,
+                                    'redirect_uri': oobRedirect,
+                                    'scope': extra['scopes']!,
+                                    // 本経路と同じ判定を使う (#1109)。⚠ ここで
+                                    // ref を読まないのは #955（往復後に ref を
+                                    // 使わない）のため。
+                                    if (_forceLogin) 'force_login': 'true',
+                                  },
+                                );
                                 // 失敗時の SnackBar は共通ヘルパーへ寄せた
                                 // (#976)。
                                 await launchUrlOrToast(
@@ -1326,6 +1430,24 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       label: const Text('ブラウザでログイン'),
                     ),
             ),
+            // ⚠ **待っているあいだも「何をすればいいか」を出す (#1111)。**3 分の
+            // 打ち切り通知をタップして戻ってきた人のうち、**まだ承認していない
+            // 人**にはここしか手がかりが無く、従来はホイールが回っているだけの
+            // 画面だった（実機検証で pooza が実際にそうした）。⚠ **前面に出た
+            // ことで凍結は解けている**ので、ブラウザに戻って承認すればそのまま
+            // 完了する——それを伝えていなかっただけ。
+            //
+            // ⚠ **「もう一度ボタンを押してください」とは書かない。**待機中は
+            // 多重起動ガード (#813) が弾くので、押しても何も起きない。
+            if (_isLoggingIn) ...[
+              const SizedBox(height: 16),
+              Text(
+                'ブラウザで承認すると、この画面に戻ります。\n'
+                'まだ承認していない場合は、ブラウザに戻って承認してください。',
+                style: Theme.of(context).textTheme.bodySmall,
+                textAlign: TextAlign.center,
+              ),
+            ],
             // ⚠ **3 分の制限を隠さずに書く (#1108)。**認可を待つあいだ
             // capsicum を凍結させないための foreground service は
             // `shortService` 型で、**OS が約 3 分で打ち切る**。超えると凍結され

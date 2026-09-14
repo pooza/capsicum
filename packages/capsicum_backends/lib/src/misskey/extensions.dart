@@ -92,6 +92,13 @@ extension CapsicumMisskeyUserExtension on MisskeyUser {
       canChat: canChat,
       locked: isLocked,
       discoverable: isExplorable,
+      // ⚠ Misskey の movedTo は AP URI 1 本なので handle は作れない (#1055)。
+      movedTo: (movedTo != null && movedTo!.isNotEmpty)
+          ? MovedTo(url: movedTo!)
+          : null,
+      suspended: isSuspended ?? false,
+      silenced: isSilenced ?? false,
+      deleted: isDeleted ?? false,
     );
   }
 }

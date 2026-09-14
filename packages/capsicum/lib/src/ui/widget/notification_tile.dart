@@ -242,7 +242,7 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
             children: [
               ListTile(
                 leading: const Icon(Icons.reply),
-                title: const Text('リプライ'),
+                title: const Text('返信'),
                 onTap: () {
                   Navigator.pop(sheetContext);
                   context.push('/compose', extra: {'replyTo': targetPost});

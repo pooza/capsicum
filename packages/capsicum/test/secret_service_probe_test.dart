@@ -148,89 +148,155 @@ void main() {
 
   /// ⚠⚠ **順序が逆だと意味が無い。**「触ってから上限で打ち切る」では、
   /// 打ち切った時点で既にプラットフォームスレッドが止まっている。
+  /// ⚠⚠ **関所は `AccountStorage` から [SecureStorageGate] へ移した (#1136)。**
+  ///
+  /// 以前はこの検査が `account_storage.dart` の `_read` を見ていた。⚠ **それでは
+  /// 「このクラスを通る読み取り」しか固定できず**、同じ資源を触る `PushKeyStore`
+  /// / `DeviceInstallId` が素通りしていた（実際に削除の裏で画面が固まった）。
+  /// **見る場所を、唯一の入口である関所へ移す。**
   group('ソース検査: 触る前に聞いていること', () {
-    const path = 'lib/src/service/account_storage.dart';
-
-    test('探索が空振りしていない', () {
-      expect(File(path).existsSync(), isTrue);
-      final code = maskComments(File(path).readAsStringSync());
-      expect(
-        code,
-        contains('_storage.read('),
-        reason: '読み取りの呼び出しを拾えていない。検査のアンカーが外れている',
-      );
-    });
+    const path = 'lib/src/service/secure_storage_gate.dart';
 
     /// ⚠ **ファイル全体の最初の一致同士を比べない**（v1.64 のリリース前
-    /// レビュー）。それだと `_read` より前に別の関数で probe を呼んでいれば、
-    /// `_read` から probe が消えても通る。**`_read` の本体に絞って見る。**
-    const readSignature = 'Future<String?> _read(String key) async';
+    /// レビュー）。それだと関所より前に別の関数で probe を呼んでいれば、
+    /// 関所から probe が消えても通る。**関所の本体に絞って見る。**
+    const guardSignature = 'Future<T> _guard<T>(';
 
     String masked() => maskStrings(maskComments(File(path).readAsStringSync()));
 
-    test('_read の本体を切り出せている', () {
-      final body = functionBody(masked(), readSignature);
-      expect(body, isNotEmpty, reason: '_read のシグネチャが変わった。検査も直す');
-      expect(body, contains('_storage.read('));
+    test('探索が空振りしていない', () {
+      expect(File(path).existsSync(), isTrue);
+      final code = masked();
+      expect(
+        code,
+        contains('class SecureStorageGate'),
+        reason: '関所の宣言を拾えていない。検査のアンカーが外れている',
+      );
+      // ⚠ **読み取りだけでなく write / delete も同じ関所を通る (#1117-C)。**
+      // ここが 0 になると、下の順序の検査は「対象なし」で緑になる。
+      for (final call in [
+        '_storage.read(',
+        '_storage.write(',
+        '_storage.delete(',
+        '_storage.readAll(',
+        '_storage.containsKey(',
+      ]) {
+        expect(code, contains(call), reason: '$call を拾えていない');
+      }
+    });
+
+    test('_guard の本体を切り出せている', () {
+      final body = functionBody(masked(), guardSignature);
+      expect(body, isNotEmpty, reason: '_guard のシグネチャが変わった。検査も直す');
+      expect(body, contains('body()'));
     });
 
     test('本体の切り出し: 入れ子のブロックを越えて閉じ括弧まで取る', () {
       const source =
-          'Future<String?> _read(String key) async { if (x) { throw y; } '
-          'return z; } void other() { _storage.read(); }';
-      final body = functionBody(source, readSignature);
+          'Future<T> _guard<T>(Duration d, String o, F body) async '
+          '{ if (x) { throw y; } return z; } void other() { body(); }';
+      final body = functionBody(source, guardSignature);
       expect(body, contains('return z;'));
       expect(body, isNot(contains('other')));
     });
 
-    test('_read は probe を通ってから _storage.read を呼ぶ', () {
-      final body = functionBody(masked(), readSignature);
+    test('_guard は probe を通ってから触る', () {
+      final body = functionBody(masked(), guardSignature);
       final probe = body.indexOf('SecretServiceProbe.isResponsive()');
-      final read = body.indexOf('_storage.read(');
+      final touch = body.indexOf('body()');
 
       expect(
         probe,
         isNot(-1),
         reason:
             'secure storage を触る前の疎通確認が消えている (#1085)。'
-            '読み取りの上限だけでは、プラットフォームスレッドが塞がるので'
+            '上限だけでは、プラットフォームスレッドが塞がるので'
             '画面が真っ黒のまま復帰しない',
       );
-      expect(read, isNot(-1));
+      expect(touch, isNot(-1));
       expect(
         probe,
-        lessThan(read),
-        reason:
-            '疎通確認が読み取りより後にある。触った時点で固まるので、'
-            '後から確かめても手遅れ',
+        lessThan(touch),
+        reason: '疎通確認が呼び出しより後にある。触った時点で固まるので、後から確かめても手遅れ',
       );
     });
 
     test('⚠ 応答しないときは null ではなく TimeoutException を投げる', () {
       // ⚠ **null に潰すと「secret が存在しない」と区別がつかずログアウト扱い。**
       // #1085 のコメントで明示された制約で、probe 経路でも同じ。
-      final body = functionBody(masked(), readSignature);
+      final body = functionBody(masked(), guardSignature);
       final thrown = body.indexOf('throw TimeoutException');
       expect(thrown, isNot(-1), reason: 'probe が false のときに投げていない');
       expect(
         thrown,
-        lessThan(body.indexOf('_storage.read(')),
+        lessThan(body.indexOf('body()')),
         reason: 'probe が false のときに投げていない。null を返すとアカウントが消える',
       );
     });
 
-    test('⚠⚠ _storage.read を _read の外で直に呼んでいない', () {
-      // 新規インストールの初回起動は、prefs に索引が無いので legacy の読み取り
-      // を必ず通る。そこが直に `_storage.read` を叩いていて、キーリングが
-      // 固まっていると初回起動が真っ黒になっていた（v1.64 のリリース前レビュー）。
-      final code = masked();
-      final body = functionBody(code, readSignature);
-      final outside = code.replaceFirst(body, '');
+    test('⚠⚠ 関所の中でも、secure storage の呼び出しは全部 _guard を通る (#1136)', () {
+      // 関所のクラスの中に「_guard を通らない近道」を足せてしまうと、
+      // 入口を 1 つに絞った意味が無くなる。**同じ文の中に `_guard(` があること**
+      // で見る（列挙ではなく構造・`docs/CLAUDE.md`）。
       expect(
-        '_storage.read('.allMatches(outside).length,
-        0,
-        reason: '_read（probe と上限）を通らない読み取りがある (#1085)',
+        unguardedStorageUses(masked()),
+        isEmpty,
+        reason:
+            '関所を通らない secure storage の呼び出しがある (#1085 / #1136)。'
+            'キーリングが応答しない Linux では、そこが'
+            'プラットフォームスレッド（＝描くスレッド）を塞ぐ',
       );
+    });
+
+    group('走査に歯がある', () {
+      test('合成したソースで当たるべき形に当たる', () {
+        expect(
+          unguardedStorageUses("Future<String?> f() => _storage.read(key: k);"),
+          isNotEmpty,
+          reason: '関所を通さない直呼びを見逃している',
+        );
+        // ⚠ **同じ関数の中で _guard を呼んでいても、別の文なら通っていない。**
+        expect(
+          unguardedStorageUses(
+            "void f() { _guard(d, 'x', g); _storage.delete(key: k); }",
+          ),
+          isNotEmpty,
+        );
+      });
+
+      test('当ててはいけない形に当たらない', () {
+        expect(
+          unguardedStorageUses(
+            "Future<String?> f() => _guard(d, 'read', "
+            '() => _storage.read(key: k));',
+          ),
+          isEmpty,
+        );
+      });
+
+      // ⚠⚠ **修正前の実物を食わせる（3 点セットの 3）。**合成ソースは自分が
+      // 想定した書き方しか並べられない。#1062 のガード初版はそれで修正対象の
+      // 実物を拾えていなかった。
+      test('⚠⚠ 修正前の push_key_store は全部の呼び出しが当たる', () {
+        // #1136 を直す直前の develop。
+        const preFix = '95645329';
+        final shown = Process.runSync('git', [
+          '-C',
+          '../..',
+          'show',
+          '$preFix:packages/capsicum/lib/src/service/push_key_store.dart',
+        ]);
+        if (shown.exitCode != 0) {
+          markTestSkipped('git show が使えない: ${shown.stderr}');
+          return;
+        }
+        final code = maskStrings(maskComments(shown.stdout as String));
+        expect(
+          unguardedStorageUses(code),
+          hasLength(greaterThanOrEqualTo(10)),
+          reason: '修正前の PushKeyStore は関所を一度も通っていなかったはず',
+        );
+      });
     });
   });
 
@@ -427,6 +493,29 @@ void main() {
       );
     });
   });
+}
+
+/// 関所 (`_guard`) を通らずに secure storage を叩いている箇所 (#1136)。
+///
+/// ⚠ **「同じ文の中に `_guard(` があるか」で見る。**同じ関数の中で別の文として
+/// `_guard` を呼んでいても、その呼び出しは守られていない。⚠ 呼ぶメソッド名
+/// （read / write / delete / …）は列挙しない —— **次に増えたメソッドが黙って
+/// 通る**ので、`_storage.` そのものを見る。
+///
+/// ⚠ 呼び出し側でコメントと文字列を潰してから渡すこと。
+List<String> unguardedStorageUses(String code) {
+  final offenders = <String>[];
+  for (final m in RegExp(
+    r'_storage\s*\.\s*([A-Za-z_$][A-Za-z0-9_$]*)',
+  ).allMatches(code)) {
+    final before = code.substring(0, m.start);
+    final guard = before.lastIndexOf('_guard(');
+    // 文の切れ目より後ろに `_guard(` が無ければ、その呼び出しは守られていない。
+    if (guard == -1 || guard < before.lastIndexOf(';')) {
+      offenders.add(m.group(0)!);
+    }
+  }
+  return offenders;
 }
 
 /// [signature] の直後の `{` から、対応する `}` までを返す。見つからなければ空。

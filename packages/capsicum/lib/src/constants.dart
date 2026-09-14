@@ -27,6 +27,17 @@ const kDeviceTokenWait = Duration(seconds: 10);
 /// 起動が単に遅くなるだけで、得られるものが無い。
 const kSecureStorageReadTimeout = Duration(seconds: 5);
 
+/// secure storage の**書き込み / 削除**の上限 (#1117-C)。
+///
+/// ⚠⚠ **読み取りだけ守っても足りない。**`flutter_secure_storage_linux` は write /
+/// delete も**メソッドチャネルのハンドラ内で同期に**呼ぶので、キーリングが応答
+/// しなければ読み取りと同じようにプラットフォームスレッドが止まる。案内カードが
+/// 出ている画面から「削除」「再ログイン」を押した人がそこに落ちる。
+///
+/// ⚠ **読み取りより短くしない。**書き込みは item の作成を伴い、正常時でも読み取り
+/// より時間がかかりうる。判断材料が無いので同じ 5 秒に揃える。
+const kSecureStorageWriteTimeout = kSecureStorageReadTimeout;
+
 /// サーバーメタデータの鮮度 TTL。バージョン表示 (#774) とモロヘイヤ機能フラグ
 /// (#775) は起動時に一度きり probe した値を保持するため、この期間を超えたら
 /// 取り直す。ServerMetadataCache の成功キャッシュと AccountManagerNotifier の

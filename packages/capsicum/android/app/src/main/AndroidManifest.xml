@@ -3,8 +3,12 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <!-- #1108: OAuth の認可を待つあいだ、プロセスを凍結させないための
          foreground service。⚠ shortService 型は型固有の権限を要求しないので、
-         権限はこれ 1 つで足りる。⚠⚠ ただし Play Console への用途申告（機能の説明と
-         動作を示す動画）は要る —— 申告は宣言したすべての型が対象。 -->
+         権限はこれ 1 つで足りる。
+         ⚠⚠ Play Console への用途申告は、v1.64 の提出では求められなかった
+         （2026-09-12 実測: 「アプリのコンテンツ」に項目が出ず、production への
+         昇格も止められず公開された）。⚠ この件は「不要」→「必要」→「実測では
+         求められなかった」と 2 回ひっくり返っているので、**次に触るときは実測を
+         優先する**。型固有の権限（FOREGROUND_SERVICE_<型>）を足すと話が変わる。 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <!-- メディアビューアのギャラリー保存 (#646、gal)。API 29+ は MediaStore
          経由で権限不要のため、28 以下に限定して宣言する。 -->

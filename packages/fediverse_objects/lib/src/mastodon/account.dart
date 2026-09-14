@@ -58,6 +58,13 @@ class MastodonAccount {
   final String? url;
   final DateTime? createdAt;
 
+  /// 引っ越し先のアカウント (#1055)。引っ越していなければ null。
+  ///
+  /// ⚠ **入れ子の Account そのもの**が返るので、`acct` / `url` / `id` まで分かる
+  /// （Misskey の `movedTo` は URI 1 本しか来ない）。⚠ **`moved` の中の `moved` は
+  /// 読まない** — 多段の引っ越しを辿る画面は作らないため、1 段で足りる。
+  final MastodonAccount? moved;
+
   const MastodonAccount({
     required this.id,
     required this.username,
@@ -88,6 +95,7 @@ class MastodonAccount {
     this.source,
     this.url,
     this.createdAt,
+    this.moved,
   });
 
   factory MastodonAccount.fromJson(Map<String, dynamic> json) =>

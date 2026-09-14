@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../util/exception_scrub.dart';
+import 'secure_storage_gate.dart';
 
 /// このインストールを一意に指す ID（#932 / #952 / capsicum-relay#15）。
 ///
@@ -72,12 +73,25 @@ class DeviceInstallId {
   @visibleForTesting
   static const legacyPrefsKey = 'capsicum_device_install_id';
 
-  static const _storage = FlutterSecureStorage(
-    iOptions: IOSOptions(
-      accessibility: KeychainAccessibility.first_unlock_this_device,
-    ),
-    mOptions: MacOsOptions(
-      accessibility: KeychainAccessibility.first_unlock_this_device,
+  /// ⚠⚠ **関所越しにしか触らない (#1136)。**以前はここが `FlutterSecureStorage`
+  /// そのもので、`SecretServiceProbe` の参照が**ゼロ**だった。
+  ///
+  /// ⚠⚠ **[get] は起動直後にほぼ同時多発で呼ばれる**（下の [_pending] の doc）。
+  /// キーリングが応答しない Linux では、**読みと書きの両方が
+  /// プラットフォームスレッド（＝描くスレッド）を塞ぐ**ので、
+  /// **起動経路そのものが止まりうる**位置にある。
+  ///
+  /// ⚠ **区画（`first_unlock_this_device`）はこの店のもの。**ThisDeviceOnly を
+  /// 崩すと ID がバックアップに乗り、#952（復元先が同じ ID を送る）が戻る。
+  /// 共有するのは関所だけ。
+  static const _gate = SecureStorageGate(
+    FlutterSecureStorage(
+      iOptions: IOSOptions(
+        accessibility: KeychainAccessibility.first_unlock_this_device,
+      ),
+      mOptions: MacOsOptions(
+        accessibility: KeychainAccessibility.first_unlock_this_device,
+      ),
     ),
   );
 
@@ -94,7 +108,7 @@ class DeviceInstallId {
   static Future<String> _load() async {
     String? existing;
     try {
-      existing = await _storage.read(key: storageKey);
+      existing = await _gate.read(key: storageKey);
     } catch (e) {
       // Android の復元直後（マスター鍵が別）や Keychain 一過性失敗。前者は
       // 作り直すのが正解、後者もこの起動では読めないので同じ扱いにする。
@@ -109,7 +123,7 @@ class DeviceInstallId {
 
     final generated = _generateUuidV4();
     try {
-      await _storage.write(key: storageKey, value: generated);
+      await _gate.write(key: storageKey, value: generated);
     } catch (e) {
       // 永続化に失敗しても push 登録そのものは従来どおり（token をキーにした
       // 動作）で通したいので、その場限りの値を返して続行する。
