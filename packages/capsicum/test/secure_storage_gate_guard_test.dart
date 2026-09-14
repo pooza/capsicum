@@ -119,7 +119,8 @@ void main() {
     // lib から消えたら、束縛を探す検査は「どちらも無い」で緑になる。
     final mentioning = libFiles()
         .where(
-          (f) => normalize(f.readAsStringSync()).contains('FlutterSecureStorage'),
+          (f) =>
+              normalize(f.readAsStringSync()).contains('FlutterSecureStorage'),
         )
         .toList();
     expect(

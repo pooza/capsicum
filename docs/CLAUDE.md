@@ -351,10 +351,13 @@ capsicum には「ソースを文字列で走査して規約違反を落とす�
 ⚠⚠ **push する前にリポジトリルートで 1 回通す。**`develop` への push でも `analyze.yml` は走るので（v1.48 で drift が溜まった反省から `branches: [main, develop]` になった）赤は必ず見えるが、**push してから踏むと同期のたびに「赤ならその場で直す」手戻りが乗る**（2026-09-01 に #1058 の修正で実際に踏んだ。`786d47cf` → `2561b020`）。
 
 ```bash
-# format はバージョン管理対象の .dart だけにスコープする（build/ を巻き込まない）
-git ls-files '*.dart' | xargs -n 40 dart format --output=none --set-exit-if-changed
+# format は .gitignore の外の .dart だけにスコープする（build/ を巻き込まない）
+git ls-files --cached --others --exclude-standard '*.dart' \
+  | xargs -n 40 dart format --output=none --set-exit-if-changed
 dart analyze --fatal-infos
 ```
+
+⚠⚠ **`--others --exclude-standard` を外さない。**`git ls-files '*.dart'` だけだと**追跡対象しか出ない**ので、**まだ `git add` していない新規ファイルが検査をすり抜ける**。⚠ **CI は `dart format .` なので、そこで初めて赤になる**（2026-09-14 に #1136 の新規テストで実際に踏んだ。手元は緑 → push して赤 → `6761fd49` の直後に整形コミットが要った）。`--exclude-standard` が `.gitignore` を尊重するので、`build/` を巻き込む心配はない。⚠ **これは「検査が動いていないのに緑」の一種**で、下の `| tail` と同じ型。
 
 ⚠ **`dart format .`（カレント全体）は使わない。**SwiftPM 併存移行（#836）以降、`build/` 配下に他パッケージの SwiftPM checkout（`.dart` を含む）が展開されるため、`.` で流すとバージョン管理外のファイルまで整形対象に拾って drift 判定が誤爆する（v1.51 で誤爆・`3e2783ad`）。
 
@@ -363,7 +366,8 @@ dart analyze --fatal-infos
 ⚠⚠ **結果を `| tail` 等へ繋がない。**`$?` がパイプ末尾のコマンドのものになり、**整形が失敗していても `0` が返る**（同日に踏んだ）。出力を見たいならファイルへ落として終了コードを先に確かめる:
 
 ```bash
-git ls-files '*.dart' | xargs -n 40 dart format --output=none --set-exit-if-changed > /tmp/fmt.log 2>&1; echo "FORMAT_EXIT=$?"
+git ls-files --cached --others --exclude-standard '*.dart' \
+  | xargs -n 40 dart format --output=none --set-exit-if-changed > /tmp/fmt.log 2>&1; echo "FORMAT_EXIT=$?"
 dart analyze --fatal-infos > /tmp/analyze.log 2>&1; echo "ANALYZE_EXIT=$?"
 ```
 
