@@ -177,23 +177,37 @@ flutter clean && flutter pub get
 
 **アップロード前に必ず整列を検証する**（フラグが silent に効かないことがあるため必須ゲート）:
 
-```bash
-cd packages/capsicum
-unzip -o build/app/outputs/bundle/release/app-release.aab 'base/lib/arm64-v8a/*.so' -d /tmp/so >/dev/null
-# 各 .so の PT_LOAD p_align が 16384 以上であること（特に libirondash_engine_context_native.so）
-for f in /tmp/so/base/lib/arm64-v8a/*.so; do
-  printf '%s ' "$(basename "$f")"
-  python3 - "$f" <<'PY'
-import sys,struct
-d=open(sys.argv[1],'rb').read(); off=struct.unpack_from('<Q',d,0x20)[0]
-es=struct.unpack_from('<H',d,0x36)[0]; n=struct.unpack_from('<H',d,0x38)[0]; m=0
-for i in range(n):
-    o=off+i*es
-    if struct.unpack_from('<I',d,o)[0]==1: m=max(m,struct.unpack_from('<Q',d,o+0x30)[0])
-print('align',m,'OK' if m>=16384 else 'BAD')
-PY
-done
+```sh
+# aab から arm64 の .so を取り出す
+unzip -o -q packages/capsicum/build/app/outputs/bundle/release/app-release.aab \
+  'base/lib/arm64-v8a/*.so' -d /tmp/aabcheck
+
+# 全 .so の PT_LOAD の Align を一度に見る（NDK 同梱の llvm-readelf）
+~/Library/Android/sdk/ndk/*/toolchains/llvm/prebuilt/*/bin/llvm-readelf \
+  -l /tmp/aabcheck/base/lib/arm64-v8a/*.so | grep -E 'File:|^  LOAD'
 ```
 
-`libirondash_engine_context_native.so` が `BAD align=4096` なら、上の export / daemon 停止が効いていない。直してから upload すること。
+**`0x4000`（16KB）以上であること。**`0x1000`（4KB）が 1 つでもあれば、上の export / daemon 停止が効いていない。⚠ **`libirondash_engine_context_native.so` を特に見る**（precompiled に戻ると 4KB になる）。`libapp.so` / `libflutter.so` の `0x10000`（64KB）は 16KB の要件を満たすので問題ない。
+
+⚠⚠ **以前ここには `for` ループ + `python3` ヒアドキュメントの ELF パーサが書いてあったが、どちらも[コマンドの書き方](../../../docs/dev-environment.md#コマンドの書き方)に反する**（インタプリタは allowlist に載せない方針・シェルのループは `deny-shell-loops.sh` が機械的に拒否する）。**手順書のとおりに実行できない状態だった**ので、NDK 同梱の `llvm-readelf` 1 回に置き換えた（2026-09-17・v1.65 のリリースで実際に踏んだ）。
+
+#### versionCode / versionName / secrets の焼き込みを実バイナリで確認する
+
+```sh
+# versionCode は bundletool で読む（aapt2 は aab を直接読めない）
+java -jar ~/.local/bin/bundletool-all.jar dump manifest \
+  --bundle=packages/capsicum/build/app/outputs/bundle/release/app-release.aab \
+  --xpath=/manifest/@android:versionCode
+
+# secrets が焼き込まれているか（件数だけ出る＝値は画面に出ない）
+source ~/.config/capsicum/secrets.env
+grep -c -a -F "$RELAY_SECRET" /tmp/aabcheck/base/lib/arm64-v8a/libapp.so
+grep -c -a -F "$SENTRY_DSN" /tmp/aabcheck/base/lib/arm64-v8a/libapp.so
+```
+
+⚠ **`grep` には `-a` が要る**（バイナリ相手だと付けないと何も出ず、「焼き込まれていない」と誤読する）。⚠ **`-c` で件数だけ出す** —— 値を画面に出さないため。
+
+⚠ `bundletool` は GitHub Releases から `~/.local/bin/bundletool-all.jar` へ直接配置する（`sentry-cli` と同じ運用）。
+
+
 
