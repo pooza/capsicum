@@ -2,16 +2,21 @@ import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:test/test.dart';
 
-/// #1109: `force_login=true` を「このサーバーに既にアカウントを持っているとき」
-/// だけ付けられるようにする。
+/// #1109: アダプターが `forceLogin` を出し分けられること。
 ///
-/// ⚠ **なぜ付けたままにしないか。**認可待ちの keep-alive は約 3 分で打ち切られる
-/// （#1108）のに、`force_login=true` は ID / パスワード入力・パスワードマネージャ
-/// や 2FA との往復を毎回強制し、その 3 分を確実に削る。
+/// ⚠⚠ **呼び出し側（`login_screen`）は v1.65 から常に `true` を渡す**（#1143）。
+/// #1109 は「このサーバーに既にアカウントを持っているときだけ付ける」形にしたが、
+/// リリース前レビューで前提が崩れた:
 ///
-/// ⚠ **なぜ全部外さないか。**同じサーバーの 2 人目以降は、ブラウザのセッションで
-/// 1 人目が黙って選ばれてしまう（意図した相手が入らない）。判断は呼び出し側
-/// （`login_screen`）が持ち、既定は従来どおり true。
+/// - **省いても速くならない** —— フォークで `force_login` を見ているのは
+///   `can_authorize_response?` の 1 か所だけで、**同意画面を必ず出す**効果しか
+///   無い。認証を担う `resource_owner_authenticator` は参照していない
+/// - **「アカウントの有無」では危険な経路を覆えない** —— capsicum は削除時に
+///   トークンを revoke しないので、@a を消して @b を足すと判定は false なのに
+///   サーバー側の @a のトークンが生きており、**@a が黙って戻ってくる**
+///
+/// ⚠ **それでもアダプター側の出し分けは残す。**判断は呼び出し側が持つ、という
+/// 構造は変えていない（既定は true）。ここはその契約の固定。
 void main() {
   ApplicationInfo appInfo() => ApplicationInfo(
     name: 'capsicum',

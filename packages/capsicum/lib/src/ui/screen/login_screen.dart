@@ -644,36 +644,30 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         website: AppConstants.websiteUrl,
       );
 
-      // ⚠ **`force_login` は「このサーバーに既にアカウントを持っているとき」だけ
-      // 付ける (#1109)。**認可待ちの keep-alive は約 3 分で打ち切られる（#1108）
-      // のに、`force_login=true` は ID / パスワード入力・パスワードマネージャや
-      // 2FA との往復を**毎回**強制するので、その 3 分を確実に削る。
+      // ⚠⚠ **`force_login` は常に付ける。**#1109 で「このサーバーに既にアカウントを
+      // 持っているときだけ」に絞ったが、**v1.65 のリリース前レビューで前提と実装の
+      // 両方が崩れた**ので無条件へ戻した（#1143）。
       //
-      // ⚠ **外せないのは同じサーバーの 2 人目以降。**ブラウザのセッションで 1 人目
-      // が黙って選ばれると、「別のアカウントを足したつもりが同じアカウント」に
-      // なる（#1110 で一覧の重複は消えたが、**意図した相手が入らない**のは残る）。
-      // 「接続し直す」も同じ理由でこちら側＝強制のままにする。
+      // **1. 省いても速くならない。**#1109 の根拠は「`force_login=true` が ID /
+      // パスワード入力や 2FA の往復を毎回強制し、認可待ちの 3 分（#1108）を削る」
+      // だったが、フォークで `force_login` を参照しているのは
+      // `Oauth::AuthorizationsController#can_authorize_response?` の 1 か所だけで、
+      // **Doorkeeper の自動承認を止める＝同意画面を必ず出す**効果しか無い。認証を
+      // 担う `resource_owner_authenticator` は `current_user || redirect_to(...)` で
+      // **`force_login` を見ていない**。⚠ 実機で観測された「毎回パスワード入力」が
+      // 何だったかは**再現しないと分からない**ので、原因の特定は別途。
       //
-      // ⚠ **初回ログインだけ外す形は採らない。**新規ユーザーはそのサーバーの
-      // ブラウザセッションを持っていないことが多く、`force_login` の有無で挙動が
-      // 変わらない＝効かないところで外すことになる（#1109 本文の検討 3）。
-      // ⚠⚠ **`offlineAccounts` も数える。**`accounts`（接続済み）と
-      // `offlineAccounts`（到達不能で保持中・#792）は**互いに素**で、
-      // `_removeOffline` が昇格時に片方から落とす。そして「接続し直す」の導線
-      // （`reconnectRouteFor`）は **offline 側からしか呼ばれない**ので、
-      // `accounts` だけ見ると**この画面がいちばん守りたい経路で判定が必ず
-      // false になる**（＝上のコメントが「強制のままにする」と宣言している相手）。
+      // **2. 「アカウントの有無」では危険な経路を覆えない。**capsicum は
+      // **アカウント削除時にトークンを revoke しない**（リポジトリ全体で
+      // `/oauth/revoke` の呼び出しが無い）一方、Mastodon 側は `reuse_access_token`
+      // 有効・期限無しなので、**@a を消して後日 @b を足すと** 手元のどのリストにも
+      // entry が無く（＝判定は false）、サーバー側では @a のトークンが生きていて
+      // `matching_token?` が成立する → **同意画面を出さずに @a が戻ってくる**。
+      // 判定を `offlineAccounts` まで広げてもこの経路は残る。
       //
-      // ⚠ **ホストは小文字で比べる。**`a.key.host` は `AccountKey.fromStorageKey`
-      // （`Uri.parse`）経由で正規化済みだが、`widget.host` は入力の `trim()` だけ
-      // （`server_selection_screen.dart`）。大文字混じりで打つと同じく外れる。
-      final manager = ref.read(accountManagerProvider);
-      final targetHost = widget.host.toLowerCase();
-      _forceLogin =
-          manager.accounts.any((a) => a.key.host.toLowerCase() == targetHost) ||
-          manager.offlineAccounts.any(
-            (o) => o.key.host.toLowerCase() == targetHost,
-          );
+      // ⚠ **コストは同意 1 タップ**で、ログインは稀な操作。誤って別のアカウントへ
+      // 繋がる損失と釣り合わない。
+      _forceLogin = true;
       _logLoginStep('startLogin.begin', data: {'forceLogin': _forceLogin});
       final startResult = await loginSupport.startLogin(
         application,
