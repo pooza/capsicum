@@ -511,21 +511,44 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   /// ⚠ [_myUser] は [getMyself] が埋める。まだ null のあいだ（起動直後の
   /// キャッシュ復元など）は従来どおり判定する —— 隠す側に倒しておき、直後の
   /// REST 結果で正される。
+  /// ⚠⚠ **ブースト / 引用の中身も見る (#1117 レビュー)。**以前は `post` 本体の
+  /// `content` + `spoilerText` しか見ておらず、**純 Renote は `content` が null
+  /// なので即 return していた** —— ミュート語を含む投稿が Renote されると全文が
+  /// そのまま出る、という抜けがあった（拡散経路が丸ごと素通り）。
+  ///
+  /// 本家も同じ形で、`use-note.ts` が **note 本体 → `reply` → `renote`** の順に
+  /// `checkWordMute` を 3 回呼ぶ。ここでは capsicum のモデルに合わせて
+  /// `reblog`（renote）と `quote` を対象に足す。
+  ///
+  /// ⚠ **自分除外はノートごとに掛ける**（本家と同じ）。自分の投稿を他人が
+  /// Renote した場合、外側は他人でも中身は自分なので、中身は判定から外れる。
   Post _applyWordFilter(Post post) {
     if (_mutedWords.isEmpty && _hardMutedWords.isEmpty) return post;
     final myId = _myUser?.id;
     if (myId != null && post.author.id == myId) return post;
-    final text = '${post.content ?? ''} ${post.spoilerText ?? ''}'
-        .toLowerCase();
-    if (text.trim().isEmpty) return post;
 
-    if (_matchesMuteWords(text, _hardMutedWords)) {
+    final targets = <Post>[post, ?post.reblog, ?post.quote];
+    var matchedHard = false;
+    var matchedSoft = false;
+    for (final target in targets) {
+      if (myId != null && target.author.id == myId) continue;
+      final text = '${target.content ?? ''} ${target.spoilerText ?? ''}'
+          .toLowerCase();
+      if (text.trim().isEmpty) continue;
+      if (_matchesMuteWords(text, _hardMutedWords)) {
+        matchedHard = true;
+        break;
+      }
+      if (_matchesMuteWords(text, _mutedWords)) matchedSoft = true;
+    }
+
+    if (matchedHard) {
       return post.copyWith(
         filterAction: FilterAction.hide,
         filterTitle: 'ワードミュート',
       );
     }
-    if (_matchesMuteWords(text, _mutedWords)) {
+    if (matchedSoft) {
       return post.copyWith(
         filterAction: FilterAction.warn,
         filterTitle: 'ワードミュート',

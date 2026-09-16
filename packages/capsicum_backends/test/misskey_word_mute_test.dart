@@ -47,6 +47,92 @@ void main() {
   Future<List<Post>> timelineOf(MisskeyAdapter adapter) async =>
       (await adapter.getTimeline(TimelineType.home)).posts;
 
+  // ⚠⚠ v1.65 のリリース前レビューで見つけた抜け。純 Renote は外側の `text` が
+  // null なので、以前の実装は `text.trim().isEmpty` で**即 return していた**。
+  // ミュート語を含む投稿が Renote されると全文が素通りする＝拡散経路が丸ごと
+  // 抜けていた。本家は `use-note.ts` が note → reply → renote の 3 回判定する。
+  test('⚠⚠ ブーストの中身にミュート語があれば当たる（外側は本文を持たない）', () async {
+    final adapter = await adapterWith(
+      mutedWords: [
+        ['ダイの大冒険'],
+      ],
+      notes: [
+        note({
+          'id': 'boost',
+          'text': null,
+          'renote': note({'id': 'inner', 'text': 'ダイの大冒険は名作'}),
+        }),
+      ],
+    );
+
+    final post = (await timelineOf(adapter)).single;
+
+    expect(post.filterAction, FilterAction.warn);
+    expect(post.filterTitle, 'ワードミュート');
+  });
+
+  test('⚠ 引用の中身にミュート語があっても当たる', () async {
+    final adapter = await adapterWith(
+      mutedWords: [
+        ['ダイの大冒険'],
+      ],
+      notes: [
+        note({
+          'id': 'quote',
+          'text': 'これは見て',
+          'renote': note({'id': 'inner', 'text': 'ダイの大冒険は名作'}),
+        }),
+      ],
+    );
+
+    expect((await timelineOf(adapter)).single.filterAction, FilterAction.warn);
+  });
+
+  test('⚠ 中身にも語が無ければ当たらない（何でも当てていないことの固定）', () async {
+    final adapter = await adapterWith(
+      mutedWords: [
+        ['ダイの大冒険'],
+      ],
+      notes: [
+        note({
+          'id': 'boost',
+          'text': null,
+          'renote': note({'id': 'inner', 'text': '今日はいい天気'}),
+        }),
+      ],
+    );
+
+    expect(
+      (await timelineOf(adapter)).single.filterAction,
+      isNot(FilterAction.warn),
+    );
+  });
+
+  test('⚠ 自分の投稿が Renote されても、中身は判定から外れる（本家と同じくノートごとに除外）', () async {
+    final adapter = await adapterWith(
+      mutedWords: [
+        ['ダイの大冒険'],
+      ],
+      notes: [
+        note({
+          'id': 'boost',
+          'text': null,
+          'renote': note({
+            'id': 'inner',
+            'userId': 'me',
+            'user': {'id': 'me', 'username': 'pooza'},
+            'text': 'ダイの大冒険は名作',
+          }),
+        }),
+      ],
+    );
+
+    expect(
+      (await timelineOf(adapter)).single.filterAction,
+      isNot(FilterAction.warn),
+    );
+  });
+
   test('他人の投稿にミュート語があれば warn が載る', () async {
     final adapter = await adapterWith(
       mutedWords: [
