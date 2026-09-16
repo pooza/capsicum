@@ -92,9 +92,13 @@ extension CapsicumMisskeyUserExtension on MisskeyUser {
       canChat: canChat,
       locked: isLocked,
       discoverable: isExplorable,
-      // ⚠ Misskey の movedTo は AP URI 1 本なので handle は作れない (#1055)。
+      // ⚠⚠ **Misskey の `movedTo` は URI ではなくユーザー ID**（#1117 レビューで
+      // 訂正）。`UserEntityService` が `resolvePerson(...).then(user => user.id)`
+      // ＝ローカル DB の aid を返す。json-schema の `format: 'uri'` は実装と
+      // 合っていない。⚠ **`url` に入れると生の ID が画面に出てリンクも開けない**
+      // ので、正しい入れ物である `userId` へ入れる（`url` / `handle` は null）。
       movedTo: (movedTo != null && movedTo!.isNotEmpty)
-          ? MovedTo(url: movedTo!)
+          ? MovedTo(userId: movedTo!)
           : null,
       suspended: isSuspended ?? false,
       silenced: isSilenced ?? false,

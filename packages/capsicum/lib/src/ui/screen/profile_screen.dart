@@ -884,14 +884,26 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     final moved = user.movedTo;
     return [
       if (moved != null)
-        _stateBadge(
-          theme,
-          icon: Icons.move_down,
-          // 行き先が分かる粒度はサーバーによって違う（Mastodon は handle、
-          // Misskey は URI のみ）。分かるほうを出す。
-          label: 'このアカウントは引っ越しました → ${moved.handle ?? moved.url}',
-          onTap: () => openFediverseLink(context, ref, moved.url),
-        ),
+        () {
+          // 行き先が分かる粒度はサーバーによって違う。Mastodon は入れ子の
+          // Account が来るので handle / url が分かるが、**Misskey は
+          // ローカル DB のユーザー ID しか来ない**（#1117 レビューで判明）。
+          //
+          // ⚠⚠ **開けないものをタップ可能に見せない。**以前は ID を `url` に
+          // 入れていたため、Misskey では生の ID がラベルに出たうえ、タップしても
+          // 「リンクを開けませんでした」になっていた。
+          final destination = moved.handle ?? moved.url;
+          return _stateBadge(
+            theme,
+            icon: Icons.move_down,
+            label: destination == null
+                ? 'このアカウントは引っ越しました'
+                : 'このアカウントは引っ越しました → $destination',
+            onTap: moved.url == null
+                ? null
+                : () => openFediverseLink(context, ref, moved.url!),
+          );
+        }(),
       if (user.suspended)
         _stateBadge(
           theme,

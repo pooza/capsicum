@@ -61,27 +61,71 @@ void main() {
       expect(user.movedTo, isNull);
     });
 
-    test('⚠ Mastodon では凍結 / サイレンス / 削除済みは常に false', () {
-      // REST の Account に相当フィールドが無い。Misskey 側の値を Mastodon の
-      // プロフィールへ混ぜないことの確認。
+    test('キーが来ないときは凍結 / サイレンス / 削除済みとも false', () {
+      // serializer が `if: :unavailable?` / `if: :silenced?` 付きなので、
+      // 該当しないアカウントでは**キーごと来ない**。null を false へ畳む。
       final user = mastodon({}).toCapsicum('example.com');
       expect(user.suspended, isFalse);
       expect(user.silenced, isFalse);
       expect(user.deleted, isFalse);
     });
+
+    test('⚠⚠ 凍結を拾う（「Mastodon には相当フィールドが無い」は誤りだった）', () {
+      // `account_serializer.rb`: `attribute :suspended, if: :unavailable?`。
+      // 通常の /api/v1/accounts/:id で返る。v1.65 のリリース前レビューまで
+      // 読んでおらず、#1055 がプリセット 4 台中 3 台で効いていなかった。
+      final user = mastodon({'suspended': true}).toCapsicum('example.com');
+      expect(user.suspended, isTrue);
+      expect(user.silenced, isFalse);
+    });
+
+    test('⚠⚠ サイレンスの JSON キーは silenced ではなく limited', () {
+      // serializer が `attribute :silenced, key: :limited` と改名している。
+      // ⚠ これが歯 —— `silenced` を読む実装に戻すとこのテストが落ちる。
+      final user = mastodon({'limited': true}).toCapsicum('example.com');
+      expect(user.silenced, isTrue);
+      expect(user.suspended, isFalse);
+    });
+
+    test('⚠ silenced というキーで来ても読まない（改名前の綴りに戻さないための固定）', () {
+      final user = mastodon({'silenced': true}).toCapsicum('example.com');
+      expect(user.silenced, isFalse);
+    });
+
+    test('⚠ 削除済みは Mastodon では suspended に畳まれる', () {
+      // `unavailable? = deleted? || suspended?` なので、削除済みでも
+      // 立つのは suspended 側。deleted を別に期待しない。
+      final user = mastodon({'suspended': true}).toCapsicum('example.com');
+      expect(user.deleted, isFalse);
+    });
   });
 
   group('Misskey の movedTo と状態フラグ', () {
-    test('movedTo は URL だけ入り、handle は null のまま', () {
+    test('⚠⚠ movedTo は URI ではなくユーザー ID として入る', () {
+      // Misskey が返すのは AP URI ではなく**ローカル DB の aid**。
+      // `UserEntityService` が `resolvePerson(movedToUri).then(u => u.id)` を
+      // 返しており、json-schema の `format: 'uri'` は実装と合っていない。
+      // ⚠ 以前はこれを `url` に入れていたため、画面に生の ID が出たうえ
+      // タップしても開けなかった（v1.65 のリリース前レビューで訂正）。
+      final user = misskey({'movedTo': '9abc'}).toCapsicum('example.com');
+
+      expect(user.movedTo, isNotNull);
+      expect(user.movedTo!.userId, '9abc');
+      // ⚠ **url は null。**開けないものをリンクに見せないため、画面は
+      // `url == null` のときタップ不可のバッジにする。
+      expect(user.movedTo!.url, isNull);
+      expect(user.movedTo!.handle, isNull);
+    });
+
+    test('⚠ URL 形の値が来ても url には入れない（サーバー実装が変わっても誤リンクを作らない）', () {
+      // 将来 Misskey が URI を返すようになっても、こちら側が勝手に
+      // 「URL だから開ける」と判断しないことの固定。解決は別途 users/show で行う。
       final user = misskey({
         'movedTo': 'https://misskey.delmulin.com/users/9abc',
       }).toCapsicum('example.com');
 
-      expect(user.movedTo, isNotNull);
-      expect(user.movedTo!.url, 'https://misskey.delmulin.com/users/9abc');
-      // ⚠ AP URI からは @user@host を作れない。画面は URL を出す。
-      expect(user.movedTo!.handle, isNull);
-      expect(user.movedTo!.userId, isNull);
+      expect(user.movedTo!.url, isNull);
+      expect(user.movedTo!.userId, 'https://misskey.delmulin.com/users/9abc');
     });
 
     test('⚠ 空文字の movedTo は引っ越し扱いにしない', () {

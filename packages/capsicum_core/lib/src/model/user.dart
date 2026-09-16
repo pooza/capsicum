@@ -51,19 +51,29 @@ class AvatarDecoration {
 /// 「[handle] があれば handle、無ければ [url]」で出し、遷移は常に [url] を
 /// `openFediverseLink` へ渡す形にする（どちらの粒度でも同じ導線になる）。
 class MovedTo {
-  /// 引っ越し先の URL。Mastodon は `moved.url`、Misskey は `movedTo`（AP URI）。
-  final String url;
+  /// 引っ越し先の URL。Mastodon は `moved.url`。
+  ///
+  /// ⚠⚠ **Misskey では null。**あちらの `movedTo` は URI ではなく[userId]
+  /// （下記）。null のときは**リンクにしない** —— 開けない文字列をタップ可能に
+  /// 見せない。
+  final String? url;
 
   /// `@user@host`。Mastodon のみ分かる。Misskey は null。
   final String? handle;
 
-  /// 引っ越し先のアカウント ID（このサーバーから見た ID）。Mastodon のみ。
+  /// 引っ越し先のアカウント ID（このサーバーから見た ID）。
   ///
-  /// ⚠ **今は使っていない。**遷移は [url] 経由に統一してあるが、将来
-  /// resolve を省いて直接プロフィールを開くときに使える。
+  /// ⚠⚠ **Misskey の `movedTo` はこれ。**json-schema は `format: 'uri'` と
+  /// 書いているが実装と合っておらず、`UserEntityService` は
+  /// `resolvePerson(movedToUri).then(user => user.id)` ＝**ローカル DB の aid**
+  /// を返す（本家フロントも `MkAccountMoved.vue` で `users/show({ userId })`
+  /// として扱っている）。⚠ **これを [url] に入れると生の ID が画面に出て、
+  /// タップしても開けない。**
+  ///
+  /// ⚠ 解決して行き先を出す改修は別途（`users/show` の往復が要る）。
   final String? userId;
 
-  const MovedTo({required this.url, this.handle, this.userId});
+  const MovedTo({this.url, this.handle, this.userId});
 }
 
 class User {
@@ -129,16 +139,25 @@ class User {
   /// （棚卸しの分類 C）。
   final MovedTo? movedTo;
 
-  /// 凍結されている (#1055)。Misskey の `isSuspended`。
+  /// 凍結されている (#1055)。Mastodon の `suspended` / Misskey の `isSuspended`。
   ///
-  /// ⚠ **Mastodon では常に false。**REST の Account に相当フィールドが無い
-  /// （`suspended` はモデレーション文脈でしか返らない）。
+  /// ⚠⚠ **「Mastodon には相当フィールドが無い」は誤りだった**（v1.65 のリリース
+  /// 前レビューで訂正）。`account_serializer.rb` の
+  /// `attribute :suspended, if: :unavailable?` が通常の `/api/v1/accounts/:id`
+  /// で返る。⚠ **Mastodon 側では削除済みもここに畳まれる**（`unavailable? =
+  /// deleted? || suspended?`）。
   final bool suspended;
 
-  /// サイレンスされている (#1055)。Misskey の `isSilenced`。Mastodon では false。
+  /// サイレンス（制限）されている (#1055)。Mastodon の `limited` /
+  /// Misskey の `isSilenced`。
+  ///
+  /// ⚠ **Mastodon の JSON キーは `silenced` ではなく `limited`**（serializer が
+  /// 改名している）。
   final bool silenced;
 
-  /// 削除済み (#1055)。Misskey の `isDeleted`。Mastodon では false。
+  /// 削除済み (#1055)。Misskey の `isDeleted`。
+  ///
+  /// ⚠ **Mastodon では常に false** —— あちらは [suspended] に畳まれるため。
   final bool deleted;
 
   const User({
