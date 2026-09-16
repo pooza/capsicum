@@ -195,7 +195,9 @@ probing の結果、基本的な機能が欠けているサーバーに対して
 
 ### develop が次リリース対象でないときの出し方
 
-**まず `git log main..develop --oneline` で develop の中身を見る。**次マイルストーンの work が乗っていたら、上のフローは使えない。
+**まず `git fetch origin` してから `git log origin/main..develop --oneline` で develop の中身を見る。**次マイルストーンの work が乗っていたら、上のフローは使えない。
+
+⚠⚠ **ローカルの `main` を見ない。**`git log main..develop` と書くと**ローカルの `main` ブランチ**を見るが、日常の作業では更新されないので**平気で何リリースも遅れている**。2026-09-17 にこのゲートを初めて実行したとき、ローカル `main` が v1.63 の頃（`d99b3b53`）で止まっており、**121 件**——すでに出荷済みの v1.64 の work を含む——が「develop に乗っている」ように見えた。実際は `origin/main..develop` で **44 件**。⚠ **リモートが正。**このゲートは「フロー記述を鵜呑みにせず差分を見る」ためのものなので、**その差分自体が stale だと目的ごと失われる。**
 
 | 状況 | 判定 |
 | --- | --- |
@@ -205,8 +207,8 @@ probing の結果、基本的な機能が欠けているサーバーに対して
 
 手順:
 
-1. **`main` から** `fix/NNNN` を切って修正する（⚠ **develop から切らない**）
-2. **`main` から** `release/x.y.z` を切り、必要なコミットだけを載せる
+1. **`origin/main` から** `fix/NNNN` を切って修正する（⚠ **develop から切らない**・⚠ **ローカル `main` からも切らない**。stale なら 1 つ前のリリースを土台にしてしまう）
+2. **`origin/main` から** `release/x.y.z` を切り、必要なコミットだけを載せる
 3. release ブランチでビルド・検証する（⚠ **検証する artifact も release ブランチから作る**）
 4. `release/x.y.z` → `main` の PR → マージ → タグ → fastlane
 5. **`main` を `develop` へ back-merge する**（develop 側が修正を取りこぼさないように）

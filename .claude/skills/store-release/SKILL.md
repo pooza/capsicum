@@ -32,8 +32,11 @@ description: ストアリリースの毎回の手順。relay の残件ゲート 
 ⚠⚠ **他のどの工程よりも先に、`develop` の中身を見る。**
 
 ```sh
-git log main..develop --oneline
+git fetch origin
+git log origin/main..develop --oneline
 ```
+
+⚠⚠ **`main` ではなく `origin/main` と書く。**ローカルの `main` は日常の作業では更新されないので**平気で何リリースも遅れている**（2026-09-17 にこのゲートを初めて実行したとき、ローカル `main` が v1.63 の頃で止まっており、出荷済みの v1.64 の work を含む 121 件が「develop に乗っている」ように見えた。実際は 44 件）。**このゲートは差分を実際に見るためのものなので、差分自体が stale だと意味が無い。**
 
 **次マイルストーンの work が乗っていたら、`develop` → `main` は使えない。**その場合は `main` から `release/x.y.z` を切り、必要なコミットだけを載せて出す（**検証する artifact も release ブランチから作る**）。判定表と手順の正本は [docs/CLAUDE.md](../../../docs/CLAUDE.md#develop-が次リリース対象でないときの出し方)。
 
