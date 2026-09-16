@@ -70,5 +70,28 @@ curl -s https://relay.capsicum.shrieker.net/health   # revision が origin/main 
 
 **Issue を消化しきったらビルドに入る前に回す。**⚠ ここを飛ばしてビルドに入らない。
 
+#### ⚠⚠ 5 観点を走らせる前に、リリース PR を ready にする（2026-09-17 追加）
+
+**`/release-review` を起動するのと同じタイミングで、develop → main のドラフト PR を ready にする。**
+
+```sh
+gh pr ready <PR番号> --repo pooza/capsicum
+gh pr comment <PR番号> --repo pooza/capsicum --body "@codex review"
+```
+
+⚠ **ready 化だけでは走らないことがある**ので、`@codex review` を明示的に打つ（2026-09-17 に実際に発火しなかった）。
+
+**なぜここか。**[release-review スキル](../release-review/SKILL.md)は「Codex は PR ready 時に走るので**併走させ**、重複しない指摘だけを拾う」と書いているが、**ready にする step がどこにも無かった**ため、実際には §4.4 まで ready されず**併走が成立していなかった**。v1.65 では Codex の指摘（P1 1 件 + P2 1 件）と CI のテスト失敗が、**Apple 2 つを審査提出し Android を製品版へ昇格したあとに**届いた。⚠ **その時点では取り込めない**（バイナリは既に Apple の審査に入っている）。
+
+ここで ready にすると:
+
+- Codex の指摘と 5 観点の指摘を**同じ修正コミット群で消化できる**
+- **レビュー済みのコードでビルドできる**（今の順序だと、ビルドしたあとに指摘が来る）
+- PR 粒度の CI（`pubspec.lock` churn ガード等）も早く回る
+
+⚠ **ready 化すると以降の push ごとに PR の CI が走る**（draft ガード #987 の意図どおり）。これは織り込みずみのコスト。
+
+⚠ **マージ直前の「締めの 1 回」は別途必要**（`docs/CLAUDE.md`「Codex レビューの回し方」）。ここで打つのは初回。
+
 ⚠ **「push 前のローカル整形・解析」はこの節から出した**（[CLAUDE.md](../../../docs/CLAUDE.md#push-前のローカル整形解析)）。リリース時だけの話ではなく毎コミットの話だったため。
 
