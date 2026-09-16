@@ -23,17 +23,15 @@
 ///
 /// ⚠⚠ **Mastodon の本文はこの数え方と一致しない。**`StatusLengthValidator` が
 /// `each_grapheme_cluster.size` を使っており、さらに **URL を一律 23 文字**として
-/// 数える。
+/// 数え、**CW も同じ枠**に入れる。
 ///
-/// ⚠ **にもかかわらず、本文カウンタは backend を分岐せずこれを当てている**
-/// （`compose_screen` の `'$len / $maxLength'`）。以前この doc は「Mastodon の
-/// 本文には当てない」と書いていたが、**実装がそうなっていない**
-/// （#1035-D3）。v1.60 までは `value.text.length` だったので、当てていないの
-/// ではなく**別のズレ方をしていた**だけ。
+/// ⚠⚠ **本文カウンタはここを使わない (#1034)。**`post_text_length.dart` の
+/// `postTextLength` が backend ごとの規則で数える。ここは **ALT のように両上流
+/// ともコードポイントで数える欄**の担当。
 ///
-/// 実害は「Mastodon で URL を含む長文のカウンタが実際より多く出る」形で、
-/// **正しい数え方に寄せるのは [#1034](https://github.com/pooza/capsicum/issues/1034)**。
-/// ここに書いてあるのは適用範囲の事実であって、当てるなという規約ではない。
+/// 経緯: v1.60 までの本文カウンタは `value.text.length`（UTF-16）で、#1027-F2 が
+/// ここへ寄せ、#1035-D3 が「Mastodon には当てないと書いてあるのに当てている」
+/// ことを記録し、#1034 で backend ごとに分けた。
 int serverTextLength(String text) => text.runes.length;
 
 // ⚠ **カウンタ widget はここに置かない (#1035-E4)。**`InputCounterWidgetBuilder`

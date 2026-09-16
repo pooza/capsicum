@@ -29,6 +29,7 @@ import '../../url_helper.dart';
 import '../../util/exception_scrub.dart';
 import '../../util/misskey_api_error.dart';
 import '../../util/now_playing_formatter.dart';
+import '../../util/post_text_length.dart';
 import '../../util/reentrancy_guard.dart';
 import '../../util/reply_target_gone.dart';
 import '../../util/text_length.dart';
@@ -451,15 +452,27 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// 宛先が無いので**誰にも届かない** — だからといって広い範囲へ倒さず、
   /// ユーザーに選び直してもらう。
   String? get _unsendableScopeReason {
-    if (_scope != PostScope.direct) return null;
     final adapter = ref.read(currentAdapterProvider);
-    if (selectableScopes(adapter).contains(PostScope.direct)) return null;
-    // ⚠ redraft で引き継いだ返信も「宛先がある」側 (#1113)。
-    if (_isReply) return null;
-    final label = postScopeLabel(PostScope.direct, adapter);
-    return '「$label」は宛先を指定する必要がありますが、capsicum には指定する画面が'
-        'ありません。このままでは誰にも届きません。公開範囲を選び直すか、'
-        '「メッセージ」をお使いください。';
+    return unsendableDirectScopeReason(
+      scope: _scope,
+      selectable: selectableScopes(adapter),
+      directLabel: postScopeLabel(PostScope.direct, adapter),
+      // ⚠ redraft で引き継いだ返信も「宛先がある」側 (#1113)。
+      isReply: _isReply,
+      replyTargetIsSelf: _replyTargetIsSelf,
+    );
+  }
+
+  /// 返信先が**自分の投稿だと分かっている**か (#1117-B)。
+  ///
+  /// ⚠ **分からないときは false**（＝送信を止めない）。返信先の取得は redraft で
+  /// 失敗しうるし（`_redraftReplyToUnavailable`）、そこで止めると「他人への返信を
+  /// 送れない」を大量に作る。⚠ **止めるのは確実に困る場合だけ。**
+  bool get _replyTargetIsSelf {
+    final authorId = _replyToPost?.author.id;
+    if (authorId == null) return false;
+    final me = ref.read(currentAccountProvider)?.user.id;
+    return me != null && authorId == me;
   }
 
   bool _cwEnabled = false;
@@ -3921,9 +3934,30 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     ];
   }
 
+  /// 本文カウンタに出す数 (#1034)。
+  ///
+  /// ⚠⚠ **CW も渡す。**Mastodon の `StatusLengthValidator` は
+  /// `spoiler_text + countable_text(text)` を**ひとつの枠**で数えるので、
+  /// 渡さないと CW 付きの長文が**カウンタが緑のままサーバーに弾かれる**。
+  /// Misskey は CW が別枠なので [postTextLength] 側が捨てる。
+  ///
+  /// ⚠ 渡す CW は [_submit] が送るのと同じ形（`_cwEnabled` のときだけ・trim 済み）
+  /// に揃える。表示だけ増えて実際には送らない、の逆を作らない。判定は
+  /// [composePostLength]（この画面は widget test を持てないので、数える側を
+  /// 純関数へ出して単体で押さえる）。
+  int _countedLength(PostLengthRule rule) => composePostLength(
+    rule,
+    text: _controller.text,
+    cwEnabled: _cwEnabled,
+    cw: _cwController.text,
+  );
+
   @override
   Widget build(BuildContext context) {
     final maxLength = ref.watch(maxPostLengthProvider);
+    // 数え方はサーバー（adapter）が持つ (#1034)。上限だけ揃えて数え方を
+    // 揃えないのが #1035-A3 の形。
+    final lengthRule = ref.watch(postLengthRuleProvider);
     // 本文入力に使うフォント (#892)。空 = 既定。誤入力・未インストールは OS の
     // フォント解決が黙って既定へフォールバックする。
     final composeFontFamily = ref.watch(composeFontFamilyProvider);
@@ -3944,12 +3978,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           },
         ),
         title: Text(
-          // ⚠ 元投稿の取得を待たずに「リプライ」と出す (#1113)。取得が返る前でも
+          // ⚠ 元投稿の取得を待たずに「返信」と出す (#1113)。取得が返る前でも
           // 返信として送られることは確定している。
           _isReply
               ? (_effectiveChannelName != null
-                    ? 'リプライ：$_effectiveChannelName'
-                    : 'リプライ')
+                    ? '返信：$_effectiveChannelName'
+                    : '返信')
               : _effectiveChannelName != null
               ? '${ref.watch(postLabelProvider)}：$_effectiveChannelName'
               : ref.watch(postLabelProvider),
@@ -4138,10 +4172,16 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                             right: 4,
                             bottom: 4,
                             child: IgnorePointer(
-                              child: ValueListenableBuilder<TextEditingValue>(
-                                valueListenable: _controller,
-                                builder: (context, value, _) {
-                                  final len = serverTextLength(value.text);
+                              // ⚠ **本文だけを見張っていると数が古くなる
+                              // (#1034)。**Mastodon は CW も同じ枠で数えるので、
+                              // CW 欄の変更でも引き直す。
+                              child: AnimatedBuilder(
+                                animation: Listenable.merge([
+                                  _controller,
+                                  _cwController,
+                                ]),
+                                builder: (context, _) {
+                                  final len = _countedLength(lengthRule);
                                   return Text(
                                     '$len / $maxLength',
                                     style: TextStyle(

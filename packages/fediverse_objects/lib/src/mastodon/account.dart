@@ -58,6 +58,29 @@ class MastodonAccount {
   final String? url;
   final DateTime? createdAt;
 
+  /// 引っ越し先のアカウント (#1055)。引っ越していなければ null。
+  ///
+  /// ⚠ **入れ子の Account そのもの**が返るので、`acct` / `url` / `id` まで分かる
+  /// （Misskey の `movedTo` は URI 1 本しか来ない）。⚠ **`moved` の中の `moved` は
+  /// 読まない** — 多段の引っ越しを辿る画面は作らないため、1 段で足りる。
+  final MastodonAccount? moved;
+
+  /// 凍結・削除済みか (#1055)。
+  ///
+  /// ⚠ **serializer は `if: :unavailable?` 付きで、`unavailable? = deleted? ||
+  /// suspended?`**（`account_serializer.rb` / `concerns/account/suspensions.rb`）。
+  /// つまり**削除済みもここに畳まれる**ので、`deleted` を別に持たない。
+  /// 該当しないアカウントではキーごと来ないので null になる。
+  final bool? suspended;
+
+  /// サイレンス（制限）されているか (#1055)。
+  ///
+  /// ⚠⚠ **JSON のキーは `silenced` ではなく `limited`。**serializer が
+  /// `attribute :silenced, key: :limited, if: :silenced?` と改名している。
+  /// キー名で grep すると見落とすので注意。
+  @JsonKey(name: 'limited')
+  final bool? limited;
+
   const MastodonAccount({
     required this.id,
     required this.username,
@@ -88,6 +111,9 @@ class MastodonAccount {
     this.source,
     this.url,
     this.createdAt,
+    this.moved,
+    this.suspended,
+    this.limited,
   });
 
   factory MastodonAccount.fromJson(Map<String, dynamic> json) =>

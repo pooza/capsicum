@@ -75,8 +75,31 @@ extension CapsicumMastodonAccountExtension on MastodonAccount {
       featureApproval: _parseFeatureApproval(featureApproval),
       locked: locked,
       discoverable: discoverable,
+      movedTo: _movedTo(moved),
+      // ⚠⚠ **Mastodon にも凍結 / サイレンスは来る (#1055)。**当初「REST の
+      // Account に相当フィールドが無い」として Misskey だけに入れていたが誤り。
+      // `account_serializer.rb` に `attribute :suspended, if: :unavailable?` と
+      // `attribute :silenced, key: :limited, if: :silenced?` が実在する。
+      // ⚠ **`silenced` の JSON キーは `limited`。**該当しないアカウントでは
+      // キーごと来ない（＝null）ので false へ畳む。
+      // ⚠ `deleted` は Mastodon では `unavailable?` 経由で `suspended` に
+      // 畳まれるため、別に立てない。
+      suspended: suspended ?? false,
+      silenced: limited ?? false,
     );
   }
+}
+
+/// `moved`（入れ子の Account）から引っ越し先を組む (#1055)。
+///
+/// ⚠ **`url` が無い `moved` は捨てる。**遷移先が作れず、画面に出しても「引っ越し
+/// ました」だけで行き先が示せないため。`acct` があれば `@user@host` を作る
+/// （`acct` はリモートなら既に `user@host` の形）。
+MovedTo? _movedTo(MastodonAccount? moved) {
+  if (moved == null) return null;
+  final url = moved.url;
+  if (url == null || url.isEmpty) return null;
+  return MovedTo(url: url, handle: '@${moved.acct}', userId: moved.id);
 }
 
 FeatureApproval? _parseFeatureApproval(Map<String, dynamic>? raw) {
@@ -140,6 +163,7 @@ extension CapsicumMastodonStatusExtension on MastodonStatus {
       quoteApprovalPolicy: parseMastodonQuoteApprovalPolicy(quoteApproval),
       language: language,
       url: url,
+      editedAt: editedAt,
     );
   }
 }

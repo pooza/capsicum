@@ -9,6 +9,7 @@ import '../../model/account.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../service/sentry_op_failure.dart';
+import '../../util/post_text_length.dart';
 import '../util/compose_template_display.dart';
 import '../util/text_length_counter.dart';
 import '../widget/bottom_safe_area.dart';
@@ -110,10 +111,16 @@ class TemplatesManageScreen extends ConsumerWidget {
   /// アダプタ不在の稀な null 時のみ上限なしにする。
   int? _bodyMaxLength(WidgetRef ref) => ref.read(maxPostLengthProvider);
 
+  /// 本文の数え方も compose と揃える (#1034)。⚠ **上限だけ借りて数え方を
+  /// 借りないと、同じ本文で compose と数字が食い違う**（#1035-A3 の再演）。
+  PostLengthRule _bodyLengthRule(WidgetRef ref) =>
+      ref.read(postLengthRuleProvider);
+
   Future<void> _create(BuildContext context, WidgetRef ref) async {
     final result = await _showEditor(
       context,
       maxBodyLength: _bodyMaxLength(ref),
+      bodyLengthRule: _bodyLengthRule(ref),
     );
     if (result == null || !context.mounted) return;
     final account = ref.read(currentAccountProvider);
@@ -145,6 +152,7 @@ class TemplatesManageScreen extends ConsumerWidget {
       context,
       initial: template,
       maxBodyLength: _bodyMaxLength(ref),
+      bodyLengthRule: _bodyLengthRule(ref),
     );
     if (result == null || !context.mounted) return;
     final account = ref.read(currentAccountProvider);
@@ -240,11 +248,15 @@ Future<({String name, String body, String? cw})?> _showEditor(
   BuildContext context, {
   ComposeTemplate? initial,
   required int? maxBodyLength,
+  required PostLengthRule bodyLengthRule,
 }) {
   return showDialog<({String name, String body, String? cw})>(
     context: context,
-    builder: (context) =>
-        _TemplateEditorDialog(initial: initial, maxBodyLength: maxBodyLength),
+    builder: (context) => _TemplateEditorDialog(
+      initial: initial,
+      maxBodyLength: maxBodyLength,
+      bodyLengthRule: bodyLengthRule,
+    ),
   );
 }
 
@@ -317,8 +329,13 @@ class _TemplateTile extends StatelessWidget {
 class _TemplateEditorDialog extends StatefulWidget {
   final ComposeTemplate? initial;
   final int? maxBodyLength;
+  final PostLengthRule bodyLengthRule;
 
-  const _TemplateEditorDialog({this.initial, required this.maxBodyLength});
+  const _TemplateEditorDialog({
+    this.initial,
+    required this.maxBodyLength,
+    required this.bodyLengthRule,
+  });
 
   @override
   State<_TemplateEditorDialog> createState() => _TemplateEditorDialogState();
@@ -407,7 +424,12 @@ class _TemplateEditorDialogState extends State<_TemplateEditorDialog> {
                 //
                 // `text_length.dart` が立てた「切らずにサーバーと同じ単位で
                 // 数える」方針と真逆だったので揃える。
-                buildCounter: serverLengthCounter(_bodyController),
+                // 数え方も compose と同じ規則で (#1034)。テンプレの CW は
+                // ここでは別枠（下の欄に独自の 200）なので本文だけ渡す。
+                buildCounter: serverLengthCounter(
+                  _bodyController,
+                  count: (text) => postTextLength(widget.bodyLengthRule, text),
+                ),
                 maxLengthEnforcement: MaxLengthEnforcement.none,
                 expands: true,
                 maxLines: null,

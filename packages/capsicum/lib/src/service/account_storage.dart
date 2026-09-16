@@ -8,12 +8,12 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../constants.dart';
 import '../model/account_key.dart';
 import '../platform/platform_info.dart';
 import '../util/exception_scrub.dart';
 import '../util/sentry_tag_hash.dart';
 import 'secret_service_probe.dart';
+import 'secure_storage_gate.dart';
 import 'secure_storage_health.dart';
 
 /// [AccountStorage.getSecrets] が「secret は存在するが今は読めない」ときに投げる
@@ -58,7 +58,7 @@ class AccountStorage {
   /// `kSecAttrAccessibleWhenUnlocked` = [KeychainAccessibility.unlocked]）で
   /// 書き込んでいた。flutter_secure_storage の macOS / iOS 実装は delete /
   /// readAll / containsKey のクエリに `kSecAttrAccessible` を含めるため、
-  /// 現行 [_storage]（first_unlock）からは旧 accessibility の item が
+  /// 現行の区画（first_unlock）からは旧 accessibility の item が
   /// **見えない / 消せない**。旧 item を列挙・削除するときはこの options を
   /// 明示する。
   static const _legacyIosOptions = IOSOptions(
@@ -68,32 +68,39 @@ class AccountStorage {
     accessibility: KeychainAccessibility.unlocked,
   );
 
-  final FlutterSecureStorage _storage;
+  /// ⚠ **secure storage へは [SecureStorageGate] 越しにしか触らない (#1136)。**
+  /// 疎通確認と上限を「呼ぶ側が思い出して通す」形にすると、**層ごとに抜ける**
+  /// （#1117-C はこのクラスだけを通し、`PushKeyStore` /
+  /// `DeviceInstallId` が素通りしていた）。
+  final SecureStorageGate _gate;
 
   /// Deduplicates Sentry reports within the process so the same Keystore
   /// breakage isn't reported once per account × app launch. Keyed by
   /// `(stage, runtimeType)` where stage is `index` or `secret:<account>`.
   static final Set<String> _reportedErrors = {};
 
+  /// [storage] はテストの差し替え口。⚠ **区画（accessibility）ごと渡す**ので
+  /// 型は [FlutterSecureStorage] のまま、関所は [SecureStorageGate] が掛ける。
   AccountStorage([FlutterSecureStorage? storage])
-    : _storage =
-          storage ??
-          const FlutterSecureStorage(
-            // macOS / iOS の Keychain アクセスを「再起動後の最初のアンロック
-            // 以降ならロック中でも read/write 可」にする (#643)。既定の
-            // unlocked だと launch-at-login や画面ロック中の起動でアカウント
-            // secret 読み出しが -25308 errSecInteractionNotAllowed で弾かれ、
-            // catch-all で「通信に失敗しました」と誤表示される。PushKeyStore
-            // (#392) と同じ accessibility。NSE 共有は不要なので groupId は
-            // 付けない（Keychain partition を変えると既存 item の読み出しに
-            // 影響しうるため）。
-            iOptions: IOSOptions(
-              accessibility: KeychainAccessibility.first_unlock,
+    : _gate = SecureStorageGate(
+        storage ??
+            const FlutterSecureStorage(
+              // macOS / iOS の Keychain アクセスを「再起動後の最初のアンロック
+              // 以降ならロック中でも read/write 可」にする (#643)。既定の
+              // unlocked だと launch-at-login や画面ロック中の起動でアカウント
+              // secret 読み出しが -25308 errSecInteractionNotAllowed で弾かれ、
+              // catch-all で「通信に失敗しました」と誤表示される。PushKeyStore
+              // (#392) と同じ accessibility。NSE 共有は不要なので groupId は
+              // 付けない（Keychain partition を変えると既存 item の読み出しに
+              // 影響しうるため）。
+              iOptions: IOSOptions(
+                accessibility: KeychainAccessibility.first_unlock,
+              ),
+              mOptions: MacOsOptions(
+                accessibility: KeychainAccessibility.first_unlock,
+              ),
             ),
-            mOptions: MacOsOptions(
-              accessibility: KeychainAccessibility.first_unlock,
-            ),
-          );
+      );
 
   Future<SharedPreferences> _prefs() => SharedPreferences.getInstance();
 
@@ -176,7 +183,7 @@ class AccountStorage {
         e,
       );
       _reportOnce('secret:$accountKey', e, st);
-      await _storage.delete(key: 'secret_$accountKey');
+      await _gate.delete(key: 'secret_$accountKey');
       return null;
     } catch (e, st) {
       // BadPaddingException etc. may bypass PlatformException wrapping
@@ -196,7 +203,7 @@ class AccountStorage {
         throw TransientSecretUnavailableException(e);
       }
       _reportOnce('secret:$accountKey', e, st);
-      await _storage.delete(key: 'secret_$accountKey');
+      await _gate.delete(key: 'secret_$accountKey');
       return null;
     }
   }
@@ -280,17 +287,11 @@ class AccountStorage {
   /// （Android の EncryptedSharedPreferences）。全 OS に掛けると、遅いだけの
   /// 端末でアカウントがオフラインに落ち、「キーリング / Secret Service」を
   /// 名指しする案内まで出ていた（v1.64 のリリース前レビュー）。
-  Future<String?> _read(String key) async {
-    if (!await SecretServiceProbe.isResponsive()) {
-      // ⚠ **触らずに諦める。**触れば固まるので、上限を掛けても手遅れになる。
-      // 呼び出し側（[getSecrets]）が transient として扱い、アカウントは残る。
-      // ⚠ message で「触っていない」ことを伝える（Sentry で実タイムアウトと
-      // 区別するため・[SecureStorageHealth.probeSkipMessage]）。
-      throw TimeoutException(SecureStorageHealth.probeSkipMessage);
-    }
-    final read = _storage.read(key: key);
-    return usesSecretService ? read.timeout(kSecureStorageReadTimeout) : read;
-  }
+  /// ⚠⚠ **関所の実体は [SecureStorageGate] へ出した (#1136)。**ここに置いたまま
+  /// では**このクラスを通る経路しか守れず**、`PushKeyStore` /
+  /// `DeviceInstallId` が素通りしていた（実際に削除の裏で画面が固まった）。
+  /// 読み取りだけでなく write / delete も同じ関所を通る（#1117-C の結論）。
+  Future<String?> _read(String key) => _gate.read(key: key);
 
   /// flutter_secure_storage の MethodChannel が plugin register より先に
   /// 叩かれた場合、Linux では `MissingPluginException` で帰る。これは
@@ -357,7 +358,7 @@ class AccountStorage {
     List<String> list;
     try {
       // ⚠ **[_read] を通す (#1085)。**新規インストールでは prefs に索引が無い
-      // ので、**初回起動は必ずここを通る**。直に `_storage.read` を叩くと、
+      // ので、**初回起動は必ずここを通る**。直に `_gate.read` を叩くと、
       // キーリングが固まっている Linux では初回起動が真っ黒なまま返らない
       // （報告もされにくい面・v1.64 のリリース前レビュー）。
       final raw = await _read(_legacyAccountListKey);
@@ -374,7 +375,7 @@ class AccountStorage {
     } catch (e, st) {
       // JSON parse 失敗等。legacy データ自体が壊れているので削除。
       _reportOnce('index', e, st);
-      await _storage.delete(key: _legacyAccountListKey);
+      await _gate.delete(key: _legacyAccountListKey);
       return [];
     }
     try {
@@ -385,7 +386,7 @@ class AccountStorage {
       return list;
     }
     // ここまで来たら新 index への書き込みが完了している。legacy を削除。
-    await _storage.delete(key: _legacyAccountListKey);
+    await _gate.delete(key: _legacyAccountListKey);
     return list;
   }
 
@@ -416,7 +417,7 @@ class AccountStorage {
       // 旧 item は default accessibility (unlocked) で書かれており、現行
       // first_unlock の readAll はクエリに kSecAttrAccessible を含むため
       // それらを返さない。旧 accessibility を明示して legacy item を列挙する。
-      final all = await _storage.readAll(
+      final all = await _gate.readAll(
         iOptions: _legacyIosOptions,
         mOptions: _legacyMacOptions,
       );
@@ -430,13 +431,13 @@ class AccountStorage {
         if (!isOwned) continue;
         // 旧 accessibility を明示して delete（first_unlock の delete では
         // 旧 item にマッチせず no-op になる）→ first_unlock で書き直す。
-        await _storage.delete(
+        await _gate.delete(
           key: entry.key,
           iOptions: _legacyIosOptions,
           mOptions: _legacyMacOptions,
         );
         try {
-          await _storage.write(key: entry.key, value: entry.value);
+          await _gate.write(key: entry.key, value: entry.value);
         } on PlatformException {
           // delete 成功直後に write が transient error（ロック中 -25308 等）
           // で落ちると、その item は既に Keychain から消え、in-memory の値も
@@ -444,7 +445,7 @@ class AccountStorage {
           // 永久喪失する（getAccountKeys が legacy を write 成功まで残して
           // 避けているのと同じ事故）。旧 accessibility で値を書き戻して
           // 保全してから rethrow し、flag を立てずに次回起動で再試行させる。
-          await _storage.write(
+          await _gate.write(
             key: entry.key,
             value: entry.value,
             iOptions: _legacyIosOptions,
@@ -522,7 +523,7 @@ class AccountStorage {
       final key = 'secret_$accountKey';
       bool stale;
       try {
-        stale = await _storage.containsKey(key: key);
+        stale = await _gate.containsKey(key: key);
       } on MissingPluginException {
         // secure storage 自体が居ない。残りを試しても同じ例外になるだけなので
         // 打ち切るが、**未調査ぶんは「きれい」ではなく「未解決」として返す**。
@@ -557,7 +558,7 @@ class AccountStorage {
       );
       await _deleteSecretWithObservability(accountKey);
       try {
-        if (await _storage.containsKey(key: key)) unresolved.add(accountKey);
+        if (await _gate.containsKey(key: key)) unresolved.add(accountKey);
       } catch (_) {
         // 確認できないなら消えたと見なさない。
         unresolved.add(accountKey);
@@ -566,7 +567,7 @@ class AccountStorage {
     return unresolved;
   }
 
-  /// `_storage.delete` の例外を握り潰さず観測し、delete 後に残骸が残れば
+  /// `_gate.delete` の例外を握り潰さず観測し、delete 後に残骸が残れば
   /// 1 度だけ再 delete を試みる (#621)。flutter_secure_storage_linux が
   /// key に `:` / `/` / `@` を含む URL 形式で delete を non-op で帰す挙動
   /// が疑われるが、コード読みだけでは真因不能のため、実機で踏んだ際に
@@ -575,7 +576,20 @@ class AccountStorage {
   Future<void> _deleteSecretWithObservability(String accountKey) async {
     final key = 'secret_$accountKey';
     try {
-      await _storage.delete(key: key);
+      // ⚠ **関所を通す (#1117-C)。**キーリングが応答しない環境では delete も
+      // 固まる（案内カードの出ている画面から「削除」を押した人がここに来る）。
+      await _gate.delete(key: key);
+    } on TimeoutException catch (e) {
+      // ⚠⚠ **ここは投げない。**削除は「索引から消す」が主目的で、残骸 secret は
+      // #1012 の `purgeStaleSecrets` が後で拾う。ここで投げると、ユーザーから見て
+      // **アカウントを消せない**（画面に残り続ける）。旗を立てて観測へ回す。
+      SecureStorageHealth.markUnavailable(e);
+      debugLogException(
+        'capsicum: secure storage did not answer on delete for '
+        '${sentrySafeAccountKey(accountKey)}',
+        e,
+      );
+      return;
     } on MissingPluginException catch (e, st) {
       debugLogException(
         'capsicum: plugin register race on delete for '
@@ -592,9 +606,9 @@ class AccountStorage {
       _reportOnce('secret:$accountKey:delete', e, st);
     }
     try {
-      if (await _storage.containsKey(key: key)) {
-        await _storage.delete(key: key);
-        if (await _storage.containsKey(key: key)) {
+      if (await _gate.containsKey(key: key)) {
+        await _gate.delete(key: key);
+        if (await _gate.containsKey(key: key)) {
           // ⚠ **メッセージに $key を入れない。**`secret_<accountKey>` は
           // `username@host` そのもの。識別は host + ハッシュ化 username の
           // scope タグで足りる（#1020 で `stale_on_import` を直したとき、
@@ -637,7 +651,7 @@ class AccountStorage {
     await _writeWithDuplicateRecovery('client_creds_$host', data);
   }
 
-  /// `_storage.write` を実行し、macOS / iOS の Keychain が既存 item を
+  /// `_gate.write` を実行し、macOS / iOS の Keychain が既存 item を
   /// 更新できず -25299 (errSecDuplicateItem) を投げた場合に delete してから
   /// 書き直す。
   ///
@@ -649,24 +663,29 @@ class AccountStorage {
   /// `CAPSICUM-2E` として観測）。[migrateAccessibilityIfNeeded] と同じ
   /// delete→write 戦略で、衝突 item を除去してから新しい属性で焼き直す。
   Future<void> _writeWithDuplicateRecovery(String key, String value) async {
+    // ⚠ **関所を通す (#1117-C)。**キーリングが応答しない環境では write も固まる。
     try {
-      await _storage.write(key: key, value: value);
+      await _gate.write(key: key, value: value);
     } on PlatformException catch (e) {
       if (!_isKeychainDuplicate(e)) rethrow;
+      // ⚠ **`$key` を生で書かない。**`secret_<username@host>` そのものなので、
+      // release では breadcrumb 化され、以後の任意の Sentry イベントにハンドルが
+      // 付く（`_scrubBreadcrumb` が当てるのは relay の push token だけ）。
       debugPrint(
-        'capsicum: keychain duplicate (-25299) on write $key; delete+retry',
+        'capsicum: keychain duplicate (-25299) on write '
+        '${sentrySafeAccountKey(key)}; delete+retry',
       );
       // 衝突相手は #643 以前の default accessibility (unlocked) で書かれた旧
       // item。現行 first_unlock の delete はクエリに kSecAttrAccessible を
       // 含むため旧 item にマッチせず no-op になり、再 write が再び -25299 に
       // なる（内部ベータ 1.31.0+90 で実証）。旧 accessibility を明示して
       // 衝突 item を確実に除去してから書き直す。
-      await _storage.delete(
+      await _gate.delete(
         key: key,
         iOptions: _legacyIosOptions,
         mOptions: _legacyMacOptions,
       );
-      await _storage.write(key: key, value: value);
+      await _gate.write(key: key, value: value);
     }
   }
 
@@ -680,12 +699,15 @@ class AccountStorage {
   Future<void> deleteHostClientCredentials(String host) async {
     // 旧 accessibility (unlocked) で残る古い cache も確実に消すため両方で
     // delete する（first_unlock だけだと #643 以前の item にマッチしない）。
-    await _storage.delete(
+    // ⚠ 関所を通す (#1117-C)。⚠⚠ **ここは握らない** —— 呼ぶのは #620 の
+    // 自己回復経路で、`login_screen` 側が `try` で包んで「消せなかった」を
+    // 記録しつつ先へ進む作りになっている。
+    await _gate.delete(
       key: 'client_creds_$host',
       iOptions: _legacyIosOptions,
       mOptions: _legacyMacOptions,
     );
-    await _storage.delete(key: 'client_creds_$host');
+    await _gate.delete(key: 'client_creds_$host');
   }
 
   /// Retrieve OAuth client credentials for a host.

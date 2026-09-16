@@ -16,9 +16,15 @@ import '../../util/text_length.dart';
 /// 移した時点（#1035-E4）で `lib/src/util/` のうち **material を import して
 /// いたのはここだけ**で、#1027 が `user_acct` を「ui の下にあったことが
 /// provider 側の再実装の理由」として `util/` へ移したのと**向きが逆**だった。
+///
+/// ⚠ **既定はコードポイント ([serverTextLength])。**ALT のように両上流とも
+/// コードポイントで数える欄はこれでよい。**本文と同じ上限を当てる欄**は
+/// サーバーごとに規則が違う（Mastodon は書記素 + URL 23 文字）ので、
+/// [count] に `postTextLength` を渡す (#1034)。
 InputCounterWidgetBuilder serverLengthCounter(
-  TextEditingController controller,
-) =>
+  TextEditingController controller, {
+  int Function(String text)? count,
+}) =>
     (
       BuildContext context, {
       required int currentLength,
@@ -30,7 +36,7 @@ InputCounterWidgetBuilder serverLengthCounter(
       // 「名前の変更」「フォルダを作成」に**上限のない裸の数字**が出ていた。
       // null を返せば既定と同じ「カウンタ無し」に戻る。
       if (maxLength == null) return null;
-      final length = serverTextLength(controller.text);
+      final length = (count ?? serverTextLength)(controller.text);
       final theme = Theme.of(context);
       return Text(
         '$length / $maxLength',

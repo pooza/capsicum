@@ -7,6 +7,7 @@ import 'package:pointycastle/export.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../platform/platform_info.dart';
 import '../util/exception_scrub.dart';
+import 'secure_storage_gate.dart';
 
 /// Web Push 用の ECDH P-256 鍵ペアと auth シークレットの生成・保管。
 ///
@@ -33,23 +34,35 @@ class PushKeyStore {
   /// 既定の `unlocked` だとバックグラウンド経路（NSE / トークン更新 / 通知到着等）が
   /// デバイスロック中に -25308 errSecInteractionNotAllowed で弾かれる (#385)。
   static const _appleAccessGroup = 'Y27AK8VF85.group.jp.co.b-shock.capsicum';
-  static const _storage = FlutterSecureStorage(
-    iOptions: IOSOptions(
-      groupId: _appleAccessGroup,
-      accessibility: KeychainAccessibility.first_unlock,
-    ),
-    mOptions: MacOsOptions(
-      groupId: _appleAccessGroup,
-      accessibility: KeychainAccessibility.first_unlock,
+
+  /// ⚠⚠ **関所越しにしか触らない (#1136)。**以前はここが `FlutterSecureStorage`
+  /// そのもので、`SecretServiceProbe` の参照が**ゼロ**だった —— キーリングが
+  /// 応答しない Linux では、アカウント削除の裏で走る [delete] が
+  /// **プラットフォームスレッド（＝描くスレッド）を塞いで画面を固めた**
+  /// （#1117-C が `AccountStorage` にしか関所を置いていなかったため）。
+  ///
+  /// ⚠ **区画（access group + accessibility）はこの店のものを保つ。**揃えると
+  /// 既存 item が見えなくなる / 消せなくなる（#392 / #656）。共有するのは関所だけ。
+  static const _gate = SecureStorageGate(
+    FlutterSecureStorage(
+      iOptions: IOSOptions(
+        groupId: _appleAccessGroup,
+        accessibility: KeychainAccessibility.first_unlock,
+      ),
+      mOptions: MacOsOptions(
+        groupId: _appleAccessGroup,
+        accessibility: KeychainAccessibility.first_unlock,
+      ),
     ),
   );
+
   static const _prefix = 'capsicum_push_';
 
   /// #385（iOS）/ #454（macOS）で `groupId` + `first_unlock` を入れる以前の鍵は
   /// `FlutterSecureStorage()` 既定、すなわち **groupId 無し + accessibility
   /// `unlocked`** で保存されている。flutter_secure_storage の readAll / delete は
-  /// クエリに `kSecAttrAccessible` と `kSecAttrAccessGroup` を含めるため、現行
-  /// [_storage]（group + first_unlock）からはそれら旧鍵が見えず・消せない。
+  /// クエリに `kSecAttrAccessible` と `kSecAttrAccessGroup` を含めるため、
+  /// 現行の区画（group + first_unlock）からはそれら旧鍵が見えず・消せない。
   /// 旧鍵を列挙・削除するための per-call options (#656)。AccountStorage の同型
   /// 対応 (#643) と同じ手法。
   static const _legacyIosOptions = IOSOptions(
@@ -61,11 +74,11 @@ class PushKeyStore {
 
   /// v1.20 以前に書き込んだ鍵は旧 accessibility (kSecAttrAccessibleWhenUnlocked)
   /// + groupId 無しのまま。flutter_secure_storage は既存 item の attribute を
-  /// 書き換えないため、起動時に一度だけ旧 options で read → delete し、現行
-  /// [_storage]（group + first_unlock）で re-write して焼き直す。完了フラグを
+  /// 書き換えないため、起動時に一度だけ旧 options で read → delete し、
+  /// 現行の区画（group + first_unlock）で re-write して焼き直す。完了フラグを
   /// SharedPreferences に持って二度目以降はスキップ (#392 / #656)。
   ///
-  /// `_v1` は旧 migration が `_storage`（group + first_unlock）の readAll で
+  /// `_v1` は旧 migration が 現行の区画（group + first_unlock）の readAll で
   /// 列挙していたため旧鍵を取りこぼし、空振りでフラグだけ立てていた (#656)。
   /// 修正版を全端末で再実行させるため `_v2` に上げる。
   ///
@@ -91,7 +104,7 @@ class PushKeyStore {
     }
     try {
       // 旧鍵 (groupId 無し + unlocked) を明示 options で列挙する。
-      final all = await _storage.readAll(
+      final all = await _gate.readAll(
         iOptions: _legacyIosOptions,
         mOptions: _legacyMacOptions,
       );
@@ -101,15 +114,15 @@ class PushKeyStore {
         // 自分の item に限定して他用途を触らない。
         if (!entry.key.startsWith(_prefix)) continue;
         // 旧 options を明示して delete（現行 options の delete は旧鍵に
-        // マッチせず no-op）→ 引数なし = 現行 _storage（group + first_unlock）で
+        // マッチせず no-op）→ 引数なし = 現行の区画（group + first_unlock）で
         // 書き直す。group partition が変わるため -25299 衝突は起きない。
-        await _storage.delete(
+        await _gate.delete(
           key: entry.key,
           iOptions: _legacyIosOptions,
           mOptions: _legacyMacOptions,
         );
         try {
-          await _storage.write(key: entry.key, value: entry.value);
+          await _gate.write(key: entry.key, value: entry.value);
         } on PlatformException {
           // delete 成功直後に write が transient error（ロック中 -25308 等）で
           // 落ちると鍵が Keychain からも in-memory からも失われ、次回 readAll
@@ -117,7 +130,7 @@ class PushKeyStore {
           // rethrow し、flag を立てず次回起動で再試行させる。push 鍵は
           // getOrCreate で再生成可能だが、再生成はリレー再登録（新 p256dh）を
           // 要し push 不達の窓を作るため、できるだけ保全する。
-          await _storage.write(
+          await _gate.write(
             key: entry.key,
             value: entry.value,
             iOptions: _legacyIosOptions,
@@ -152,7 +165,7 @@ class PushKeyStore {
 
   /// リレーサーバーの subscription ID を保存する。
   static Future<void> saveRelayId(String accountStorageKey, int id) async {
-    await _storage.write(
+    await _gate.write(
       key: _key(_Slot.relayId, accountStorageKey),
       value: '$id',
     );
@@ -160,7 +173,7 @@ class PushKeyStore {
 
   /// リレーサーバーの subscription ID を取得する。
   static Future<int?> getRelayId(String accountStorageKey) async {
-    final v = await _storage.read(key: _key(_Slot.relayId, accountStorageKey));
+    final v = await _gate.read(key: _key(_Slot.relayId, accountStorageKey));
     return v != null ? int.tryParse(v) : null;
   }
 
@@ -171,7 +184,7 @@ class PushKeyStore {
     String accountStorageKey,
     String endpoint,
   ) async {
-    await _storage.write(
+    await _gate.write(
       key: _key(_Slot.endpoint, accountStorageKey),
       value: endpoint,
     );
@@ -179,7 +192,7 @@ class PushKeyStore {
 
   /// 保存済みの Web Push エンドポイント URL を取得する。
   static Future<String?> getEndpoint(String accountStorageKey) async {
-    return _storage.read(key: _key(_Slot.endpoint, accountStorageKey));
+    return _gate.read(key: _key(_Slot.endpoint, accountStorageKey));
   }
 
   /// 直近の登録に使ったデバイストークン（APNs / FCM のトークン、Windows は
@@ -189,24 +202,24 @@ class PushKeyStore {
   /// キーで持つ。[delete] は [_Slot] を列挙するため、1 アカウントのログアウト
   /// で巻き添えに消えることがない。
   static Future<void> saveDeviceToken(String token) async {
-    await _storage.write(key: _deviceTokenKey, value: token);
+    await _gate.write(key: _deviceTokenKey, value: token);
   }
 
   /// 直近の登録に使ったデバイストークンを取得する。未保存なら null。
   static Future<String?> getDeviceToken() async {
-    return _storage.read(key: _deviceTokenKey);
+    return _gate.read(key: _deviceTokenKey);
   }
 
   /// 保存済みデバイストークンを消す。デバイス全体の登録を畳むとき
   /// （token rotation の掃除など）に、次回起動で誤検知しないよう合わせて呼ぶ。
   static Future<void> deleteDeviceToken() async {
-    await _storage.delete(key: _deviceTokenKey);
+    await _gate.delete(key: _deviceTokenKey);
   }
 
   /// 指定アカウントの鍵・登録情報をすべて削除する。
   static Future<void> delete(String accountStorageKey) async {
     for (final slot in _Slot.values) {
-      await _storage.delete(key: _key(slot, accountStorageKey));
+      await _gate.delete(key: _key(slot, accountStorageKey));
     }
   }
 
@@ -219,7 +232,7 @@ class PushKeyStore {
   /// バックグラウンド isolate / iOS NSE が読むと新旧混成ロードで silent
   /// 復号失敗を起こしうるレースがあった。1 blob 化でアトミック化している。
   static Future<PushKeys?> _load(String key) async {
-    final raw = await _storage.read(key: _key(_Slot.keyset, key));
+    final raw = await _gate.read(key: _key(_Slot.keyset, key));
     if (raw != null) {
       try {
         final json = jsonDecode(raw);
@@ -299,7 +312,7 @@ class PushKeyStore {
       'auth': keys.auth,
       'priv': keys.privateKeyBase64,
     });
-    await _storage.write(key: _key(_Slot.keyset, key), value: body);
+    await _gate.write(key: _key(_Slot.keyset, key), value: body);
   }
 }
 

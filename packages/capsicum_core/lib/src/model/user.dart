@@ -43,6 +43,39 @@ class AvatarDecoration {
   });
 }
 
+/// 引っ越し先のアカウント (#1055)。
+///
+/// ⚠ **サーバーによって分かる粒度が違う。**Mastodon の `moved` は Account
+/// オブジェクトそのものなので [userId] / [handle] まで分かるが、Misskey の
+/// `movedTo` は **ActivityPub の URI 1 本**しか来ない。したがって画面は
+/// 「[handle] があれば handle、無ければ [url]」で出し、遷移は常に [url] を
+/// `openFediverseLink` へ渡す形にする（どちらの粒度でも同じ導線になる）。
+class MovedTo {
+  /// 引っ越し先の URL。Mastodon は `moved.url`。
+  ///
+  /// ⚠⚠ **Misskey では null。**あちらの `movedTo` は URI ではなく[userId]
+  /// （下記）。null のときは**リンクにしない** —— 開けない文字列をタップ可能に
+  /// 見せない。
+  final String? url;
+
+  /// `@user@host`。Mastodon のみ分かる。Misskey は null。
+  final String? handle;
+
+  /// 引っ越し先のアカウント ID（このサーバーから見た ID）。
+  ///
+  /// ⚠⚠ **Misskey の `movedTo` はこれ。**json-schema は `format: 'uri'` と
+  /// 書いているが実装と合っておらず、`UserEntityService` は
+  /// `resolvePerson(movedToUri).then(user => user.id)` ＝**ローカル DB の aid**
+  /// を返す（本家フロントも `MkAccountMoved.vue` で `users/show({ userId })`
+  /// として扱っている）。⚠ **これを [url] に入れると生の ID が画面に出て、
+  /// タップしても開けない。**
+  ///
+  /// ⚠ 解決して行き先を出す改修は別途（`users/show` の往復が要る）。
+  final String? userId;
+
+  const MovedTo({this.url, this.handle, this.userId});
+}
+
 class User {
   final String id;
   final String username;
@@ -99,6 +132,34 @@ class User {
   /// `isExplorable`（#865）。未取得・未対応では null。
   final bool? discoverable;
 
+  /// 引っ越し先 (#1055)。引っ越していなければ null。
+  ///
+  /// ⚠ **読む側だけの情報。**引っ越しを「する」側（`i/move` /
+  /// `accounts/:id/move`）はアカウントの生死に関わるのでクライアントに持たせない
+  /// （棚卸しの分類 C）。
+  final MovedTo? movedTo;
+
+  /// 凍結されている (#1055)。Mastodon の `suspended` / Misskey の `isSuspended`。
+  ///
+  /// ⚠⚠ **「Mastodon には相当フィールドが無い」は誤りだった**（v1.65 のリリース
+  /// 前レビューで訂正）。`account_serializer.rb` の
+  /// `attribute :suspended, if: :unavailable?` が通常の `/api/v1/accounts/:id`
+  /// で返る。⚠ **Mastodon 側では削除済みもここに畳まれる**（`unavailable? =
+  /// deleted? || suspended?`）。
+  final bool suspended;
+
+  /// サイレンス（制限）されている (#1055)。Mastodon の `limited` /
+  /// Misskey の `isSilenced`。
+  ///
+  /// ⚠ **Mastodon の JSON キーは `silenced` ではなく `limited`**（serializer が
+  /// 改名している）。
+  final bool silenced;
+
+  /// 削除済み (#1055)。Misskey の `isDeleted`。
+  ///
+  /// ⚠ **Mastodon では常に false** —— あちらは [suspended] に畳まれるため。
+  final bool deleted;
+
   const User({
     required this.id,
     required this.username,
@@ -130,6 +191,10 @@ class User {
     this.featureApproval,
     this.locked,
     this.discoverable,
+    this.movedTo,
+    this.suspended = false,
+    this.silenced = false,
+    this.deleted = false,
   });
 
   User copyWithIsCat(bool isCat) => User(
@@ -163,5 +228,9 @@ class User {
     featureApproval: featureApproval,
     locked: locked,
     discoverable: discoverable,
+    movedTo: movedTo,
+    suspended: suspended,
+    silenced: silenced,
+    deleted: deleted,
   );
 }

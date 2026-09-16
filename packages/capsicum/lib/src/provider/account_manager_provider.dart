@@ -19,6 +19,7 @@ import '../service/compose_draft_store.dart';
 import '../service/notification_label_cache.dart';
 import '../service/push_registration_service.dart';
 import '../service/secret_service_probe.dart';
+import '../service/secure_storage_health.dart';
 import '../service/sentry_op_failure.dart';
 import '../service/server_metadata_cache.dart';
 import '../service/timeline_cache.dart';
@@ -114,6 +115,22 @@ Duration offlineRetryDelay(int attempt) => attempt < kOfflineRetryRampUp.length
 /// アカウントを並列 probe しているので待ちは全体に効く。失敗が本物（本当に
 /// 回線が無い）だったときのコストが、そのまま起動の遅延になる。
 const kInitialProbeRetryDelay = Duration(milliseconds: 300);
+
+/// [newcomer] を先頭に置いた一覧を返す。⚠ **同じキーの既存 entry は落とす** (#1110)。
+///
+/// ログイン済みのアカウントを「アカウントを追加」から足し直すと、落とさない限り
+/// 一覧に同じアカウントが 2 件並ぶ。⚠ **索引側（[AccountStorage.addAccount]）は
+/// `contains` で弾いている**ので、起動し直すと 1 件に戻る——**再起動で消える＝
+/// 気づきにくい**不具合だった。
+///
+/// ⚠ **先頭へ置く意味は「現在のアカウント」ではなく並び順**。足し直しでも並びは
+/// 新しい方に寄せる（`current` は呼び出し側が別に差し替える）。
+///
+/// オフライン保持 entry の重複排除 (#792) と同じ形。**片方だけ直さないこと。**
+List<Account> withAccountAtFront(List<Account> accounts, Account newcomer) => [
+  newcomer,
+  ...accounts.where((a) => a.key != newcomer.key),
+];
 
 class AccountManagerNotifier extends Notifier<AccountManagerState> {
   @override
@@ -221,7 +238,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
           )
         : account;
 
-    final newAccounts = [enriched, ...state.accounts];
+    final newAccounts = withAccountAtFront(state.accounts, enriched);
     // 手動ログインで復帰したサーバーがオフライン保持中なら、その entry を落と
     // して二重表示を防ぐ (#792)。
     final offline = state.offlineAccounts
@@ -579,6 +596,9 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
   /// after OS update / device reset).
   Future<int> restoreSessions() async {
     final storage = ref.read(accountStorageProvider);
+    // ⚠ 起動時の復元も「1 周」(#1117-C)。ここを切らないと、前の周の失敗が残った
+    // まま案内の上げ下げを判断することになる。
+    SecureStorageHealth.beginSweep();
     final keys = await storage.getAccountKeys();
     var skippedCount = 0;
     // 一時的な到達不能で落ちたアカウント（secret は有効）。オフライン保持し
@@ -1131,7 +1151,12 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     // 判明）。背景ループも同じ理由で再起動まで復帰しなかった。
     // ⚠ **1 周で 1 回。**アカウントごとに捨てると、応答しない環境でアカウントの
     // 数だけ Ping の上限を払う。
-    if (targets.isNotEmpty) SecretServiceProbe.forgetUnresponsive();
+    if (targets.isNotEmpty) {
+      SecretServiceProbe.forgetUnresponsive();
+      // ⚠ **1 周の定義を 2 つ持たない (#1117-C)。**案内を下ろしてよいかは
+      // 「この 1 周で 1 件も落ちていないか」で決めるので、同じ場所で頭を切る。
+      SecureStorageHealth.beginSweep();
+    }
     for (final offline in targets) {
       final keyStr = offline.key.toStorageKey();
       if (state.accounts.any((a) => a.key == offline.key)) {
@@ -1200,7 +1225,11 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     // `SharedPreferences.getInstance()` 等が投げると **下の
     // `storage.removeAccount` に到達せず、アカウントが消えないまま無言で終わる**。
     // 投げっぱなしにすることで、掃除の失敗が削除そのものを巻き込まなくなる。
-    unawaited(() async {
+    // ⚠⚠ **テストから待てるように future を保持する。**投げっぱなしのまま
+    // `expect` を書くと、**掃除が終わる前に assert して落ちる flaky テスト**に
+    // なる（v1.65 のリリース PR の CI で 3 回中 2 回落ちた）。⚠ **本番の挙動は
+    // 変えない** —— 保持するだけで、ここでは待たない。
+    lastOfflineArtifactCleanup = () async {
       try {
         await PushRegistrationService.forgetAccountLocally(key);
         // 通知ラベルの表示名キャッシュ (#770 / #1024)。残すと同じ
@@ -1216,7 +1245,8 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
           stackTrace: st,
         );
       }
-    }());
+    }();
+    unawaited(lastOfflineArtifactCleanup!);
 
     final storage = ref.read(accountStorageProvider);
     await storage.removeAccount(key.toStorageKey());
@@ -1239,6 +1269,16 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
   /// 永続化するという仕様自体は維持する。
   @visibleForTesting
   static void resetReportedRestoreErrors() => _reportedRestoreErrors.clear();
+
+  /// [removeOfflineAccount] が投げっぱなしにした端末側の掃除 (#1024)。
+  ///
+  /// ⚠⚠ **テストが完了を待つためだけに置いてある。**本番経路は待たない
+  /// （待つと圏外時に最大 10 秒ボタンが効かなくなる・#1035-A4）。⚠ **これが無いと
+  /// 掃除の終了前に `expect` が走る flaky テスト**になる —— v1.65 のリリース PR の
+  /// CI で 3 回中 2 回落ちた。⚠ 同じファイルの「下書きは残らない」テストが安定して
+  /// いたのは、あちらの掃除が `await` 側にあるため。
+  @visibleForTesting
+  static Future<void>? lastOfflineArtifactCleanup;
 
   static void _reportRestoreOnce(String accountKey, Object e, StackTrace st) {
     final dedupKey = '$accountKey:${e.runtimeType}';

@@ -37,6 +37,18 @@ class MisskeyUser {
   final bool? canChat;
   final String? chatScope;
 
+  /// 引っ越し先の ActivityPub URI (#1055)。引っ越していなければ null。
+  ///
+  /// ⚠ **URI 1 本しか来ない**（Mastodon の `moved` は Account そのもの）。
+  /// `@user@host` は分からないので、画面には URL を出す。
+  final String? movedTo;
+
+  /// 凍結 / サイレンス / 削除済み (#1055)。⚠ **いずれも「通常の状態ではない」系**
+  /// で、引っ越しと同じ表示ルールに束ねる。未取得では null。
+  final bool? isSuspended;
+  final bool? isSilenced;
+  final bool? isDeleted;
+
   const MisskeyUser({
     required this.id,
     required this.username,
@@ -65,6 +77,10 @@ class MisskeyUser {
     this.createdAt,
     this.canChat,
     this.chatScope,
+    this.movedTo,
+    this.isSuspended,
+    this.isSilenced,
+    this.isDeleted,
   });
 
   factory MisskeyUser.fromJson(Map<String, dynamic> json) =>

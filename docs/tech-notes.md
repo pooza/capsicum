@@ -52,6 +52,16 @@
 
 `context.push<T>('/route')` + `context.pop(result)` を使う。`Navigator.pop(context, result)` では `go_router` が戻り値を握りつぶす。`showGeneralDialog` のコールバック方式もリビルドで消失するため不可。
 
+#### ⚠⚠ `extra` は refresh のたびに消える — 画面をまたぐ引数はクエリで運ぶ（#1057）
+
+`refreshListenable` が鳴ると `RouteMatchList` が**シリアライズ経由で組み直される**。`extraCodec` を渡していないので `json.encoder.convert(extra)` に掛かり、**`BackendType`（enum）のような JSON にできない値が 1 つでも入っていると extra が丸ごと `null` に落ちる**（`RouteMatchListCodec._toPrimitives`）。⚠ **クエリパラメータは残る**ので、**画面の生存中ずっと要る引数はクエリで運ぶ**（`loginLocation()` / `resolveLoginArgs()` のように、組み立てと読み取りを 1 対で置いて両側を通す）。⚠ **refresh を跨いでも State は作り直されない**ので、クエリ化すれば画面の続行は保てる。
+
+⚠⚠ **`push` で積んだぶんは top-level redirect の `matchedLocation` に出ない。**`RouteMatchList.push` は `copyWith(matches:)` だけで **`uri` を更新しない**。ホームから `/server` → `/login` と積んでも location は `/home` のままなので、**`matchedLocation` を見る分岐は「押し込み経路でだけ黙って成立しない」**。初回ログイン（`go('/server')`）では成立するため、**新規ユーザーでは動いて既存ユーザーで動かない**という割れ方をする。
+
+⚠ **どちらも go_router 側の挙動なので、こちらのコードをいくら読んでも出てこない。**`~/.pub-cache/hosted/pub.dev/go_router-<版>/lib/src/` を直接読むのが早い。⚠ **この 3 点（extra が消える / State は保たれる / push は location に出ない）は `router_login_args_test` で固定してある**——前提が崩れると対策ごと無効になるため。
+
+⚠ 同じ原理で **`state.extra!` の強制 unwrap は refresh を跨ぐと落ちうる**（[#1107](https://github.com/pooza/capsicum/issues/1107)）。
+
 ### MFM リンク記法の URL 抽出
 
 MFM のリンク記法 `[text](URL)` は、現状の正規表現ベースの URL 抽出だと末尾の `)` が URL の一部として誤認識される。MFM パーサー実装時にこの問題も解消すること。
@@ -66,7 +76,7 @@ Google Play は 64bit `.so` の LOAD セグメントが 16KB 整列（`p_align >
 
 原因は `irondash_engine_context`（`super_drag_and_drop` → `super_native_extensions` の transitive 依存）。cargokit はデフォルトで **GitHub の precompiled `.so` をダウンロード**して使い、irondash 0.5.5（最新）の precompiled が 4KB 整列・upstream 修正なし（姉妹 super_native_extensions は build.rs に `cargo:rustc-link-arg=-Wl,-z,max-page-size=16384` があり precompiled も 16KB 済み）。**ELF セグメント整列は後から変えられない**ので zipalign 等では直らない。
 
-対処（恒久・コミット済み）: `packages/capsicum/android/cargokit_options.yaml` に `use_precompiled_binaries: false` を置いてローカル Rust ビルドへ切り替え（要 rustup + android ターゲット）、ビルド時に `CARGO_ENCODED_RUSTFLAGS=-Clink-arg=-Wl,-z,max-page-size=16384` を渡して 16KB 整列させる。**stale な gradle daemon は古い環境を握っていてフラグを取りこぼす**ので `./gradlew --stop` してから build。手順・検証の正本は docs/store-release-guide.md §4.2「Android: 16KB ページサイズ対応」。アップロード前に `.so` の `p_align` を必ず検証する。
+対処（恒久・コミット済み）: `packages/capsicum/android/cargokit_options.yaml` に `use_precompiled_binaries: false` を置いてローカル Rust ビルドへ切り替え（要 rustup + android ターゲット）、ビルド時に `CARGO_ENCODED_RUSTFLAGS=-Clink-arg=-Wl,-z,max-page-size=16384` を渡して 16KB 整列させる。**stale な gradle daemon は古い環境を握っていてフラグを取りこぼす**ので `./gradlew --stop` してから build。手順・検証の正本は `.claude/skills/store-release/build-upload.md` §4.2「Android: 16KB ページサイズ対応」。アップロード前に `.so` の `p_align` を必ず検証する。
 
 ### 仕様に迷ったらまず本家 Mastodon / Misskey の実装を確認する
 
@@ -180,6 +190,17 @@ super_drag_and_drop の drag 開始ジェスチャーは入力デバイスで異
 ### `flutter_web_auth_2` が Android エミュレータで不安定
 
 `CallbackActivity` 方式でカスタムスキーム (`capsicum://oauth`) を受けるが、Android エミュレータで安定して動作しない。`url_launcher` + OOB（手動コード入力）フォールバックで代替している（[login-troubleshooting.md](login-troubleshooting.md) も参照）。
+
+### Android の凍結（App Freezer）を実機で追う道具（#1108）
+
+Android 12+ は背面に回ったプロセスを**凍結**する。OAuth のように「ブラウザを操作しているあいだ capsicum が待つ」形は正面からこれに当たり、**loopback の callback ページを返せない**＝承認しても戻らない。⚠ **検証を人の目視に頼らない**——下はすべて adb で読める。
+
+- `adb logcat -G 16M` を**検証開始前に**（`-G` はバッファを消す）。⚠ **ストリームは USB 切断で落ちる**ので `-d` で吸い出す方式にする
+- 凍結: `adb logcat -d | grep "freezing <pid>"` / 解凍は `sync unfroze`
+- キャッシュ状態: `adb shell cat /proc/<pid>/oom_score_adj` が 900 台。⚠ **切り替え直後は 700 だが、放置すればそのまま落ちる**
+- コールバック到達: `adb shell cat /proc/net/tcp | grep -i 1BBB`（7099）。5 番目のフィールドが `tx:rx` で、**rx が 0 以外なら未読が積まれている**＝届いているのに読めていない
+- 通知が出たか: `adb shell dumpsys notification`。⚠ **チャンネルの `mLastNotificationUpdateTimeMs` は通知が消えた後も「いつ投稿されたか」を残す**ので、「出なかった」を事後に反証できる。⚠ **Android 12+ は foreground service の通知を約 10 秒遅らせる**ので、出した直後にシェードを見ても無い
+- ⚠ **アプリを 4 つ開くと LMK に capsicum ごと殺される。**押し下げは**放置だけで足りる**
 
 ### デバッグ APK の手動インストール
 
@@ -420,6 +441,15 @@ v1.63 で実際に踏んだ（#1043）:
 新しい Misskey API エンドポイントを利用する際は `MisskeyAdapter._permissions` リストに該当パーミッションを追加すること。追加漏れは 403 `PERMISSION_DENIED` になる。既存トークンには効かないため、ユーザーは再ログインが必要。v1.2 で `read:channels` / `write:channels` / `write:report-abuse` を追加した経緯がある。
 
 エラー時は「権限がありません。再ログインが必要な場合があります」のようなメッセージを表示する。
+
+#### UI で作れない投稿を API で用意する（検証素材の作り方）
+
+指名投稿・特定の返信構造など、**クライアントの UI では作れない素材**は MiAuth でトークンを取って API で作る。⚠ **Misskey Web が未ログインでも、MiAuth の認可画面は保存済みアカウントを選べる**ので、ブラウザにセッションがあれば足りる。
+
+1. `https://<host>/miauth/<任意の UUID>?permission=write:notes` をブラウザで開いて承認
+2. `POST https://<host>/api/miauth/<同じ UUID>/check` でトークンが返る
+
+⚠ debug 版のサーバー選択にはステージングのプリセットが並ぶので、本番に素材を作らない。
 
 ### `i/update` は空文字列禁止
 

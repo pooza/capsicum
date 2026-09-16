@@ -48,6 +48,21 @@ class SecureStorageHealth {
   /// 送っても母数が水増しされるだけ。
   static bool _reported = false;
 
+  /// この 1 周で読めなかったアカウントの数 (#1117-C)。
+  ///
+  /// ⚠⚠ **これが無いと「後から書いたほうが勝つ」。**復元は全アカウントを並べて
+  /// 回すので、**読めないアカウントが残っているのに後続の 1 件が成功すると案内が
+  /// 消えていた**（原因に辿れる唯一の手掛かりが消える）。
+  static int _failuresInSweep = 0;
+
+  /// 復元 / 再試行の 1 周の頭で呼ぶ (#1117-C)。
+  ///
+  /// ⚠ `SecretServiceProbe.forgetUnresponsive` と**同じ場所で呼ぶ**（1 周の定義を
+  /// 2 つ持たないため）。
+  static void beginSweep() {
+    _failuresInSweep = 0;
+  }
+
   /// 触る前の疎通確認（`SecretServiceProbe`）で諦めたときの
   /// `TimeoutException.message`。
   ///
@@ -67,6 +82,7 @@ class SecureStorageHealth {
           : 'capsicum: secure storage did not respond within '
                 '${cause.duration?.inMilliseconds}ms',
     );
+    _failuresInSweep++;
     notifier.value = true;
     if (_reported) return;
     _reported = true;
@@ -104,6 +120,7 @@ class SecureStorageHealth {
     // 載る。release の `debugPrint` は breadcrumb になり、message は
     // `_scrubBreadcrumb` で push token しか伏せられない。
     debugLogException('capsicum: secure storage refused the read', cause);
+    _failuresInSweep++;
     notifier.value = true;
   }
 
@@ -111,7 +128,12 @@ class SecureStorageHealth {
   /// (#1085)。
   ///
   /// ⚠ **Sentry の送信済みフラグは戻さない。**1 プロセス 1 回の母数を保つ。
+  /// ⚠⚠ **同じ 1 周で読めなかったアカウントが 1 件でもあれば下ろさない**
+  /// (#1117-C)。以前は「後から書いたほうが勝つ」形で、**読めないアカウントが
+  /// 残っているのに後続の 1 件が成功すると案内が消えていた**。原因（キーリング）に
+  /// 辿れる唯一の手掛かりなので、1 件でも失敗が残っているあいだは出し続ける。
   static void markRecovered() {
+    if (_failuresInSweep > 0) return;
     if (!notifier.value) return;
     debugPrint('capsicum: secure storage is readable again');
     notifier.value = false;
@@ -121,5 +143,6 @@ class SecureStorageHealth {
   static void resetForTest() {
     notifier.value = false;
     _reported = false;
+    _failuresInSweep = 0;
   }
 }

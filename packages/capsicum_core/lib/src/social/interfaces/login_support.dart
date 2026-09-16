@@ -70,6 +70,17 @@ class LoginFailure extends LoginResult {
 /// Phase 1: [startLogin] returns [LoginNeedsOAuth] with the browser URL.
 /// Phase 2: [completeLogin] is called with the callback URI after browser redirect.
 abstract mixin class LoginSupport {
-  Future<LoginResult> startLogin(ApplicationInfo application);
+  /// [forceLogin] が true なら、ブラウザにそのサーバーのセッションがあっても
+  /// ログイン画面から通させる（Mastodon の `force_login=true`・#1109）。
+  ///
+  /// ⚠ **既定は true**（従来の挙動）。false にできるのは「どのアカウントで承認
+  /// されても構わない」場面だけ。⚠ **同じサーバーに 2 つ目のアカウントを足す
+  /// ときに false にすると、ブラウザのセッションで 1 つ目が黙って選ばれる。**
+  ///
+  /// ⚠ Misskey（MiAuth）に相当する概念は無いので無視される。
+  Future<LoginResult> startLogin(
+    ApplicationInfo application, {
+    bool forceLogin = true,
+  });
   Future<LoginResult> completeLogin(Uri callbackUri, Map<String, String> extra);
 }

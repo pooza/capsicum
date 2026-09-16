@@ -41,6 +41,10 @@ void main() {
       ...exportableSettings.map((s) => s.key),
       ...deviceLocalKeys,
       ...accountScopedKeys,
+      // アカウント別設定は #1119 で「意図的な除外」から「バックアップ対象」へ
+      // 移った。⚠ **prefix はこちらにも入るので、和集合から外すと検査が
+      // 素通りする。**
+      ...accountScopedSettings.map((s) => s.prefix),
     };
     final missing = keys.difference(covered);
 
@@ -56,9 +60,28 @@ void main() {
 
   test('バックアップ対象と意図的な除外は重ならない', () {
     final exported = exportableSettings.map((s) => s.key).toSet();
+    final accountScoped = accountScopedSettings.map((s) => s.prefix).toSet();
     expect(exported.intersection(deviceLocalKeys), isEmpty);
     expect(exported.intersection(accountScopedKeys), isEmpty);
     expect(deviceLocalKeys.intersection(accountScopedKeys), isEmpty);
+    // ⚠ **書き出す prefix と除外する prefix が重なっていないこと (#1119)。**
+    // 重なると「除外のつもりのものが書き出される」を読む側から検出できない。
+    expect(accountScoped.intersection(accountScopedKeys), isEmpty);
+    expect(accountScoped.intersection(deviceLocalKeys), isEmpty);
+    expect(accountScoped.intersection(exported), isEmpty);
+  });
+
+  test('アカウント別設定の prefix は末尾が _ で、YAML キーはそれを落としたもの', () {
+    // YAML 上のキーは prefix から機械的に作る。⚠ **末尾の `_` を落とし忘れると、
+    // 書き出したファイルを自分で読み込めない**（キーが一致しない）。
+    for (final setting in accountScopedSettings) {
+      expect(setting.prefix, endsWith('_'));
+      expect(
+        setting.yamlKey,
+        setting.prefix.substring(0, setting.prefix.length - 1),
+      );
+      expect(setting.yamlKey, isNot(endsWith('_')));
+    }
   });
 
   test('バックアップ対象のキーに重複が無い', () {

@@ -91,6 +91,11 @@ class MisskeyCapabilities extends AdapterCapabilities {
 
   @override
   int? get maxPostContentLength => 3000;
+
+  /// `notes/create` の JSON Schema `maxLength`（ajv）と DB の型はどちらも
+  /// コードポイント。CW は `text` とは別枠の 500 (#1034)。
+  @override
+  PostLengthRule get postLengthRule => PostLengthRule.codePoints;
 }
 
 class MisskeyAdapter extends DecentralizedBackendAdapter
@@ -488,66 +493,63 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     ).results.map(_applyWordFilter).toList();
   }
 
+  /// ワードミュートを適用する。
+  ///
+  /// ⚠⚠ **`Post` を手で組み直さない (#1117-B)。**以前はここで `Post(...)` を
+  /// 全フィールド書き写していたため、**quote / quoteState / poll / card /
+  /// channel / localOnly / language / url / reactionAcceptance などを軒並み
+  /// 捨てていた**。warn が掛かった自分の投稿を「削除して再編集」すると、
+  /// 「ローカルのみ」やチャンネル・投票・引用が落ちる形で表に出ていた。
+  /// **判定結果だけを [Post.copyWith] で載せる。**
+  ///
+  /// ⚠⚠ **自分の投稿はワードミュートの対象外**（Misskey 本家と同じ）。
+  /// `check-word-mute.ts` は backend / frontend の両方で
+  /// `if (me && note.userId === me.id) return false` を先頭に持つ。per-server の
+  /// workaround ではなく**上流の仕様に合わせる**話。⚠ 自分の投稿が隠れると
+  /// 「投稿したのに無い」に見えるうえ、再編集の入口にも辿れない。
+  ///
+  /// ⚠ [_myUser] は [getMyself] が埋める。まだ null のあいだ（起動直後の
+  /// キャッシュ復元など）は従来どおり判定する —— 隠す側に倒しておき、直後の
+  /// REST 結果で正される。
+  /// ⚠⚠ **ブースト / 引用の中身も見る (#1117 レビュー)。**以前は `post` 本体の
+  /// `content` + `spoilerText` しか見ておらず、**純 Renote は `content` が null
+  /// なので即 return していた** —— ミュート語を含む投稿が Renote されると全文が
+  /// そのまま出る、という抜けがあった（拡散経路が丸ごと素通り）。
+  ///
+  /// 本家も同じ形で、`use-note.ts` が **note 本体 → `reply` → `renote`** の順に
+  /// `checkWordMute` を 3 回呼ぶ。ここでは capsicum のモデルに合わせて
+  /// `reblog`（renote）と `quote` を対象に足す。
+  ///
+  /// ⚠ **自分除外はノートごとに掛ける**（本家と同じ）。自分の投稿を他人が
+  /// Renote した場合、外側は他人でも中身は自分なので、中身は判定から外れる。
   Post _applyWordFilter(Post post) {
     if (_mutedWords.isEmpty && _hardMutedWords.isEmpty) return post;
-    final text = '${post.content ?? ''} ${post.spoilerText ?? ''}'
-        .toLowerCase();
-    if (text.trim().isEmpty) return post;
+    final myId = _myUser?.id;
+    if (myId != null && post.author.id == myId) return post;
 
-    if (_matchesMuteWords(text, _hardMutedWords)) {
-      return Post(
-        id: post.id,
-        postedAt: post.postedAt,
-        author: post.author,
-        content: post.content,
-        isHtml: post.isHtml,
-        scope: post.scope,
-        attachments: post.attachments,
-        favouriteCount: post.favouriteCount,
-        reblogCount: post.reblogCount,
-        replyCount: post.replyCount,
-        favourited: post.favourited,
-        reblogged: post.reblogged,
-        bookmarked: post.bookmarked,
-        sensitive: post.sensitive,
-        reactions: post.reactions,
-        myReaction: post.myReaction,
-        reactionEmojis: post.reactionEmojis,
-        inReplyToId: post.inReplyToId,
-        reblog: post.reblog,
-        spoilerText: post.spoilerText,
-        emojis: post.emojis,
-        emojiHost: post.emojiHost,
-        pinned: post.pinned,
+    final targets = <Post>[post, ?post.reblog, ?post.quote];
+    var matchedHard = false;
+    var matchedSoft = false;
+    for (final target in targets) {
+      if (myId != null && target.author.id == myId) continue;
+      final text = '${target.content ?? ''} ${target.spoilerText ?? ''}'
+          .toLowerCase();
+      if (text.trim().isEmpty) continue;
+      if (_matchesMuteWords(text, _hardMutedWords)) {
+        matchedHard = true;
+        break;
+      }
+      if (_matchesMuteWords(text, _mutedWords)) matchedSoft = true;
+    }
+
+    if (matchedHard) {
+      return post.copyWith(
         filterAction: FilterAction.hide,
         filterTitle: 'ワードミュート',
       );
     }
-    if (_matchesMuteWords(text, _mutedWords)) {
-      return Post(
-        id: post.id,
-        postedAt: post.postedAt,
-        author: post.author,
-        content: post.content,
-        isHtml: post.isHtml,
-        scope: post.scope,
-        attachments: post.attachments,
-        favouriteCount: post.favouriteCount,
-        reblogCount: post.reblogCount,
-        replyCount: post.replyCount,
-        favourited: post.favourited,
-        reblogged: post.reblogged,
-        bookmarked: post.bookmarked,
-        sensitive: post.sensitive,
-        reactions: post.reactions,
-        myReaction: post.myReaction,
-        reactionEmojis: post.reactionEmojis,
-        inReplyToId: post.inReplyToId,
-        reblog: post.reblog,
-        spoilerText: post.spoilerText,
-        emojis: post.emojis,
-        emojiHost: post.emojiHost,
-        pinned: post.pinned,
+    if (matchedSoft) {
+      return post.copyWith(
         filterAction: FilterAction.warn,
         filterTitle: 'ワードミュート',
       );
@@ -718,7 +720,13 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   // LoginSupport
 
   @override
-  Future<LoginResult> startLogin(ApplicationInfo application) async {
+  Future<LoginResult> startLogin(
+    ApplicationInfo application, {
+    // ⚠ **MiAuth に `force_login` 相当は無いので無視する** (#1109)。承認画面は
+    // セッションがあってもアカウントの確認を挟むので、Mastodon の
+    // 「黙って既存アカウントで承認される」形にならない。
+    bool forceLogin = true,
+  }) async {
     try {
       final session = const Uuid().v4();
       final authUrl = Uri.https(host, '/miauth/$session', {

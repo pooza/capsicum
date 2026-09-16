@@ -71,7 +71,7 @@ class PostTouchActionRow extends ConsumerWidget {
     }
 
     if (enabled.contains(PostTouchAction.reply)) {
-      add(Icons.reply, 'リプライ', () {
+      add(Icons.reply, '返信', () {
         context.push('/compose', extra: {'replyTo': targetPost});
       });
     }

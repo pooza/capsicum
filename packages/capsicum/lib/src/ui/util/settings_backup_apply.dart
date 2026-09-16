@@ -169,8 +169,12 @@ final Set<String> _knownBackupKeys = {
   for (final setting in exportableSettings) setting.key,
   ...deviceLocalKeys,
   ...accountScopedKeys,
+  ...accountScopedSettings.map((s) => s.prefix),
   // アカウント索引の取り込み結果 (#1001)。理由は定数文字列。
   'accounts',
+  // アカウント別設定の取り込み結果 (#1119)。⚠ **理由は件数だけの定数文字列で、
+  // アカウント名は入らない**（`_mergeAccountSettings` が 1 行にまとめている）。
+  'account_settings',
 };
 
 /// 取り込めなかった件数の但し書き。何も落ちていなければ空文字 (#1010)。

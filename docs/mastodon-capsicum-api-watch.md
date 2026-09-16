@@ -109,6 +109,19 @@ minor 内の patch 更新（自前 3 鯖は pooza が本番へリリース日に
 
 実測（2026-09-03）: 美食丼 / デルムリン丼 / キュアスタ！の `/api/v2/instance` はいずれも `4.7.1`。
 
+### v4.7.1 → v4.7.2（本番 3 台適用済み・2026-09-16 トリアージ）
+
+**client 影響なし（capsicum コード変更ゼロ）**。`app/serializers/rest/` と `config/routes/` の diff はいずれも**完全に空**。動いたのは 4 箇所だけ。
+
+- **none（フォーク内部・streaming）**: `streaming/index.js` の `subscriptionKeyForChannel` が、購読キーの区切りを生の NUL バイトから Unicode エスケープ表記へ変えた（フォーク #925 の後追い・`file` / `grep` がソースをバイナリ扱いして検索を取りこぼすのを避けるため）。⚠ **キーはサーバー内部の購読管理用で、WebSocket のプロトコルには出ない。**⚠ 元の patch（2026-07-05）は **DEFAULT_TAG によるローカル TL 置換と hashtag column が共有 WS で衝突する**のを直したもので、capsicum の [#1090](https://github.com/pooza/capsicum/issues/1090)（デッキの streaming 多重化）とは**別件**。
+- **none（フォーク・メディア掃除）**: `app/models/media_attachment.rb` に `scope :without_default_tag`（デフォルトタグ付き投稿のメディアを「ローカル扱い」で保持する）。API 応答には出ない。
+- **none（Web フォーム専用）**: `app/models/form/import.rb` の JSON 検証の順序と `json_data` の型分岐。管理画面のインポート機能で、REST API は通らない。
+- **passive（応答形状は不変）**: `api/v1/notifications/requests_controller#dismiss_bulk` が `FilteredNotificationCleanupWorker` を積むようになった。応答は `render_empty` のままで、クライアントから見た契約は変わらない。
+
+⚠ **HEIF まわりの騒ぎは capsicum / Misskey に無関係**（2026-09-15 に pooza が調査済みと明言）。モロヘイヤ 5.37.1 側の話で、Mastodon 4.7.2 のパッチ適用だけでは終わらなかったという運用の経緯。
+
+実測（2026-09-16）: 美食丼 / デルムリン丼 / キュアスタ！の `/api/v2/instance` はいずれも `4.7.2`。
+
 ## 関連
 
 - [#721](https://github.com/pooza/capsicum/issues/721) Mastodon 4.6 互換性確認（受動・closed）

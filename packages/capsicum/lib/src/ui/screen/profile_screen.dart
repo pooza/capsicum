@@ -871,6 +871,117 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     ];
   }
 
+  /// 「そのアカウントは通常の状態ではない」ことを示すバッジ列 (#1055)。
+  ///
+  /// 引っ越し済み・凍結・サイレンス・削除済みを**同じ表示ルール**で束ねる。
+  /// フォローしているのに投稿が来ない相手が、何も無かったかのように普通の
+  /// プロフィールとして出るのを防ぐのが目的。
+  ///
+  /// ⚠ **タイムラインのアカウント表示には印を出さない。**引っ越し済みの人の
+  /// 過去の投稿は普通に流れてくるので、全部に印が付くと煩い（Issue の「出しすぎ
+  /// ない」）。気付く必要があるのはプロフィールを開いたときで足りる。
+  List<Widget> _buildAccountStateBadges(ThemeData theme, User user) {
+    final moved = user.movedTo;
+    return [
+      if (moved != null)
+        () {
+          // 行き先が分かる粒度はサーバーによって違う。Mastodon は入れ子の
+          // Account が来るので handle / url が分かるが、**Misskey は
+          // ローカル DB のユーザー ID しか来ない**（#1117 レビューで判明）。
+          //
+          // ⚠⚠ **開けないものをタップ可能に見せない。**以前は ID を `url` に
+          // 入れていたため、Misskey では生の ID がラベルに出たうえ、タップしても
+          // 「リンクを開けませんでした」になっていた。
+          final destination = moved.handle ?? moved.url;
+          return _stateBadge(
+            theme,
+            icon: Icons.move_down,
+            label: destination == null
+                ? 'このアカウントは引っ越しました'
+                : 'このアカウントは引っ越しました → $destination',
+            onTap: moved.url == null
+                ? null
+                : () => openFediverseLink(context, ref, moved.url!),
+          );
+        }(),
+      if (user.suspended)
+        _stateBadge(
+          theme,
+          icon: Icons.block,
+          label: 'このアカウントは凍結されています',
+          emphasized: true,
+        ),
+      if (user.silenced)
+        _stateBadge(
+          theme,
+          icon: Icons.visibility_off,
+          label: 'このアカウントはサイレンスされています',
+        ),
+      if (user.deleted)
+        _stateBadge(
+          theme,
+          icon: Icons.person_off,
+          label: 'このアカウントは削除済みです',
+          emphasized: true,
+        ),
+    ];
+  }
+
+  /// [_buildAccountStateBadges] の 1 行。ミュートバッジと同じ見た目に揃える。
+  ///
+  /// [emphasized] は取り返しのつかない状態（凍結・削除済み）にだけ使い、
+  /// error 系の色で出す。[onTap] があれば押せる（引っ越し先へ遷移）。
+  Widget _stateBadge(
+    ThemeData theme, {
+    required IconData icon,
+    required String label,
+    bool emphasized = false,
+    VoidCallback? onTap,
+  }) {
+    final background = emphasized
+        ? theme.colorScheme.errorContainer
+        : theme.colorScheme.secondaryContainer;
+    final foreground = emphasized
+        ? theme.colorScheme.onErrorContainer
+        : theme.colorScheme.onSecondaryContainer;
+    final content = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: foreground),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              label,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: foreground,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: onTap == null
+            ? content
+            : InkWell(
+                onTap: onTap,
+                borderRadius: BorderRadius.circular(8),
+                child: content,
+              ),
+      ),
+    );
+  }
+
   Widget _buildProfileHeader(BuildContext context, User user) {
     final theme = Theme.of(context);
 
@@ -952,6 +1063,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
               ),
             ],
           ),
+          ..._buildAccountStateBadges(theme, user),
           ..._buildMuteBadge(theme),
           if (user.description != null && user.description!.isNotEmpty) ...[
             const SizedBox(height: 12),

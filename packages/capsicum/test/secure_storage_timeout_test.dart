@@ -85,10 +85,15 @@ void main() {
   });
 
   test('⚠⚠ 読めなかった後に読めたら、案内を下ろす', () {
+    // ⚠ **次の 1 周に入ってから読む (#1117-C)。**同じ周で 1 件でも落ちていれば
+    // 後続の成功では下ろさない（読めないアカウントが残っているのに案内が消えると
+    // 原因に辿れない）。復帰の経路（再試行・起動時の復元）は頭で beginSweep を
+    // 呼ぶので、そこを真似る。
     // #1085: 再試行で復帰できるようにしたので、旗を立てっぱなしにすると
     // キーリングが直ったあとも「読み出せません」の案内が残る。
     SecureStorageHealth.markRefused(Exception('Failed to unlock the keyring'));
     expect(SecureStorageHealth.unavailable, isTrue);
+    SecureStorageHealth.beginSweep();
 
     final storage = _MockSecureStorage();
     when(
@@ -105,6 +110,8 @@ void main() {
   test('⚠ item が無い（null）読み取りでも案内を下ろす', () {
     // 読めないのではなく、読んだ結果が空だった。キーリングは応答している。
     SecureStorageHealth.markRefused(Exception('Failed to unlock the keyring'));
+    // 上のテストと同じ理由で 1 周を切る (#1117-C)。
+    SecureStorageHealth.beginSweep();
 
     final storage = _MockSecureStorage();
     when(
