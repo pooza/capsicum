@@ -191,6 +191,47 @@ probing の結果、基本的な機能が欠けているサーバーに対して
 3. CI（`dart format`・`dart analyze`）が通ることを確認してからマージ
 4. `main` でタグを打ちリリース
 
+⚠⚠ **このフローは「develop に乗っているもの ＝ 次に出すもの」が成立するときだけ使える。**成立しない状況が 2 つある（次節）。**フロー記述だけを見て release PR を作らない。**
+
+### develop が次リリース対象でないときの出し方
+
+**まず `git log main..develop --oneline` で develop の中身を見る。**次マイルストーンの work が乗っていたら、上のフローは使えない。
+
+| 状況 | 判定 |
+| --- | --- |
+| develop が次リリース対象そのもの | 上のフローでよい |
+| **ホットフィックス**（x.y.z）で、develop に次マイルストーンの work が乗っている | 下の手順 |
+| **v2.0 開発中の 1.x リリース**（develop が 2.x 線である間はずっと） | 下の手順 |
+
+手順:
+
+1. **`main` から** `fix/NNNN` を切って修正する（⚠ **develop から切らない**）
+2. **`main` から** `release/x.y.z` を切り、必要なコミットだけを載せる
+3. release ブランチでビルド・検証する（⚠ **検証する artifact も release ブランチから作る**）
+4. `release/x.y.z` → `main` の PR → マージ → タグ → fastlane
+5. **`main` を `develop` へ back-merge する**（develop 側が修正を取りこぼさないように）
+
+⚠⚠ **2026-04-27 に実際に事故った。**v1.20.2 のホットフィックスで `fix/385` を develop から切り、この CLAUDE.md の「develop → main」の記述だけを見て release PR を作ろうとした。develop には v1.21 向けコミットが 4 本乗っていたため、**そのままマージしていれば v1.20.2 として出すべきでない内容が main に流れていた**。さらに検証ビルド `1.20.2+49` も develop 起点で作っており、**verified artifact 自体が v1.21 のコードを含んでいて出荷できない状態**だった。⚠ **「branch 操作は安全」と保証する前に、main / develop の差分を実際に見る。**
+
+#### v2.0 開発中は、1.x のリリースが全部この形になる
+
+**v2.0 の実装が develop に乗ると、`develop` → `main` は 1.x に使えなくなる**（大玉 3 本・長期のため、develop は「まだ出せないもの」を数か月抱える）。一方 [roadmap.md](roadmap.md) のとおり **1.x は止められない** —— ユーザー報告・上流追従・Sentry 起点の修正はその間も発生するので、「v2.0 まで 1.x 凍結」は選べない。
+
+したがってこの期間は、**`main` が 1.x 線・`develop` が 2.x 線**になる:
+
+| | 通常 | v2.0 開発中 |
+| --- | --- | --- |
+| 1.x の修正を切る元 | `develop` | **`main`** |
+| 1.x のリリース PR | `develop` → `main` | **`release/x.y.z`** → `main` |
+| 取り込みの向き | — | **`main` → `develop`** の一方向 back-merge |
+| `develop` → `main` | 毎リリース | **v2.0 を出すとき 1 回だけ** |
+
+⚠ **新しい仕組みではない。**上のホットフィックス手順そのままで、**それが常態になる**というだけ。
+
+⚠⚠ **専用の長寿命ブランチ（`develop-2.0` 等）は作らない。**v2.0 の土台側（[#1087](https://github.com/pooza/capsicum/issues/1087) `timelineProvider` の family 化 / [#1088](https://github.com/pooza/capsicum/issues/1088) family キー / [#1089](https://github.com/pooza/capsicum/issues/1089)・[#1090](https://github.com/pooza/capsicum/issues/1090) streaming の多重化 / [#1095](https://github.com/pooza/capsicum/issues/1095)・[#1096](https://github.com/pooza/capsicum/issues/1096) ProviderScope）は **provider と streaming の根を組み替える**。そして 1.x の不具合修正（ログイン・タイムライン・通知）も、ほぼ必ず同じ層に触る。長寿命ブランチを 2 本持つと、**その面積の乖離を挟んで毎回 cherry-pick する**ことになる。**乖離を抱えるブランチを `develop` 1 本に限る**のが要点。
+
+**切り替えのトリガーは「develop に 1.x として出せない最初のコミットが入った瞬間」。**⚠ どのコミットがそれに当たるかは**系列の境界＝製品判断**（「[マイルストーン運用](#マイルストーン運用)」節）で、技術構造からは導けない。
+
 ### Codex レビューの回し方（open PR）
 
 ⚠ **追加コミットではレビューは発火しない。**`@codex review` を PR コメントに書いた時だけ走る（初回は PR 作成 / ready 化で自動）。**rebase / force-push で SHA が変わったときも打ち直す**。
