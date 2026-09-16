@@ -78,7 +78,12 @@ class OAuthKeepAlive {
       // `_authenticateViaLocalhostServer` の bind まで到達せず、**ポート 7099 を
       // 掴んだまま / 掴む前に**ログインが落ちる。型を絞る意味が無い場所。
       debugLogException('capsicum: oauth_keepalive: start failed', e);
-      _reportStartFailureOnce(e is PlatformException ? e.code : 'unknown');
+      // ⚠ `'unknown'` に畳まない。#1117-A が catch を広げた理由である
+      // `MissingPluginException`（plugin 未登録）と、Android が FGS を拒否した
+      // 場合とを、Sentry のタグだけで分けられなくなる。型名は機微を含まない。
+      _reportStartFailureOnce(
+        e is PlatformException ? e.code : e.runtimeType.toString(),
+      );
       return OAuthKeepAliveSession._(token: token, active: false);
     }
   }
@@ -146,8 +151,15 @@ class OAuthKeepAliveSession {
   /// 何本目の認可待ちか。[OAuthKeepAlive.stop] の世代判定に使う。
   final int token;
 
-  /// 実際に keep-alive が上がったか。
+  /// keep-alive を**必要とする OS か**（≒ Android 12 以上か）。
   ///
   /// Android 12 未満は freezer が無いので `false` になるが、**失敗ではない**。
+  ///
+  /// ⚠⚠ **「実際に上がったか」ではない。**Kotlin 側は
+  /// `OAuthKeepAliveService.start()`（戻り値なし）を呼んだあと
+  /// `shouldKeepAlive()`＝`SDK_INT >= 31` を返しているだけなので、
+  /// `startForegroundService` が受理された後に service が `onStartCommand` へ
+  /// 到達しないまま終わっても `true` になる。**#1108 / #1111 の切り分けで
+  /// 一次情報として使わないこと。**実起動の成否を返す改修は別途。
   final bool active;
 }

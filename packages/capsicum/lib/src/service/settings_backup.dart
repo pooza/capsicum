@@ -317,7 +317,11 @@ void _writeAccountSettings(StringBuffer buffer, SharedPreferences prefs) {
   for (final account in accounts) {
     final lines = <String>[];
     for (final setting in accountScopedSettings) {
-      final key = '${setting.prefix}$account';
+      // ⚠ **prefs 側のキーは正規形。**索引には非正規形（大文字ホスト等）が
+      // 入りうるが、画面は `account.key.toStorageKey()`＝正規形で読み書きする
+      // （`account_settings_screen.dart`）。索引が既に正規形なら no-op。
+      final key =
+          '${setting.prefix}${_canonicalAccountKey(account) ?? account}';
       switch (setting.type) {
         case BackupValueType.textList:
           final list = prefs.getStringList(key);
@@ -727,10 +731,13 @@ Future<List<String>> _mergeAccountSettings(
         rejected++;
         continue;
       }
-      // ⚠ **保存キーは索引に入っている生の key で組む。**正規形へ寄せると、
-      // 非正規形で索引に入っている端末で「画面が読むキー」とずれる（#1011 が
-      // 索引そのものを直さないのと同じ理由）。
-      final storageKey = '${scoped.prefix}$rawAccount';
+      // ⚠⚠ **保存キーは正規形で組む。**以前は「索引に入っている生の key で
+      // 組む」としていたが前提が逆だった —— 画面が読むのは
+      // `account.key.toStorageKey()`＝**正規形**（`account_settings_screen.dart`
+      // ほか。`Account.key` は `AccountKey.fromStorageKey(索引)` 由来）。生の key
+      // で書くと、非正規形の端末から移行したとき**誰も読まないキーへ書いて
+      // 「取り込みました」と報告する**。索引が既に正規形なら no-op。
+      final storageKey = '${scoped.prefix}$account';
       final reason = await _writeAccountValue(
         prefs,
         scoped,

@@ -668,8 +668,12 @@ class AccountStorage {
       await _gate.write(key: key, value: value);
     } on PlatformException catch (e) {
       if (!_isKeychainDuplicate(e)) rethrow;
+      // ⚠ **`$key` を生で書かない。**`secret_<username@host>` そのものなので、
+      // release では breadcrumb 化され、以後の任意の Sentry イベントにハンドルが
+      // 付く（`_scrubBreadcrumb` が当てるのは relay の push token だけ）。
       debugPrint(
-        'capsicum: keychain duplicate (-25299) on write $key; delete+retry',
+        'capsicum: keychain duplicate (-25299) on write '
+        '${sentrySafeAccountKey(key)}; delete+retry',
       );
       // 衝突相手は #643 以前の default accessibility (unlocked) で書かれた旧
       // item。現行 first_unlock の delete はクエリに kSecAttrAccessible を
