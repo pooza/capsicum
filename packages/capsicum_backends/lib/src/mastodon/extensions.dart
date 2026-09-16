@@ -76,6 +76,16 @@ extension CapsicumMastodonAccountExtension on MastodonAccount {
       locked: locked,
       discoverable: discoverable,
       movedTo: _movedTo(moved),
+      // ⚠⚠ **Mastodon にも凍結 / サイレンスは来る (#1055)。**当初「REST の
+      // Account に相当フィールドが無い」として Misskey だけに入れていたが誤り。
+      // `account_serializer.rb` に `attribute :suspended, if: :unavailable?` と
+      // `attribute :silenced, key: :limited, if: :silenced?` が実在する。
+      // ⚠ **`silenced` の JSON キーは `limited`。**該当しないアカウントでは
+      // キーごと来ない（＝null）ので false へ畳む。
+      // ⚠ `deleted` は Mastodon では `unavailable?` 経由で `suspended` に
+      // 畳まれるため、別に立てない。
+      suspended: suspended ?? false,
+      silenced: limited ?? false,
     );
   }
 }

@@ -65,6 +65,22 @@ class MastodonAccount {
   /// 読まない** — 多段の引っ越しを辿る画面は作らないため、1 段で足りる。
   final MastodonAccount? moved;
 
+  /// 凍結・削除済みか (#1055)。
+  ///
+  /// ⚠ **serializer は `if: :unavailable?` 付きで、`unavailable? = deleted? ||
+  /// suspended?`**（`account_serializer.rb` / `concerns/account/suspensions.rb`）。
+  /// つまり**削除済みもここに畳まれる**ので、`deleted` を別に持たない。
+  /// 該当しないアカウントではキーごと来ないので null になる。
+  final bool? suspended;
+
+  /// サイレンス（制限）されているか (#1055)。
+  ///
+  /// ⚠⚠ **JSON のキーは `silenced` ではなく `limited`。**serializer が
+  /// `attribute :silenced, key: :limited, if: :silenced?` と改名している。
+  /// キー名で grep すると見落とすので注意。
+  @JsonKey(name: 'limited')
+  final bool? limited;
+
   const MastodonAccount({
     required this.id,
     required this.username,
@@ -96,6 +112,8 @@ class MastodonAccount {
     this.url,
     this.createdAt,
     this.moved,
+    this.suspended,
+    this.limited,
   });
 
   factory MastodonAccount.fromJson(Map<String, dynamic> json) =>
