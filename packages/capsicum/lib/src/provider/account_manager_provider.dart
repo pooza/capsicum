@@ -1225,7 +1225,11 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     // `SharedPreferences.getInstance()` 等が投げると **下の
     // `storage.removeAccount` に到達せず、アカウントが消えないまま無言で終わる**。
     // 投げっぱなしにすることで、掃除の失敗が削除そのものを巻き込まなくなる。
-    unawaited(() async {
+    // ⚠⚠ **テストから待てるように future を保持する。**投げっぱなしのまま
+    // `expect` を書くと、**掃除が終わる前に assert して落ちる flaky テスト**に
+    // なる（v1.65 のリリース PR の CI で 3 回中 2 回落ちた）。⚠ **本番の挙動は
+    // 変えない** —— 保持するだけで、ここでは待たない。
+    lastOfflineArtifactCleanup = () async {
       try {
         await PushRegistrationService.forgetAccountLocally(key);
         // 通知ラベルの表示名キャッシュ (#770 / #1024)。残すと同じ
@@ -1241,7 +1245,8 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
           stackTrace: st,
         );
       }
-    }());
+    }();
+    unawaited(lastOfflineArtifactCleanup!);
 
     final storage = ref.read(accountStorageProvider);
     await storage.removeAccount(key.toStorageKey());
@@ -1264,6 +1269,16 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
   /// 永続化するという仕様自体は維持する。
   @visibleForTesting
   static void resetReportedRestoreErrors() => _reportedRestoreErrors.clear();
+
+  /// [removeOfflineAccount] が投げっぱなしにした端末側の掃除 (#1024)。
+  ///
+  /// ⚠⚠ **テストが完了を待つためだけに置いてある。**本番経路は待たない
+  /// （待つと圏外時に最大 10 秒ボタンが効かなくなる・#1035-A4）。⚠ **これが無いと
+  /// 掃除の終了前に `expect` が走る flaky テスト**になる —— v1.65 のリリース PR の
+  /// CI で 3 回中 2 回落ちた。⚠ 同じファイルの「下書きは残らない」テストが安定して
+  /// いたのは、あちらの掃除が `await` 側にあるため。
+  @visibleForTesting
+  static Future<void>? lastOfflineArtifactCleanup;
 
   static void _reportRestoreOnce(String accountKey, Object e, StackTrace st) {
     final dedupKey = '$accountKey:${e.runtimeType}';

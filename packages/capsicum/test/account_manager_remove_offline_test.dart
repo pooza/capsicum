@@ -175,6 +175,12 @@ void main() {
     await container
         .read(accountManagerProvider.notifier)
         .removeOfflineAccount(alice);
+    // ⚠⚠ **掃除は投げっぱなし（#1035-A4）なので明示的に待つ。**待たずに assert
+    // すると、掃除が終わる前に読んで落ちる flaky テストになる（v1.65 のリリース
+    // PR の CI で 3 回中 2 回落ちた）。⚠ 下の「下書きは残らない」が安定して
+    // いたのは、あちらの掃除が `removeOfflineAccount` の中で `await` されて
+    // いるため。**同じ見た目でも待ち方が違う。**
+    await AccountManagerNotifier.lastOfflineArtifactCleanup;
 
     expect(
       await NotificationLabelCache.readReblog(labelKey),
