@@ -657,10 +657,23 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       // ⚠ **初回ログインだけ外す形は採らない。**新規ユーザーはそのサーバーの
       // ブラウザセッションを持っていないことが多く、`force_login` の有無で挙動が
       // 変わらない＝効かないところで外すことになる（#1109 本文の検討 3）。
-      _forceLogin = ref
-          .read(accountManagerProvider)
-          .accounts
-          .any((a) => a.key.host == widget.host);
+      // ⚠⚠ **`offlineAccounts` も数える。**`accounts`（接続済み）と
+      // `offlineAccounts`（到達不能で保持中・#792）は**互いに素**で、
+      // `_removeOffline` が昇格時に片方から落とす。そして「接続し直す」の導線
+      // （`reconnectRouteFor`）は **offline 側からしか呼ばれない**ので、
+      // `accounts` だけ見ると**この画面がいちばん守りたい経路で判定が必ず
+      // false になる**（＝上のコメントが「強制のままにする」と宣言している相手）。
+      //
+      // ⚠ **ホストは小文字で比べる。**`a.key.host` は `AccountKey.fromStorageKey`
+      // （`Uri.parse`）経由で正規化済みだが、`widget.host` は入力の `trim()` だけ
+      // （`server_selection_screen.dart`）。大文字混じりで打つと同じく外れる。
+      final manager = ref.read(accountManagerProvider);
+      final targetHost = widget.host.toLowerCase();
+      _forceLogin =
+          manager.accounts.any((a) => a.key.host.toLowerCase() == targetHost) ||
+          manager.offlineAccounts.any(
+            (o) => o.key.host.toLowerCase() == targetHost,
+          );
       _logLoginStep('startLogin.begin', data: {'forceLogin': _forceLogin});
       final startResult = await loginSupport.startLogin(
         application,
@@ -802,6 +815,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 'login.error_retry.clear_failed',
                 data: {'type': clearErr.runtimeType.toString()},
               );
+            }
+            if (!mounted) {
+              _logLoginStep('login.error_retry.abandoned');
+              return;
             }
             await _login(isRetry: true);
             _logLoginStep(
@@ -970,6 +987,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             'login.silent_retry.clear_failed',
             data: {'type': clearErr.runtimeType.toString()},
           );
+        }
+        // ⚠⚠ **再試行だけは画面が生きているときに限る。**5 分の認可待ち
+        // timeout は `_OAuthCancelledException` へ変換される（`:503`）ので、
+        // **戻るで離れた試行も 5 分後にここへ落ちてくる**。`_login` は冒頭で
+        // 無条件に `setState` を呼ぶため、dispose 済みでは `_element!` が null で
+        // 必ず例外になり、**未処理例外として Sentry に上がる**（`isRetry` は
+        // 多重起動ガードも素通りするので手前でも止まらない）。
+        //
+        // ⚠ **上の資格情報の削除はガードしない。**あちらは State が死んでいても
+        // 走るべき側 —— #620 は「Android が往復中にアクティビティを再生成した」
+        // ケースを想定しており、次回の手動ログインを通すために古い creds を
+        // 捨てておく必要がある（`ref` を使っていないのはそのため）。
+        if (!mounted) {
+          _logLoginStep('login.silent_retry.abandoned');
+          return;
         }
         await _login(isRetry: true);
         _logLoginStep(
