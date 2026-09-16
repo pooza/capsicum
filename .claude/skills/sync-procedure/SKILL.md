@@ -104,12 +104,16 @@ capsicum-relay の Issue・マイルストーンは、**capsicum 本体と同じ
 
 ## 7. Sentry の新規イシュー確認
 
-- `sentry-cli --auth-token <調査用トークン> issues list -p capsicum` で未解決イシューを確認（トークンは `~/.sentryclirc` から取得: `awk '/\[auth\]/{getline; print}' ~/.sentryclirc | sed 's/token=//'`）
-- 同じトークンで `sentry-cli --auth-token <調査用トークン> issues list -p capsicum-relay` も確認（capsicum-relay#10 で 2026-05-28 から計装開始。Phase A 段階では smoke test 起点で、Phase B 以降で APNs/FCM/socket_loop の本格計装が乗る）
-- 各イシューの過去コメント（対応経緯）を確認する: `curl -sH "Authorization: Bearer <調査用トークン>" https://sentry.io/api/0/issues/{issue_id}/comments/ | jq -r '.[] | .data.text'`
+⚠⚠ **Sentry は [`.claude/scripts/sentry-api.sh`](../../scripts/sentry-api.sh) 経由で叩く（2026-09-17〜）。**調査用トークン（`~/.sentryclirc` の `[auth]`）はスクリプトの中で読み、**画面にもコマンドラインにも出さない**。⚠ **トークンを `awk` 等で読み出してコマンドへ埋める旧手順に戻さない** —— auto モードの分類器が「認証情報の露出」として拒否し、`autoMode.allow` に許可を書いても通らなかった（経緯は [dev-environment.md](../../../docs/dev-environment.md) の「落とし穴」）。⚠ リポジトリ root から相対パスで呼ぶ（`permissions.allow` の `Bash(.claude/scripts/sentry-api.sh *)` に当てるため）
+
+- `.claude/scripts/sentry-api.sh cli issues list -p capsicum` で未解決イシューを確認。新着だけなら `--query 'is:unresolved firstSeen:-3d'`（`issues list` は firstSeen を列に出さない）
+- `.claude/scripts/sentry-api.sh cli issues list -p capsicum-relay` も確認（capsicum-relay#10 で 2026-05-28 から計装開始。Phase A 段階では smoke test 起点で、Phase B 以降で APNs/FCM/socket_loop の本格計装が乗る）
+- 各イシューの過去コメント（対応経緯）を確認する: `.claude/scripts/sentry-api.sh get /issues/{issue_id}/comments/ | jq -r '.[] | .data.text'`
+- 詳細（件数・利用者数）は `get /issues/{issue_id}/`、端末・リリースは `get /issues/{issue_id}/events/latest/ | jq -c '[.tags[] | {(.key): .value}] | add'`、同一利用者かは同じく `.user.id` で見る
 - 新規・未解決のイシューがあれば内容を確認し、対応が必要か判断する（対応が必要なら GitHub Issue を起票。capsicum-relay 側のイシューは pooza/capsicum-relay リポに起票）
-- 判断結果や対応経緯はコメントとして記録する: `curl -sX POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"text":"コメント内容"}' https://sentry.io/api/0/issues/{issue_id}/comments/`
-- 調査用トークンは `~/.sentryclirc` の `[auth]` セクションから取得する（capsicum では `.sentryclirc` がデプロイ用トークンで占有されているため別枠）。⚠ **`TOKEN=$(...)` の変数代入から始めない**（[dev-environment.md](../../../docs/dev-environment.md) の「コマンドの書き方」）。`awk '/\[auth\]/{getline; print}' ~/.sentryclirc | sed 's/token=//'` を**単独で 1 回**実行して値を得て、以降のコマンドへ直接埋める
+- 判断結果や対応経緯はコメントとして記録する: `.claude/scripts/sentry-api.sh post /issues/{issue_id}/comments/ '{"text":"コメント内容"}'`
+- 調査用トークンが別枠なのは、capsicum ではリポジトリ root の `.sentryclirc` がデプロイ用トークンで占有されているため。スクリプトの `cli` は `SENTRY_AUTH_TOKEN` で調査用を明示するので、cwd に関係なく 403 にならない
+- ⚠ Windows（`sh` 不在）ではスクリプトが使えない。`sentry-cli` を `--org` 明示で叩く従来の形のまま
 - resolved 済みのイシューは報告不要
 
 ## 8. 関連リポジトリの同期確認

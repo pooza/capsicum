@@ -228,6 +228,7 @@ capsicum/
       release-review/     # リリース前レビュー（5 観点・赤黄緑の送り分け）
       store-release/      # 毎回のリリース手順（⚠ 工程ごとの補助ファイルつき）
     hooks/                # 守らせたいものの機械化（deny-shell-loops.sh）
+    scripts/              # 許可確認を出さずに回すための道具（sentry-api.sh: トークンを画面に出さず Sentry を叩く）
   docs/                   # 開発ドキュメント
     CLAUDE.md             # 本ファイル
     architecture.md       # アーキテクチャ設計
