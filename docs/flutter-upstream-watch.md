@@ -12,6 +12,7 @@ capsicum で発生する不具合のうち、原因が Flutter framework 本体�
 | [#94](https://github.com/pooza/capsicum/issues/94) | 投稿フォームのテキスト選択メニューが英語表示・範囲選択不可 | [flutter/flutter#105028](https://github.com/flutter/flutter/issues/105028) (OPEN, TextField toolbar button text do not match platform iOS and macOS text in Japanese) | 2026-09-01 | 上流 open、本命特定済。最終更新 2024-03-06・実質的な議論は 2023-08 が最後（翻訳文字列を Apple 系 / Windows 系で分ける必要があるという結論のまま停滞）。未アサイン。変化なし |
 | [#463](https://github.com/pooza/capsicum/issues/463) | 入力エラー: かっこ等の変換が確定できずカーソルがワード左に飛ぶ (Android / Samsung Keyboard) | **本命: [flutter/flutter#120351](https://github.com/flutter/flutter/issues/120351)** (OPEN, "The operation of converting from Japanese strings to symbols on certain Android devices is bad", labels `e: samsung` / `a: text input` / `platform-android` / `a: internationalization` / `P2` / triaged-framework)。旧 close: [#31512](https://github.com/flutter/flutter/issues/31512) / [#51893](https://github.com/flutter/flutter/issues/51893) (Samsung composing region 重複, 2020 close) | 2026-09-01 | **chase で本命特定済**。Samsung 端末で日本語→記号変換が不正という症状が #463 (かっこ等の変換確定不可) と一致。上流は triaged-framework P2 だが最終更新 2024-02-20 で停滞のまま（担当者は 2024-02 に triage bot が解除して以降 未アサイン）。capsicum 側の全 TextField 共通触媒は棚卸し済みで該当なし。Gboard で回避可能。変化なし |
 | [#608](https://github.com/pooza/capsicum/issues/608) | Windows: IME 変換中にカーソルが文節先頭に固着し一時的に入力不能になる | **2026-09-01 の chase で候補 3 件を特定（本命は未確定）**。① **[flutter/flutter#189491](https://github.com/flutter/flutter/issues/189491)**「[Windows] Windows Hangul syllable loss」(OPEN / P2 / `team-windows` / `triaged-windows` / `has reproducible steps`) — **最有力**。② [#126263](https://github.com/flutter/flutter/issues/126263)「[TextField] Odd behavior with Microsoft IME Japanese Text input method」(OPEN / P2 / `c: regression` / team-windows)。③ [#191196](https://github.com/flutter/flutter/issues/191196)「[Windows] IME composition survives a text-client change」(OPEN / P3) | 2026-09-01 | ⚠ **本命は未確定**。`reproduction-needed` のままで **Windows 実機での再現手順が先**（[dev-environment.md](dev-environment.md) の実機ゲート）。候補の当たり具合: **① が「打鍵が失われ、同じ文字を打ち直す必要がある」と一致**（IME/event の timing で syllable が落ちる・高速入力時に出やすく毎回は再現しない＝#608 の「たまに」と同じ非決定性）。上流も生きており 2026-07-29 に loic-sharma が [#140739](https://github.com/flutter/flutter/issues/140739) の contributor へ修正を打診、最終更新 2026-08-06。② は Windows + 日本語 IME だが症状が「重複」で、#608 の「固着・入力不能」とは別系統（2024-06 停滞）。③ は別 TextField への遷移が要るので #608 の状況とは合わない。⚠ **capsicum #608 の本文が参考に挙げている [flutter#103203](https://github.com/flutter/flutter/issues/103203) は無関係**（`r: invalid` で 2022-05 close された assertion メッセージの別件。「Windows TSF の TextEditingDelta 取りこぼし系統」という説明は成り立たない）。**2026-09-13: 再現の進め方を決めて [#608 にコメント](https://github.com/pooza/capsicum/issues/608#issuecomment-5653164782)した**（① の最小サンプルは capsicum を介さない `TextField` 単体 + Notepad 対照群なので、**素の Flutter アプリで日本語を速く打つだけの 2 分の検証に還元できる**。空振り時に粘らない条件と、退避案も併記）。⚠ **x64 実機 Windows のセッションでのみ着手可能** |
+| **（capsicum 側 Issue なし）** | **Xcode 27 で `lipo -verify_arch` が複数アーキテクチャを拒否し、macOS / iOS のビルドが落ちる** | **[flutter/flutter#188461](https://github.com/flutter/flutter/issues/188461)**（OPEN / **P1** / assignee あり / 上流は「iOS シミュレータのビルド」として報告） | 2026-09-17 | ⚠⚠ **`/opt/flutter` にローカル patch を当てて回避中**（`packages/flutter_tools/lib/src/build_system/targets/darwin.dart` の `thinFramework`。1 アーキテクチャずつ `-verify_arch` する形へ）。**この行の目的は patch を外す判断**である。上流が修正を出したら、**どの stable に入ったかを確認して pin を動かし、patch を外す**。⚠ **上流の報告は iOS シミュレータだが、capsicum が踏んだのは macOS のリリースビルド**（同じ `thinFramework` を通るため影響はより広い）。⚠ **patch は `git checkout` / SDK 入れ直しで消える**。消えたことに気づく手掛かりは、`does not contain architectures "arm64 x86_64"` という**実態と逆のメッセージ**（`lipo -info` は両方あると出す）。詳細は [dev-environment.md](dev-environment.md) |
 
 ### 監視対象に入れていない `flutter` ラベル付き Issue
 
@@ -68,6 +69,21 @@ curl -s https://storage.googleapis.com/flutter_infra_release/releases/releases_m
 | 2026-09-01 | **3.44.6**（2026-07-09） | **3.47.2**（2026-08-27） | マイナー 1 つ分。同じ 3.44 系にも 3.44.7 / .8 / .9 のパッチが出ている。⚠ **本 doc の 4 件はいずれも上流未修正なので、SDK を上げても解消しない**。上げる動機は別（一般の不具合修正・依存の追従）なので、リリース枠の判断は chase と切り離す |
 
 サードパーティパッケージ（`flutter_web_auth_2` 等）由来の項目は、当該パッケージの release notes / changelog を確認し、`pubspec.yaml` の更新で取り込めるかを判断する。
+
+### ⚠⚠ 「pin が古い」だけを見ていると、Xcode が動いて壊れるのを捕まえられない
+
+**2026-09-17 に Xcode が 26 → 27 へ自動更新され、Flutter を 1 ミリも動かしていないのに iOS / macOS のビルドが落ちた。**上の落差の表を何度見ても予兆は出ない —— **追っている向きが逆**だから。
+
+⚠ **壊れる組み合わせは (Flutter の pin, Xcode の版) のペアで決まる。**片方だけ固定しても意味がない。そして **`flutter-version` は CI 3 本で pin してあるのに、Xcode は pin していない**（[#1067](https://github.com/pooza/capsicum/issues/1067) の `Package.resolved` 往復も同じ非対称から来ている）。
+
+⚠⚠ **CI は iOS / macOS をビルドしない。**Apple 向けビルドは Mac でしか走らないので、**この種の破損は手元でしか捕まらない**。リリース当日に初めて気づく経路が実在する。
+
+対処は 2 段で入れた（2026-09-17）:
+
+1. **Xcode の自動更新を止めた** —— `defaults write com.apple.commerce AutoUpdate -bool false`。⚠ **App Store アプリ全体に効く**（Xcode だけを対象にする設定は無い）。戻すのは `-bool true`。⚠ **macOS 自体の自動更新（`AutomaticallyInstallMacOSUpdates = 1`）は切っていない** —— 入るのはマイナー / セキュリティ更新で、メジャー（26 → 27）は明示同意なしには入らないため
+2. **Xcode を上げたら、その場でスモークビルドを 1 本通す** —— `flutter build ipa --release` と `flutter build macos --release` + `xcodebuild archive`。⚠ **リリース直後に上げる**のが良い（壊れても次のリリースまでの時間がそのまま復旧の余裕になる）
+
+⚠ **2026-09-17 は結果的に運が良かっただけ**だった。Xcode が上がったのは v1.65 のビルドが終わった**約 3 時間半後**で、ビルド中に上がっていたら出荷物の素性が怪しくなっていた。
 
 ## 実行タイミング（2026-08-21 に手動運用へ切り替え）
 

@@ -46,6 +46,76 @@ dart run melos bootstrap
 
 実例は #836（3.41.9 → 3.44.6）のコミット 2 本がそのまま雛形になる。**iOS / macOS のビルド構成に影響する変更（3.44 の SwiftPM 移行など）を含む場合は、製品版昇格前に内部ベータで検証すること。**
 
+## ⚠⚠ Xcode の版は pin していない（Flutter と違って勝手に動く）
+
+**`flutter-version` は CI 3 本と全端末で pin してあるが、Xcode は pin していない。**この非対称が定期的に事故を起こす。
+
+⚠⚠ **CI は iOS / macOS をビルドしない。**Apple 向けビルドは Mac でしか走らないので、**Xcode 由来の破損は手元でしか捕まらない**。リリース当日に初めて気づく経路が実在する。
+
+### 自動更新は止めてある（2026-09-17）
+
+```sh
+defaults write com.apple.commerce AutoUpdate -bool false   # 戻すなら -bool true
+```
+
+⚠ **App Store アプリ全体に効く**（Xcode だけを対象にする設定は無い）。⚠ **macOS 自体の自動更新は切っていない**（`AutomaticallyInstallMacOSUpdates = 1`）—— 入るのはマイナー / セキュリティ更新で、メジャーは明示同意なしには入らないため。
+
+### Xcode を上げたら、その場でスモークビルドを 1 本通す
+
+```sh
+cd packages/capsicum
+source ~/.config/capsicum/secrets.env
+flutter build ipa --release --dart-define=SENTRY_DSN=$SENTRY_DSN --dart-define=SENTRY_ENV=production --dart-define=RELAY_SECRET=$RELAY_SECRET
+flutter build macos --release --dart-define=...   # 同上
+xcodebuild -workspace macos/Runner.xcworkspace -scheme Runner -configuration Release \
+  -archivePath build/macos/capsicum.xcarchive -allowProvisioningUpdates archive
+```
+
+⚠⚠ **`flutter build ipa` は失敗しても exit 0 を返すことがある**（2026-09-17 実測）。**終了コードを信用せず、成果物の存在で判定する**:
+
+```sh
+ls -la build/ios/ipa/*.ipa
+```
+
+⚠ **リリース直後に上げる**のが良い。壊れても次のリリースまでの時間がそのまま復旧の余裕になる。
+
+### 2026-09-17 に Xcode 26 → 27 で踏んだ 3 つ（層が全部違う）
+
+⚠⚠ **1 つ直すと次が出る。**「1 つ直ったから大丈夫」と判断しないこと。
+
+| # | 症状 | 層 | 対処 |
+| --- | --- | --- | --- |
+| 1 | `Target Integrity: ... IPHONEOS_DEPLOYMENT_TARGET is set to 9.0, but the range of supported deployment target versions is 15.0 to 27.0.x` | **依存（podspec）** | iOS の `Podfile` の `post_install` で 15.0 未満を底上げ |
+| 2 | `Binary ... does not contain architectures "arm64 x86_64"` | **Flutter ツール（上流バグ）** | `/opt/flutter` へローカル patch（下記） |
+| 3 | `The macOS deployment target ... is set to 11.5, but the range of supported deployment target versions is 12.0 to 27.0.x`（**`Runner` 本体・ShareExtension・NSE**） | **アプリ本体** | **最低 macOS を 12.0 へ引き上げ**（製品判断・pooza 承認） |
+
+⚠ **1 と 3 は同じ形だが深刻度が違う。**1 は依存を宣言済みの値に揃えるだけだが、**3 はサポート対象 OS を切る話**なので製品判断が要る。
+
+⚠ **`Podfile` の `platform` は podspec が明示した値を上書きしない。**Flutter 標準の `flutter_additional_ios_build_settings` は **12.0 未満しか底上げしない**ので、13.0 を宣言しているもの（`flutter_web_auth_2`）は素通りする。
+
+### ⚠⚠ `/opt/flutter` にローカル patch がある（flutter/flutter#188461）
+
+**Xcode 27 の `lipo` は `-verify_arch` に複数アーキテクチャを渡せない**（`lipo: -verify_arch requires exactly one input file` を出して exit 1）。Flutter 3.44.6 は 1 回でまとめて渡すため、**バイナリに両方揃っていても失敗する**。
+
+```
+packages/flutter_tools/lib/src/build_system/targets/darwin.dart  # thinFramework
+```
+
+⚠⚠ **エラーメッセージが実態と逆**（`does not contain architectures "arm64 x86_64"` と出るが、`lipo -info` は両方あると出す）。**patch が消えたときの手掛かりはこの文言**。
+
+⚠⚠ **patch を当てただけでは効かない。**`flutter_tools` はコンパイル済み snapshot として動き、**`.stamp` が一致していると再生成されない**。必ず落とす:
+
+```sh
+rm -f /opt/flutter/bin/cache/flutter_tools.{stamp,snapshot}
+flutter --version    # ここで Building flutter tool... が走れば再生成された
+```
+
+⚠ **これは紛らわしい失敗**。patch はファイルに残っているので `grep` では確認できてしまい、「当てたのに直らない＝patch が違う」と誤診する。実際には**当てたものが使われていない**。
+
+⚠ **消える経路**: `git checkout`（＝[基準版に追従する](#基準版に追従する各端末で普段やる方)の手順そのもの）/ SDK 入れ直し / 別の Mac には**最初から当たっていない**。
+
+⚠ **上流が修正したら patch を外して正規の版へ戻す。**判断は [flutter-upstream-watch.md](flutter-upstream-watch.md) の監視対象テーブルで追う。
+
 ## Debug ビルドと TestFlight の役割分担
 
 Debug ビルドは「コードを動かしてみるための環境」であり、本番相当の検証は TestFlight / 内部テストトラックで行う。Debug 環境で本番と同じ機能スイートが揃わなくても、TestFlight 経由で検証できるなら気にしない方針。
