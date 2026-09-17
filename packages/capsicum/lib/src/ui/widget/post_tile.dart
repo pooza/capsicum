@@ -26,6 +26,7 @@ import '../util/hashtag_actions.dart';
 import '../util/post_action_error.dart';
 import '../util/post_actions.dart';
 import '../util/post_scope_display.dart';
+import '../util/provider_scope_carrier.dart';
 import '../util/reaction_acceptance.dart';
 import '../util/relative_time.dart';
 import '../util/visible_timeline.dart';
@@ -1295,8 +1296,12 @@ class _PostTileState extends ConsumerState<PostTile> {
                 item(
                   leading: const Icon(Icons.reply),
                   title: const Text('返信'),
-                  onSelected: () =>
-                      context.push('/compose', extra: {'replyTo': targetPost}),
+                  onSelected: () => context.push(
+                    '/compose',
+                    extra: extraWithProviderScope(context, {
+                      'replyTo': targetPost,
+                    }),
+                  ),
                 ),
                 if (targetPost.quotable)
                   item(
@@ -1304,7 +1309,9 @@ class _PostTileState extends ConsumerState<PostTile> {
                     title: const Text('引用'),
                     onSelected: () => context.push(
                       '/compose',
-                      extra: {'quoteTo': targetPost},
+                      extra: extraWithProviderScope(context, {
+                        'quoteTo': targetPost,
+                      }),
                     ),
                   ),
                 if (adapter is FavoriteSupport)
@@ -1647,6 +1654,11 @@ class _PostTileState extends ConsumerState<PostTile> {
     if (adapter == null) return;
     final messenger = ScaffoldMessenger.of(context);
     final router = GoRouter.of(context);
+    // ⚠ await の後では context が使えないことがあるので、再編集フォームへ渡す
+    // スコープ（開いたカラムのアカウント・#1149）も先に取っておく。
+    final redraftExtra = extraWithProviderScope(context, {
+      'redraft': targetPost,
+    });
     // 理由は [_confirmDelete] の同名コメント (#990 / #1009)。
     final timeline = readVisibleTimelines(ref);
     final postLabel = ref.read(postLabelProvider);
@@ -1670,7 +1682,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                 if (mounted) setState(() => _deletedPostId = targetPost.id);
                 if (context.mounted) _popIfInThread(context);
                 if (mounted) {
-                  router.push('/compose', extra: {'redraft': targetPost});
+                  router.push('/compose', extra: redraftExtra);
                 }
               }, '$postLabelを削除しました');
             },
@@ -3444,12 +3456,12 @@ class _AttachmentThumbnailsState extends ConsumerState<_AttachmentThumbnails> {
   ) async {
     final result = await context.push<List<Attachment>>(
       '/media',
-      extra: {
+      extra: extraWithProviderScope(context, {
         'attachments': attachments,
         'initialIndex': index,
         'postAuthorId': widget.postAuthorId,
         'postId': widget.postId,
-      },
+      }),
     );
     if (result != null) {
       widget.onAttachmentsUpdated?.call(result);

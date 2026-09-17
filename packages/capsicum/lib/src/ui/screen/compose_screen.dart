@@ -42,6 +42,7 @@ import '../util/drive_description_sync.dart';
 import '../util/livecure_snackbar.dart';
 import '../util/post_scope_display.dart';
 import '../util/program_schedule_display.dart';
+import '../util/provider_scope_carrier.dart';
 import '../util/redraft_carry_over.dart';
 import '../util/relative_time.dart';
 import '../util/shortcode_warning_controller.dart';
@@ -2783,7 +2784,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       await _clearDraft();
     }
     if (!mounted) return;
-    context.pushReplacement('/compose', extra: {'restoreDraft': draft});
+    context.pushReplacement(
+      '/compose',
+      extra: extraWithProviderScope(context, {'restoreDraft': draft}),
+    );
   }
 
   /// テンプレートの内容を本文・CW へ反映し、使用履歴を更新する。CW は空なら

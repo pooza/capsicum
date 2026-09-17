@@ -16,6 +16,7 @@ import '../util/hashtag_actions.dart';
 import '../util/notification_type_display.dart';
 import '../util/post_actions.dart';
 import '../util/post_scope_display.dart';
+import '../util/provider_scope_carrier.dart';
 import '../util/reaction_acceptance.dart';
 import '../util/relative_time.dart';
 import '../util/visible_timeline.dart';
@@ -245,7 +246,12 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
                 title: const Text('返信'),
                 onTap: () {
                   Navigator.pop(sheetContext);
-                  context.push('/compose', extra: {'replyTo': targetPost});
+                  context.push(
+                    '/compose',
+                    extra: extraWithProviderScope(context, {
+                      'replyTo': targetPost,
+                    }),
+                  );
                 },
               ),
               if (targetPost.quotable)
@@ -254,7 +260,12 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
                   title: const Text('引用'),
                   onTap: () {
                     Navigator.pop(sheetContext);
-                    context.push('/compose', extra: {'quoteTo': targetPost});
+                    context.push(
+                      '/compose',
+                      extra: extraWithProviderScope(context, {
+                        'quoteTo': targetPost,
+                      }),
+                    );
                   },
                 ),
               if (adapter is FavoriteSupport)

@@ -71,6 +71,7 @@ import 'ui/screen/splash_screen.dart';
 import 'ui/screen/templates_manage_screen.dart';
 import 'ui/screen/unified_notification_screen.dart';
 import 'ui/screen/user_list_screen.dart';
+import 'ui/util/provider_scope_carrier.dart';
 import 'ui/widget/desktop_menu_bar.dart';
 
 /// Navigator key exposed for navigation from notification taps.
@@ -265,11 +266,15 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/media',
         builder: (context, state) {
           final extra = state.extra! as Map<String, dynamic>;
-          return MediaViewerScreen(
-            attachments: extra['attachments'] as List<Attachment>,
-            initialIndex: extra['initialIndex'] as int? ?? 0,
-            postAuthorId: extra['postAuthorId'] as String?,
-            postId: extra['postId'] as String?,
+          // 開いた側（デッキのカラム）のアカウントで動かす (#1149)。
+          return withExtraProviderScope(
+            extra,
+            MediaViewerScreen(
+              attachments: extra['attachments'] as List<Attachment>,
+              initialIndex: extra['initialIndex'] as int? ?? 0,
+              postAuthorId: extra['postAuthorId'] as String?,
+              postId: extra['postId'] as String?,
+            ),
           );
         },
       ),
@@ -362,19 +367,23 @@ final routerProvider = Provider<GoRouter>((ref) {
               // (#833)。compose 側は _effectiveChannelId / _quotedPost / 送信経路が
               // これらの widget フィールドを既に参照するため本体は無改修。明示 extra
               // （通常のリプライ/引用起動）があればそちらを優先する。
-              return ComposeScreen(
-                redraft: extra?['redraft'] as Post?,
-                replyTo: extra?['replyTo'] as Post? ?? restoreDraft?.reply,
-                quoteTo: extra?['quoteTo'] as Post? ?? restoreDraft?.renote,
-                channelId:
-                    extra?['channelId'] as String? ?? restoreDraft?.channelId,
-                channelName:
-                    extra?['channelName'] as String? ??
-                    restoreDraft?.channelName,
-                sharedText: extra?['sharedText'] as String?,
-                initialText: extra?['initialText'] as String?,
-                restoreDraft: restoreDraft,
-                template: extra?['template'] as ComposeTemplate?,
+              // ⚠⚠ 開いた側（デッキのカラム）のアカウントで投稿する (#1149)。
+              return withExtraProviderScope(
+                extra,
+                ComposeScreen(
+                  redraft: extra?['redraft'] as Post?,
+                  replyTo: extra?['replyTo'] as Post? ?? restoreDraft?.reply,
+                  quoteTo: extra?['quoteTo'] as Post? ?? restoreDraft?.renote,
+                  channelId:
+                      extra?['channelId'] as String? ?? restoreDraft?.channelId,
+                  channelName:
+                      extra?['channelName'] as String? ??
+                      restoreDraft?.channelName,
+                  sharedText: extra?['sharedText'] as String?,
+                  initialText: extra?['initialText'] as String?,
+                  restoreDraft: restoreDraft,
+                  template: extra?['template'] as ComposeTemplate?,
+                ),
               );
             },
           ),

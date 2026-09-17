@@ -18,6 +18,7 @@ import '../../util/exception_scrub.dart';
 import '../../util/user_acct.dart';
 import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
+import '../util/provider_scope_carrier.dart';
 import '../util/relative_time.dart';
 import '../util/visible_timeline.dart';
 import '../widget/bottom_safe_area.dart';
@@ -1375,7 +1376,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             case 'mention_compose':
               context.push(
                 '/compose',
-                extra: {'initialText': '@${userAcct(widget.user)} '},
+                extra: extraWithProviderScope(context, {
+                  'initialText': '@${userAcct(widget.user)} ',
+                }),
               );
             case 'mute':
               final ok = await _performAction(
@@ -1522,7 +1525,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   void _openImageViewer(String url, String? description) {
     context.push(
       '/media',
-      extra: {
+      extra: extraWithProviderScope(context, {
         'attachments': [
           Attachment(
             id: 'profile-image',
@@ -1532,7 +1535,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           ),
         ],
         'initialIndex': 0,
-      },
+      }),
     );
   }
 

@@ -7,6 +7,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../service/sentry_op_failure.dart';
 import '../util/draft_display.dart';
 import '../util/op_error.dart';
+import '../util/provider_scope_carrier.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/retry_error_view.dart';
 
@@ -64,7 +65,10 @@ class DraftsScreen extends ConsumerWidget {
     WidgetRef ref,
     Draft draft,
   ) async {
-    await context.push('/compose', extra: {'restoreDraft': draft});
+    await context.push(
+      '/compose',
+      extra: extraWithProviderScope(context, {'restoreDraft': draft}),
+    );
     ref.invalidate(_draftsProvider);
   }
 

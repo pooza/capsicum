@@ -16,6 +16,7 @@ import '../../provider/timeline_provider.dart';
 import '../../url_helper.dart';
 import '../util/about_dialog.dart';
 import '../util/post_scope_display.dart';
+import '../util/provider_scope_carrier.dart';
 import 'desktop_menu_model.dart';
 
 /// デスクトップメニューの /（Ctrl+R）の「タイムラインを更新」から、現在表示中の
@@ -492,7 +493,8 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
           icon: Icons.edit_outlined,
           shortcut: const MenuShortcut(LogicalKeyboardKey.keyN),
           globalShortcut: true,
-          onSelected: () => context.push('/compose'),
+          onSelected: () =>
+              context.push('/compose', extra: extraWithProviderScope(context)),
         ),
         const MenuGroupSeparator(),
         for (final item in navItems.where((i) => i.title != '設定'))

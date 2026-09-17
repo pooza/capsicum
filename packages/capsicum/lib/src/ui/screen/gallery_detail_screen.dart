@@ -4,6 +4,7 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../util/provider_scope_carrier.dart';
 import '../widget/bottom_safe_area.dart';
 
 class GalleryDetailScreen extends StatelessWidget {
@@ -88,7 +89,10 @@ class GalleryDetailScreen extends StatelessWidget {
       onTap: () {
         context.push(
           '/media',
-          extra: {'attachments': post.files, 'initialIndex': index},
+          extra: extraWithProviderScope(context, {
+            'attachments': post.files,
+            'initialIndex': index,
+          }),
         );
       },
       child: Padding(

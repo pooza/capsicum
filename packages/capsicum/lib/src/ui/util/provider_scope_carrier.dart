@@ -44,3 +44,38 @@ Widget carryProviderScope(ProviderContainer container, Widget child) =>
       container: container,
       child: ProviderScopeCarrier(container: container, child: child),
     );
+
+/// `extra` に載せる開く側のスコープのキー。
+const providerScopeExtraKey = '__providerScope';
+
+/// 開く側のスコープを載せた `extra` を作る (#1149)。
+///
+/// ⚠⚠ **全画面のまま残る画面（投稿フォーム `/compose`・メディアビューア `/media`）
+/// へ push するときは必ずこれを通す。**go_router のページの route は開く側の
+/// スコープを持ち込まないので、何もしないと**カラム B から開いた返信フォームが
+/// アカウント A として投稿する**。ルーター側は [withExtraProviderScope] で包む。
+/// 素の `push('/compose' …)` は `provider_scope_push_guard_test` が落とす。
+///
+/// ⚠ `await` の後で呼ぶと `context` が使えないことがある。先に作っておくこと。
+///
+/// ⚠ ログイン状態が切り替わって go_router が `refreshListenable` で組み直すと、
+/// JSON にできない `extra` は丸ごと null に落ちる（`router.dart` の
+/// `loginLocation` の注記・#1057）。コンテナも落ちてルートのスコープに戻るが、
+/// 同じ `extra` に載っている `Post` / `Attachment` も同時に落ちるので、この
+/// 仕組みが新しく足した弱点ではない。
+Map<String, dynamic> extraWithProviderScope(
+  BuildContext context, [
+  Map<String, dynamic>? extra,
+]) => {
+  ...?extra,
+  providerScopeExtraKey: ProviderScope.containerOf(context, listen: false),
+};
+
+/// `extra` に載っていたスコープで [child] を包む（ルーターの builder 用）。
+/// 載っていなければそのまま（アプリ起動時の共有インテント等・ルートのスコープ）。
+Widget withExtraProviderScope(Object? extra, Widget child) {
+  final container = extra is Map ? extra[providerScopeExtraKey] : null;
+  return container is ProviderContainer
+      ? carryProviderScope(container, child)
+      : child;
+}

@@ -11,6 +11,7 @@ import '../../provider/server_config_provider.dart';
 import '../../service/sentry_op_failure.dart';
 import '../../util/post_text_length.dart';
 import '../util/compose_template_display.dart';
+import '../util/provider_scope_carrier.dart';
 import '../util/text_length_counter.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/retry_error_view.dart';
@@ -102,7 +103,10 @@ class TemplatesManageScreen extends ConsumerWidget {
 
   /// テンプレートから compose を開く（新規画面なので上書き確認は不要）。
   Future<void> _compose(BuildContext context, ComposeTemplate template) async {
-    await context.push('/compose', extra: {'template': template});
+    await context.push(
+      '/compose',
+      extra: extraWithProviderScope(context, {'template': template}),
+    );
   }
 
   /// 本文入力の上限。テンプレ本文はそのまま投稿されるわけではないが、投稿可能

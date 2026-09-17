@@ -13,6 +13,7 @@ import '../../provider/server_config_provider.dart';
 import '../util/keyboard_list_navigation.dart';
 import '../util/op_error.dart';
 import '../util/post_actions.dart';
+import '../util/provider_scope_carrier.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/desktop_menu_model.dart';
 import '../widget/post_tile.dart';
@@ -155,12 +156,18 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen>
 
   void _replyToSelected() => _withSelected(
     (a) => a.canReply,
-    (a) => context.push('/compose', extra: {'replyTo': a.targetPost}),
+    (a) => context.push(
+      '/compose',
+      extra: extraWithProviderScope(context, {'replyTo': a.targetPost}),
+    ),
   );
 
   void _quoteSelected() => _withSelected(
     (a) => a.canQuote,
-    (a) => context.push('/compose', extra: {'quoteTo': a.targetPost}),
+    (a) => context.push(
+      '/compose',
+      extra: extraWithProviderScope(context, {'quoteTo': a.targetPost}),
+    ),
   );
 
   void _boostSelected() => _withSelected((a) => a.canBoost, (a) {

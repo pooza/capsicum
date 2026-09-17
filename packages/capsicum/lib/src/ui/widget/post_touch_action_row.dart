@@ -11,6 +11,7 @@ import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../util/post_actions.dart';
 import '../util/post_scope_display.dart';
+import '../util/provider_scope_carrier.dart';
 import '../util/reaction_acceptance.dart';
 import '../util/visible_timeline.dart';
 import 'reaction_picker_sheet.dart';
@@ -72,7 +73,10 @@ class PostTouchActionRow extends ConsumerWidget {
 
     if (enabled.contains(PostTouchAction.reply)) {
       add(Icons.reply, '返信', () {
-        context.push('/compose', extra: {'replyTo': targetPost});
+        context.push(
+          '/compose',
+          extra: extraWithProviderScope(context, {'replyTo': targetPost}),
+        );
       });
     }
     if (enabled.contains(PostTouchAction.favorite) &&
@@ -151,7 +155,10 @@ class PostTouchActionRow extends ConsumerWidget {
     }
     if (enabled.contains(PostTouchAction.quote) && targetPost.quotable) {
       add(Icons.format_quote, '引用', () {
-        context.push('/compose', extra: {'quoteTo': targetPost});
+        context.push(
+          '/compose',
+          extra: extraWithProviderScope(context, {'quoteTo': targetPost}),
+        );
       });
     }
 
