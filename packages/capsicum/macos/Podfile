@@ -1,6 +1,6 @@
 # Runner の MACOSX_DEPLOYMENT_TARGET (11.5) に揃える。gal (#646) が
 # macOS 11.0+ を要求し、旧値 10.15 のままだと pod install が解決できない。
-platform :osx, '11.5'
+platform :osx, '12.0'
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
@@ -40,5 +40,19 @@ end
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_macos_build_settings(target)
+
+    # ⚠⚠ **podspec が明示した deployment target は Podfile の `platform` で
+    # 上書きされない。**Xcode 27 の macOS SDK は **12.0 未満を受け付けない**ので、
+    # `The macOS deployment target ... is set to 10.14, but the range of supported
+    # deployment target versions is 12.0 to 27.0.x` でビルドが落ちる
+    # （2026-09-17 に Xcode 27.0 で実際に踏んだ）。iOS 側の Podfile と同じ形。
+    #
+    # ⚠ **Podfile の `platform :osx, '12.0'` と同じ値**にすること。
+    target.build_configurations.each do |config|
+      current = config.build_settings['MACOSX_DEPLOYMENT_TARGET']
+      if current.nil? || current.to_f < 12.0
+        config.build_settings['MACOSX_DEPLOYMENT_TARGET'] = '12.0'
+      end
+    end
   end
 end
