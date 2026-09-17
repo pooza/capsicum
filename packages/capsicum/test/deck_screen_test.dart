@@ -277,6 +277,38 @@ void main() {
       );
     });
 
+    testWidgets('⚠⚠ 別アカウントのカラムから開いたシート / ダイアログ / メニューも、そのアカウントで動く (#1149)', (
+      tester,
+    ) async {
+      await pumpTwoAccounts(tester, [
+        'a|me|timeline:home',
+        'b|other|timeline:home',
+      ]);
+
+      await tester.tap(find.byKey(const ValueKey('sheet-b')));
+      await tester.pumpAndSettle();
+      expect(find.text('sheet:other'), findsOneWidget);
+      await tester.tapAt(const Offset(10, 10));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('dialog-b')));
+      await tester.pumpAndSettle();
+      expect(find.text('dialog:other'), findsOneWidget);
+      await tester.tapAt(const Offset(10, 10));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('menu-b')));
+      await tester.pumpAndSettle();
+      expect(find.text('menu:other'), findsOneWidget);
+      await tester.tapAt(const Offset(10, 10));
+      await tester.pumpAndSettle();
+
+      // 現在のアカウントのカラムからは、現在のアカウント。
+      await tester.tap(find.byKey(const ValueKey('sheet-a')));
+      await tester.pumpAndSettle();
+      expect(find.text('sheet:me'), findsOneWidget);
+    });
+
     testWidgets('接続されていないアカウントのカラムは、消さずに案内を出す', (tester) async {
       await pumpTwoAccounts(tester, [
         'a|me|timeline:home',
@@ -318,11 +350,43 @@ class _StubColumnState extends ConsumerState<_StubColumn> {
   Widget build(BuildContext context) {
     widget.containers[widget.column.id] = ProviderScope.containerOf(context);
     final account = ref.watch(currentAccountKeyProvider);
+    final id = widget.column.id;
+    // 開いた先で見える「現在のアカウント」。
+    Widget seen(String where) => Consumer(
+      builder: (_, r, _) =>
+          Text('$where:${r.watch(currentAccountKeyProvider)?.username}'),
+    );
     return Column(
       children: [
         Text(
           account?.username ?? '-',
           key: ValueKey('account-${widget.column.id}'),
+        ),
+        Row(
+          children: [
+            TextButton(
+              key: ValueKey('sheet-$id'),
+              onPressed: () => showModalBottomSheet<void>(
+                context: context,
+                builder: (_) => seen('sheet'),
+              ),
+              child: const Text('S'),
+            ),
+            TextButton(
+              key: ValueKey('dialog-$id'),
+              onPressed: () => showDialog<void>(
+                context: context,
+                builder: (_) => Dialog(child: seen('dialog')),
+              ),
+              child: const Text('D'),
+            ),
+            PopupMenuButton<int>(
+              key: ValueKey('menu-$id'),
+              itemBuilder: (_) => [
+                PopupMenuItem(value: 1, child: seen('menu')),
+              ],
+            ),
+          ],
         ),
         Expanded(
           child: ListView.builder(

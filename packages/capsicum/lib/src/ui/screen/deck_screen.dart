@@ -7,6 +7,7 @@ import '../../model/deck_column.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../util/deck_layout.dart';
+import '../util/provider_scope_carrier.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/deck_column_view.dart';
 import '../widget/deck_columns_sheet.dart';
@@ -121,10 +122,9 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
       return DeckColumnUnavailable(column: column);
     }
     used.add(account.key);
-    return UncontrolledProviderScope(
-      container: _containerFor(account),
-      child: child,
-    );
+    // ⚠ UncontrolledProviderScope だけだと、カラムから開いたシート / ダイアログ /
+    // メニューはルートのスコープ（現在のアカウント）で動く (#1149)。
+    return carryProviderScope(_containerFor(account), child);
   }
 
   @override
