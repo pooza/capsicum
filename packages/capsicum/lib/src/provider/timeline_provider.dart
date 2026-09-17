@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../main.dart' show appLaunchStopwatch;
+import '../model/account.dart';
 import '../model/account_key.dart';
 import '../service/timeline_cache.dart';
 import '../util/conversion_skip_report.dart';
@@ -35,6 +36,35 @@ final pendingInitialTabProvider = StateProvider<TabType?>((ref) => null);
 final selectedTimelineTypeProvider = Provider<TimelineType>((ref) {
   final tab = ref.watch(selectedTabProvider);
   return tab is TimelineTab ? tab.type : TimelineType.home;
+});
+
+/// 本線 TL（[timelineProvider]）の family キー (#1087)。
+///
+/// ⚠ **値のまま持つ。文字列にしない**（`docs/deck-ui-plan.md` 決定済み事項 4）。
+/// [AccountKey] も [TimelineType] も値で比較できるので、record の `==` がそのまま
+/// 「同じカラムか」になる。
+///
+/// ⚠ 種別は [TabType] ではなく [TimelineType] で持つ。本線 TL が扱えるのは
+/// [TimelineTab] だけで、ハッシュタグ / リスト / チャンネルは別の family
+/// （#1088 でそれぞれのキーに [AccountKey] を足す）。[TabType] で持つと、
+/// チャンネルタブ等へ切り替えたときに「中身は同じホーム TL なのに別インスタンス」
+/// になって REST を取り直す（[selectedTimelineTypeProvider] は非 TL タブを home に
+/// 畳むので、これまでは再取得していなかった）。
+///
+/// [account] が null になるのはアカウントが 1 つも無いときだけで、そのインスタンスは
+/// 何も取得しない（従来の「アダプタが無い」と同じ）。
+typedef TimelineKey = ({AccountKey? account, TimelineType type});
+
+/// HomeScreen が表示している本線 TL のキー (#1087)。
+///
+/// デッキ導入前の「アカウント 1 つ・タブ 1 本」の画面は、これで [timelineProvider] を
+/// 引く。record は値で比較されるので、アカウントもタブも変わらない限り同じ
+/// インスタンスを指し続ける。
+final currentTimelineKeyProvider = Provider<TimelineKey>((ref) {
+  return (
+    account: ref.watch(currentAccountProvider)?.key,
+    type: ref.watch(selectedTimelineTypeProvider),
+  );
 });
 
 /// `null` 自体が「明示的にクリア」を意味する nullable フィールドを
@@ -524,7 +554,13 @@ mixin TimelineListMutations<Arg>
 }
 
 /// Notifier that manages paginated timeline fetching with optional streaming.
-class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
+///
+/// ⚠ **`(アカウント, 種別)` ごとに別インスタンス** (#1087)。以前は family を持たない
+/// singleton で、アカウント / 種別の切替は同じインスタンスの build() 再実行だった。
+/// 今は切替で**別のインスタンスへ移り**、前のものは誰も watch しなくなって
+/// autoDispose で破棄される（`autoDispose` の扱い自体は変えていない）。
+class TimelineNotifier
+    extends AutoDisposeFamilyAsyncNotifier<TimelineState, TimelineKey> {
   static const _pageSize = 20;
 
   /// ホーム TL の初回描画を 1 プロセス 1 回だけ計測するためのフラグ (#716)。
@@ -628,11 +664,24 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   StreamConnectionState _streamConnectionState =
       StreamConnectionState.connecting;
 
+  /// このインスタンスが担当するアカウントのアダプタ (#1087)。
+  ///
+  /// ⚠⚠ **現在のアカウントがキーのアカウントと一致するときだけ返す。**アカウントを
+  /// 切り替えた直後は、破棄される前の旧インスタンスがまだ生きていることがある。
+  /// そこで `currentAdapterProvider` をそのまま読むと、**旧キーのインスタンスが
+  /// 新しいアカウントの TL を取りに行く**（REST の無駄打ち・別アカウントの投稿が
+  /// 旧キーの一覧に入る）。
+  ///
+  /// 解決元を `currentAccountProvider` にしておくのは、フェーズ 2（#1095 / #1096）で
+  /// カラムごとに `ProviderScope` で上書きする対象がこれだから。
+  DecentralizedBackendAdapter? _adapterFor(Account? current) =>
+      current != null && current.key == arg.account ? current.adapter : null;
+
   @override
-  Future<TimelineState> build() async {
-    // build() reruns when adapter / timeline type changes. Reset stream-side
-    // state so queued posts from a previous timeline context cannot leak
-    // into the new one via flushPending().
+  Future<TimelineState> build(TimelineKey key) async {
+    // build() reruns when the serving account's adapter changes. Reset
+    // stream-side state so queued posts from a previous timeline context cannot
+    // leak into the new one via flushPending().
     _pendingPosts.clear();
     _isNearTop = true;
     _disposed = false;
@@ -646,14 +695,13 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     _reconnectCount = 0;
     _lastDisconnectedAt = null;
 
-    final adapter = ref.watch(currentAdapterProvider);
-    final type = ref.watch(selectedTimelineTypeProvider);
-    final contextKey = timelineContextKey(
-      ref.watch(currentAccountProvider)?.key,
-      'tl:${type.name}',
-    );
+    final type = key.type;
+    final contextKey = timelineContextKey(key.account, 'tl:${type.name}');
     // await を挟む前に確定させる (#914 §5)。以降の stale 判定はこれを見る。
     _servingContextKey = contextKey;
+    // 種別はキーで固定なので watch しない。アカウントは「同じアカウントのアダプタが
+    // 作り直された」（再接続等）ときに build() をやり直すため watch する。
+    final adapter = _adapterFor(ref.watch(currentAccountProvider));
     if (adapter == null) return TimelineState(contextKey: contextKey);
 
     // #716 計測: ホーム TL の初回描画を fetch (サーバー応答) / enrich (isCat) /
@@ -1232,7 +1280,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     // サーバー別に切り分けられるよう host を控える (#826)。挙動は host で分岐
     // しない (per-server workaround は入れない)。付与するのは観測タグのみで、
     // push.host と同型に host のみ載せ生 URL / トークンは載せない。
-    final host = ref.read(currentAccountProvider)?.key.host;
+    final host = arg.account?.host;
     final stream = adapter.streamTimeline(
       type,
       onParseError: (e, st) {
@@ -1491,8 +1539,8 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     final capturedContextKey = state.valueOrNull?.contextKey;
     _catchUpInProgress = true;
     try {
-      final adapter = ref.read(currentAdapterProvider);
-      final type = ref.read(selectedTimelineTypeProvider);
+      final adapter = _adapterFor(ref.read(currentAccountProvider));
+      final type = arg.type;
       if (adapter == null) return;
 
       final gap = await collectCatchUpGap(
@@ -1610,8 +1658,8 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   }
 
   /// 自分の投稿を即座に**現在アクティブな TL** の先頭へ楽観的挿入する (#717)。
-  /// 投稿成功直後に呼ぶ。この provider は [selectedTimelineTypeProvider] を
-  /// watch するため、挿入先は home 固定ではなく今表示中の TL（home / local /
+  /// 投稿成功直後に呼ぶ。呼び出し側は表示中のキー（[currentTimelineKeyProvider]）で
+  /// インスタンスを引くので、挿入先は home 固定ではなく今表示中の TL（home / local /
   /// social / federated）になる。
   ///
   /// 旧実装は投稿後に `invalidate(timelineProvider)` で REST 全再取得していたが、
@@ -1630,8 +1678,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     // build 中・未構築なら何もしない（後続の REST / streaming が拾う）。
     if (current == null) return;
     // 表示中の TL 種別にこの投稿が実際に載るか（種別 × 公開範囲）で弾く (#814)。
-    final type = ref.read(selectedTimelineTypeProvider);
-    if (!ownPostAppearsInTimeline(type, post)) return;
+    if (!ownPostAppearsInTimeline(arg.type, post)) return;
     if (post.filterAction == FilterAction.hide) return;
     final hideLivecure = ref.read(hideLivecureProvider);
     if (hideLivecure && _hasLivecureTag(post)) return;
@@ -1727,8 +1774,8 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
 
     for (var attempt = 0; attempt <= loadMoreMaxRetries; attempt++) {
       try {
-        final adapter = ref.read(currentAdapterProvider);
-        final type = ref.read(selectedTimelineTypeProvider);
+        final adapter = _adapterFor(ref.read(currentAccountProvider));
+        final type = arg.type;
         if (adapter == null) {
           _resetLoading();
           return;
@@ -1874,7 +1921,10 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   IsCatEnricher get _isCatEnricher => ref.read(isCatEnricherProvider);
 }
 
-final timelineProvider =
-    AsyncNotifierProvider.autoDispose<TimelineNotifier, TimelineState>(
-      TimelineNotifier.new,
-    );
+/// 本線 TL（ホーム / ローカル / ソーシャル / 連合）。キーは [TimelineKey] (#1087)。
+///
+/// 表示中の TL を引くときは `timelineProvider(ref.watch(currentTimelineKeyProvider))`。
+/// ⚠ `ref.invalidate(timelineProvider)`（引数なし）は **family の全インスタンス**を
+/// 作り直す。表示中の 1 本だけで良ければキーを渡す。
+final timelineProvider = AsyncNotifierProvider.autoDispose
+    .family<TimelineNotifier, TimelineState, TimelineKey>(TimelineNotifier.new);

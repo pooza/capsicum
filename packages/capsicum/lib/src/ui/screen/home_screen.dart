@@ -209,7 +209,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     } else if (selectedList != null) {
       timeline = ref.read(listTimelineProvider(selectedList.id)).valueOrNull;
     } else {
-      timeline = ref.read(timelineProvider).valueOrNull;
+      timeline = ref
+          .read(timelineProvider(ref.read(currentTimelineKeyProvider)))
+          .valueOrNull;
     }
     // 継続エラー時 (loadMoreError) は自動再試行を止め、リトライストームで末尾の
     // ローディングが固化するのを防ぐ (#678)。回復は pull-to-refresh / タブ再選択で
@@ -228,7 +230,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         } else if (selectedList != null) {
           ref.read(listTimelineProvider(selectedList.id).notifier).loadMore();
         } else {
-          ref.read(timelineProvider.notifier).loadMore();
+          ref
+              .read(
+                timelineProvider(ref.read(currentTimelineKeyProvider)).notifier,
+              )
+              .loadMore();
         }
       }
     }
@@ -245,7 +251,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     // Notify timeline notifier whether the user is near the top so that
     // streaming posts can be queued while scrolling (#296).
     if (selectedHashtag == null && selectedList == null) {
-      ref.read(timelineProvider.notifier).setNearTop(minIndex <= 1);
+      ref
+          .read(timelineProvider(ref.read(currentTimelineKeyProvider)).notifier)
+          .setNearTop(minIndex <= 1);
     }
 
     // Save marker (home timeline only, debounced).
@@ -478,13 +486,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     }
 
     // Choose which timeline data to display.
+    final mainTimelineKey = ref.watch(currentTimelineKeyProvider);
     final AsyncValue<TimelineState> timeline;
     if (selectedHashtag != null) {
       timeline = ref.watch(hashtagTimelineProvider(selectedHashtag));
     } else if (selectedList != null) {
       timeline = ref.watch(listTimelineProvider(selectedList.id));
     } else {
-      timeline = ref.watch(timelineProvider);
+      timeline = ref.watch(timelineProvider(mainTimelineKey));
     }
 
     // Provider to listen for loadMore errors.
@@ -494,7 +503,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     } else if (selectedList != null) {
       listenTarget = listTimelineProvider(selectedList.id);
     } else {
-      listenTarget = timelineProvider;
+      listenTarget = timelineProvider(mainTimelineKey);
     }
 
     // Show a SnackBar when loadMore fails.
@@ -937,7 +946,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                           listTimelineProvider(selectedList.id).future,
                         );
                       } else {
-                        refreshed = ref.refresh(timelineProvider.future);
+                        refreshed = ref.refresh(
+                          timelineProvider(
+                            ref.read(currentTimelineKeyProvider),
+                          ).future,
+                        );
                       }
                       await refreshed;
                     } finally {
@@ -1012,7 +1025,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                                   listTimelineProvider(selectedList.id),
                                 );
                               } else {
-                                ref.invalidate(timelineProvider);
+                                ref.invalidate(
+                                  timelineProvider(
+                                    ref.read(currentTimelineKeyProvider),
+                                  ),
+                                );
                               }
                             },
                             child: const Text('再試行'),
@@ -1080,7 +1097,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       } else if (selectedList != null) {
         refreshed = ref.refresh(listTimelineProvider(selectedList.id).future);
       } else {
-        refreshed = ref.refresh(timelineProvider.future);
+        refreshed = ref.refresh(
+          timelineProvider(ref.read(currentTimelineKeyProvider)).future,
+        );
       }
       await refreshed;
     } finally {
@@ -1775,9 +1794,10 @@ class _StreamStatusIndicatorState
 
   @override
   Widget build(BuildContext context) {
-    final async = ref.watch(timelineProvider);
+    final key = ref.watch(currentTimelineKeyProvider);
+    final async = ref.watch(timelineProvider(key));
     // 切断検知 (reconnectCount 増加) を拾って flash を発火する (#782)。
-    ref.listen(timelineProvider, (prev, next) {
+    ref.listen(timelineProvider(key), (prev, next) {
       _onReconnectCount(next.valueOrNull?.reconnectCount ?? 0);
     });
     // リロード中（アカウント/文脈切替・起動時の current 着地・pull-to-refresh）は
@@ -1789,8 +1809,8 @@ class _StreamStatusIndicatorState
     // ケース）間も connecting を表示し、緑は「この文脈の TL がロード済み＋live」
     // だけを意味するようにする (#758)。
     final expectedContextKey = timelineContextKey(
-      ref.watch(currentAccountProvider)?.key,
-      'tl:${ref.watch(selectedTimelineTypeProvider).name}',
+      key.account,
+      'tl:${key.type.name}',
     );
     final stale = _timelineIsStale(async, expectedContextKey);
     // 前文脈のキャッシュや build 中は再接続カウント等を出さない（現在の文脈の

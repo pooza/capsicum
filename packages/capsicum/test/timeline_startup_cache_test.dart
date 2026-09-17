@@ -115,6 +115,11 @@ Post _post(String id, {String content = 'body'}) => Post(
   content: content,
 );
 
+/// 表示中の本線 TL のキー (#1087)。HomeScreen と同じく
+/// [currentTimelineKeyProvider] から引く。
+TimelineKey keyOf(ProviderContainer container) =>
+    container.read(currentTimelineKeyProvider);
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -161,7 +166,11 @@ void main() {
     );
     // autoDispose なので、購読を張らないと read 直後に捨てられて裏の取得結果を
     // 受け取れない（実アプリでは HomeScreen が watch し続けている状態に相当）。
-    container.listen(timelineProvider, (_, _) {}, fireImmediately: true);
+    container.listen(
+      timelineProvider(keyOf(container)),
+      (_, _) {},
+      fireImmediately: true,
+    );
     return container;
   }
 
@@ -188,7 +197,9 @@ void main() {
     final container = makeContainer(adapter);
     addTearDown(container.dispose);
 
-    final first = await container.read(timelineProvider.future);
+    final first = await container.read(
+      timelineProvider(keyOf(container)).future,
+    );
 
     expect(first.fromCache, isTrue);
     expect(first.posts.map((p) => p.id), ['cached1']);
@@ -198,7 +209,7 @@ void main() {
     await Future<void>.delayed(Duration.zero);
     await Future<void>.delayed(Duration.zero);
 
-    final after = container.read(timelineProvider).value!;
+    final after = container.read(timelineProvider(keyOf(container))).value!;
     expect(after.fromCache, isFalse);
     expect(after.posts.map((p) => p.id), ['new1']);
   });
@@ -219,7 +230,9 @@ void main() {
     addTearDown(container.dispose);
 
     // 先出し自体は従来どおり成功する。
-    final first = await container.read(timelineProvider.future);
+    final first = await container.read(
+      timelineProvider(keyOf(container)).future,
+    );
     expect(first.fromCache, isTrue);
     expect(first.posts.map((p) => p.id), ['cached1']);
 
@@ -229,7 +242,7 @@ void main() {
     await Future<void>.delayed(Duration.zero);
 
     expect(
-      container.read(timelineProvider).hasError,
+      container.read(timelineProvider(keyOf(container))).hasError,
       isTrue,
       reason: '古いキャッシュを「生きた TL」として出し続けない',
     );
@@ -240,7 +253,9 @@ void main() {
     final container = makeContainer(adapter);
     addTearDown(container.dispose);
 
-    final state = await container.read(timelineProvider.future);
+    final state = await container.read(
+      timelineProvider(keyOf(container)).future,
+    );
 
     expect(state.fromCache, isFalse);
     expect(state.posts.map((p) => p.id), ['new1']);
@@ -251,7 +266,7 @@ void main() {
     final container = makeContainer(adapter);
     addTearDown(container.dispose);
 
-    await container.read(timelineProvider.future);
+    await container.read(timelineProvider(keyOf(container)).future);
     // 保存は unawaited で、静的な書き込みキュー (_writeQueue) 越しに直列化される
     // （Linux では新規作成時に chmod サブプロセスも挟む）。固定 delay だと CI の
     // 負荷でレースするため、書き上がるまでポーリングする (#958)。
@@ -272,11 +287,15 @@ void main() {
     final container = makeContainer(adapter);
     addTearDown(container.dispose);
 
-    final first = await container.read(timelineProvider.future);
+    final first = await container.read(
+      timelineProvider(keyOf(container)).future,
+    );
     expect(first.fromCache, isTrue);
 
-    container.invalidate(timelineProvider);
-    final second = await container.read(timelineProvider.future);
+    container.invalidate(timelineProvider(keyOf(container)));
+    final second = await container.read(
+      timelineProvider(keyOf(container)).future,
+    );
     expect(second.fromCache, isFalse);
   });
 
@@ -302,17 +321,27 @@ void main() {
     final container = makeContainer(adapter);
     addTearDown(container.dispose);
 
-    final first = await container.read(timelineProvider.future);
+    final firstKey = keyOf(container);
+    final first = await container.read(timelineProvider(firstKey).future);
     expect(first.fromCache, isTrue);
     expect(first.posts.map((p) => p.id), ['cached1']);
 
-    // 別アカウントへ切替 → build() がやり直され、担当する文脈が変わる。
+    // 別アカウントへ切替 → 別キーのインスタンスへ移る (#1087)。HomeScreen が
+    // 新しいキーを watch し直すのと同じく、購読を張り直す。
     final otherAdapter = _FakeAdapter(fresh: [_post('other1')]);
     container.read(_selectedAccount.notifier).state = _accountFor(
       otherAdapter,
       username: 'other',
     );
-    final switched = await container.read(timelineProvider.future);
+    expect(keyOf(container), isNot(firstKey), reason: '前提: キーが変わっている');
+    container.listen(
+      timelineProvider(keyOf(container)),
+      (_, _) {},
+      fireImmediately: true,
+    );
+    final switched = await container.read(
+      timelineProvider(keyOf(container)).future,
+    );
     expect(switched.posts.map((p) => p.id), [
       'other1',
     ], reason: '前提: 切替後の一覧が出ている');
@@ -321,11 +350,24 @@ void main() {
     gate.complete();
     await Future<void>.delayed(const Duration(milliseconds: 10));
 
-    final after = container.read(timelineProvider).value!;
+    final after = container.read(timelineProvider(keyOf(container))).value!;
     expect(after.posts.map((p) => p.id), [
       'other1',
     ], reason: '切替前のアカウントの取得結果が、切替後の一覧を上書きしない');
     expect(after.contextKey, isNot(equals(contextKeyFor())));
+
+    // ⚠ 旧キーのインスタンスはまだ購読されている（テストの listen が残っている）。
+    // 現在のアカウントがキーと食い違う間は、新しいアカウントの TL を取りに行かない。
+    expect(
+      container
+          .read(timelineProvider(firstKey))
+          .valueOrNull
+          ?.posts
+          .map((p) => p.id),
+      isNot(contains('other1')),
+      reason: '旧キーの一覧に、切替後のアカウントの投稿が入らない',
+    );
+    expect(otherAdapter.fetchCount, 1, reason: '切替後のアカウントを引くのは新キーの 1 本だけ');
   });
 
   /// #958-1: 先出しの窓の**外**（build() 再実行＝pull-to-refresh / タブ・アカウント
@@ -344,7 +386,7 @@ void main() {
     addTearDown(container.dispose);
 
     // build() を起こし、_loadInitial を gate 上の getTimeline で待たせる。
-    final future = container.read(timelineProvider.future);
+    final future = container.read(timelineProvider(keyOf(container)).future);
     // getTimeline に入る＝取得開始（世代を控えた後）まで進める。ここより後の
     // ブロックだけが「取得を跨いだ」ケースになる。
     while (adapter.fetchCount == 0) {
@@ -352,7 +394,9 @@ void main() {
     }
 
     // visible_timeline 相当: 一覧からの除去 + キャッシュ clear。除去で世代が進む。
-    container.read(timelineProvider.notifier).removePostsByUser('u1');
+    container
+        .read(timelineProvider(keyOf(container)).notifier)
+        .removePostsByUser('u1');
     await TimelineCache.clear();
 
     // 取得完了 → save に到達するが、世代が進んでいるので書かない。
@@ -390,12 +434,16 @@ void main() {
     final container = makeContainer(adapter);
     addTearDown(container.dispose);
 
-    final first = await container.read(timelineProvider.future);
+    final first = await container.read(
+      timelineProvider(keyOf(container)).future,
+    );
     expect(first.fromCache, isTrue);
     expect(first.posts.map((p) => p.id), ['200', '100']);
 
     // 窓が開いている（fresh 未着）間に loadMore。
-    final loadMore = container.read(timelineProvider.notifier).loadMore();
+    final loadMore = container
+        .read(timelineProvider(keyOf(container)).notifier)
+        .loadMore();
     await Future<void>.delayed(Duration.zero);
 
     // fresh が着く前は、cached-last(100) を起点にした続き取得へ入っていない。
@@ -410,7 +458,7 @@ void main() {
     await loadMore;
     await Future<void>.delayed(Duration.zero);
 
-    final after = container.read(timelineProvider).value!;
+    final after = container.read(timelineProvider(keyOf(container))).value!;
     expect(after.posts.map((p) => p.id), [
       '900',
       '800',

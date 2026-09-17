@@ -161,7 +161,9 @@ VisibleTimelineMutator readVisibleTimelines(WidgetRef ref) {
   final resolvedList = ref.read(selectedListProvider);
   return VisibleTimelineMutator._(
     main: mainTimelineIsVisible(tab, listResolved: resolvedList != null)
-        ? ref.read(timelineProvider.notifier)
+        ? ref.read(
+            timelineProvider(ref.read(currentTimelineKeyProvider)).notifier,
+          )
         : null,
     hashtag: tab is HashtagTab
         ? ref.read(hashtagTimelineProvider(tab.tag).notifier)
