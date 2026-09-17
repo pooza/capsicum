@@ -1,6 +1,7 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../model/account_key.dart';
 import 'account_manager_provider.dart';
 import 'preferences_provider.dart';
 import 'timeline_provider.dart';
@@ -16,13 +17,19 @@ import 'timeline_provider.dart';
 /// Format a display label for a hashtag spec.
 String hashtagSpecLabel(String spec) => '#${spec.replaceAll('+', ' + #')}';
 
-/// Notifier that manages paginated hashtag timeline fetching.
+/// ハッシュタグ TL の family キー (#1088)。
 ///
-/// The family key is a hashtag spec: "tag" or "tag+and1+and2" where "+"
-/// separates AND-matched tags (Mastodon `all[]` parameter).
+/// [spec] は "tag" または "tag+and1+and2"（"+" は AND 指定・Mastodon の `all[]`）。
+///
+/// ⚠ **アカウントを含める。**含めないと、デッキで 2 アカウントの同じタグを並べた
+/// ときに**同じインスタンスを共有して、片方のサーバーの投稿がもう片方に混ざる**
+/// （設計書 B-4）。record は値で比較されるので、そのまま family キーになる。
+typedef HashtagTimelineKey = ({AccountKey? account, String spec});
+
+/// Notifier that manages paginated hashtag timeline fetching.
 class HashtagTimelineNotifier
-    extends AutoDisposeFamilyAsyncNotifier<TimelineState, String>
-    with TimelineListMutations<String> {
+    extends AutoDisposeFamilyAsyncNotifier<TimelineState, HashtagTimelineKey>
+    with TimelineListMutations<HashtagTimelineKey> {
   static const _pageSize = 20;
 
   /// 自分の投稿をこのハッシュタグ TL の先頭へ楽観的に挿入する (#887)。
@@ -41,17 +48,17 @@ class HashtagTimelineNotifier
   }
 
   @override
-  Future<TimelineState> build(String arg) async {
-    final adapter = ref.watch(currentAdapterProvider);
-    final contextKey = timelineContextKey(
-      ref.watch(currentAccountProvider)?.key,
-      'tag:$arg',
+  Future<TimelineState> build(HashtagTimelineKey key) async {
+    final adapter = adapterForTimelineKey(
+      ref.watch(currentAccountProvider),
+      key.account,
     );
+    final contextKey = timelineContextKey(key.account, 'tag:${key.spec}');
     if (adapter == null || adapter is! HashtagSupport) {
       return TimelineState(hasMore: false, contextKey: contextKey);
     }
 
-    final (primary, all) = parseHashtagSpec(arg);
+    final (primary, all) = parseHashtagSpec(key.spec);
     final hideLivecure = ref.watch(hideLivecureProvider);
     final result = await fetchUntilVisible(
       pageSize: _pageSize,
@@ -73,13 +80,16 @@ class HashtagTimelineNotifier
 
     for (var attempt = 0; attempt <= loadMoreMaxRetries; attempt++) {
       try {
-        final adapter = ref.read(currentAdapterProvider);
+        final adapter = adapterForTimelineKey(
+          ref.read(currentAccountProvider),
+          arg.account,
+        );
         if (adapter == null || adapter is! HashtagSupport) {
           state = AsyncData(current.copyWith(isLoadingMore: false));
           return;
         }
 
-        final (primary, all) = parseHashtagSpec(arg);
+        final (primary, all) = parseHashtagSpec(arg.spec);
         final base = state.valueOrNull ?? current;
         final lastId = base.posts.last.id;
         final hideLivecure = ref.read(hideLivecureProvider);
@@ -124,6 +134,6 @@ class HashtagTimelineNotifier
 }
 
 final hashtagTimelineProvider = AsyncNotifierProvider.autoDispose
-    .family<HashtagTimelineNotifier, TimelineState, String>(
+    .family<HashtagTimelineNotifier, TimelineState, HashtagTimelineKey>(
       HashtagTimelineNotifier.new,
     );

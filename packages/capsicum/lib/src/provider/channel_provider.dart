@@ -1,19 +1,27 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../model/account_key.dart';
 import 'account_manager_provider.dart';
 import 'preferences_provider.dart';
 import 'timeline_provider.dart';
 
+/// チャンネル TL の family キー (#1088)。持ち方の理由は [ListTimelineKey] と同じ
+/// （id だけ・チャンネル名は混ぜない・アカウントを含める）。
+typedef ChannelTimelineKey = ({AccountKey? account, String id});
+
 /// Notifier that manages paginated channel timeline fetching.
 class ChannelTimelineNotifier
-    extends AutoDisposeFamilyAsyncNotifier<TimelineState, String>
-    with TimelineListMutations<String> {
+    extends AutoDisposeFamilyAsyncNotifier<TimelineState, ChannelTimelineKey>
+    with TimelineListMutations<ChannelTimelineKey> {
   static const _pageSize = 20;
 
   @override
-  Future<TimelineState> build(String arg) async {
-    final adapter = ref.watch(currentAdapterProvider);
+  Future<TimelineState> build(ChannelTimelineKey key) async {
+    final adapter = adapterForTimelineKey(
+      ref.watch(currentAccountProvider),
+      key.account,
+    );
     if (adapter == null || adapter is! ChannelSupport) {
       return const TimelineState(hasMore: false);
     }
@@ -23,7 +31,7 @@ class ChannelTimelineNotifier
       pageSize: _pageSize,
       hideLivecure: hideLivecure,
       fetch: (maxId) => (adapter as ChannelSupport).getChannelTimeline(
-        arg,
+        key.id,
         query: TimelineQuery(maxId: maxId, limit: _pageSize),
       ),
     );
@@ -37,7 +45,10 @@ class ChannelTimelineNotifier
 
     for (var attempt = 0; attempt <= loadMoreMaxRetries; attempt++) {
       try {
-        final adapter = ref.read(currentAdapterProvider);
+        final adapter = adapterForTimelineKey(
+          ref.read(currentAccountProvider),
+          arg.account,
+        );
         if (adapter == null || adapter is! ChannelSupport) {
           state = AsyncData(current.copyWith(isLoadingMore: false));
           return;
@@ -47,7 +58,7 @@ class ChannelTimelineNotifier
         final lastId = base.posts.last.id;
         final hideLivecure = ref.read(hideLivecureProvider);
         final raw = await (adapter as ChannelSupport).getChannelTimeline(
-          arg,
+          arg.id,
           query: TimelineQuery(maxId: lastId, limit: _pageSize),
         );
         final older = hideLivecure
@@ -86,7 +97,7 @@ class ChannelTimelineNotifier
 }
 
 final channelTimelineProvider = AsyncNotifierProvider.autoDispose
-    .family<ChannelTimelineNotifier, TimelineState, String>(
+    .family<ChannelTimelineNotifier, TimelineState, ChannelTimelineKey>(
       ChannelTimelineNotifier.new,
     );
 

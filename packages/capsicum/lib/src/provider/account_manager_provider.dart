@@ -1434,6 +1434,16 @@ final currentAccountProvider = Provider<Account?>((ref) {
   return ref.watch(accountManagerProvider).current;
 });
 
+/// 現在のアカウントのキーだけ (#1088)。
+///
+/// TL の family キーを組み立てる側が watch する。[currentAccountProvider] を直接
+/// watch すると、同じアカウントのまま `Account` インスタンスが差し替わっただけ
+/// （プロフィール更新等）でも作り直しが走る。[AccountKey] は値で比較されるので、
+/// こちらはアカウントが変わったときだけ通知する。
+final currentAccountKeyProvider = Provider<AccountKey?>((ref) {
+  return ref.watch(currentAccountProvider)?.key;
+});
+
 /// 到達不能でオフライン保持中のアカウント一覧 (#792)。
 final offlineAccountsProvider = Provider<List<OfflineAccount>>((ref) {
   return ref.watch(accountManagerProvider).offlineAccounts;

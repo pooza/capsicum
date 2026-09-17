@@ -3599,7 +3599,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           if (channelId != null) {
             // チャンネル投稿は両 TL を再取得（home への楽観挿入はしない）。
             ref.invalidate(timelineProvider);
-            ref.invalidate(channelTimelineProvider(channelId));
+            ref.invalidate(
+              channelTimelineProvider((
+                account: ref.read(currentAccountKeyProvider),
+                id: channelId,
+              )),
+            );
           } else if (posted != null) {
             // #717: 自分の投稿を TL 先頭へ楽観的に挿入する。invalidate の
             // REST 全再取得に依存しないため、サーバー伝播レースやストリーミング

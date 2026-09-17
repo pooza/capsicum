@@ -203,11 +203,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     // Load more when near the end.
     final selectedHashtag = ref.read(selectedHashtagProvider);
     final selectedList = ref.read(selectedListProvider);
+    final accountKey = ref.read(currentAccountKeyProvider);
     final TimelineState? timeline;
     if (selectedHashtag != null) {
-      timeline = ref.read(hashtagTimelineProvider(selectedHashtag)).valueOrNull;
+      timeline = ref
+          .read(
+            hashtagTimelineProvider((
+              account: accountKey,
+              spec: selectedHashtag,
+            )),
+          )
+          .valueOrNull;
     } else if (selectedList != null) {
-      timeline = ref.read(listTimelineProvider(selectedList.id)).valueOrNull;
+      timeline = ref
+          .read(
+            listTimelineProvider((account: accountKey, id: selectedList.id)),
+          )
+          .valueOrNull;
     } else {
       timeline = ref
           .read(timelineProvider(ref.read(currentTimelineKeyProvider)))
@@ -225,10 +237,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       if (maxIndex >= timeline.posts.length - 8) {
         if (selectedHashtag != null) {
           ref
-              .read(hashtagTimelineProvider(selectedHashtag).notifier)
+              .read(
+                hashtagTimelineProvider((
+                  account: accountKey,
+                  spec: selectedHashtag,
+                )).notifier,
+              )
               .loadMore();
         } else if (selectedList != null) {
-          ref.read(listTimelineProvider(selectedList.id).notifier).loadMore();
+          ref
+              .read(
+                listTimelineProvider((
+                  account: accountKey,
+                  id: selectedList.id,
+                )).notifier,
+              )
+              .loadMore();
         } else {
           ref
               .read(
@@ -487,24 +511,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
     // Choose which timeline data to display.
     final mainTimelineKey = ref.watch(currentTimelineKeyProvider);
-    final AsyncValue<TimelineState> timeline;
-    if (selectedHashtag != null) {
-      timeline = ref.watch(hashtagTimelineProvider(selectedHashtag));
-    } else if (selectedList != null) {
-      timeline = ref.watch(listTimelineProvider(selectedList.id));
-    } else {
-      timeline = ref.watch(timelineProvider(mainTimelineKey));
-    }
+    final accountKey = ref.watch(currentAccountKeyProvider);
+    final HashtagTimelineKey? hashtagKey = selectedHashtag == null
+        ? null
+        : (account: accountKey, spec: selectedHashtag);
+    final ListTimelineKey? listKey = selectedList == null
+        ? null
+        : (account: accountKey, id: selectedList.id);
 
-    // Provider to listen for loadMore errors.
+    // Provider to listen for loadMore errors (and to display).
     final ProviderListenable<AsyncValue<TimelineState>> listenTarget;
-    if (selectedHashtag != null) {
-      listenTarget = hashtagTimelineProvider(selectedHashtag);
-    } else if (selectedList != null) {
-      listenTarget = listTimelineProvider(selectedList.id);
+    if (hashtagKey != null) {
+      listenTarget = hashtagTimelineProvider(hashtagKey);
+    } else if (listKey != null) {
+      listenTarget = listTimelineProvider(listKey);
     } else {
       listenTarget = timelineProvider(mainTimelineKey);
     }
+    final AsyncValue<TimelineState> timeline = ref.watch(listenTarget);
 
     // Show a SnackBar when loadMore fails.
     ref.listen(listenTarget, (prev, next) {
@@ -805,6 +829,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     // MessagesTab のみ背景不要で除外する。
     final account = ref.watch(currentAccountProvider);
     final storageKey = account?.key.toStorageKey();
+    // 再取得・再試行で表示中の TL を指すキー (#1088)。build() 側の watch と同じ式。
+    final HashtagTimelineKey? hashtagKey = selectedHashtag == null
+        ? null
+        : (account: account?.key, spec: selectedHashtag);
+    final ListTimelineKey? listKey = selectedList == null
+        ? null
+        : (account: account?.key, id: selectedList.id);
     final bgPath = storageKey != null
         ? ref.watch(backgroundImageProvider(storageKey))
         : null;
@@ -937,13 +968,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     setState(() => _pullRefreshing = true);
                     try {
                       final Future<TimelineState> refreshed;
-                      if (selectedHashtag != null) {
+                      if (hashtagKey != null) {
                         refreshed = ref.refresh(
-                          hashtagTimelineProvider(selectedHashtag).future,
+                          hashtagTimelineProvider(hashtagKey).future,
                         );
-                      } else if (selectedList != null) {
+                      } else if (listKey != null) {
                         refreshed = ref.refresh(
-                          listTimelineProvider(selectedList.id).future,
+                          listTimelineProvider(listKey).future,
                         );
                       } else {
                         refreshed = ref.refresh(
@@ -1016,14 +1047,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                             // は気づける導線が無い）。分岐は loadMore /
                             // pull-to-refresh / [_refreshCurrentTimeline] と同型。
                             onPressed: () {
-                              if (selectedHashtag != null) {
+                              if (hashtagKey != null) {
                                 ref.invalidate(
-                                  hashtagTimelineProvider(selectedHashtag),
+                                  hashtagTimelineProvider(hashtagKey),
                                 );
-                              } else if (selectedList != null) {
-                                ref.invalidate(
-                                  listTimelineProvider(selectedList.id),
-                                );
+                              } else if (listKey != null) {
+                                ref.invalidate(listTimelineProvider(listKey));
                               } else {
                                 ref.invalidate(
                                   timelineProvider(
@@ -1086,16 +1115,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     // 未マウント）ときは currentState が null。スピナーは出せないが更新は行う。
     final selectedHashtag = ref.read(selectedHashtagProvider);
     final selectedList = ref.read(selectedListProvider);
+    final accountKey = ref.read(currentAccountKeyProvider);
     _rearmMarkerRestore();
     if (mounted) setState(() => _pullRefreshing = true);
     try {
       final Future<TimelineState> refreshed;
       if (selectedHashtag != null) {
         refreshed = ref.refresh(
-          hashtagTimelineProvider(selectedHashtag).future,
+          hashtagTimelineProvider((
+            account: accountKey,
+            spec: selectedHashtag,
+          )).future,
         );
       } else if (selectedList != null) {
-        refreshed = ref.refresh(listTimelineProvider(selectedList.id).future);
+        refreshed = ref.refresh(
+          listTimelineProvider((
+            account: accountKey,
+            id: selectedList.id,
+          )).future,
+        );
       } else {
         refreshed = ref.refresh(
           timelineProvider(ref.read(currentTimelineKeyProvider)).future,

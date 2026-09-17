@@ -62,10 +62,25 @@ typedef TimelineKey = ({AccountKey? account, TimelineType type});
 /// インスタンスを指し続ける。
 final currentTimelineKeyProvider = Provider<TimelineKey>((ref) {
   return (
-    account: ref.watch(currentAccountProvider)?.key,
+    account: ref.watch(currentAccountKeyProvider),
     type: ref.watch(selectedTimelineTypeProvider),
   );
 });
+
+/// TL の family キーが指すアカウントのアダプタ (#1087 / #1088)。
+///
+/// ⚠⚠ **現在のアカウントがキーのアカウントと一致するときだけ返す。**アカウントを
+/// 切り替えた直後は、破棄される前の旧キーのインスタンスがまだ生きていることがある。
+/// そこで `currentAdapterProvider` をそのまま読むと、**旧キーのインスタンスが
+/// 新しいアカウントの TL を取りに行く**（REST の無駄打ち・別アカウントの投稿が
+/// 旧キーの一覧に入る）。本線 / ハッシュタグ / リスト / チャンネルの 4 系統で共有する。
+///
+/// 解決元を `currentAccountProvider` にしておくのは、フェーズ 2（#1095 / #1096）で
+/// カラムごとに `ProviderScope` で上書きする対象がこれだから。
+DecentralizedBackendAdapter? adapterForTimelineKey(
+  Account? current,
+  AccountKey? account,
+) => current != null && current.key == account ? current.adapter : null;
 
 /// `null` 自体が「明示的にクリア」を意味する nullable フィールドを
 /// `copyWith` で保持／差し替えするための sentinel (#455 / #450 と同型)。
@@ -664,18 +679,9 @@ class TimelineNotifier
   StreamConnectionState _streamConnectionState =
       StreamConnectionState.connecting;
 
-  /// このインスタンスが担当するアカウントのアダプタ (#1087)。
-  ///
-  /// ⚠⚠ **現在のアカウントがキーのアカウントと一致するときだけ返す。**アカウントを
-  /// 切り替えた直後は、破棄される前の旧インスタンスがまだ生きていることがある。
-  /// そこで `currentAdapterProvider` をそのまま読むと、**旧キーのインスタンスが
-  /// 新しいアカウントの TL を取りに行く**（REST の無駄打ち・別アカウントの投稿が
-  /// 旧キーの一覧に入る）。
-  ///
-  /// 解決元を `currentAccountProvider` にしておくのは、フェーズ 2（#1095 / #1096）で
-  /// カラムごとに `ProviderScope` で上書きする対象がこれだから。
+  /// このインスタンスが担当するアカウントのアダプタ（[adapterForTimelineKey]）。
   DecentralizedBackendAdapter? _adapterFor(Account? current) =>
-      current != null && current.key == arg.account ? current.adapter : null;
+      adapterForTimelineKey(current, arg.account);
 
   @override
   Future<TimelineState> build(TimelineKey key) async {
