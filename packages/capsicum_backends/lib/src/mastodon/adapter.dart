@@ -4,6 +4,7 @@ import 'dart:developer' as developer;
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
 import 'package:fediverse_objects/fediverse_objects.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'client.dart';
 import 'extensions.dart';
@@ -126,7 +127,17 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         TranslationSupport,
         MediaUpdateSupport {
   final MastodonClient client;
-  MastodonStreaming? _streaming;
+
+  /// 本線 TL の購読。キーごとに 1 本ずつソケットを張る (#1090)。
+  ///
+  /// ⚠ 以前は単数で持っており、2 本目の購読が 1 本目を黙って止めていた（B-1）。
+  /// ⚠ `subscribe` フレームで 1 本に多重化する方式にはしていない（設計書 2-C）。
+  /// 接続数が実測で問題になったら、呼び出し側を変えずにここだけ差し替えられる。
+  final Map<String, MastodonStreaming> _streamings = {};
+
+  /// 本線 TL の WebSocket を開く手段。**テスト用**（ローカルのサーバーへ向ける）。
+  /// null なら実際に [host] へ接続する。
+  WebSocketChannel Function(Uri uri)? timelineChannelFactory;
   MastodonNotificationStreaming? _notificationStreaming;
   bool _translationAvailable = false;
 
@@ -1407,6 +1418,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
 
   @override
   Stream<Post> streamTimeline(
+    String key,
     TimelineType type, {
     void Function(Object error, StackTrace stack)? onParseError,
     void Function(Object error, StackTrace stack)? onStreamError,
@@ -1414,13 +1426,14 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     void Function(StreamConnectionState state)? onConnectionState,
     void Function(int? closeCode, String? closeReason)? onDisconnect,
   }) {
-    _streaming?.dispose();
+    // 同じキーの前の購読だけを閉じる。他のキーには触らない (#1090)。
+    _streamings.remove(key)?.dispose();
     // DM timeline has no dedicated stream; avoid falling back to 'user'
     // which would mix non-DM posts into the DM tab.
     if (type == TimelineType.directMessages) return const Stream.empty();
     final token = client.accessToken;
     if (token == null) return const Stream.empty();
-    _streaming = MastodonStreaming(
+    final streaming = MastodonStreaming(
       host: host,
       accessToken: token,
       adminRoleIds: _adminRoleIds,
@@ -1429,14 +1442,15 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       onReconnectExhausted: onReconnectExhausted,
       onConnectionState: onConnectionState,
       onDisconnect: onDisconnect,
+      channelFactory: timelineChannelFactory,
     );
-    return _streaming!.connect(type);
+    _streamings[key] = streaming;
+    return streaming.connect(type);
   }
 
   @override
-  void disposeStream() {
-    _streaming?.dispose();
-    _streaming = null;
+  void disposeStream(String key) {
+    _streamings.remove(key)?.dispose();
   }
 
   // NotificationStreamSupport (#569)

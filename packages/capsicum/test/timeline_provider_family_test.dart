@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:capsicum/src/model/account.dart';
 import 'package:capsicum/src/model/account_key.dart';
 import 'package:capsicum/src/provider/account_manager_provider.dart';
@@ -39,6 +41,35 @@ class _RecordingAdapter extends Mock implements DecentralizedBackendAdapter {
       content: 'body',
     );
     return TimelineResponse(posts: [post], rawCount: 1, rawLastId: post.id);
+  }
+}
+
+/// キーごとに購読を持つアダプタ (#1089 / #1090)。どのキーが張られ・閉じられたかを記録する。
+class _KeyedStreamingAdapter extends _RecordingAdapter
+    implements StreamSupport {
+  final Map<String, StreamController<Post>> controllers = {};
+  final List<String> disposed = [];
+
+  @override
+  Stream<Post> streamTimeline(
+    String key,
+    TimelineType type, {
+    void Function(Object error, StackTrace stack)? onParseError,
+    void Function(Object error, StackTrace stack)? onStreamError,
+    void Function()? onReconnectExhausted,
+    void Function(StreamConnectionState state)? onConnectionState,
+    void Function(int? closeCode, String? closeReason)? onDisconnect,
+  }) {
+    controllers.remove(key)?.close();
+    final controller = StreamController<Post>.broadcast();
+    controllers[key] = controller;
+    return controller.stream;
+  }
+
+  @override
+  void disposeStream(String key) {
+    disposed.add(key);
+    controllers.remove(key)?.close();
   }
 }
 
@@ -173,6 +204,63 @@ void main() {
     expect(adapter.calls, isEmpty, reason: '別アカウントのアダプタで TL を引かない');
     expect(state.posts, isEmpty);
   });
+
+  test(
+    '⚠⚠ 同じアカウントの home と local が別々のキーで購読し、片方の破棄が他方を閉じない (#1089 / #1090)',
+    () async {
+      final adapter = _KeyedStreamingAdapter();
+      final container = ProviderContainer(
+        overrides: [
+          currentAccountProvider.overrideWith(
+            (ref) => _account(_meKey, adapter),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      const home = (account: _meKey, type: TimelineType.home);
+      const local = (account: _meKey, type: TimelineType.local);
+      keepAlive(container, home);
+      final localSub = container.listen(
+        timelineProvider(local),
+        (_, _) {},
+        fireImmediately: true,
+      );
+      await container.read(timelineProvider(home).future);
+      await container.read(timelineProvider(local).future);
+
+      final homeKey = timelineContextKey(
+        _meKey,
+        const TimelineTab(TimelineType.home),
+      )!;
+      final localKey = timelineContextKey(
+        _meKey,
+        const TimelineTab(TimelineType.local),
+      )!;
+      expect(adapter.controllers.keys, containsAll([homeKey, localKey]));
+
+      // local のカラムが消えた（誰も watch しなくなった）→ autoDispose。
+      localSub.close();
+      await Future<void>.delayed(Duration.zero);
+      await container.pump();
+
+      expect(adapter.disposed, [localKey], reason: '閉じるのは local のキーだけ');
+
+      // home には引き続き届く。
+      adapter.controllers[homeKey]!.add(
+        Post(
+          id: 'live1',
+          postedAt: DateTime.utc(2026, 9, 17),
+          author: const User(id: 'u2', username: 'someone'),
+          content: 'live',
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        container.read(timelineProvider(home)).value!.posts.map((p) => p.id),
+        contains('live1'),
+      );
+    },
+  );
 
   test('loadMore は選択中のタブではなく、キーの種別で続きを取る', () async {
     final adapter = _RecordingAdapter();

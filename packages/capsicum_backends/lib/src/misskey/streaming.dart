@@ -39,6 +39,12 @@ class MisskeyStreaming {
   /// null なら無視。
   final void Function(int? closeCode, String? closeReason)? onDisconnect;
 
+  /// WebSocket を開く手段。null なら実際に [host] へ接続する。
+  ///
+  /// テストでローカルのサーバーへ向けるための差し替え口 (#1089)。接続・`connect`
+  /// フレームを固定するテストはそれまで 1 本も無かった（計算とパースだけ）。
+  final WebSocketChannel Function(Uri uri)? channelFactory;
+
   WebSocketChannel? _channel;
   StreamController<Post>? _controller;
   Timer? _reconnectTimer;
@@ -68,6 +74,7 @@ class MisskeyStreaming {
     this.onReconnectExhausted,
     this.onConnectionState,
     this.onDisconnect,
+    this.channelFactory,
   });
 
   // 同じ状態が連続するときは UI へ重複通知しない (#714)。観測経路の失敗で
@@ -107,7 +114,10 @@ class MisskeyStreaming {
       queryParameters: {'i': accessToken},
     );
 
-    _channel = IOWebSocketChannel.connect(uri, pingInterval: _pingInterval);
+    final factory = channelFactory;
+    _channel = factory != null
+        ? factory(uri)
+        : IOWebSocketChannel.connect(uri, pingInterval: _pingInterval);
     _channel!.stream.listen(
       _onMessage,
       onError: (Object error, StackTrace stack) {

@@ -47,6 +47,7 @@ class _StreamingFakeAdapter extends Mock
 
   @override
   Stream<Post> streamTimeline(
+    String key,
     TimelineType type, {
     void Function(Object error, StackTrace stack)? onParseError,
     void Function(Object error, StackTrace stack)? onStreamError,
@@ -56,7 +57,7 @@ class _StreamingFakeAdapter extends Mock
   }) => _controller.stream;
 
   @override
-  void disposeStream() {}
+  void disposeStream(String key) {}
 }
 
 class _FakeCapabilities extends Mock implements AdapterCapabilities {

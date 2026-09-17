@@ -729,7 +729,9 @@ class TimelineNotifier
       _disposed = true;
       _streamSubscription?.cancel();
       if (adapter is StreamSupport) {
-        (adapter as StreamSupport).disposeStream();
+        // ⚠ このインスタンスのキーの購読だけを閉じる (#1089 / #1090)。同じ
+        // アカウントの別の TL（デッキの隣のカラム）の購読には触らない。
+        (adapter as StreamSupport).disposeStream(_streamKey);
       }
     });
 
@@ -1284,9 +1286,18 @@ class TimelineNotifier
   void _stopStreaming(StreamSupport adapter) {
     _streamSubscription?.cancel();
     _streamSubscription = null;
-    adapter.disposeStream();
+    adapter.disposeStream(_streamKey);
     _setStreamConnectionState(StreamConnectionState.disabled);
   }
+
+  /// アダプタ側の購読キー (#1089 / #1090)。TL の文脈キー
+  /// （`<アカウント>|timeline:<種別>`）をそのまま使う。
+  ///
+  /// ⚠ null にならないのは、購読を張る / 閉じるのがアダプタを得られたとき
+  /// （＝キーのアカウントが現在のアカウントと一致したとき・[adapterForTimelineKey]）
+  /// だけだから。
+  String get _streamKey =>
+      timelineContextKey(arg.account, TimelineTab(arg.type))!;
 
   void _startStreaming(StreamSupport adapter, TimelineType type) {
     _streamSubscription?.cancel();
@@ -1296,6 +1307,7 @@ class TimelineNotifier
     // push.host と同型に host のみ載せ生 URL / トークンは載せない。
     final host = arg.account?.host;
     final stream = adapter.streamTimeline(
+      _streamKey,
       type,
       onParseError: (e, st) {
         Sentry.addBreadcrumb(

@@ -5,6 +5,18 @@ import '../../model/timeline_type.dart';
 abstract mixin class StreamSupport {
   /// Returns a stream of new posts for the given timeline type.
   ///
+  /// [key] は購読の識別子 (#1089 / #1090)。**同じアダプタ（＝同じアカウント）で
+  /// 複数の購読を同時に持てる**よう、購読はキーごとに独立している。
+  ///
+  /// - 同じ [key] で呼び直すと、**そのキーの**前の購読だけを閉じて張り直す
+  /// - 別の [key] の購読には触らない（⚠ 以前は単数で持っており、2 本目を張ると
+  ///   1 本目が**黙って止まっていた**。デッキで同じアカウントの home と local を
+  ///   並べると片方しかライブにならない・`docs/deck-ui-plan.md` B-1）
+  ///
+  /// ⚠ 接続方式（キーごとにソケットを分けるか、1 本に多重化するか）は実装の内部
+  /// 事情で、呼び出し側からは見えない（決定済み事項 2-A）。呼び出し側は TL の
+  /// 文脈キー（`<アカウント>|<種別>`）をそのまま渡す想定。
+  ///
   /// [onParseError] は実装内部で raw payload の JSON parse / 型変換に失敗した
   /// ときに呼ばれる任意コールバック。サーバー schema 変更を観測するため、
   /// 呼び出し側 (capsicum 本体) で Sentry 計装に繋げる用途を想定 (#586)。
@@ -23,6 +35,7 @@ abstract mixin class StreamSupport {
   /// とともに呼ばれる。本番でどんな切れ方をしているか (1000 / 1001 / 1006 …) を
   /// Sentry で観測する用途を想定 (#788)。null なら無視。
   Stream<Post> streamTimeline(
+    String key,
     TimelineType type, {
     void Function(Object error, StackTrace stack)? onParseError,
     void Function(Object error, StackTrace stack)? onStreamError,
@@ -31,6 +44,10 @@ abstract mixin class StreamSupport {
     void Function(int? closeCode, String? closeReason)? onDisconnect,
   });
 
-  /// Closes the current streaming connection.
-  void disposeStream();
+  /// [key] の購読だけを閉じる。他のキーの購読には触らない。無ければ何もしない。
+  ///
+  /// ⚠ デッキで同じ中身のカラムが重複しているときは provider を共有するので、
+  /// 呼ぶのは「最後の 1 本が消えたとき」だけ（autoDispose の `onDispose`・
+  /// 決定済み事項 6-3）。カラムを 1 本削除しただけで呼ばないこと。
+  void disposeStream(String key);
 }

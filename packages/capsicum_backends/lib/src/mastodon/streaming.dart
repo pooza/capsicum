@@ -41,6 +41,12 @@ class MastodonStreaming {
   /// null なら無視。
   final void Function(int? closeCode, String? closeReason)? onDisconnect;
 
+  /// WebSocket を開く手段。null なら実際に [host] へ接続する。
+  ///
+  /// テストでローカルのサーバーへ向けるための差し替え口 (#1090)。接続を固定する
+  /// テストはそれまで 1 本も無かった（計算とパースだけ）。
+  final WebSocketChannel Function(Uri uri)? channelFactory;
+
   WebSocketChannel? _channel;
   StreamController<Post>? _controller;
   Timer? _reconnectTimer;
@@ -73,6 +79,7 @@ class MastodonStreaming {
     this.onReconnectExhausted,
     this.onConnectionState,
     this.onDisconnect,
+    this.channelFactory,
   });
 
   // 同じ状態が連続するときは UI へ重複通知しない (#714)。観測経路の失敗で
@@ -106,7 +113,10 @@ class MastodonStreaming {
       queryParameters: {'access_token': accessToken, 'stream': stream},
     );
 
-    _channel = IOWebSocketChannel.connect(uri, pingInterval: _pingInterval);
+    final factory = channelFactory;
+    _channel = factory != null
+        ? factory(uri)
+        : IOWebSocketChannel.connect(uri, pingInterval: _pingInterval);
     _channel!.ready
         .then((_) {
           _reconnectAttempts = 0;

@@ -5,6 +5,7 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
 import 'package:fediverse_objects/fediverse_objects.dart';
 import 'package:uuid/uuid.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'chat_room_streaming.dart';
 import 'chat_streaming.dart';
@@ -133,7 +134,15 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         TimelineCacheSupport,
         MulukhiyaRepostSupport,
         ChatSupport {
-  MisskeyStreaming? _streaming;
+  /// 本線 TL の購読。キーごとに 1 本ずつソケットを張る (#1089)。
+  ///
+  /// ⚠ 以前は単数で持っており、2 本目の購読が 1 本目を黙って止めていた（B-1）。
+  /// ルーム購読（[_chatRoomStreamings]）と同じ「キー付きレジストリ」の形。
+  final Map<String, MisskeyStreaming> _streamings = {};
+
+  /// 本線 TL の WebSocket を開く手段。**テスト用**（ローカルのサーバーへ向ける）。
+  /// null なら実際に [host] へ接続する。
+  WebSocketChannel Function(Uri uri)? timelineChannelFactory;
   MisskeyNotificationStreaming? _notificationStreaming;
   MisskeyChatStreaming? _chatStreaming;
   // ルーム毎に 1 本ずつ WebSocket を張る (chatRoom channel は roomId 必須で
@@ -1857,6 +1866,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
 
   @override
   Stream<Post> streamTimeline(
+    String key,
     TimelineType type, {
     void Function(Object error, StackTrace stack)? onParseError,
     void Function(Object error, StackTrace stack)? onStreamError,
@@ -1864,10 +1874,11 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     void Function(StreamConnectionState state)? onConnectionState,
     void Function(int? closeCode, String? closeReason)? onDisconnect,
   }) {
-    _streaming?.dispose();
+    // 同じキーの前の購読だけを閉じる。他のキーには触らない (#1089)。
+    _streamings.remove(key)?.dispose();
     final token = client.accessToken;
     if (token == null) return const Stream.empty();
-    _streaming = MisskeyStreaming(
+    final streaming = MisskeyStreaming(
       host: host,
       accessToken: token,
       adminRoleIds: _adminRoleIds,
@@ -1876,14 +1887,15 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       onReconnectExhausted: onReconnectExhausted,
       onConnectionState: onConnectionState,
       onDisconnect: onDisconnect,
+      channelFactory: timelineChannelFactory,
     );
-    return _streaming!.connect(type).map(_applyWordFilter);
+    _streamings[key] = streaming;
+    return streaming.connect(type).map(_applyWordFilter);
   }
 
   @override
-  void disposeStream() {
-    _streaming?.dispose();
-    _streaming = null;
+  void disposeStream(String key) {
+    _streamings.remove(key)?.dispose();
   }
 
   // NotificationStreamSupport (#569)
