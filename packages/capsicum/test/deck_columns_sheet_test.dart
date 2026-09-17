@@ -27,6 +27,17 @@ class _Capabilities extends Mock implements AdapterCapabilities {
   };
 }
 
+/// 先頭が現在のアカウントになるアカウント管理。
+class _TwoAccounts extends AccountManagerNotifier {
+  _TwoAccounts(this._accounts);
+
+  final List<Account> _accounts;
+
+  @override
+  AccountManagerState build() =>
+      AccountManagerState(accounts: _accounts, current: _accounts.first);
+}
+
 const _me = AccountKey(
   type: BackendType.mastodon,
   host: 'mstdn.example',
@@ -110,6 +121,49 @@ void main() {
 
     expect(container.read(deckColumnsProvider).map((c) => c.id), [first.id]);
     expect(second.id, isNot(first.id));
+  });
+
+  testWidgets('⚠ アカウントを選ぶと、そのアカウントのカラムとして足される (#1096)', (tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    initSharedPreferencesCache(await SharedPreferences.getInstance());
+    tester.view.physicalSize = const Size(600, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    const other = AccountKey(
+      type: BackendType.mastodon,
+      host: 'mstdn.example',
+      username: 'other',
+    );
+    Account account(AccountKey key) => Account(
+      key: key,
+      adapter: _Adapter(),
+      user: User(id: key.username, username: key.username),
+      userSecret: const UserSecret(accessToken: 'token'),
+    );
+    final container = ProviderContainer(
+      overrides: [
+        accountManagerProvider.overrideWith(
+          () => _TwoAccounts([account(_me), account(other)]),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: Scaffold(body: DeckColumnsSheet())),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('deck-account-selector')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('@other@mstdn.example').last);
+    await tester.pumpAndSettle();
+    await tester.tap(candidate('timeline:home'));
+    await tester.pumpAndSettle();
+
+    expect(container.read(deckColumnsProvider).single.account, other);
   });
 
   testWidgets('カラム 0 本の状態が壊れない', (tester) async {

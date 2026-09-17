@@ -1,32 +1,76 @@
+import 'package:capsicum/src/model/account.dart';
+import 'package:capsicum/src/model/account_key.dart';
 import 'package:capsicum/src/model/deck_column.dart';
+import 'package:capsicum/src/provider/account_manager_provider.dart';
 import 'package:capsicum/src/ui/screen/deck_screen.dart';
 import 'package:capsicum/src/util/shared_preferences_cache.dart';
+import 'package:capsicum_backends/capsicum_backends.dart';
+import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// #1092: デッキ画面のカラムコンテナ。
 ///
 /// カラムの中身は差し替え口（`columnBuilder`）で軽いものにして、**コンテナの
 /// 振る舞いだけ**を見る（`PostTile` の依存一式を用意しないため）。
+class _Adapter extends Mock implements DecentralizedBackendAdapter {}
+
+Account _account(String username) => Account(
+  key: AccountKey(
+    type: BackendType.misskey,
+    host: 'misskey.example',
+    username: username,
+  ),
+  adapter: _Adapter(),
+  user: User(id: username, username: username),
+  userSecret: const UserSecret(accessToken: 'token'),
+);
+
+/// ログイン済みのアカウントを差し替えられるアカウント管理。先頭が現在のアカウント。
+class _TestAccountNotifier extends AccountManagerNotifier {
+  _TestAccountNotifier(this._accounts);
+
+  final List<Account> _accounts;
+
+  @override
+  AccountManagerState build() =>
+      AccountManagerState(accounts: _accounts, current: _accounts.first);
+
+  void replaceAccounts(List<Account> accounts) =>
+      state = AccountManagerState(accounts: accounts, current: accounts.first);
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   /// 各カラムの `initState` が何回走ったか（カラム id → 回数）。
   final initCounts = <String, int>{};
 
-  setUp(initCounts.clear);
+  /// 各カラムが置かれた位置の `ProviderContainer`（カラム id → コンテナ）。
+  final containers = <String, ProviderContainer>{};
 
-  Future<void> pumpDeck(
+  setUp(() {
+    initCounts.clear();
+    containers.clear();
+  });
+
+  /// [lines] は `<id>|<アカウント名>|<種別>`（ホストは misskey.example）。
+  Future<void> pumpDeckLines(
     WidgetTester tester, {
     required Size size,
-    required List<String> columnIds,
+    required List<String> lines,
+    List<Account>? accounts,
   }) async {
     SharedPreferences.setMockInitialValues({
       'deck_columns': [
-        for (final id in columnIds)
-          '$id|misskey://me@misskey.example|hashtag:$id',
+        for (final line in lines)
+          () {
+            final [id, user, tab] = line.split('|');
+            return '$id|misskey://$user@misskey.example|$tab';
+          }(),
       ],
     });
     initSharedPreferencesCache(await SharedPreferences.getInstance());
@@ -36,12 +80,18 @@ void main() {
 
     await tester.pumpWidget(
       ProviderScope(
+        overrides: [
+          accountManagerProvider.overrideWith(
+            () => _TestAccountNotifier(accounts ?? [_account('me')]),
+          ),
+        ],
         child: MaterialApp(
           home: DeckScreen(
             columnBuilder: (column) => _StubColumn(
               key: ValueKey('stub-${column.id}'),
               column: column,
               initCounts: initCounts,
+              containers: containers,
             ),
           ),
         ),
@@ -49,6 +99,16 @@ void main() {
     );
     await tester.pumpAndSettle();
   }
+
+  Future<void> pumpDeck(
+    WidgetTester tester, {
+    required Size size,
+    required List<String> columnIds,
+  }) => pumpDeckLines(
+    tester,
+    size: size,
+    lines: [for (final id in columnIds) '$id|me|hashtag:$id'],
+  );
 
   double columnWidthOf(WidgetTester tester, String id) =>
       tester.getSize(find.byKey(ValueKey('stub-$id'))).width;
@@ -149,24 +209,105 @@ void main() {
         .pixels;
     expect(offsetAfter, offsetBefore);
   });
+
+  group('カラムごとのアカウント (#1096)', () {
+    Future<void> pumpTwoAccounts(WidgetTester tester, List<String> lines) =>
+        pumpDeckLines(
+          tester,
+          size: const Size(1600, 600),
+          lines: lines,
+          accounts: [_account('me'), _account('other')],
+        );
+
+    String accountSeenBy(WidgetTester tester, String id) =>
+        tester.widget<Text>(find.byKey(ValueKey('account-$id'))).data!;
+
+    testWidgets('⚠⚠ 別アカウントのカラムの中では、「現在のアカウント」がそのカラムのアカウントになる', (tester) async {
+      await pumpTwoAccounts(tester, [
+        'a|me|timeline:home',
+        'b|other|timeline:home',
+      ]);
+
+      expect(accountSeenBy(tester, 'a'), 'me');
+      expect(accountSeenBy(tester, 'b'), 'other');
+    });
+
+    testWidgets('⚠⚠ 同じアカウントのカラムはコンテナを共有し、現在のアカウントのカラムはルートのまま', (tester) async {
+      await pumpTwoAccounts(tester, [
+        'a|me|timeline:home',
+        'b|other|timeline:home',
+        'c|other|hashtag:x',
+      ]);
+
+      // 別アカウント other の 2 本は同じコンテナ（重複カラムが TL を共有し、
+      // 購読キーがぶつからない・未決事項 10）。
+      expect(identical(containers['b'], containers['c']), isTrue);
+      // 現在のアカウント me は HomeScreen と同じルート（決定済み事項 8）。
+      final root = ProviderScope.containerOf(
+        tester.element(find.byType(DeckScreen)),
+      );
+      expect(identical(containers['a'], root), isTrue);
+      expect(identical(containers['b'], root), isFalse);
+    });
+
+    testWidgets('同じアカウントの Account が差し替わっても（再接続等）、コンテナは作り直さず中身だけ新しくなる', (
+      tester,
+    ) async {
+      await pumpTwoAccounts(tester, [
+        'a|me|timeline:home',
+        'b|other|timeline:home',
+      ]);
+      final before = containers['b']!;
+      final notifier =
+          ProviderScope.containerOf(
+                tester.element(find.byType(DeckScreen)),
+              ).read(accountManagerProvider.notifier)
+              as _TestAccountNotifier;
+
+      final reconnected = _account('other');
+      notifier.replaceAccounts([_account('me'), reconnected]);
+      await tester.pumpAndSettle();
+
+      expect(identical(containers['b'], before), isTrue);
+      expect(initCounts['b'], 1, reason: 'カラムを作り直していない');
+      expect(
+        identical(before.read(currentAccountProvider), reconnected),
+        isTrue,
+        reason: 'カラムの中の「現在のアカウント」は新しい Account を指す',
+      );
+    });
+
+    testWidgets('接続されていないアカウントのカラムは、消さずに案内を出す', (tester) async {
+      await pumpTwoAccounts(tester, [
+        'a|me|timeline:home',
+        'z|ghost|timeline:home',
+      ]);
+
+      expect(find.byKey(const ValueKey('stub-z')), findsNothing);
+      expect(find.text('@ghost@misskey.example は接続されていません'), findsOneWidget);
+    });
+  });
 }
 
-/// 縦に長いリストを持つだけのカラム。`initState` の回数を数える。
-class _StubColumn extends StatefulWidget {
+/// 縦に長いリストを持つだけのカラム。`initState` の回数と、自分の位置で見える
+/// 「現在のアカウント」・コンテナを記録する。
+class _StubColumn extends ConsumerStatefulWidget {
   const _StubColumn({
     super.key,
     required this.column,
     required this.initCounts,
+    required this.containers,
   });
 
   final DeckColumn column;
   final Map<String, int> initCounts;
+  final Map<String, ProviderContainer> containers;
 
   @override
-  State<_StubColumn> createState() => _StubColumnState();
+  ConsumerState<_StubColumn> createState() => _StubColumnState();
 }
 
-class _StubColumnState extends State<_StubColumn> {
+class _StubColumnState extends ConsumerState<_StubColumn> {
   @override
   void initState() {
     super.initState();
@@ -174,10 +315,24 @@ class _StubColumnState extends State<_StubColumn> {
   }
 
   @override
-  Widget build(BuildContext context) => ListView.builder(
-    key: ValueKey('list-${widget.column.id}'),
-    itemCount: 100,
-    itemBuilder: (_, i) =>
-        SizedBox(height: 40, child: Text('${widget.column.id}-$i')),
-  );
+  Widget build(BuildContext context) {
+    widget.containers[widget.column.id] = ProviderScope.containerOf(context);
+    final account = ref.watch(currentAccountKeyProvider);
+    return Column(
+      children: [
+        Text(
+          account?.username ?? '-',
+          key: ValueKey('account-${widget.column.id}'),
+        ),
+        Expanded(
+          child: ListView.builder(
+            key: ValueKey('list-${widget.column.id}'),
+            itemCount: 100,
+            itemBuilder: (_, i) =>
+                SizedBox(height: 40, child: Text('${widget.column.id}-$i')),
+          ),
+        ),
+      ],
+    );
+  }
 }

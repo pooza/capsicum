@@ -2,6 +2,7 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../model/account_key.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/channel_provider.dart';
 import '../../provider/list_provider.dart';
@@ -12,16 +13,15 @@ import 'home_menu.dart' show tabLabel;
 ///
 /// ⚠ **「タブ管理」の一般化**（`docs/deck-ui-plan.md` 決定済み事項 6-1）。
 /// `TabManagementSheet` と同じ「並べ替えできるリスト + 追加欄」の形で、新しい UI
-/// パターンを持ち込まない。違いは 2 つ:
+/// パターンを持ち込まない。違いは 3 つ:
 ///
 /// - ⚠⚠ **同じカラムを重複して足せる**（6-2）。並べ替え・削除は**列内の id** で
 ///   指す。**中身（アカウント + 種別）でも index でも指さない**
 /// - ⚠⚠ **削除で購読を止めない**（6-3）。重複カラムは provider を共有するので、
 ///   1 本消して止めるともう 1 本が無音で止まる。最後の 1 本が消えたときに
 ///   autoDispose が片づける
-///
-/// ⚠ フェーズ 2 でカラムごとにアカウントを選べるようにする（#1096）。今は現在の
-/// アカウントで足す。
+/// - **カラムごとにアカウントを選べる**（#1096）。候補とラベルは、そのアカウントの
+///   スコープで解決する（リスト名・ローカルの呼称はアカウントごとに違う）
 class DeckColumnsSheet extends ConsumerStatefulWidget {
   const DeckColumnsSheet({super.key});
 
@@ -30,99 +30,22 @@ class DeckColumnsSheet extends ConsumerStatefulWidget {
 }
 
 class _DeckColumnsSheetState extends ConsumerState<DeckColumnsSheet> {
-  final _hashtagController = TextEditingController();
+  /// カラムを足すアカウント。null なら現在のアカウント。
+  AccountKey? _selectedAccount;
 
-  @override
-  void dispose() {
-    _hashtagController.dispose();
-    super.dispose();
-  }
-
-  DeckColumnsNotifier get _notifier => ref.read(deckColumnsProvider.notifier);
-
-  void _add(TabType tab) {
-    final account = ref.read(currentAccountKeyProvider);
-    if (account == null) return;
-    _notifier.add(account, tab);
-  }
-
-  void _addHashtag() {
-    final text = _hashtagController.text.trim().replaceFirst(RegExp('^#'), '');
-    if (text.isEmpty) return;
-    _add(HashtagTab(text));
-    _hashtagController.clear();
-  }
-
-  static IconData _icon(TabType tab) => switch (tab) {
-    TimelineTab() => Icons.forum_outlined,
-    ListTab() => Icons.list,
-    HashtagTab() => Icons.tag,
-    ChannelTab() => Icons.forum,
-    NotificationsTab() => Icons.notifications_outlined,
-    AnnouncementsTab() => Icons.campaign_outlined,
-    MessagesTab() => Icons.chat_bubble_outline,
-  };
-
-  Widget _sectionHeader(ThemeData theme, String title) => Container(
-    width: double.infinity,
-    color: theme.colorScheme.surfaceContainerHighest,
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-    child: Text(
-      title,
-      style: theme.textTheme.titleSmall?.copyWith(
-        color: theme.colorScheme.onSurfaceVariant,
-      ),
-    ),
-  );
-
-  /// 現在のアカウントで足せるカラムの候補。
-  ///
-  /// ⚠ **メッセージは出さない。**フィードを持たない遷移トリガー (#439) なので
-  /// カラムにならない。
-  List<TabType> _candidates(
-    DecentralizedBackendAdapter? adapter,
-    String? storageKey,
-  ) {
-    final supported =
-        adapter?.capabilities.supportedTimelines ??
-        {TimelineType.home, TimelineType.local, TimelineType.federated};
-    final pinnedHashtags = storageKey == null
-        ? const <TabType>[]
-        : [
-            for (final e in ref.watch(tabConfigProvider(storageKey)))
-              if (e.tab is HashtagTab) e.tab,
-          ];
-    final lists = adapter is ListSupport
-        ? ref.watch(listsProvider).valueOrNull ?? const <PostList>[]
-        : const <PostList>[];
-    final channels = adapter is ChannelSupport
-        ? ref.watch(followedChannelsProvider).valueOrNull ?? const <Channel>[]
-        : const <Channel>[];
-    return [
-      for (final type in TimelineType.values)
-        if (supported.contains(type)) TimelineTab(type),
-      const NotificationsTab(),
-      const AnnouncementsTab(),
-      ...pinnedHashtags,
-      for (final list in lists) ListTab(id: list.id, name: list.title),
-      for (final ch in channels) ChannelTab(id: ch.id, name: ch.name),
-    ];
-  }
+  Widget _sectionHeader(ThemeData theme, String title) =>
+      _DeckSheetSectionHeader(title: title);
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final notifier = ref.read(deckColumnsProvider.notifier);
     final columns = ref.watch(deckColumnsProvider);
-    final account = ref.watch(currentAccountProvider);
-    final adapter = ref.watch(currentAdapterProvider);
-    final isMastodon =
-        adapter != null &&
-        !adapter.capabilities.supportedTimelines.contains(TimelineType.social);
-    final lists = adapter is ListSupport
-        ? ref.watch(listsProvider).valueOrNull ?? const <PostList>[]
-        : const <PostList>[];
-    String label(TabType tab) => tabLabel(ref, tab, isMastodon, adapter, lists);
-    final candidates = _candidates(adapter, account?.key.toStorageKey());
+    final accounts = ref.watch(accountManagerProvider).accounts;
+    final currentKey = ref.watch(currentAccountKeyProvider);
+    final selected = accounts.any((a) => a.key == _selectedAccount)
+        ? _selectedAccount
+        : currentKey;
 
     return Padding(
       // ⚠ キーボードとナビゲーションバーの両方を足す (#1062)。
@@ -169,7 +92,7 @@ class _DeckColumnsSheetState extends ConsumerState<DeckColumnsSheet> {
                     // onReorderItem は「取り除いたあとの挿入位置」を渡すので、
                     // DeckColumnsNotifier.move と同じ意味 (#836)。
                     onReorderItem: (oldIndex, newIndex) =>
-                        _notifier.move(columns[oldIndex].id, newIndex),
+                        notifier.move(columns[oldIndex].id, newIndex),
                     itemBuilder: (context, index) {
                       final column = columns[index];
                       return ListTile(
@@ -179,12 +102,9 @@ class _DeckColumnsSheetState extends ConsumerState<DeckColumnsSheet> {
                           index: index,
                           child: const Icon(Icons.drag_handle),
                         ),
-                        title: Row(
-                          children: [
-                            Icon(_icon(column.tab), size: 18),
-                            const SizedBox(width: 8),
-                            Expanded(child: Text(label(column.tab))),
-                          ],
+                        title: DeckAccountScope(
+                          account: column.account,
+                          child: _TabTitle(tab: column.tab),
                         ),
                         subtitle: Text(
                           '@${column.account.username}@${column.account.host}',
@@ -192,49 +112,43 @@ class _DeckColumnsSheetState extends ConsumerState<DeckColumnsSheet> {
                         trailing: IconButton(
                           icon: const Icon(Icons.delete_outline),
                           tooltip: 'カラムを削除',
-                          onPressed: () => _notifier.remove(column.id),
+                          onPressed: () => notifier.remove(column.id),
                         ),
                       );
                     },
                   ),
                   _sectionHeader(theme, 'カラムを追加'),
-                  if (account == null)
+                  if (selected == null)
                     const Padding(
                       padding: EdgeInsets.all(16),
                       child: Text('アカウントがありません'),
                     )
                   else ...[
-                    for (final tab in candidates)
-                      ListTile(
-                        key: ValueKey('candidate-${tab.toIdentityKey()}'),
-                        leading: Icon(_icon(tab)),
-                        title: Text(label(tab)),
-                        trailing: const Icon(Icons.add),
-                        onTap: () => _add(tab),
-                      ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: _hashtagController,
-                              decoration: const InputDecoration(
-                                hintText: 'ハッシュタグを入力',
-                                prefixText: '#',
-                                isDense: true,
+                    if (accounts.length > 1)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: DropdownButton<AccountKey>(
+                          key: const ValueKey('deck-account-selector'),
+                          isExpanded: true,
+                          value: selected,
+                          items: [
+                            for (final account in accounts)
+                              DropdownMenuItem(
+                                value: account.key,
+                                child: Text(
+                                  '@${account.key.username}@${account.key.host}',
+                                ),
                               ),
-                              onSubmitted: (_) => _addHashtag(),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          IconButton(
-                            icon: const Icon(Icons.add),
-                            tooltip: 'ハッシュタグのカラムを追加',
-                            onPressed: _addHashtag,
-                          ),
-                        ],
+                          ],
+                          onChanged: (key) =>
+                              setState(() => _selectedAccount = key),
+                        ),
                       ),
+                    DeckAccountScope(
+                      // ⚠ アカウントを替えたら候補を作り直す（入力欄も含めて）。
+                      key: ValueKey(selected),
+                      account: selected,
+                      child: const _DeckColumnCandidates(),
                     ),
                   ],
                 ],
@@ -244,6 +158,205 @@ class _DeckColumnsSheetState extends ConsumerState<DeckColumnsSheet> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// [account] のスコープで子を描く (#1096)。現在のアカウントならそのまま。
+///
+/// ⚠ 子の中の `currentAccountProvider` 系が [account] を指すようになる。
+/// デッキ画面のカラムと同じ仕組み（案 S）を、シートの中の小さな部品に使う。
+/// 接続されていないアカウントでは上書きしない（ラベルが現在のアカウントの呼称で
+/// 出るだけで、何も外へ出さない）。
+class DeckAccountScope extends ConsumerWidget {
+  const DeckAccountScope({
+    super.key,
+    required this.account,
+    required this.child,
+  });
+
+  final AccountKey account;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (account == ref.watch(currentAccountKeyProvider)) return child;
+    final resolved = ref
+        .watch(accountManagerProvider)
+        .accounts
+        .where((a) => a.key == account)
+        .firstOrNull;
+    if (resolved == null) return child;
+    return ProviderScope(
+      overrides: [currentAccountProvider.overrideWithValue(resolved)],
+      child: child,
+    );
+  }
+}
+
+class _DeckSheetSectionHeader extends StatelessWidget {
+  const _DeckSheetSectionHeader({required this.title});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      width: double.infinity,
+      color: theme.colorScheme.surfaceContainerHighest,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Text(
+        title,
+        style: theme.textTheme.titleSmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+}
+
+IconData _tabIcon(TabType tab) => switch (tab) {
+  TimelineTab() => Icons.forum_outlined,
+  ListTab() => Icons.list,
+  HashtagTab() => Icons.tag,
+  ChannelTab() => Icons.forum,
+  NotificationsTab() => Icons.notifications_outlined,
+  AnnouncementsTab() => Icons.campaign_outlined,
+  MessagesTab() => Icons.chat_bubble_outline,
+};
+
+/// 周りのスコープのアカウントで [tab] のラベルを出す。
+String _labelInScope(WidgetRef ref, TabType tab) {
+  final adapter = ref.watch(currentAdapterProvider);
+  final isMastodon =
+      adapter != null &&
+      !adapter.capabilities.supportedTimelines.contains(TimelineType.social);
+  // リスト名はキーに持たない（決定済み事項 4）ので、実行時に一覧から引く。
+  // ⚠ リスト以外で一覧の取得を起こさない。
+  final lists = tab is ListTab && adapter is ListSupport
+      ? ref.watch(listsProvider).valueOrNull ?? const <PostList>[]
+      : const <PostList>[];
+  return tabLabel(ref, tab, isMastodon, adapter, lists);
+}
+
+class _TabTitle extends ConsumerWidget {
+  const _TabTitle({required this.tab});
+
+  final TabType tab;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => Row(
+    children: [
+      Icon(_tabIcon(tab), size: 18),
+      const SizedBox(width: 8),
+      Expanded(child: Text(_labelInScope(ref, tab))),
+    ],
+  );
+}
+
+/// 周りのスコープのアカウントで足せるカラムの候補と、ハッシュタグの入力欄。
+class _DeckColumnCandidates extends ConsumerStatefulWidget {
+  const _DeckColumnCandidates();
+
+  @override
+  ConsumerState<_DeckColumnCandidates> createState() =>
+      _DeckColumnCandidatesState();
+}
+
+class _DeckColumnCandidatesState extends ConsumerState<_DeckColumnCandidates> {
+  final _hashtagController = TextEditingController();
+
+  @override
+  void dispose() {
+    _hashtagController.dispose();
+    super.dispose();
+  }
+
+  void _add(TabType tab) {
+    // ⚠ スコープの中なので、選んだアカウントが返る。
+    final account = ref.read(currentAccountKeyProvider);
+    if (account == null) return;
+    ref.read(deckColumnsProvider.notifier).add(account, tab);
+  }
+
+  void _addHashtag() {
+    final text = _hashtagController.text.trim().replaceFirst(RegExp('^#'), '');
+    if (text.isEmpty) return;
+    _add(HashtagTab(text));
+    _hashtagController.clear();
+  }
+
+  /// 足せるカラムの候補。
+  ///
+  /// ⚠ **メッセージは出さない。**フィードを持たない遷移トリガー (#439) なので
+  /// カラムにならない。
+  List<TabType> _candidates() {
+    final adapter = ref.watch(currentAdapterProvider);
+    final storageKey = ref.watch(currentAccountKeyProvider)?.toStorageKey();
+    final supported =
+        adapter?.capabilities.supportedTimelines ??
+        {TimelineType.home, TimelineType.local, TimelineType.federated};
+    final pinnedHashtags = storageKey == null
+        ? const <TabType>[]
+        : [
+            for (final e in ref.watch(tabConfigProvider(storageKey)))
+              if (e.tab is HashtagTab) e.tab,
+          ];
+    final lists = adapter is ListSupport
+        ? ref.watch(listsProvider).valueOrNull ?? const <PostList>[]
+        : const <PostList>[];
+    final channels = adapter is ChannelSupport
+        ? ref.watch(followedChannelsProvider).valueOrNull ?? const <Channel>[]
+        : const <Channel>[];
+    return [
+      for (final type in TimelineType.values)
+        if (supported.contains(type)) TimelineTab(type),
+      const NotificationsTab(),
+      const AnnouncementsTab(),
+      ...pinnedHashtags,
+      for (final list in lists) ListTab(id: list.id, name: list.title),
+      for (final ch in channels) ChannelTab(id: ch.id, name: ch.name),
+    ];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        for (final tab in _candidates())
+          ListTile(
+            key: ValueKey('candidate-${tab.toIdentityKey()}'),
+            leading: Icon(_tabIcon(tab)),
+            title: Text(_labelInScope(ref, tab)),
+            trailing: const Icon(Icons.add),
+            onTap: () => _add(tab),
+          ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _hashtagController,
+                  decoration: const InputDecoration(
+                    hintText: 'ハッシュタグを入力',
+                    prefixText: '#',
+                    isDense: true,
+                  ),
+                  onSubmitted: (_) => _addHashtag(),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                icon: const Icon(Icons.add),
+                tooltip: 'ハッシュタグのカラムを追加',
+                onPressed: _addHashtag,
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

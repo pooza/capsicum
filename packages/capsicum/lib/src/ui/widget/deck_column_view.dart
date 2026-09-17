@@ -42,11 +42,12 @@ class DeckColumnView extends ConsumerWidget {
   }
 
   Widget _body(WidgetRef ref) {
-    // ⚠ フェーズ 1 はアカウントが 1 つ（現在のアカウント）。別アカウントのカラムを
-    // 描くにはスコープの割り当て（#1096）が要る。それまでは取得もしない
-    // （TL の family はキーのアカウントと現在のアカウントが一致しないと取らない）。
+    // ⚠ カラムのアカウントは、デッキ画面がスコープで `currentAccountProvider` に
+    // 渡している (#1096)。ここで食い違うのはその割り当てが壊れたときだけで、
+    // **そのまま描くと別のアカウントとして操作が外に出る**（B-2）ので出さない。
+    // TL の family も、キーのアカウントと現在のアカウントが一致しないと取らない。
     if (column.account != ref.watch(currentAccountKeyProvider)) {
-      return const _DeckColumnMessage('現在のアカウント以外のカラムは、まだ表示できません');
+      return const _DeckColumnMessage('このカラムを表示できません');
     }
     final account = column.account;
     return switch (column.tab) {
@@ -90,6 +91,30 @@ class DeckColumnView extends ConsumerWidget {
       // メッセージはフィードを持たない遷移トリガー (#439) なので、カラムにならない。
       MessagesTab() => const _DeckColumnMessage('このカラムは表示できません'),
     };
+  }
+}
+
+/// アカウントが接続されていないカラム (#1096)。
+///
+/// 設定バックアップから移行した直後や、到達不能なアカウント（#792）。⚠ **列からは
+/// 消さない**（決定済み事項 5-1）。ログインし直す / 復帰すると、そのまま動き出す。
+class DeckColumnUnavailable extends StatelessWidget {
+  const DeckColumnUnavailable({super.key, required this.column});
+
+  final DeckColumn column;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final account = column.account;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border(right: BorderSide(color: theme.dividerColor)),
+      ),
+      child: _DeckColumnMessage(
+        '@${account.username}@${account.host} は接続されていません',
+      ),
+    );
   }
 }
 
@@ -141,6 +166,7 @@ class _DeckColumnHeader extends ConsumerWidget {
           if (column.tab case TimelineTab(
             :final type,
           ) when account == ref.watch(currentAccountKeyProvider))
+            // カラムのスコープの中なので、別アカウントのカラムでもここは一致する。
             _DeckStreamDot(
               key: ValueKey(type),
               timelineKey: (account: account, type: type),
