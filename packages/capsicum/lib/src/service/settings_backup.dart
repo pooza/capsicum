@@ -169,6 +169,17 @@ const deviceLocalKeys = <String>{
 ///   する意味が無く、`addAccount` がログイン直後に上書きする（#1057）。
 const accountScopedKeys = <String>{'background_opacity', 'last_tab_'};
 
+/// 書き出すかどうかが**まだ決まっていない**設定。今は書き出さない。
+///
+/// 「足し忘れ」と「意図的に外した」に加えて、**「判断待ち」を明示する**ための枠。
+/// ⚠ ここを [deviceLocalKeys] 等へ流用すると、判断が済んだように見えて宿題が消える。
+///
+/// - `deck_columns` … デッキのカラム列 (#1091)。**#1101 で決める。**カラム列は
+///   タブ設定の一般化（`docs/deck-ui-plan.md` 決定済み事項 6-1）で、タブ設定は
+///   #1119 でバックアップ対象になった。含める場合は、索引に無いアカウントを指す
+///   カラムを落とす処理（決定済み事項 5-1）とセットで入れる
+const pendingBackupDecisionKeys = <String>{'deck_columns'};
+
 /// アカウントごとの設定 1 件 (#1119)。実体の保存キーは `<prefix><アカウント>`。
 class AccountScopedSetting {
   const AccountScopedSetting(this.prefix, this.type);

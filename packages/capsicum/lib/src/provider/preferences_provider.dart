@@ -7,6 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../model/account_key.dart';
+import '../model/deck_column.dart';
 import '../util/shared_preferences_cache.dart';
 import 'account_manager_provider.dart';
 import 'channel_provider.dart';
@@ -43,6 +45,10 @@ const _recentEmojisKey = 'recent_emojis';
 const _composeTemplateHistoryKey = 'compose_template_history';
 const _emojiZeroWidthSpaceKey = 'emoji_zero_width_space';
 const _darkSurfaceVariantKey = 'dark_surface_variant';
+
+/// デッキのカラム列 (#1091)。⚠ バックアップに含めるかは #1101 で決める
+/// （`settings_backup.dart` の `pendingBackupDecisionKeys`）。
+const _deckColumnsKey = 'deck_columns';
 const _tabConfigPrefix = 'tab_config_';
 const _avatarShapeKey = 'avatar_shape';
 const _mouseDragScrollKey = 'mouse_drag_scroll';
@@ -558,6 +564,90 @@ class TabConfigNotifier extends FamilyNotifier<List<TabConfigEntry>, String> {
       state = updated;
       _save(updated);
     }
+  }
+}
+
+/// デッキのカラム列 (#1091)。
+///
+/// タブ設定（[tabConfigProvider]）の一般化で、永続化も同じ `List<String>`
+/// （`docs/deck-ui-plan.md` 決定済み事項 6-1）。⚠ 違いは 2 つ:
+///
+/// - **family ではない。**カラムごとにアカウントを持つので、列そのものは
+///   アカウントに依存しない
+/// - ⚠⚠ **同じ中身を重複して置ける**（6-2）。並べ替え・削除は [DeckColumn.id] で
+///   指す。**中身（アカウント + 種別）で指さない**
+///
+/// ⚠ 削除しても購読を明示的に止めない（6-3）。重複カラムは provider を共有するので、
+/// 最後の 1 本が消えたときに autoDispose が片づける。
+final deckColumnsProvider =
+    NotifierProvider<DeckColumnsNotifier, List<DeckColumn>>(
+      DeckColumnsNotifier.new,
+    );
+
+class DeckColumnsNotifier extends Notifier<List<DeckColumn>> {
+  @override
+  List<DeckColumn> build() {
+    // タブ設定と同じく pre-warm 済みの SharedPreferences から同期で読む (#579)。
+    final saved = sharedPrefsOrThrow.getStringList(_deckColumnsKey);
+    if (saved == null) return const [];
+    final columns = <DeckColumn>[];
+    final seenIds = <String>{};
+    for (final line in saved) {
+      final column = DeckColumn.deserialize(line);
+      // 読めない行と、id が重複する行（手編集等）は黙って捨てる。⚠ 重複 id を
+      // 残すと、並べ替え・削除が 2 本のどちらを指すか決まらない。
+      if (column == null || !seenIds.add(column.id)) continue;
+      columns.add(column);
+    }
+    return columns;
+  }
+
+  Future<void> _save() => sharedPrefsOrThrow.setStringList(_deckColumnsKey, [
+    for (final c in state) c.serialize(),
+  ]);
+
+  /// 列内で未使用の id を採番する。並べ替えても変わらない。
+  String _newId() {
+    final used = {for (final c in state) c.id};
+    var n = DateTime.now().microsecondsSinceEpoch;
+    String id;
+    do {
+      id = (n++).toRadixString(36);
+    } while (used.contains(id));
+    return id;
+  }
+
+  /// 末尾にカラムを足す。⚠ **同じ中身が既にあっても足す**（重複を許す・6-2）。
+  Future<DeckColumn> add(AccountKey account, TabType tab) async {
+    final column = DeckColumn(id: _newId(), account: account, tab: tab);
+    state = [...state, column];
+    await _save();
+    return column;
+  }
+
+  /// [id] のカラムを外す。無ければ何もしない。
+  Future<void> remove(String id) async {
+    if (!state.any((c) => c.id == id)) return;
+    state = [
+      for (final c in state)
+        if (c.id != id) c,
+    ];
+    await _save();
+  }
+
+  /// [id] のカラムを [newIndex] へ動かす。
+  ///
+  /// [newIndex] は**取り除いたあとの列での挿入位置**（`ReorderableListView` の
+  /// `onReorderItem` と同じ意味・`tab_management_sheet.dart` 参照）。範囲外は端へ
+  /// 丸める。
+  Future<void> move(String id, int newIndex) async {
+    final from = state.indexWhere((c) => c.id == id);
+    if (from < 0) return;
+    final next = [...state];
+    final column = next.removeAt(from);
+    next.insert(newIndex.clamp(0, next.length), column);
+    state = next;
+    await _save();
   }
 }
 

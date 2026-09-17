@@ -19,6 +19,18 @@ sealed class TabType {
   /// - `announcements`
   String toKey();
 
+  /// 同一性だけを表す文字列 (#1091)。**表示名を含まない。**
+  ///
+  /// ⚠⚠ [toKey] は [ListTab] / [ChannelTab] で表示名を含むのに、`==` / `hashCode` は
+  /// id しか見ていない。**[toKey] の文字列を同一性に使うと、サーバー側でリスト名を
+  /// 変えた瞬間に「同じリストなのに別物」になる**（デッキのカラム列を保存すると
+  /// 並び順ごと消える）。文字列を ID・永続化キー・キャッシュのスロット名に使う
+  /// ときはこちらを使う。
+  ///
+  /// [fromKey] で読み戻せる（表示名は null になる。表示名は実行時に解決する）。
+  /// [toKey] は既存の保存形式なので触らない。
+  String toIdentityKey() => toKey();
+
   /// Deserialize from the compact string produced by [toKey].
   ///
   /// Returns null for unrecognized formats (forward-compatible).
@@ -88,6 +100,9 @@ class ListTab extends TabType {
   String toKey() => name != null ? 'list:$id:$name' : 'list:$id';
 
   @override
+  String toIdentityKey() => 'list:$id';
+
+  @override
   bool operator ==(Object other) => other is ListTab && id == other.id;
 
   @override
@@ -115,6 +130,9 @@ class ChannelTab extends TabType {
 
   @override
   String toKey() => name != null ? 'channel:$id:$name' : 'channel:$id';
+
+  @override
+  String toIdentityKey() => 'channel:$id';
 
   @override
   bool operator ==(Object other) => other is ChannelTab && id == other.id;
