@@ -99,6 +99,7 @@ class ChannelTimelineNotifier
 final channelTimelineProvider = AsyncNotifierProvider.autoDispose
     .family<ChannelTimelineNotifier, TimelineState, ChannelTimelineKey>(
       ChannelTimelineNotifier.new,
+      dependencies: [currentAccountProvider],
     );
 
 /// 現在アカウントがフォロー中のチャンネル一覧 (#334 タブ管理から参照)。
@@ -111,4 +112,4 @@ final followedChannelsProvider = FutureProvider<List<Channel>>((ref) async {
   } catch (_) {
     return const [];
   }
-});
+}, dependencies: [currentAdapterProvider]);

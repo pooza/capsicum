@@ -22,7 +22,7 @@ final _infoBotUserProvider = FutureProvider.autoDispose<User?>((ref) async {
   if (parts.length != 2) return null;
 
   return adapter.getUser(parts[0], parts[1]);
-});
+}, dependencies: [currentAdapterProvider, currentMulukhiyaProvider]);
 
 /// Standalone screen with AppBar.
 class AnnouncementScreen extends ConsumerWidget {

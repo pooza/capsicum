@@ -17,6 +17,7 @@ final _scheduledPostsProvider = FutureProvider.autoDispose<List<ScheduledPost>>(
     if (adapter == null || adapter is! ScheduleSupport) return [];
     return (adapter as ScheduleSupport).getScheduledPosts();
   },
+  dependencies: [currentAdapterProvider],
 );
 
 class ScheduledPostsScreen extends ConsumerWidget {

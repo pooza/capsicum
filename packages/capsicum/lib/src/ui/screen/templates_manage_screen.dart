@@ -43,7 +43,7 @@ final composeTemplatesProvider =
         );
         rethrow;
       }
-    });
+    }, dependencies: [currentAccountProvider]);
 
 /// 投稿テンプレートの管理画面 (#767)。作成・編集・削除と、テンプレートからの
 /// 投稿開始を行う。適用（本文差し替え）は compose 画面の選択シートが担う。

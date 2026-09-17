@@ -1430,6 +1430,11 @@ final accountStorageProvider = Provider<AccountStorage>(
 );
 
 /// Convenience provider for the currently selected account.
+///
+/// ⚠⚠ **デッキのカラムはこれを `ProviderScope` で上書きする**（#1095・案 S）。
+/// これを直接・間接に読む provider は `dependencies:` の宣言が要る。宣言が無いと
+/// カラムの中でもルートの「現在のアカウント」で動く（別のアカウントとして投稿等が
+/// 外に出る・B-2）。宣言漏れは `provider_scope_dependencies_guard_test` が落とす。
 final currentAccountProvider = Provider<Account?>((ref) {
   return ref.watch(accountManagerProvider).current;
 });
@@ -1442,7 +1447,7 @@ final currentAccountProvider = Provider<Account?>((ref) {
 /// こちらはアカウントが変わったときだけ通知する。
 final currentAccountKeyProvider = Provider<AccountKey?>((ref) {
   return ref.watch(currentAccountProvider)?.key;
-});
+}, dependencies: [currentAccountProvider]);
 
 /// 到達不能でオフライン保持中のアカウント一覧 (#792)。
 final offlineAccountsProvider = Provider<List<OfflineAccount>>((ref) {
@@ -1452,12 +1457,12 @@ final offlineAccountsProvider = Provider<List<OfflineAccount>>((ref) {
 /// Convenience provider for the current adapter.
 final currentAdapterProvider = Provider<DecentralizedBackendAdapter?>((ref) {
   return ref.watch(currentAccountProvider)?.adapter;
-});
+}, dependencies: [currentAccountProvider]);
 
 /// Convenience provider for the current account's mulukhiya service.
 final currentMulukhiyaProvider = Provider<MulukhiyaService?>((ref) {
   return ref.watch(currentAccountProvider)?.mulukhiya;
-});
+}, dependencies: [currentAccountProvider]);
 
 /// `catch` の中から `account` を読むための、**投げない**読み取り (#1064)。
 ///

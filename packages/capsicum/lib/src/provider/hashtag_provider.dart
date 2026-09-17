@@ -136,4 +136,5 @@ class HashtagTimelineNotifier
 final hashtagTimelineProvider = AsyncNotifierProvider.autoDispose
     .family<HashtagTimelineNotifier, TimelineState, HashtagTimelineKey>(
       HashtagTimelineNotifier.new,
+      dependencies: [currentAccountProvider],
     );

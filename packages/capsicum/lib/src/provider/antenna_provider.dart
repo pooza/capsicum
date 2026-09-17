@@ -9,7 +9,7 @@ final antennasProvider = FutureProvider.autoDispose<List<Antenna>>((ref) async {
   final adapter = ref.watch(currentAdapterProvider);
   if (adapter == null || adapter is! AntennaSupport) return [];
   return (adapter as AntennaSupport).getAntennas();
-});
+}, dependencies: [currentAdapterProvider]);
 
 /// Notifier that manages paginated antenna notes fetching.
 class AntennaNotesNotifier
@@ -76,4 +76,5 @@ class AntennaNotesNotifier
 final antennaNotesProvider = AsyncNotifierProvider.autoDispose
     .family<AntennaNotesNotifier, TimelineState, String>(
       AntennaNotesNotifier.new,
+      dependencies: [currentAdapterProvider],
     );

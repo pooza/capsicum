@@ -427,4 +427,4 @@ final _threadProvider = FutureProvider.autoDispose.family<List<Post>, String>((
   if (adapter == null) return [];
   final thread = await adapter.getThread(postId);
   return ref.read(isCatEnricherProvider).enrichPosts(thread);
-});
+}, dependencies: [currentAdapterProvider, isCatEnricherProvider]);

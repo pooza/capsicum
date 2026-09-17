@@ -22,7 +22,7 @@ final selectedListProvider = Provider<PostList?>((ref) {
   if (tab is! ListTab) return null;
   final lists = ref.watch(listsProvider).valueOrNull ?? [];
   return lists.where((l) => l.id == tab.id).firstOrNull;
-});
+}, dependencies: [listsProvider]);
 
 /// 選択中タブが [HashtagTab] のときのタグ spec。
 final selectedHashtagProvider = Provider<String?>((ref) {

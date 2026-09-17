@@ -105,4 +105,5 @@ class FavoriteNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
 final favoriteProvider =
     AsyncNotifierProvider.autoDispose<FavoriteNotifier, TimelineState>(
       FavoriteNotifier.new,
+      dependencies: [currentAdapterProvider],
     );

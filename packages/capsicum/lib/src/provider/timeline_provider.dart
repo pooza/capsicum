@@ -65,7 +65,7 @@ final currentTimelineKeyProvider = Provider<TimelineKey>((ref) {
     account: ref.watch(currentAccountKeyProvider),
     type: ref.watch(selectedTimelineTypeProvider),
   );
-});
+}, dependencies: [currentAccountKeyProvider]);
 
 /// TL の family キーが指すアカウントのアダプタ (#1087 / #1088)。
 ///
@@ -1953,4 +1953,7 @@ class TimelineNotifier
 /// ⚠ `ref.invalidate(timelineProvider)`（引数なし）は **family の全インスタンス**を
 /// 作り直す。表示中の 1 本だけで良ければキーを渡す。
 final timelineProvider = AsyncNotifierProvider.autoDispose
-    .family<TimelineNotifier, TimelineState, TimelineKey>(TimelineNotifier.new);
+    .family<TimelineNotifier, TimelineState, TimelineKey>(
+      TimelineNotifier.new,
+      dependencies: [currentAccountProvider, isCatEnricherProvider],
+    );

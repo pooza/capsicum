@@ -660,72 +660,76 @@ class DeckColumnsNotifier extends Notifier<List<DeckColumn>> {
 /// excluded (#464 — Misskey 同士でも別サーバーの ChannelTab が残存表示
 /// される問題対策。ListTab と同型に揃える)。
 /// Server lists not yet in the config are appended automatically.
-final visibleTabsProvider = Provider.family<List<TabType>, String>((
-  ref,
-  storageKey,
-) {
-  final adapter = ref.watch(currentAdapterProvider);
-  final supported =
-      adapter?.capabilities.supportedTimelines ??
-      {TimelineType.home, TimelineType.local, TimelineType.federated};
-  final serverLists = ref.watch(listsProvider).valueOrNull ?? [];
-  final serverListIds = serverLists.map((l) => l.id).toSet();
-  // 現サーバーのフォロー中チャンネル ID 集合。followedChannelsProvider が
-  // まだ resolve していない (loading) 段階では `null` のままで、capability
-  // チェックだけにフォールバックする (前アカウントの古い ChannelTab を
-  // 切るのが目的なので、loading 中の誤判定で正規チャンネルを消すのを避ける)。
-  final serverChannelsAsync = ref.watch(followedChannelsProvider);
-  final serverChannelIds = serverChannelsAsync.valueOrNull
-      ?.map((c) => c.id)
-      .toSet();
-  final config = ref.watch(tabConfigProvider(storageKey));
-
-  final tabs = config.where((e) => e.visible).map((e) => e.tab).where((tab) {
-    if (tab is TimelineTab) return supported.contains(tab.type);
-    if (tab is ListTab) return serverListIds.contains(tab.id);
-    if (tab is ChannelTab) {
-      if (adapter is! ChannelSupport) return false;
-      // serverChannelIds が未確定 (初回ロード前) の間は capability 判定の
-      // みでフォールバック。確定後に本フィルタが効いて他サーバー由来の
-      // ChannelTab が消える。
-      if (serverChannelIds == null) return true;
-      return serverChannelIds.contains(tab.id);
-    }
-    return true;
-  }).toList();
-
-  // Append server lists not yet tracked in the config.
-  final configListIds = config
-      .where((e) => e.tab is ListTab)
-      .map((e) => (e.tab as ListTab).id)
-      .toSet();
-  for (final list in serverLists) {
-    if (!configListIds.contains(list.id)) {
-      tabs.add(ListTab(id: list.id, name: list.title));
-    }
-  }
-
-  // Append followed channels not yet tracked in the config (#666 — channel
-  // tabs were only synced when the tab management sheet opened, so they did
-  // not appear right after login. Mirror the list behaviour above so they
-  // show as soon as followedChannelsProvider resolves). Channels the user
-  // explicitly hid are already in `config` (visible == false) and thus in
-  // configChannelIds, so they are not re-appended.
-  if (adapter is ChannelSupport && serverChannelIds != null) {
-    final configChannelIds = config
-        .where((e) => e.tab is ChannelTab)
-        .map((e) => (e.tab as ChannelTab).id)
+final visibleTabsProvider = Provider.family<List<TabType>, String>(
+  (ref, storageKey) {
+    final adapter = ref.watch(currentAdapterProvider);
+    final supported =
+        adapter?.capabilities.supportedTimelines ??
+        {TimelineType.home, TimelineType.local, TimelineType.federated};
+    final serverLists = ref.watch(listsProvider).valueOrNull ?? [];
+    final serverListIds = serverLists.map((l) => l.id).toSet();
+    // 現サーバーのフォロー中チャンネル ID 集合。followedChannelsProvider が
+    // まだ resolve していない (loading) 段階では `null` のままで、capability
+    // チェックだけにフォールバックする (前アカウントの古い ChannelTab を
+    // 切るのが目的なので、loading 中の誤判定で正規チャンネルを消すのを避ける)。
+    final serverChannelsAsync = ref.watch(followedChannelsProvider);
+    final serverChannelIds = serverChannelsAsync.valueOrNull
+        ?.map((c) => c.id)
         .toSet();
-    final followedChannels = serverChannelsAsync.valueOrNull ?? const [];
-    for (final ch in followedChannels) {
-      if (!configChannelIds.contains(ch.id)) {
-        tabs.add(ChannelTab(id: ch.id, name: ch.name));
+    final config = ref.watch(tabConfigProvider(storageKey));
+
+    final tabs = config.where((e) => e.visible).map((e) => e.tab).where((tab) {
+      if (tab is TimelineTab) return supported.contains(tab.type);
+      if (tab is ListTab) return serverListIds.contains(tab.id);
+      if (tab is ChannelTab) {
+        if (adapter is! ChannelSupport) return false;
+        // serverChannelIds が未確定 (初回ロード前) の間は capability 判定の
+        // みでフォールバック。確定後に本フィルタが効いて他サーバー由来の
+        // ChannelTab が消える。
+        if (serverChannelIds == null) return true;
+        return serverChannelIds.contains(tab.id);
+      }
+      return true;
+    }).toList();
+
+    // Append server lists not yet tracked in the config.
+    final configListIds = config
+        .where((e) => e.tab is ListTab)
+        .map((e) => (e.tab as ListTab).id)
+        .toSet();
+    for (final list in serverLists) {
+      if (!configListIds.contains(list.id)) {
+        tabs.add(ListTab(id: list.id, name: list.title));
       }
     }
-  }
 
-  return tabs;
-});
+    // Append followed channels not yet tracked in the config (#666 — channel
+    // tabs were only synced when the tab management sheet opened, so they did
+    // not appear right after login. Mirror the list behaviour above so they
+    // show as soon as followedChannelsProvider resolves). Channels the user
+    // explicitly hid are already in `config` (visible == false) and thus in
+    // configChannelIds, so they are not re-appended.
+    if (adapter is ChannelSupport && serverChannelIds != null) {
+      final configChannelIds = config
+          .where((e) => e.tab is ChannelTab)
+          .map((e) => (e.tab as ChannelTab).id)
+          .toSet();
+      final followedChannels = serverChannelsAsync.valueOrNull ?? const [];
+      for (final ch in followedChannels) {
+        if (!configChannelIds.contains(ch.id)) {
+          tabs.add(ChannelTab(id: ch.id, name: ch.name));
+        }
+      }
+    }
+
+    return tabs;
+  },
+  dependencies: [
+    currentAdapterProvider,
+    listsProvider,
+    followedChannelsProvider,
+  ],
+);
 
 /// Whether a specific tab type is currently visible.
 final isTabVisibleProvider =

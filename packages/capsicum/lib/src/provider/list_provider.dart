@@ -11,7 +11,7 @@ final listsProvider = FutureProvider.autoDispose<List<PostList>>((ref) async {
   final adapter = ref.watch(currentAdapterProvider);
   if (adapter == null || adapter is! ListSupport) return [];
   return (adapter as ListSupport).getLists();
-});
+}, dependencies: [currentAdapterProvider]);
 
 /// リスト TL の family キー (#1088)。
 ///
@@ -110,4 +110,5 @@ class ListTimelineNotifier
 final listTimelineProvider = AsyncNotifierProvider.autoDispose
     .family<ListTimelineNotifier, TimelineState, ListTimelineKey>(
       ListTimelineNotifier.new,
+      dependencies: [currentAccountProvider],
     );

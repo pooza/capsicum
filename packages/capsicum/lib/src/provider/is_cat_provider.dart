@@ -409,4 +409,4 @@ final isCatEnricherProvider = Provider<IsCatEnricher>((ref) {
   return account != null
       ? IsCatEnricher.forAccount(account)
       : IsCatEnricher(mulukhiya: null, accessToken: null);
-});
+}, dependencies: [currentAccountProvider]);

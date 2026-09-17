@@ -107,7 +107,7 @@ final chatMessageStreamProvider = Provider.autoDispose<Stream<ChatMessage>?>((
   );
   ref.onDispose(() => (adapter as ChatSupport).disposeChatStream());
   return stream;
-});
+}, dependencies: [currentAdapterProvider]);
 
 /// /chat/history で取得するスレッド一覧。ChatSupport を持たない adapter では
 /// 空リストを返す。streaming で来た新着 chat は thread を先頭に並べ替える。
@@ -299,7 +299,7 @@ final chatRoomMessageStreamProvider = Provider.autoDispose
         () => (adapter as ChatSupport).disposeRoomChatStream(roomId: roomId),
       );
       return stream;
-    });
+    }, dependencies: [currentAdapterProvider]);
 
 /// 自分が参加しているルーム一覧。ChatSupport / room 非対応 adapter は空配列。
 final joiningChatRoomsProvider = FutureProvider.autoDispose<List<ChatRoom>>((
@@ -314,7 +314,7 @@ final joiningChatRoomsProvider = FutureProvider.autoDispose<List<ChatRoom>>((
   } on UnsupportedError {
     return const [];
   }
-});
+}, dependencies: [currentAdapterProvider]);
 
 /// 特定ルームのメンバー一覧 (`family<roomId>`)。
 final chatRoomMembersProvider = FutureProvider.autoDispose
@@ -329,7 +329,7 @@ final chatRoomMembersProvider = FutureProvider.autoDispose
       } on UnsupportedError {
         return const [];
       }
-    });
+    }, dependencies: [currentAdapterProvider]);
 
 /// 受信招待箱。invitations/inbox 相当。
 final chatInvitationInboxProvider =
@@ -343,7 +343,7 @@ final chatInvitationInboxProvider =
       } on UnsupportedError {
         return const [];
       }
-    });
+    }, dependencies: [currentAdapterProvider]);
 
 /// 特定ルームのメッセージタイムライン。DM 用 [ChatThreadNotifier] の room 版。
 /// state は [ChatThreadState] を流用し、`messages` 配列は「先頭が最新、末尾が古い」
@@ -557,11 +557,21 @@ Future<void> _toggleChatReaction(
 final chatRoomTimelineProvider = AsyncNotifierProvider.autoDispose
     .family<ChatRoomTimelineNotifier, ChatThreadState, String>(
       ChatRoomTimelineNotifier.new,
+      dependencies: [
+        currentAdapterProvider,
+        chatRoomMessageStreamProvider,
+        chatThreadListProvider,
+      ],
     );
 
 final chatThreadListProvider =
     AsyncNotifierProvider.autoDispose<ChatThreadListNotifier, List<ChatThread>>(
       ChatThreadListNotifier.new,
+      dependencies: [
+        currentAdapterProvider,
+        chatMessageStreamProvider,
+        currentAccountProvider,
+      ],
     );
 
 /// `null` 自体が「明示的にクリア」を意味する nullable フィールドを
@@ -755,6 +765,11 @@ class ChatThreadNotifier
 final chatThreadProvider = AsyncNotifierProvider.autoDispose
     .family<ChatThreadNotifier, ChatThreadState, String>(
       ChatThreadNotifier.new,
+      dependencies: [
+        currentAdapterProvider,
+        chatMessageStreamProvider,
+        chatThreadListProvider,
+      ],
     );
 
 /// 新規 DM / ルーム招待相手をユーザー検索で探すための provider。
@@ -777,4 +792,4 @@ final chatUserSearchProvider = FutureProvider.autoDispose
       );
       if (selfHost == null) return users;
       return users.where((u) => u.host == null || u.host == selfHost).toList();
-    });
+    }, dependencies: [currentAdapterProvider, currentAccountProvider]);

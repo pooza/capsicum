@@ -16,7 +16,7 @@ final _draftsProvider = FutureProvider.autoDispose<List<Draft>>((ref) async {
   final adapter = ref.watch(currentAdapterProvider);
   if (adapter == null || adapter is! DraftSupport) return [];
   return (adapter as DraftSupport).getDrafts();
-});
+}, dependencies: [currentAdapterProvider]);
 
 class DraftsScreen extends ConsumerWidget {
   const DraftsScreen({super.key});

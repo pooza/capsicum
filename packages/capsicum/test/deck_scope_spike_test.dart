@@ -193,14 +193,11 @@ void main() {
       expect(column.read(real.currentAccountProvider), isNull);
     });
 
-    test('5. ⚠ 実物の currentAdapterProvider は今のままではスコープに追随しない', () {
-      // これがフェーズ 2 で足す必要のある宣言そのもの。現状の
-      //   final currentAdapterProvider = Provider<...>((ref) =>
-      //       ref.watch(currentAccountProvider)?.adapter);
-      // には dependencies が無いので、スコープされた文脈から読むと落ちる。
-      //
-      // ⚠ **落ちること自体が良い知らせ。**「宣言を足し忘れた provider は
-      // 黙って現在のアカウントで動く」ではなく「開発中に気づく」を意味する。
+    test('5. 実物の currentAdapterProvider はスコープに追随する（#1095 で宣言済み）', () {
+      // ⚠ スパイクの時点（2026-09-06）では dependencies が無く、ここは
+      // AssertionError で落ちることを固定していた。#1095 で宣言を足したので、
+      // **カラムのスコープではカラムのアカウント（ここでは null）のアダプタが返る**。
+      // 宣言漏れの網羅は `provider_scope_dependencies_guard_test` が見る。
       final root = ProviderContainer();
       addTearDown(root.dispose);
 
@@ -210,10 +207,9 @@ void main() {
       );
       addTearDown(column.dispose);
 
-      expect(
-        () => column.read(real.currentAdapterProvider),
-        throwsA(isA<AssertionError>()),
-      );
+      expect(column.read(real.currentAdapterProvider), isNull);
+      expect(column.read(real.currentMulukhiyaProvider), isNull);
+      expect(column.read(real.currentAccountKeyProvider), isNull);
     });
   });
 

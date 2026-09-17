@@ -155,4 +155,9 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
 final notificationProvider =
     AsyncNotifierProvider.autoDispose<NotificationNotifier, NotificationState>(
       NotificationNotifier.new,
+      dependencies: [
+        currentAdapterProvider,
+        isCatEnricherProvider,
+        currentAccountProvider,
+      ],
     );
