@@ -2,7 +2,9 @@ import 'package:capsicum/src/model/account.dart';
 import 'package:capsicum/src/model/account_key.dart';
 import 'package:capsicum/src/model/deck_column.dart';
 import 'package:capsicum/src/provider/account_manager_provider.dart';
+import 'package:capsicum/src/provider/preferences_provider.dart';
 import 'package:capsicum/src/ui/screen/deck_screen.dart';
+import 'package:capsicum/src/ui/util/deck_navigation.dart';
 import 'package:capsicum/src/util/shared_preferences_cache.dart';
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
@@ -319,6 +321,82 @@ void main() {
       expect(find.text('@ghost@misskey.example は接続されていません'), findsOneWidget);
     });
   });
+
+  group('カラムから開いたものは新しいカラムになる (#1148)', () {
+    List<DeckColumn> columnsOf(WidgetTester tester) {
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(DeckScreen)),
+      );
+      return container.read(deckColumnsProvider);
+    }
+
+    testWidgets('⚠⚠ 元のカラムの右隣に、元のカラムのアカウントで足される', (tester) async {
+      await pumpDeckLines(
+        tester,
+        size: const Size(1600, 600),
+        lines: const [
+          'a|me|timeline:home',
+          'b|other|timeline:home',
+          'c|me|timeline:local',
+        ],
+        accounts: [_account('me'), _account('other')],
+      );
+
+      await tester.tap(find.byKey(const ValueKey('open-post-b')));
+      await tester.pumpAndSettle();
+
+      final columns = columnsOf(tester);
+      expect(columns.map((c) => c.id).take(2), ['a', 'b']);
+      final opened = columns[2];
+      expect(opened.tab, const PostThreadTab('p-b'));
+      expect(opened.account.username, 'other');
+      expect((opened.seed! as Post).id, 'p-b', reason: '開いた投稿をそのまま渡す');
+      expect(columns.last.id, 'c');
+      // 足したカラムの中も、そのアカウントで動く（#1096 のコンテナに乗る）。
+      expect(
+        tester.widget<Text>(find.byKey(ValueKey('account-${opened.id}'))).data,
+        'other',
+      );
+    });
+
+    testWidgets('⚠ カラムから開いたシートの中から開いても、元のカラムの右隣に足される', (tester) async {
+      await pumpDeckLines(
+        tester,
+        size: const Size(1600, 600),
+        lines: const ['a|me|timeline:home', 'b|other|timeline:home'],
+        accounts: [_account('me'), _account('other')],
+      );
+
+      await tester.tap(find.byKey(const ValueKey('open-profile-sheet-a')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('sheet-open-profile')));
+      await tester.pumpAndSettle();
+
+      final columns = columnsOf(tester);
+      expect(columns.map((c) => c.tab), [
+        const TimelineTab(TimelineType.home),
+        const ProfileTab('u-sheet'),
+        const TimelineTab(TimelineType.home),
+      ]);
+      expect(columns[1].account.username, 'me');
+    });
+
+    testWidgets('足したカラムが画面の外なら、見える位置まで横に送る', (tester) async {
+      // 800px = 2 本。b から開くと 3 本目に入り、画面の外になる。
+      await pumpDeckLines(
+        tester,
+        size: const Size(800, 600),
+        lines: const ['a|me|timeline:home', 'b|me|timeline:local'],
+      );
+      expect(horizontalOffset(tester), 0);
+
+      await tester.tap(find.byKey(const ValueKey('open-post-b')));
+      await tester.pumpAndSettle();
+
+      expect(columnsOf(tester), hasLength(3));
+      expect(horizontalOffset(tester), 400, reason: 'カラム 1 本ぶん送って 3 本目を見せる');
+    });
+  });
 }
 
 /// 縦に長いリストを持つだけのカラム。`initState` の回数と、自分の位置で見える
@@ -385,6 +463,38 @@ class _StubColumnState extends ConsumerState<_StubColumn> {
               itemBuilder: (_) => [
                 PopupMenuItem(value: 1, child: seen('menu')),
               ],
+            ),
+            // #1148: カラムの中から投稿を開く。
+            TextButton(
+              key: ValueKey('open-post-$id'),
+              onPressed: () => openPost(
+                context,
+                Post(
+                  id: 'p-$id',
+                  postedAt: DateTime(2026),
+                  author: const User(id: 'author', username: 'author'),
+                ),
+              ),
+              child: const Text('P'),
+            ),
+            // #1148: 長押しシートの「プロフィールを表示」の形（シートの中から開く）。
+            TextButton(
+              key: ValueKey('open-profile-sheet-$id'),
+              onPressed: () => showModalBottomSheet<void>(
+                context: context,
+                builder: (sheetContext) => TextButton(
+                  key: const ValueKey('sheet-open-profile'),
+                  onPressed: () {
+                    Navigator.pop(sheetContext);
+                    openProfile(
+                      sheetContext,
+                      const User(id: 'u-sheet', username: 'u'),
+                    );
+                  },
+                  child: const Text('プロフィール'),
+                ),
+              ),
+              child: const Text('U'),
             ),
           ],
         ),

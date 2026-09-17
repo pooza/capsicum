@@ -1,3 +1,4 @@
+import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -7,6 +8,7 @@ import '../../model/deck_column.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../util/deck_layout.dart';
+import '../util/deck_navigation.dart';
 import '../util/provider_scope_carrier.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/deck_column_view.dart';
@@ -57,12 +59,56 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
   /// コンテナへ最後に渡した `Account`。インスタンスが変わったら上書きを更新する。
   final Map<AccountKey, Account> _containerAccounts = {};
 
+  final _scrollController = ScrollController();
+
+  /// 直近の割り付け。足したカラムを見える位置まで送るのに使う。
+  DeckLayout? _layout;
+
   @override
   void dispose() {
+    _scrollController.dispose();
     for (final container in _containers.values) {
       container.dispose();
     }
     super.dispose();
+  }
+
+  /// カラムから開いた投稿・プロフィール等を、元のカラムの右隣に足す (#1148・
+  /// 決定済み事項 9)。アカウントは元のカラムのものを引き継ぐ。
+  Future<void> _openColumn(DeckColumn from, TabType tab, Object? seed) async {
+    final added = await ref
+        .read(deckColumnsProvider.notifier)
+        .insertAfter(from.id, from.account, tab, seed: seed);
+    if (!mounted) return;
+    // ⚠ 足した直後のフレームではまだ Row に居ない。組み上がってから送る。
+    WidgetsBinding.instance.addPostFrameCallback((_) => _reveal(added.id));
+  }
+
+  /// [id] のカラムが画面に入るよう横に送る。入っていれば動かさない。
+  ///
+  /// 送り先はカラム幅の倍数に揃える（スナップの位置から外さない）。
+  void _reveal(String id) {
+    final layout = _layout;
+    if (!mounted || layout == null || !_scrollController.hasClients) return;
+    final index = ref.read(deckColumnsProvider).indexWhere((c) => c.id == id);
+    if (index < 0) return;
+    final position = _scrollController.position;
+    final width = layout.columnWidth;
+    final first = (position.pixels / width).round();
+    final last = first + layout.visibleColumns - 1;
+    final double target;
+    if (index < first) {
+      target = index * width;
+    } else if (index > last) {
+      target = (index - layout.visibleColumns + 1) * width;
+    } else {
+      return;
+    }
+    _scrollController.animateTo(
+      target.clamp(0, position.maxScrollExtent),
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOut,
+    );
   }
 
   ProviderContainer _containerFor(Account account) {
@@ -112,8 +158,14 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
     List<Account> accounts,
     Set<AccountKey> used,
   ) {
-    final child =
-        widget.columnBuilder?.call(column) ?? DeckColumnView(column: column);
+    // ⚠ カラムの中から開く投稿・プロフィール等は、ここで渡す口を通って右隣の
+    // カラムになる (#1148)。シートの中にも持ち込まれる（InheritedTheme）。
+    final child = DeckColumnScope(
+      column: column,
+      onOpen: _openColumn,
+      child:
+          widget.columnBuilder?.call(column) ?? DeckColumnView(column: column),
+    );
     if (column.account == currentKey) return child;
     final account = accounts.where((a) => a.key == column.account).firstOrNull;
     if (account == null) {
@@ -177,7 +229,9 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
                     columnCount: columns.length,
                     minColumnWidth: minColumnWidth,
                   );
+                  _layout = layout;
                   return SingleChildScrollView(
+                    controller: _scrollController,
                     scrollDirection: Axis.horizontal,
                     physics: DeckSnapScrollPhysics(
                       columnWidth: layout.columnWidth,

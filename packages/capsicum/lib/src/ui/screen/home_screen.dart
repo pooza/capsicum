@@ -30,6 +30,7 @@ import '../../service/update_checker.dart';
 import '../../url_helper.dart';
 import '../../util/startup_trace.dart';
 import '../util/about_dialog.dart';
+import '../util/deck_navigation.dart';
 import '../util/keyboard_list_navigation.dart';
 import '../util/mouse_drag_scroll_behavior.dart';
 import '../util/offline_account_display.dart';
@@ -189,7 +190,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   @override
   void onKeyboardListActivate(int index) {
     if (index >= _keyboardPosts.length) return;
-    context.push('/post', extra: _keyboardPosts[index]);
+    openPost(context, _keyboardPosts[index]);
   }
 
   void _onPositionsChanged() {
@@ -662,7 +663,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               Padding(
                 padding: const EdgeInsets.only(right: 8),
                 child: GestureDetector(
-                  onTap: () => context.push('/profile', extra: account.user),
+                  onTap: () => openProfile(context, account.user),
                   child: UserAvatar(
                     user: account.user,
                     size: 28,
@@ -1198,6 +1199,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) context.push('/chat');
         });
+      case PostThreadTab():
+      case ProfileTab():
+        // デッキのカラム専用 (#1148)。タブとしては保存されない。
+        break;
     }
   }
 
@@ -1409,7 +1414,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                         onTap: current != null
                             ? () {
                                 dismiss();
-                                context.push('/profile', extra: current.user);
+                                openProfile(context, current.user);
                               }
                             : null,
                         child: current != null
@@ -1437,7 +1442,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                         onTap: current != null
                             ? () {
                                 dismiss();
-                                context.push('/profile', extra: current.user);
+                                openProfile(context, current.user);
                               }
                             : null,
                         child: Column(

@@ -11,6 +11,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../service/tco_resolver.dart';
+import '../util/deck_navigation.dart';
 import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
 import '../util/notification_type_display.dart';
@@ -135,7 +136,7 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
 
     return InkWell(
       onTap: notification.post != null
-          ? () => context.push('/post', extra: notification.post!)
+          ? () => openPost(context, notification.post!)
           // Collections 通知 (#741): post を持たないため、タップで対象コレクション
           // の詳細（#742）を開く。
           : notification.collection != null
@@ -545,7 +546,7 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
     return Row(
       children: [
         GestureDetector(
-          onTap: () => context.push('/profile', extra: user),
+          onTap: () => openProfile(context, user),
           child: UserAvatar(user: user, size: 24, borderRadius: 4),
         ),
         const SizedBox(width: 8),

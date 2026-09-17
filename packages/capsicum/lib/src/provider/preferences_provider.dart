@@ -628,6 +628,31 @@ class DeckColumnsNotifier extends Notifier<List<DeckColumn>> {
     return column;
   }
 
+  /// [afterId] のカラムの右隣にカラムを足す (#1148)。カラムから開いた投稿・
+  /// プロフィール等の出し先（決定済み事項 9・SubwayTooter の `nextPosition`）。
+  ///
+  /// [afterId] が列に無ければ（開いた直後に元のカラムが消された等）末尾に足す。
+  /// ⚠ 重複は許す（[add] と同じ）。
+  Future<DeckColumn> insertAfter(
+    String afterId,
+    AccountKey account,
+    TabType tab, {
+    Object? seed,
+  }) async {
+    final column = DeckColumn(
+      id: _newId(),
+      account: account,
+      tab: tab,
+      seed: seed,
+    );
+    final index = state.indexWhere((c) => c.id == afterId);
+    final next = [...state];
+    next.insert(index < 0 ? next.length : index + 1, column);
+    state = next;
+    await _save();
+    return column;
+  }
+
   /// [id] のカラムを外す。無ければ何もしない。
   Future<void> remove(String id) async {
     if (!state.any((c) => c.id == id)) return;

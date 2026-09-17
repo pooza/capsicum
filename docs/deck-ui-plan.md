@@ -425,6 +425,13 @@ actions: [
 - **振り分けは 1 箇所に寄せる。**URL タップを `openFediverseLink` に集約した #1030 と同じ形で、「投稿を開く」「プロフィールを開く」を**デッキの中ならカラムを足す・外なら今どおり push** に出し分ける入口を作り、素の `context.push('/post' …)` 等を走査で止める
 - ⚠ **カラムにならないものは残る**: 投稿フォーム（返信・引用）/ メディアビューア / BottomSheet / Dialog。これらは**全画面・重ね表示のまま、カラムのスコープを引き継ぐ**必要がある（未決事項 9 の残り）
 
+**実装（2026-09-17・[#1148](https://github.com/pooza/capsicum/issues/1148)）:**
+
+- 種別は `TabType` に `PostThreadTab(postId)` / `ProfileTab(userId)` を足した（**デッキ専用・タブ UI には出ない**）。保存は id だけで、開いた時点の `Post` / `User` は `DeckColumn.seed`（保存しない）で渡す。**読み戻したカラムはカラムのアカウントで `getPostById` / `getUserById` し直す**（id はサーバーローカル）
+- 振り分けは `openPost` / `openProfile` / `openHashtag`（`ui/util/deck_navigation.dart`）。カラムの位置に `DeckColumnScope` を置き、**`InheritedTheme` にして長押しシート等の中にも持ち込む**（#1149 の `ProviderScopeCarrier` と同じ仕組み）。素の `push('/post' …)` は `deck_navigation_guard_test` が止める
+- 中身は既存の `PostDetailScreen` / `ProfileScreen` を `embedded: true` で描く（**戻るボタンを出さない** —— `pop` はデッキ画面ごと閉じる）。閉じるのはカラムのヘッダーの × ボタン（全カラムに付けた）
+- ⚠ **ここから全画面で開くもの（フォロワー一覧 `/users` 等）は、まだルートのスコープで動く**（別 Issue）
+
 ---
 
 ## 参考実装: SubwayTooter（2026-09-06 にソースを実読）

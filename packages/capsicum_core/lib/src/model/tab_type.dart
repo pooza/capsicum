@@ -54,6 +54,8 @@ sealed class TabType {
       'list' => _parseListTab(value),
       'hashtag' => HashtagTab(value),
       'channel' => _parseChannelTab(value),
+      'thread' => PostThreadTab(value),
+      'profile' => ProfileTab(value),
       _ => null,
     };
   }
@@ -185,6 +187,43 @@ class MessagesTab extends TabType {
 
   @override
   int get hashCode => runtimeType.hashCode;
+}
+
+/// 投稿のスレッド (#1148)。⚠ **デッキのカラム専用で、タブ UI には出ない。**
+///
+/// デッキのカラムから投稿を開いたとき、元のカラムの右隣に足す。保存するのは
+/// id だけで、投稿そのものはカラムのアカウントで取り直す（id はサーバーローカル
+/// なので、アカウントと組でないと意味を持たない）。
+class PostThreadTab extends TabType {
+  final String postId;
+  const PostThreadTab(this.postId);
+
+  @override
+  String toKey() => 'thread:$postId';
+
+  @override
+  bool operator ==(Object other) =>
+      other is PostThreadTab && postId == other.postId;
+
+  @override
+  int get hashCode => postId.hashCode;
+}
+
+/// ユーザーのプロフィール (#1148)。⚠ **デッキのカラム専用で、タブ UI には出ない。**
+/// [PostThreadTab] と同じく id だけを保存する。
+class ProfileTab extends TabType {
+  final String userId;
+  const ProfileTab(this.userId);
+
+  @override
+  String toKey() => 'profile:$userId';
+
+  @override
+  bool operator ==(Object other) =>
+      other is ProfileTab && userId == other.userId;
+
+  @override
+  int get hashCode => userId.hashCode;
 }
 
 /// Extension to enable functional-style usage with nullable values.

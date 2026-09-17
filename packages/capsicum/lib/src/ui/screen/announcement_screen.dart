@@ -3,10 +3,10 @@ import 'dart:async';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../provider/announcement_provider.dart';
+import '../util/deck_navigation.dart';
 import '../util/op_error.dart';
 import '../widget/announcement_tile.dart';
 import '../widget/bottom_safe_area.dart';
@@ -141,7 +141,7 @@ class _AnnouncementViewState extends ConsumerState<AnnouncementView> {
   Future<void> _openInfoBotProfile(BuildContext context, WidgetRef ref) async {
     final user = ref.read(_infoBotUserProvider).valueOrNull;
     if (user != null && context.mounted) {
-      context.push('/profile', extra: user);
+      openProfile(context, user);
     }
   }
 }

@@ -3,7 +3,6 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:html_unescape/html_unescape.dart';
 
 import '../../provider/account_manager_provider.dart';
@@ -11,6 +10,7 @@ import '../../provider/server_info_provider.dart';
 import '../../provider/server_version_provider.dart';
 import '../../service/server_version_checker.dart';
 import '../../url_helper.dart';
+import '../util/deck_navigation.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/emoji_text.dart';
 import '../widget/push_registration_status_section.dart';
@@ -135,8 +135,7 @@ class _ServerInfoScreenState extends ConsumerState<ServerInfoScreen> {
                 emojis: instance.contactAccount!.emojis,
                 fallbackHost: instance.contactAccount!.host,
               ),
-              onTap: () =>
-                  context.push('/profile', extra: instance.contactAccount),
+              onTap: () => openProfile(context, instance.contactAccount!),
             ),
           if (instance.contactEmail != null)
             ListTile(

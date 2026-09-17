@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
@@ -17,6 +16,7 @@ import '../../util/oauth_scope_error.dart';
 import '../flash/flash_result_digest.dart';
 import '../flash/flash_runtime.dart';
 import '../flash/flash_view.dart';
+import '../util/deck_navigation.dart';
 import '../util/fediverse_link.dart';
 import '../util/flash_error.dart';
 import '../util/hashtag_actions.dart';
@@ -187,7 +187,7 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
     try {
       final user = await adapter.getUser(username, host);
       if (user != null && mounted) {
-        context.push('/profile', extra: user);
+        openProfile(context, user);
       }
     } on Exception catch (e) {
       debugLogException('Failed to look up mention $mention', e);

@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../url_helper.dart';
+import 'deck_navigation.dart';
 
 /// 投稿本文・お知らせ等に貼られた URL タップの共通ハンドラ (#820)。
 ///
@@ -54,11 +55,11 @@ Future<void> openFediverseLink(
       messenger.hideCurrentSnackBar();
       if (!context.mounted) return;
       if (results.posts.isNotEmpty) {
-        context.push('/post', extra: results.posts.first);
+        openPost(context, results.posts.first);
         return;
       }
       if (results.users.isNotEmpty) {
-        context.push('/profile', extra: results.users.first);
+        openProfile(context, results.users.first);
         return;
       }
     } catch (_) {

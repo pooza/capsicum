@@ -21,6 +21,7 @@ import '../../service/tco_resolver.dart';
 import '../../service/url_preview_cache.dart';
 import '../../util/exception_scrub.dart';
 import '../../util/user_acct.dart';
+import '../util/deck_navigation.dart';
 import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
 import '../util/post_action_error.dart';
@@ -340,7 +341,7 @@ class _PostTileState extends ConsumerState<PostTile> {
     try {
       final user = await adapter.getUser(username, host);
       if (user != null && mounted) {
-        context.push('/profile', extra: user);
+        openProfile(context, user);
       }
     } on Exception catch (e) {
       debugLogException('Failed to look up mention $mention', e);
@@ -494,9 +495,7 @@ class _PostTileState extends ConsumerState<PostTile> {
           ? colorScheme.primaryContainer.withValues(alpha: 0.3)
           : null,
       child: InkWell(
-        onTap: widget.tappable
-            ? () => context.push('/post', extra: post)
-            : null,
+        onTap: widget.tappable ? () => openPost(context, post) : null,
         onLongPress: () => _showActionMenu(context),
         // デスクトップでは右クリックも長押しと同じアクションメニューを開く。
         onSecondaryTap: () => _showActionMenu(context),
@@ -522,10 +521,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                             // onTap（/post 遷移）より内側の GestureDetector を優先。
                             : GestureDetector(
                                 behavior: HitTestBehavior.opaque,
-                                onTap: () => context.push(
-                                  '/profile',
-                                  extra: post.author,
-                                ),
+                                onTap: () => openProfile(context, post.author),
                                 child: EmojiText(
                                   '${post.author.displayName ?? post.author.username} が${ref.watch(reblogLabelProvider)}',
                                   emojis: post.author.emojis,
@@ -1074,8 +1070,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                 left: 0,
                 top: 0,
                 child: GestureDetector(
-                  onTap: () =>
-                      context.push('/profile', extra: displayPost.author),
+                  onTap: () => openProfile(context, displayPost.author),
                   child: UserAvatar(user: displayPost.author, size: 40),
                 ),
               ),
@@ -2173,7 +2168,7 @@ class _PostTileState extends ConsumerState<PostTile> {
     final style = Theme.of(context).textTheme.bodySmall;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () => context.push('/profile', extra: post.author),
+      onTap: () => openProfile(context, post.author),
       child: Row(
         children: [
           Icon(Icons.groups, size: 14, color: style?.color),
@@ -3286,7 +3281,7 @@ class _QuoteCardState extends ConsumerState<_QuoteCard> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return GestureDetector(
-      onTap: () => context.push('/post', extra: quote),
+      onTap: () => openPost(context, quote),
       child: Container(
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
@@ -3300,7 +3295,7 @@ class _QuoteCardState extends ConsumerState<_QuoteCard> {
               children: [
                 if (quote.author.avatarUrl != null)
                   GestureDetector(
-                    onTap: () => context.push('/profile', extra: quote.author),
+                    onTap: () => openProfile(context, quote.author),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(4),
                       child: Image.network(

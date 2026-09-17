@@ -16,6 +16,7 @@ import '../../service/tco_resolver.dart';
 import '../../url_helper.dart';
 import '../../util/exception_scrub.dart';
 import '../../util/user_acct.dart';
+import '../util/deck_navigation.dart';
 import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
 import '../util/provider_scope_carrier.dart';
@@ -38,7 +39,11 @@ enum _ProfileTab { posts, media, gallery, pages }
 class ProfileScreen extends ConsumerStatefulWidget {
   final User user;
 
-  const ProfileScreen({super.key, required this.user});
+  /// デッキのカラムの中身として描く (#1148)。戻るボタンを出さない（閉じるのは
+  /// カラムのヘッダー）。⚠ 戻るボタンの `pop` はデッキ画面ごと閉じてしまう。
+  final bool embedded;
+
+  const ProfileScreen({super.key, required this.user, this.embedded = false});
 
   @override
   ConsumerState<ProfileScreen> createState() => _ProfileScreenState();
@@ -530,16 +535,22 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
               expandedHeight: 200,
               pinned: true,
               backgroundColor: colorScheme.inversePrimary,
-              leading: Padding(
-                padding: const EdgeInsets.all(8),
-                child: CircleAvatar(
-                  backgroundColor: Colors.black38,
-                  child: IconButton(
-                    icon: const Icon(Icons.arrow_back, color: Colors.white),
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                ),
-              ),
+              automaticallyImplyLeading: !widget.embedded,
+              leading: widget.embedded
+                  ? null
+                  : Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: CircleAvatar(
+                        backgroundColor: Colors.black38,
+                        child: IconButton(
+                          icon: const Icon(
+                            Icons.arrow_back,
+                            color: Colors.white,
+                          ),
+                          onPressed: () => Navigator.of(context).pop(),
+                        ),
+                      ),
+                    ),
               flexibleSpace: FlexibleSpaceBar(
                 background: GestureDetector(
                   behavior: HitTestBehavior.opaque,
@@ -1734,7 +1745,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     try {
       final user = await adapter.getUser(username, host);
       if (user != null && mounted) {
-        context.push('/profile', extra: user);
+        openProfile(context, user);
       }
     } on Exception catch (e) {
       debugLogException('Failed to look up mention $mention', e);

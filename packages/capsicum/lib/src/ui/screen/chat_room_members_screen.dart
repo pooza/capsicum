@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/chat_provider.dart';
 import '../../util/user_acct.dart';
+import '../util/deck_navigation.dart';
 import '../util/op_error.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/retry_error_view.dart';
@@ -93,7 +94,7 @@ class ChatRoomMembersScreen extends ConsumerWidget {
                                   ).colorScheme.primaryContainer,
                                 )
                               : null,
-                          onTap: () => context.push('/profile', extra: user),
+                          onTap: () => openProfile(context, user),
                         );
                       },
                     ),

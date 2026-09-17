@@ -17,6 +17,7 @@ class DeckColumn {
     required this.id,
     required this.account,
     required this.tab,
+    this.seed,
   });
 
   /// 列内の安定 ID。並べ替えても変わらない。
@@ -30,6 +31,11 @@ class DeckColumn {
   /// 保存は [TabType.toIdentityKey] で行うので、読み戻した [ListTab] /
   /// [ChannelTab] の `name` は null。
   final TabType tab;
+
+  /// 開いた時点で手元にあった中身（[PostThreadTab] なら `Post`、[ProfileTab] なら
+  /// `User`）(#1148)。**保存しない。**あれば取り直さずにすぐ描き、無ければ
+  /// （起動し直して読み戻したカラム）id でカラムのアカウントから取り直す。
+  final Object? seed;
 
   /// 中身の同一性を表す文字列。`timelineContextKey` と同じ
   /// `<アカウント>|<種別>` の形（決定済み事項 4-3）。

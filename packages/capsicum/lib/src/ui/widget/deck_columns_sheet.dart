@@ -224,6 +224,8 @@ IconData _tabIcon(TabType tab) => switch (tab) {
   NotificationsTab() => Icons.notifications_outlined,
   AnnouncementsTab() => Icons.campaign_outlined,
   MessagesTab() => Icons.chat_bubble_outline,
+  PostThreadTab() => Icons.forum_outlined,
+  ProfileTab() => Icons.person_outline,
 };
 
 /// 周りのスコープのアカウントで [tab] のラベルを出す。

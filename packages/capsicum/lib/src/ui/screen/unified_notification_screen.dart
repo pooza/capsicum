@@ -1,7 +1,6 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart' hide Notification;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../model/account.dart';
 import '../../provider/account_manager_provider.dart';
@@ -9,6 +8,7 @@ import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/unified_notification_provider.dart';
 import '../../service/tco_resolver.dart';
+import '../util/deck_navigation.dart';
 import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
 import '../util/notification_type_display.dart';
@@ -341,9 +341,9 @@ class _UnifiedNotificationTileState
       manager.switchAccount(item.account);
     }
     if (post != null) {
-      context.push('/post', extra: post);
+      openPost(context, post);
     } else if (user != null) {
-      context.push('/profile', extra: user);
+      openProfile(context, user);
     }
   }
 

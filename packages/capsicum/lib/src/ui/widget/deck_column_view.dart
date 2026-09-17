@@ -7,9 +7,12 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/channel_provider.dart';
 import '../../provider/hashtag_provider.dart';
 import '../../provider/list_provider.dart';
+import '../../provider/preferences_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../screen/announcement_screen.dart';
 import '../screen/notification_screen.dart';
+import '../screen/post_detail_screen.dart';
+import '../screen/profile_screen.dart';
 import 'home_menu.dart' show tabLabel;
 import 'post_tile.dart';
 import 'retry_error_view.dart';
@@ -90,6 +93,24 @@ class DeckColumnView extends ConsumerWidget {
       AnnouncementsTab() => const AnnouncementView(),
       // メッセージはフィードを持たない遷移トリガー (#439) なので、カラムにならない。
       MessagesTab() => const _DeckColumnMessage('このカラムは表示できません'),
+      // カラムから開いた投稿・プロフィール (#1148)。⚠ id はサーバーローカルなので、
+      // 取り直しはカラムのアカウント（スコープの currentAdapterProvider）で行う。
+      PostThreadTab(:final postId) => _DeckSeededBody<Post>(
+        seed: switch (column.seed) {
+          final Post p when p.id == postId => p,
+          _ => null,
+        },
+        fetch: (adapter) => adapter.getPostById(postId),
+        builder: (post) => PostDetailScreen(post: post, embedded: true),
+      ),
+      ProfileTab(:final userId) => _DeckSeededBody<User>(
+        seed: switch (column.seed) {
+          final User u when u.id == userId => u,
+          _ => null,
+        },
+        fetch: (adapter) => adapter.getUserById(userId),
+        builder: (user) => ProfileScreen(user: user, embedded: true),
+      ),
     };
   }
 }
@@ -171,8 +192,79 @@ class _DeckColumnHeader extends ConsumerWidget {
               key: ValueKey(type),
               timelineKey: (account: account, type: type),
             ),
+          // カラムから開いたカラムは使い捨てなので、ヘッダーで閉じられるようにする
+          // (#1148)。⚠ 列から外すだけで購読は止めない（autoDispose に任せる・#1093）。
+          IconButton(
+            icon: const Icon(Icons.close),
+            tooltip: 'カラムを閉じる',
+            visualDensity: VisualDensity.compact,
+            onPressed: () =>
+                ref.read(deckColumnsProvider.notifier).remove(column.id),
+          ),
         ],
       ),
+    );
+  }
+}
+
+/// id から取り直す中身 (#1148)。開いた時点の中身（[seed]）があればそのまま描く。
+///
+/// 読み戻したカラム（起動し直した後）は [seed] が無いので、カラムのアカウントで
+/// [fetch] する。
+class _DeckSeededBody<T extends Object> extends ConsumerStatefulWidget {
+  const _DeckSeededBody({
+    required this.seed,
+    required this.fetch,
+    required this.builder,
+  });
+
+  final T? seed;
+  final Future<T> Function(DecentralizedBackendAdapter adapter) fetch;
+  final Widget Function(T value) builder;
+
+  @override
+  ConsumerState<_DeckSeededBody<T>> createState() => _DeckSeededBodyState<T>();
+}
+
+class _DeckSeededBodyState<T extends Object>
+    extends ConsumerState<_DeckSeededBody<T>> {
+  Future<T>? _future;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.seed == null) _load();
+  }
+
+  void _load() {
+    final adapter = ref.read(currentAdapterProvider);
+    final future = adapter == null
+        ? Future<T>.error(StateError('adapter is not ready'))
+        : widget.fetch(adapter);
+    // ⚠ 再試行では setState の中で作るので、FutureBuilder が購読するのは次の
+    // フレーム。それより先に失敗すると「未処理の例外」として上がる（テストで
+    // 実際に踏んだ）。エラーは FutureBuilder が拾うので、ここでは握っておくだけ。
+    future.ignore();
+    _future = future;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final seed = widget.seed;
+    if (seed != null) return widget.builder(seed);
+    return FutureBuilder<T>(
+      future: _future,
+      builder: (context, snapshot) {
+        final value = snapshot.data;
+        if (value != null) return widget.builder(value);
+        if (snapshot.hasError) {
+          return RetryErrorView(
+            message: '読み込みに失敗しました',
+            onRetry: () => setState(_load),
+          );
+        }
+        return const Center(child: CircularProgressIndicator());
+      },
     );
   }
 }

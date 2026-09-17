@@ -249,6 +249,9 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
       NotificationsTab() => '通知',
       AnnouncementsTab() => 'お知らせ',
       MessagesTab() => 'メッセージ',
+      // デッキのカラム専用 (#1148)。タブ管理には出ない。
+      PostThreadTab() => 'スレッド',
+      ProfileTab() => 'プロフィール',
     };
   }
 
@@ -261,6 +264,8 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
       NotificationsTab() => Icons.notifications_outlined,
       AnnouncementsTab() => Icons.campaign_outlined,
       MessagesTab() => Icons.chat_bubble_outline,
+      PostThreadTab() => Icons.forum_outlined,
+      ProfileTab() => Icons.person_outline,
     };
   }
 

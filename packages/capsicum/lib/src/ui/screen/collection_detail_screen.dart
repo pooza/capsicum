@@ -2,12 +2,12 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../provider/is_cat_provider.dart';
 import '../../service/sentry_op_failure.dart';
 import '../../util/user_acct.dart';
+import '../util/deck_navigation.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/emoji_text.dart';
 import '../widget/section_header.dart';
@@ -224,7 +224,7 @@ class _CollectionDetailScreenState
   }) {
     final isOwnerAccount = user.id == collection.ownerAccountId;
     return ListTile(
-      onTap: () => context.push('/profile', extra: user),
+      onTap: () => openProfile(context, user),
       leading: UserAvatar(user: user, size: 40),
       title: Row(
         children: [

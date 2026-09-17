@@ -49,9 +49,21 @@ void main() {
         ListTab(id: 'l1', name: '実況'),
         ChannelTab(id: 'c1', name: '#general'),
         NotificationsTab(),
+        // #1148: カラムから開いたスレッド・プロフィール
+        PostThreadTab('9zx8abc'),
+        ProfileTab('u1'),
       ]) {
         expect(TabType.fromKey(tab.toIdentityKey()), tab);
       }
+    });
+
+    test('スレッドとプロフィールは id で区別する (#1148)', () {
+      expect(const PostThreadTab('a'), isNot(const PostThreadTab('b')));
+      expect(const ProfileTab('a'), isNot(const ProfileTab('b')));
+      // 同じ id でも種別が違えば別物（投稿 id とユーザー id は別の空間）。
+      expect(const PostThreadTab('a'), isNot(const ProfileTab('a')));
+      expect(TabType.fromKey('thread:'), isNull);
+      expect(TabType.fromKey('profile:'), isNull);
     });
   });
 
@@ -195,6 +207,74 @@ void main() {
         const ListTab(id: 'l1'),
       ]);
       expect(restored.every((c) => c.account == _me), isTrue);
+    });
+
+    test('insertAfter は元のカラムの右隣に足す (#1148)', () async {
+      final container = await makeContainer();
+      final notifier = container.read(deckColumnsProvider.notifier);
+      final a = await notifier.add(_me, const HashtagTab('a'));
+      final b = await notifier.add(_me, const HashtagTab('b'));
+
+      final opened = await notifier.insertAfter(
+        a.id,
+        _me,
+        const PostThreadTab('p1'),
+      );
+      expect(container.read(deckColumnsProvider).map((c) => c.id), [
+        a.id,
+        opened.id,
+        b.id,
+      ]);
+
+      // 同じ元から続けて開くと、元の右隣（先に開いたものの左）に入る。
+      final again = await notifier.insertAfter(
+        a.id,
+        _me,
+        const ProfileTab('u1'),
+      );
+      expect(container.read(deckColumnsProvider).map((c) => c.id), [
+        a.id,
+        again.id,
+        opened.id,
+        b.id,
+      ]);
+    });
+
+    test('insertAfter の元が列に無ければ末尾に足す', () async {
+      final container = await makeContainer();
+      final notifier = container.read(deckColumnsProvider.notifier);
+      final a = await notifier.add(_me, const HashtagTab('a'));
+
+      final opened = await notifier.insertAfter(
+        'gone',
+        _me,
+        const PostThreadTab('p1'),
+      );
+      expect(container.read(deckColumnsProvider).map((c) => c.id), [
+        a.id,
+        opened.id,
+      ]);
+    });
+
+    test('⚠ 開いた時点の中身（seed）は保存しない。読み戻すと id だけ残る', () async {
+      final container = await makeContainer();
+      final notifier = container.read(deckColumnsProvider.notifier);
+      final a = await notifier.add(_me, const HashtagTab('a'));
+      final seed = Object();
+      final opened = await notifier.insertAfter(
+        a.id,
+        _me,
+        const PostThreadTab('p1'),
+        seed: seed,
+      );
+      expect(container.read(deckColumnsProvider).last.seed, same(seed));
+
+      final restarted = ProviderContainer();
+      addTearDown(restarted.dispose);
+      final restored = restarted.read(deckColumnsProvider).last;
+      expect(restored.id, opened.id);
+      expect(restored.tab, const PostThreadTab('p1'));
+      expect(restored.seed, isNull);
     });
 
     test('move の挿入位置が範囲外なら端へ丸める', () async {

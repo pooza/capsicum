@@ -15,6 +15,7 @@ import '../../provider/supporter_purchase_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../../url_helper.dart';
 import '../util/about_dialog.dart';
+import '../util/deck_navigation.dart';
 import '../util/post_scope_display.dart';
 import '../util/provider_scope_carrier.dart';
 import 'desktop_menu_model.dart';
@@ -91,6 +92,8 @@ String tabLabel(
     NotificationsTab() => '通知',
     AnnouncementsTab() => 'お知らせ',
     MessagesTab() => 'メッセージ',
+    PostThreadTab() => 'スレッド',
+    ProfileTab() => 'プロフィール',
   };
 }
 
@@ -517,7 +520,7 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
             MenuActionEntry(
               label: 'プロフィール',
               icon: Icons.person_outline,
-              onSelected: () => context.push('/profile', extra: current.user),
+              onSelected: () => openProfile(context, current.user),
             ),
           if (current != null && otherAccounts.isNotEmpty)
             const MenuGroupSeparator(),
@@ -673,7 +676,7 @@ Future<void> showFavoriteTags(BuildContext context, WidgetRef ref) async {
                 dense: true,
                 onTap: () {
                   Navigator.pop(context);
-                  context.push('/hashtag/${tag.name}');
+                  openHashtag(context, tag.name);
                 },
               ),
           ],
