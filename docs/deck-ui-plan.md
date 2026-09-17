@@ -814,6 +814,34 @@ To fix this error, you can add <dependency> (a) to the "dependencies" of <provid
 
 ⚠ **分解の結果、v2.0 の open は 21 → 37 件。**[roadmap.md](roadmap.md)「決定済み事項 3」の閾値（v1.0 の 46 件）にはまだ届かないが、**#597 の分解ぶんが未計上**。逃がす判断はそちらが出てから。
 
+### 9. カラムから開くシート / ダイアログ / 画面は、カラムのスコープの外で動く（2026-09-17 実測・[#1096](https://github.com/pooza/capsicum/issues/1096)）
+
+⚠⚠ **案 S（1-7）の「UI 62 ファイル無改修」は、カラムの中に描かれるものにしか成り立たない。**`showModalBottomSheet` / `showDialog` / `context.push` は **Navigator の下に積まれる**ので、ウィジェット木の上ではカラムの `ProviderScope` の外に居る。
+
+- **実測**（`deck_scope_spike_test`）: カラムは B でも、そこから開いた BottomSheet の中は **root** を読む。開く側で `ProviderScope.containerOf(context)` を取り、中身を `UncontrolledProviderScope` で包めば B を引き継げる
+- ⚠⚠ **B-2 の本丸はここにある。**投稿アクションは長押しの BottomSheet に集約されている（CLAUDE.md「アクションメニュー」）ので、**カラム B の投稿をアカウント A としてお気に入り / ブーストする**経路そのもの
+- **規模**: `showModalBottomSheet` 40 / `showDialog` 58 / `context.push` 141 / `Navigator.push` 9 / `showMenu` 3 ＝ **63 ファイル・251 箇所**（`post_tile.dart` だけで 26）。1 つずつ包む規模ではない
+
+**未決（判断が要る）**: カラムから開いたものを**どこに出すか**が先に決まらないと、手段が決まらない。
+
+| 出し方 | スコープの引き継ぎ方 | 性質 |
+| --- | --- | --- |
+| 全画面（現行どおり） | 開く箇所を「スコープを引き継ぐ版」のヘルパへ寄せ、素の呼び出しを走査テストで禁止 | UX は今のまま。251 箇所の置き換え |
+| カラムの中（カラムごとに入れ子の Navigator） | Navigator がスコープの内側に来るので、シート / push は自然に引き継ぐ | ⚠ `showDialog` は既定で root Navigator、`context.push`（go_router）はルーターの Navigator へ行くので、それぞれ別に手当てが要る |
+
+⚠ 参考実装（SubwayTooter）は詳細を**新しいカラムとして開く**。これも選択肢になる。
+
+### 10. スコープの単位は「カラムごと」ではなく「アカウントごと」にする必要がある（2026-09-17・[#1096](https://github.com/pooza/capsicum/issues/1096)）
+
+⚠⚠ **#1096 の本文どおりカラムごとに `ProviderScope` を置くと、決定済み事項 6-2 と B-1 の解消が同時に壊れる。**
+
+- **6-2 が壊れる**: `dependencies:` を持つ provider は**スコープごとに別インスタンス**になる（`deck_scope_spike_test` 2）。**同じアカウントの重複カラムが TL を共有しない**（購読 2 本・メモリ 2 本）
+- ⚠⚠ **B-1 が再発する**: 2 つのインスタンスは**同じ購読キー**（`<アカウント>|timeline:<種別>`）で同じアダプタに `streamTimeline` するので、#1089 / #1090 のレジストリは**後から張った方で前の購読を閉じる**。**先に置いたカラムのライブが黙って止まる**
+
+→ **スコープ（`ProviderContainer`）はアカウントごとに 1 つ作り、そのアカウントのカラム全部で共有する**（`UncontrolledProviderScope(container: アカウントのコンテナ)`）。重複カラムは同じインスタンスを共有し、購読も 1 本になる。
+
+⚠ **現在のアカウントのカラムは、ルートのコンテナを使うか、タブ UI と同時に出さない。**ルートで HomeScreen のタブ UI が同じ TL を watch していると、ルートのインスタンスとアカウントのコンテナのインスタンスが同じ購読キーでぶつかる（上と同じ壊れ方）。デッキへの入り方（タブ UI と切り替えるか並べるか）の判断と連動する。
+
 ---
 
 ## 関連
