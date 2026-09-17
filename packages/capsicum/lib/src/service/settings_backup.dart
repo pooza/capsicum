@@ -144,6 +144,8 @@ const deviceLocalKeys = <String>{
   // ローカルファイルパス。他端末には存在しない。
   'background_image_path',
   // 画面サイズとキーボードに依存する。他端末へ持ち込む意味がない。
+  // デッキのカラム幅も画面幅に対する好みなので同じ扱い (#1092)。
+  'deck_column_width',
   'insert_picker_height',
   'reaction_picker_height',
   'sticker_picker_height',

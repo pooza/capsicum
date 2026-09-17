@@ -49,6 +49,9 @@ const _darkSurfaceVariantKey = 'dark_surface_variant';
 /// デッキのカラム列 (#1091)。⚠ バックアップに含めるかは #1101 で決める
 /// （`settings_backup.dart` の `pendingBackupDecisionKeys`）。
 const _deckColumnsKey = 'deck_columns';
+
+/// デッキのカラム幅の下限（ユーザー設定・#1092）。
+const _deckColumnWidthKey = 'deck_column_width';
 const _tabConfigPrefix = 'tab_config_';
 const _avatarShapeKey = 'avatar_shape';
 const _mouseDragScrollKey = 'mouse_drag_scroll';
@@ -1849,6 +1852,42 @@ class EmojiSizeNotifier extends PersistedNotifier<double> {
       prefs.setDouble(_emojiScaleKey, value);
 
   Future<void> setSize(double size) => persist(size);
+}
+
+/// デッキのカラム幅の下限 (#1092)。
+///
+/// ⚠ **「快適な幅」ではなく「これ以上狭くしない下限」**（`docs/deck-ui-plan.md`
+/// 未決事項 8）。iPhone 13 mini の論理幅。律速は投稿タイルの最上段（表示名と
+/// バッジ群が同じ 1 行を奪い合う）で、⚠ **overflow 検出では見つからない**
+/// （バッジ群が `FittedBox(scaleDown)` なので黙って縮む）。**ユーザー設定でも
+/// これより下げられない。**
+const minDeckColumnWidth = 375.0;
+
+/// ユーザー設定で広げられる上限。広すぎるとデッキの意味（同時に見える本数）が
+/// 無くなるので置く。
+const maxDeckColumnWidth = 800.0;
+
+/// デッキのカラム幅の下限（ユーザー設定）。実際の幅は `computeDeckLayout` が
+/// 画面幅から決め、ここはその下限として使う。
+final deckColumnWidthProvider =
+    NotifierProvider<DeckColumnWidthNotifier, double>(
+      DeckColumnWidthNotifier.new,
+    );
+
+class DeckColumnWidthNotifier extends PersistedNotifier<double> {
+  @override
+  double get defaultValue => minDeckColumnWidth;
+  @override
+  double normalize(double value) =>
+      value.clamp(minDeckColumnWidth, maxDeckColumnWidth);
+  @override
+  double? readSaved(SharedPreferences prefs) =>
+      prefs.getDouble(_deckColumnWidthKey);
+  @override
+  Future<void> writeSaved(SharedPreferences prefs, double value) =>
+      prefs.setDouble(_deckColumnWidthKey, value);
+
+  Future<void> setWidth(double width) => persist(width);
 }
 
 class ThumbnailScaleNotifier extends PersistedNotifier<double> {

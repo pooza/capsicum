@@ -27,6 +27,7 @@ import 'ui/screen/clip_notes_screen.dart';
 import 'ui/screen/collection_detail_screen.dart';
 import 'ui/screen/collections_list_screen.dart';
 import 'ui/screen/compose_screen.dart';
+import 'ui/screen/deck_screen.dart';
 import 'ui/screen/drafts_screen.dart';
 import 'ui/screen/drive_manager_screen.dart';
 import 'ui/screen/episode_browser_screen.dart';
@@ -282,6 +283,11 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/home',
             builder: (context, state) => const HomeScreen(),
+          ),
+          // デッキ (#1092)。タブ UI とは別画面（決定済み事項 8）。
+          GoRoute(
+            path: '/deck',
+            builder: (context, state) => const DeckScreen(),
           ),
           GoRoute(
             path: '/settings',
