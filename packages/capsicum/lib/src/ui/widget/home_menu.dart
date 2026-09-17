@@ -141,6 +141,13 @@ List<HomeNavItem> buildHomeNavItems(
         icon: Icons.notifications_active_outlined,
         onSelected: () => act(() => context.push('/notifications/all')),
       ),
+    // デッキ (#720 / #1092)。⚠ タブ UI とは別画面（`docs/deck-ui-plan.md`
+    // 決定済み事項 8）。
+    HomeNavItem(
+      title: 'デッキ',
+      icon: Icons.view_week_outlined,
+      onSelected: () => act(() => context.push('/deck')),
+    ),
     HomeNavItem(
       title: ref.read(bookmarkLabelProvider),
       icon: Icons.bookmark_outline,

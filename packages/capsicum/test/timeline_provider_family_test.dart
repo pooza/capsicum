@@ -262,6 +262,47 @@ void main() {
     },
   );
 
+  test('⚠⚠ 同じカラムを 2 本置いて 1 本だけ外しても購読は止まらず、全部外したときだけ閉じる (#1093)', () async {
+    // デッキで重複カラムは同じ provider インスタンスを共有する（決定済み事項 6-2）。
+    // 削除時に購読を明示的に止めると、残ったもう 1 本が無音で止まる（6-3）。
+    final adapter = _KeyedStreamingAdapter();
+    final container = ProviderContainer(
+      overrides: [
+        currentAccountProvider.overrideWith((ref) => _account(_meKey, adapter)),
+      ],
+    );
+    addTearDown(container.dispose);
+    const key = (account: _meKey, type: TimelineType.home);
+    final homeKey = timelineContextKey(
+      _meKey,
+      const TimelineTab(TimelineType.home),
+    )!;
+
+    // カラム 2 本ぶんの watch。
+    final first = container.listen(
+      timelineProvider(key),
+      (_, _) {},
+      fireImmediately: true,
+    );
+    final second = container.listen(
+      timelineProvider(key),
+      (_, _) {},
+      fireImmediately: true,
+    );
+    await container.read(timelineProvider(key).future);
+    expect(adapter.controllers.keys, [homeKey], reason: '前提: 購読は 1 本');
+
+    first.close();
+    await container.pump();
+    expect(adapter.disposed, isEmpty, reason: 'もう 1 本が残っているので閉じない');
+
+    second.close();
+    await container.pump();
+    expect(adapter.disposed, [
+      homeKey,
+    ], reason: '最後の 1 本が消えたら autoDispose で閉じる');
+  });
+
   test('loadMore は選択中のタブではなく、キーの種別で続きを取る', () async {
     final adapter = _RecordingAdapter();
     final container = makeContainer(adapter);

@@ -6,6 +6,7 @@ import '../../provider/preferences_provider.dart';
 import '../util/deck_layout.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/deck_column_view.dart';
+import '../widget/deck_columns_sheet.dart';
 
 /// デッキ画面 (#1092)。カラムを横に並べる。
 ///
@@ -34,12 +35,34 @@ class DeckScreen extends ConsumerWidget {
     final minColumnWidth = ref.watch(deckColumnWidthProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('デッキ')),
+      appBar: AppBar(
+        title: const Text('デッキ'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.view_column_outlined),
+            tooltip: 'カラム編集',
+            onPressed: () => showDeckColumnsSheet(context),
+          ),
+        ],
+      ),
       // 各カラムの最後の投稿がナビゲーションバーに潜らないよう、下端の inset を
       // 画面でまとめて吸う (#1037 / #1062)。
       body: BottomSafeArea(
         child: columns.isEmpty
-            ? const Center(child: Text('カラムがありません'))
+            ? Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('カラムがありません'),
+                    const SizedBox(height: 12),
+                    FilledButton.icon(
+                      icon: const Icon(Icons.add),
+                      label: const Text('カラムを追加'),
+                      onPressed: () => showDeckColumnsSheet(context),
+                    ),
+                  ],
+                ),
+              )
             : LayoutBuilder(
                 builder: (context, constraints) {
                   final layout = computeDeckLayout(
