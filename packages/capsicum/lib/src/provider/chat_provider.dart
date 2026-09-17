@@ -561,6 +561,7 @@ final chatRoomTimelineProvider = AsyncNotifierProvider.autoDispose
         currentAdapterProvider,
         chatRoomMessageStreamProvider,
         chatThreadListProvider,
+        currentAccountProvider,
       ],
     );
 
@@ -769,6 +770,7 @@ final chatThreadProvider = AsyncNotifierProvider.autoDispose
         currentAdapterProvider,
         chatMessageStreamProvider,
         chatThreadListProvider,
+        currentAccountProvider,
       ],
     );
 

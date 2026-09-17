@@ -16,7 +16,7 @@
 // 宣言漏れの網羅検査（走査テスト）は別途要る（3-b のコメントを参照）。
 
 import 'package:capsicum/src/provider/account_manager_provider.dart' as real;
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -38,7 +38,7 @@ final scopedAdapterProvider = Provider<String>(
   dependencies: [currentAccountProvider],
 );
 
-/// ⚠ 宣言漏れの対照群。現状の capsicum の書き方そのもの。
+/// ⚠ 宣言漏れの対照群。#1095 より前の capsicum の書き方そのもの。
 final unscopedAdapterProvider = Provider<String>(
   (ref) => 'adapter:${ref.watch(currentAccountProvider).label}',
 );
@@ -244,5 +244,102 @@ void main() {
       expect(find.text('adapter:A'), findsOneWidget);
       expect(find.text('adapter:B'), findsOneWidget);
     });
+
+    // ⚠⚠ 2026-09-17 に追加（#1095 の実装中に気づいた穴の実測）。
+    //
+    // capsicum の投稿アクションは長押しの BottomSheet に集約されている（docs/CLAUDE.md
+    // 「アクションメニュー」）。BottomSheet / Dialog / push した画面は **Navigator の
+    // 下に積まれる**ので、ウィジェット木の上ではカラムの ProviderScope の外に居る。
+    testWidgets('⚠⚠ カラムの中から開いた BottomSheet は、カラムのスコープではなくルートのスコープで動く', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            home: ProviderScope(
+              overrides: [
+                currentAccountProvider.overrideWithValue(
+                  const FakeAccount('B'),
+                ),
+              ],
+              child: Scaffold(
+                body: Consumer(
+                  builder: (context, ref, _) => Column(
+                    children: [
+                      Text('column:${ref.watch(scopedAdapterProvider)}'),
+                      ElevatedButton(
+                        onPressed: () => showModalBottomSheet<void>(
+                          context: context,
+                          builder: (_) => Consumer(
+                            builder: (_, sheetRef, _) => Text(
+                              'sheet:${sheetRef.watch(scopedAdapterProvider)}',
+                            ),
+                          ),
+                        ),
+                        child: const Text('open'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('column:adapter:B'), findsOneWidget);
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      // ⚠ カラムは B なのに、シートの中は root。**アカウント B のカラムの投稿を
+      // アカウント A としてお気に入りする**形そのもの。#1096 でシート / ダイアログ /
+      // push を開く側がスコープを引き継ぐ必要がある。
+      expect(find.text('sheet:adapter:root'), findsOneWidget);
+    });
+
+    testWidgets(
+      'BottomSheet の中身を UncontrolledProviderScope で包めば、カラムのスコープを引き継げる',
+      (tester) async {
+        await tester.pumpWidget(
+          ProviderScope(
+            child: MaterialApp(
+              home: ProviderScope(
+                overrides: [
+                  currentAccountProvider.overrideWithValue(
+                    const FakeAccount('B'),
+                  ),
+                ],
+                child: Scaffold(
+                  body: Builder(
+                    builder: (context) => ElevatedButton(
+                      onPressed: () {
+                        // 開く側の BuildContext からスコープのコンテナを取り、シートへ渡す。
+                        final container = ProviderScope.containerOf(context);
+                        showModalBottomSheet<void>(
+                          context: context,
+                          builder: (_) => UncontrolledProviderScope(
+                            container: container,
+                            child: Consumer(
+                              builder: (_, sheetRef, _) => Text(
+                                'sheet:${sheetRef.watch(scopedAdapterProvider)}',
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                      child: const Text('open'),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+
+        await tester.tap(find.text('open'));
+        await tester.pumpAndSettle();
+        expect(find.text('sheet:adapter:B'), findsOneWidget);
+      },
+    );
   });
 }

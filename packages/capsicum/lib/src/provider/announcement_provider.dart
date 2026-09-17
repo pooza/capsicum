@@ -223,7 +223,7 @@ class AnnouncementNotifier extends AutoDisposeAsyncNotifier<AnnouncementState> {
 final announcementProvider =
     AsyncNotifierProvider.autoDispose<AnnouncementNotifier, AnnouncementState>(
       AnnouncementNotifier.new,
-      dependencies: [currentAdapterProvider],
+      dependencies: [currentAdapterProvider, currentAccountProvider],
     );
 
 /// Number of unread announcements (0 while loading or on error).

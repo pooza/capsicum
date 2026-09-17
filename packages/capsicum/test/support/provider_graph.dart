@@ -10,11 +10,12 @@
 /// - 右辺が名前で参照するクラスの本体。`<クラス>.new` の Notifier（`build()` や
 ///   `loadMore()` で `ref.read(...)` している分）と、`(ref) => Foo(ref)` で `ref` を
 ///   受け取るサービスクラスの両方
+/// - それらが呼ぶ **`Ref` を引数に取るトップレベル関数**（`_toggleChatReaction(ref, …)`）
+///   と、**`extension … on Ref` のメンバー**（`ref.accountForReport`）の本体
 ///
 /// ## ⚠ 拾えないもの
 ///
-/// - `ref` を引数で受け取る**関数やヘルパクラスの中**の参照（例: `foo(ref)` の中で
-///   `ref.read(currentAccountProvider)`）。見つけたら本体側へ寄せるか、ここを広げる
+/// - 関数がさらに別の関数へ `ref` を渡す**2 段目以降**。見つけたら広げる
 library;
 
 import 'dart:collection';
@@ -133,10 +134,40 @@ ProviderGraph buildProviderGraph(Map<String, String> sources) {
   // Notifier クラスの本体（クラス名 → 本体）。
   final classBodies = <String, String>{};
   final classDecl = RegExp(r'\bclass\s+([A-Z]\w*)\b[^{;]*\{');
+  // `Ref` を引数に取るトップレベル関数の本体（関数名 → 本体）。
+  // 例: `_toggleChatReaction(Ref ref, …)` を 2 つの Notifier から呼ぶ形。
+  final refFunctionBodies = <String, String>{};
+  final refFunctionDecl = RegExp(
+    r'^[A-Za-z_][\w<>?, ]*\s+(\w+)\s*\(([^)]*)\)\s*(?:async\s*)?\{',
+    multiLine: true,
+  );
+  // `extension … on Ref` のメンバー（メンバー名 → そのメンバーを含む本体）。
+  // 例: `ref.accountForReport`。
+  final refExtensionBodies = <String, String>{};
+  final refExtensionDecl = RegExp(r'\bextension\s+\w+\s+on\s+Ref\s*\{');
+  // ⚠ メンバーの**宣言**だけを拾う（dart format の 2 字下げの行）。本体中の呼び出し
+  // （`read(currentAccountProvider)`）まで拾うと、あらゆる `ref.read` がこの拡張を
+  // 読んだことになり、全 provider が誤検出される（実際に踏んだ）。
+  final memberName = RegExp(
+    r'^  [\w<>?]+\s+(?:get\s+)?(\w+)\s*(?:\(|\{|=>)',
+    multiLine: true,
+  );
   for (final src in masked.values) {
     for (final m in classDecl.allMatches(src)) {
       final end = _matchingBrace(src, m.end - 1);
       classBodies[m.group(1)!] = src.substring(m.end, end);
+    }
+    for (final m in refFunctionDecl.allMatches(src)) {
+      if (!RegExp(r'\bRef\b').hasMatch(m.group(2)!)) continue;
+      final end = _matchingBrace(src, m.end - 1);
+      refFunctionBodies[m.group(1)!] = src.substring(m.end, end);
+    }
+    for (final m in refExtensionDecl.allMatches(src)) {
+      final end = _matchingBrace(src, m.end - 1);
+      final body = src.substring(m.end, end);
+      for (final n in memberName.allMatches(body)) {
+        refExtensionBodies[n.group(1)!] = body;
+      }
     }
   }
 
@@ -186,6 +217,15 @@ ProviderGraph buildProviderGraph(Map<String, String> sources) {
       if (!seenClasses.add(name)) continue;
       final classBody = classBodies[name];
       if (classBody != null) scanned.write(classBody);
+    }
+    // 本体（クラス本体を含む）が呼ぶ `Ref` 受け取りの関数と、`ref.<拡張メンバー>`。
+    // ⚠ 1 段だけ辿る（関数がさらに別の関数へ ref を渡す形は、見つけたら広げる）。
+    final soFar = scanned.toString();
+    for (final f in refFunctionBodies.entries) {
+      if (RegExp('\\b${f.key}\\s*\\(').hasMatch(soFar)) scanned.write(f.value);
+    }
+    for (final x in refExtensionBodies.entries) {
+      if (RegExp('\\.${x.key}\\b').hasMatch(soFar)) scanned.write(x.value);
     }
     final references = {
       for (final id in _identifier.allMatches(scanned.toString()))

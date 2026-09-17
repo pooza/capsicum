@@ -184,6 +184,61 @@ final serviceProvider = Provider((ref) => Service(ref));
       );
     });
 
+    test('Ref を引数に取る関数の中の参照も当たる（Notifier から呼ぶ形）', () {
+      expect(
+        missingOf('''
+$base
+Future<void> _toggle(
+  Ref ref,
+  String id,
+) async {
+  ref.read(currentAccountProvider);
+}
+class FooNotifier extends Notifier<int> {
+  int build() => 0;
+  Future<void> toggle() => _toggle(ref, 'x');
+}
+final fooProvider = NotifierProvider<FooNotifier, int>(FooNotifier.new);
+'''),
+        {
+          'fooProvider': {'currentAccountProvider'},
+        },
+      );
+    });
+
+    test('extension on Ref のメンバー経由の参照も当たる', () {
+      expect(
+        missingOf('''
+$base
+extension AccountOnRef on Ref {
+  Account? get accountForReport {
+    return read(currentAccountProvider);
+  }
+}
+final fooProvider = FutureProvider((ref) async => ref.accountForReport);
+'''),
+        {
+          'fooProvider': {'currentAccountProvider'},
+        },
+      );
+    });
+
+    test('⚠ extension の本体中の呼び出し名（read）で、無関係な ref.read を誤検出しない', () {
+      expect(
+        missingOf('''
+$base
+extension AccountOnRef on Ref {
+  Account? get accountForReport {
+    return read(currentAccountProvider);
+  }
+}
+final otherProvider = Provider((ref) => 1);
+final barProvider = Provider((ref) => ref.read(otherProvider));
+'''),
+        isEmpty,
+      );
+    });
+
     test('コメントや文字列に名前が出てくるだけなら当たらない', () {
       expect(
         missingOf('''
