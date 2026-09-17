@@ -7,6 +7,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/channel_provider.dart';
 import '../../provider/list_provider.dart';
 import '../../provider/preferences_provider.dart';
+import '../util/deck_tabs.dart';
 import 'home_menu.dart' show tabLabel;
 
 /// デッキのカラムを追加・並べ替え・削除するシート (#1093)。
@@ -224,8 +225,7 @@ IconData _tabIcon(TabType tab) => switch (tab) {
   NotificationsTab() => Icons.notifications_outlined,
   AnnouncementsTab() => Icons.campaign_outlined,
   MessagesTab() => Icons.chat_bubble_outline,
-  PostThreadTab() => Icons.forum_outlined,
-  ProfileTab() => Icons.person_outline,
+  final DeckOnlyTab t => deckOnlyTabIcon(t),
 };
 
 /// 周りのスコープのアカウントで [tab] のラベルを出す。

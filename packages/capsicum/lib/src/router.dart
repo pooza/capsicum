@@ -466,7 +466,9 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: '/profile/edit',
-            builder: (context, state) => const ProfileEditScreen(),
+            // ⚠ 開いた側（デッキのカラム）のアカウントを編集する (#1150)。
+            builder: (context, state) =>
+                withExtraProviderScope(state.extra, const ProfileEditScreen()),
           ),
           // ⚠⚠ **`extra` はプロセスをまたいで残らない (#1083-F)。**この 2 本は
           // 「タイトルと fetcher（クロージャ）」を `extra` で渡す汎用画面なので、

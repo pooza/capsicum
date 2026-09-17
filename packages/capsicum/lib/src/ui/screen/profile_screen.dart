@@ -761,7 +761,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
               child: Card(
                 clipBehavior: Clip.antiAlias,
                 child: InkWell(
-                  onTap: () => context.push('/gallery/${post.id}', extra: post),
+                  onTap: () => openGalleryPost(context, post),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -1090,38 +1090,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
               if (user.hideCollections != true) ...[
                 const SizedBox(width: 24),
                 GestureDetector(
-                  onTap: () {
-                    final adapter =
-                        ref.read(currentAdapterProvider)! as FollowSupport;
-                    context.push(
-                      '/users',
-                      extra: {
-                        'title': 'フォロー',
-                        'fetcher': (String? cursor) => adapter.getFollowing(
-                          user.id,
-                          query: TimelineQuery(maxId: cursor, limit: 20),
-                        ),
-                      },
-                    );
-                  },
+                  onTap: () => openUserList(
+                    context,
+                    ref,
+                    UserListTab(UserListKind.following, user.id),
+                  ),
                   child: _statItem(context, 'フォロー', user.followingCount),
                 ),
                 const SizedBox(width: 24),
                 GestureDetector(
-                  onTap: () {
-                    final adapter =
-                        ref.read(currentAdapterProvider)! as FollowSupport;
-                    context.push(
-                      '/users',
-                      extra: {
-                        'title': 'フォロワー',
-                        'fetcher': (String? cursor) => adapter.getFollowers(
-                          user.id,
-                          query: TimelineQuery(maxId: cursor, limit: 20),
-                        ),
-                      },
-                    );
-                  },
+                  onTap: () => openUserList(
+                    context,
+                    ref,
+                    UserListTab(UserListKind.followers, user.id),
+                  ),
                   child: _statItem(context, 'フォロワー', user.followersCount),
                 ),
               ],
@@ -1297,12 +1279,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     if (adapter is AchievementSupport) {
       actions.add(
         OutlinedButton.icon(
-          onPressed: () => context.push(
-            '/achievements',
-            extra: {
-              'userId': user.id,
-              'displayName': user.displayName ?? user.username,
-            },
+          onPressed: () => openAchievements(
+            context,
+            userId: user.id,
+            displayName: user.displayName ?? user.username,
           ),
           icon: const Icon(Icons.emoji_events, size: 16),
           label: const Text('実績'),
@@ -1314,7 +1294,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       actions.add(
         OutlinedButton.icon(
           onPressed: () async {
-            final updatedUser = await context.push<User>('/profile/edit');
+            // ⚠ 編集フォームはカラムにしない（投稿フォームと同じ）。開く側の
+            // アカウントのスコープを運ぶ (#1150)。運ばないと、別アカウントの
+            // カラムにある自分のプロフィールから、現在のアカウントを編集する。
+            final updatedUser = await context.push<User>(
+              '/profile/edit',
+              extra: extraWithProviderScope(context),
+            );
             if (updatedUser != null && mounted) {
               setState(() => _user = updatedUser);
             }
@@ -1328,7 +1314,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       if (_canStartChatWith(user)) {
         actions.add(
           OutlinedButton.icon(
-            onPressed: () => context.push('/chat/user/${user.id}', extra: user),
+            onPressed: () => openChatWithUser(context, user),
             icon: const Icon(Icons.chat_bubble_outline, size: 16),
             label: const Text('メッセージを送る'),
           ),
@@ -1412,17 +1398,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             case 'report':
               await _confirmAndReportUser();
             case 'view_collections':
-              _openCollections(
-                inCollections: false,
-                ownerView: false,
-                title: 'コレクション',
-              );
+              _openCollections(CollectionsMode.list);
             case 'view_in_collections':
-              _openCollections(
-                inCollections: true,
-                ownerView: false,
-                title: '載っているコレクション',
-              );
+              _openCollections(CollectionsMode.included);
           }
         },
         itemBuilder: (_) => [
@@ -1485,17 +1463,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           case 'copy_url':
             _copyUrl(context);
           case 'my_collections':
-            _openCollections(
-              inCollections: false,
-              ownerView: true,
-              title: '自分のコレクション',
-            );
+            _openCollections(CollectionsMode.own);
           case 'in_collections':
-            _openCollections(
-              inCollections: true,
-              ownerView: false,
-              title: '載っているコレクション',
-            );
+            _openCollections(CollectionsMode.included);
         }
       },
       itemBuilder: (_) => [
@@ -1550,21 +1520,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     );
   }
 
-  void _openCollections({
-    required bool inCollections,
-    required bool ownerView,
-    required String title,
-  }) {
-    context.push(
-      '/collections',
-      extra: {
-        'accountId': widget.user.id,
-        'inCollections': inCollections,
-        'ownerView': ownerView,
-        'title': title,
-      },
-    );
-  }
+  void _openCollections(CollectionsMode mode) =>
+      openCollections(context, ref, accountId: widget.user.id, mode: mode);
 
   void _copyAcct(BuildContext context) {
     Clipboard.setData(ClipboardData(text: '@${userAcct(widget.user)}'));

@@ -84,6 +84,10 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _reveal(added.id));
   }
 
+  /// 中身の画面が「閉じる」とき（コレクションを削除した等）にカラムを外す (#1150)。
+  void _closeColumn(DeckColumn column) =>
+      ref.read(deckColumnsProvider.notifier).remove(column.id);
+
   /// [id] のカラムが画面に入るよう横に送る。入っていれば動かさない。
   ///
   /// 送り先はカラム幅の倍数に揃える（スナップの位置から外さない）。
@@ -163,6 +167,7 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
     final child = DeckColumnScope(
       column: column,
       onOpen: _openColumn,
+      onClose: _closeColumn,
       child:
           widget.columnBuilder?.call(column) ?? DeckColumnView(column: column),
     );

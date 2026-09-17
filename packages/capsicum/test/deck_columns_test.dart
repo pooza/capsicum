@@ -52,6 +52,19 @@ void main() {
         // #1148: カラムから開いたスレッド・プロフィール
         PostThreadTab('9zx8abc'),
         ProfileTab('u1'),
+        // #1150: カラムから開いた一覧・画面
+        UserListTab(UserListKind.followers, 'u1'),
+        UserListTab(UserListKind.rebloggedBy, 'p1'),
+        // ⚠ 絵文字は `:` を含む
+        UserListTab(UserListKind.reactedBy, 'p1', reaction: ':blobcat@.:'),
+        QuotesTab('p1'),
+        AchievementsTab('u1'),
+        CollectionsTab('a1', CollectionsMode.own),
+        CollectionsTab('a1', CollectionsMode.included),
+        CollectionTab('c1'),
+        GalleryPostTab('g1'),
+        FlashTab('f1'),
+        ChatUserTab('u1'),
       ]) {
         expect(TabType.fromKey(tab.toIdentityKey()), tab);
       }
@@ -64,6 +77,60 @@ void main() {
       expect(const PostThreadTab('a'), isNot(const ProfileTab('a')));
       expect(TabType.fromKey('thread:'), isNull);
       expect(TabType.fromKey('profile:'), isNull);
+    });
+
+    test('一覧の種別は、種類・対象・絵文字まで区別し、壊れたキーは読まない (#1150)', () {
+      expect(
+        const UserListTab(UserListKind.followers, 'u1'),
+        isNot(const UserListTab(UserListKind.following, 'u1')),
+      );
+      expect(
+        const UserListTab(UserListKind.reactedBy, 'p1', reaction: ':a:'),
+        isNot(const UserListTab(UserListKind.reactedBy, 'p1', reaction: ':b:')),
+      );
+      expect(
+        const CollectionsTab('a1', CollectionsMode.own),
+        isNot(const CollectionsTab('a1', CollectionsMode.list)),
+      );
+      for (final key in [
+        'users:unknown:u1', // 未知の種類
+        'users:followers:', // 対象が空
+        'users:followers', // 区切りが無い
+        'collections:unknown:a1',
+        'collections:own:',
+      ]) {
+        expect(TabType.fromKey(key), isNull, reason: key);
+      }
+      // ⚠ 絵文字の区切りが空なら絵文字なしとして読む（`users:x:p1:` を別物にしない）。
+      expect(
+        TabType.fromKey('users:reactedBy:p1:'),
+        const UserListTab(UserListKind.reactedBy, 'p1'),
+      );
+    });
+
+    test('⚠ デッキ専用の種別はすべて DeckOnlyTab（タブ UI の switch が 1 つで受ける）', () {
+      for (final tab in const <TabType>[
+        PostThreadTab('p'),
+        ProfileTab('u'),
+        UserListTab(UserListKind.following, 'u'),
+        QuotesTab('p'),
+        AchievementsTab('u'),
+        CollectionsTab('a', CollectionsMode.list),
+        CollectionTab('c'),
+        GalleryPostTab('g'),
+        FlashTab('f'),
+        ChatUserTab('u'),
+      ]) {
+        expect(tab, isA<DeckOnlyTab>(), reason: tab.toKey());
+      }
+      for (final tab in const <TabType>[
+        TimelineTab(TimelineType.home),
+        HashtagTab('t'),
+        ListTab(id: 'l'),
+        ChannelTab(id: 'c'),
+      ]) {
+        expect(tab, isNot(isA<DeckOnlyTab>()), reason: tab.toKey());
+      }
     });
   });
 

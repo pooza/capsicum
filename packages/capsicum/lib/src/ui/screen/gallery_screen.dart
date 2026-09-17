@@ -1,9 +1,9 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../provider/gallery_provider.dart';
+import '../util/deck_navigation.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/retry_error_view.dart';
 
@@ -96,7 +96,7 @@ class _GalleryCard extends StatelessWidget {
     return Card(
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () => context.push('/gallery/${post.id}', extra: post),
+        onTap: () => openGalleryPost(context, post),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

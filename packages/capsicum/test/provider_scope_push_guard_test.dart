@@ -5,7 +5,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'support/dart_source.dart';
 
 /// #1149: 投稿フォーム（`/compose`）とメディアビューア（`/media`）へは、開く側の
-/// スコープを `extraWithProviderScope` で載せて push する。
+/// スコープを `extraWithProviderScope` で載せて push する。#1150 でプロフィール編集
+/// （`/profile/edit`）も足した（別アカウントのカラムにある自分のプロフィールから
+/// 開くと、運ばなければ現在のアカウントを編集する）。
 ///
 /// ⚠⚠ **素の `push('/compose', extra: {...})` は、デッキのカラム B から開いても
 /// アカウント A（現在のアカウント）で投稿する。**go_router のページの route は
@@ -28,7 +30,7 @@ void main() {
   // ⚠ 型引数は入れ子になる（`push<List<Attachment>>(`）。`<[^>]*>` だと最初の
   // `>` で切れて当たらない（歯の確認で実際に取りこぼした）。
   final callStart = RegExp(
-    r'''\b(?:push|go|pushReplacement)(?:<[^(]*>)?\(\s*['"]/(?:compose|media)['"]''',
+    r'''\b(?:push|go|pushReplacement)(?:<[^(]*>)?\(\s*['"]/(?:compose|media|profile/edit)['"]''',
   );
 
   /// 呼び出し全体（開き括弧から対応する閉じ括弧まで）を切り出す。
@@ -96,6 +98,8 @@ void main() {
         "router.push('/compose', extra: redraftExtra);",
         "context.pushReplacement('/compose', extra: {'template': t});",
         "context.go('/media', extra: {'attachments': [a], 'initialIndex': 0});",
+        // #1150: 編集フォームも同じ
+        "context.push<User>('/profile/edit');",
         "await context.push<List<Attachment>>(\n  '/media',\n  extra: {'attachments': a},\n);",
         // 別の呼び出しの中で使っていても、この呼び出しに載っていなければ当たる
         "context.push('/media', extra: {'label': f(extraWithProviderScope)});",
@@ -115,6 +119,7 @@ void main() {
         // 別のパス
         "context.push('/composer');",
         "context.push('/media_catalog');",
+        "context.push('/profile', extra: user);",
         "context.push('/post', extra: post);",
         // コメントでの言及
         "// context.push('/compose') はしない",
@@ -144,7 +149,7 @@ void main() {
     });
   });
 
-  test('/compose と /media への push はスコープを載せている', () {
+  test('/compose・/media・/profile/edit への push はスコープを載せている', () {
     final offenders = <String>[];
     for (final file in sources) {
       final path = file.path.replaceAll('\\', '/');
@@ -155,7 +160,7 @@ void main() {
     }
     if (offenders.isNotEmpty) {
       fail(
-        '/compose と /media へは extraWithProviderScope(context, …) で push '
+        '/compose・/media・/profile/edit へは extraWithProviderScope(context, …) で push '
         'すること (#1149)。素のままだとカラムから開いても現在のアカウントで'
         '動く:\n${offenders.join('\n')}',
       );

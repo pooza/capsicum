@@ -430,7 +430,11 @@ actions: [
 - 種別は `TabType` に `PostThreadTab(postId)` / `ProfileTab(userId)` を足した（**デッキ専用・タブ UI には出ない**）。保存は id だけで、開いた時点の `Post` / `User` は `DeckColumn.seed`（保存しない）で渡す。**読み戻したカラムはカラムのアカウントで `getPostById` / `getUserById` し直す**（id はサーバーローカル）
 - 振り分けは `openPost` / `openProfile` / `openHashtag`（`ui/util/deck_navigation.dart`）。カラムの位置に `DeckColumnScope` を置き、**`InheritedTheme` にして長押しシート等の中にも持ち込む**（#1149 の `ProviderScopeCarrier` と同じ仕組み）。素の `push('/post' …)` は `deck_navigation_guard_test` が止める
 - 中身は既存の `PostDetailScreen` / `ProfileScreen` を `embedded: true` で描く（**戻るボタンを出さない** —— `pop` はデッキ画面ごと閉じる）。閉じるのはカラムのヘッダーの × ボタン（全カラムに付けた）
-- ⚠ **ここから全画面で開くもの（フォロワー一覧 `/users` 等）は、まだルートのスコープで動く**（別 Issue）
+- **カラムの中身から開く一覧・画面もカラムにした**（2026-09-17 pooza 決定・[#1150](https://github.com/pooza/capsicum/issues/1150) 案 A）: ユーザー一覧（フォロー / フォロワー / お気に入り / ブースト / 絵文字ごとのリアクション）・引用一覧・実績・コレクション一覧・コレクション・ギャラリー投稿・Play・メッセージ（相手ユーザー）・チャンネル。種別は `TabType` の中間クラス `DeckOnlyTab` の下に置き、**タブ UI 側の `switch` は `DeckOnlyTab()` の 1 ケースで受ける**。見出し・取得関数は `ui/util/deck_tabs.dart` にまとめ、**全画面の push とカラムで同じものを使う**（`/users` の fetcher を組むのもここ）
+- ⚠ `/users` / `/posts` は「タイトルと fetcher（クロージャ）」を渡す汎用画面なので**そのままでは保存できない**。種類と対象 id（`users:<種類>:<id>[:<絵文字>]`）に分解して保存し、描くときにカラムのアカウントのアダプタで fetcher を組み直す
+- ⚠ **編集フォーム（`/profile/edit`）はカラムにしない**。投稿フォームと同じく `extraWithProviderScope` でスコープを運ぶ（運ばないと、別アカウントのカラムにある自分のプロフィールから現在のアカウントを編集する）
+- 中身の画面が自分を閉じる（コレクションを削除した等）ときは `screenCloser(context)` を使う。カラムの中ではカラムを外し、外では pop する（**pop するとデッキ画面ごと閉じる**）
+- 対象外: 新規メッセージ画面の `pushReplacement`（画面自体がカラムにならない）と通知タップ（`main.dart`・カラムの外）
 
 ---
 

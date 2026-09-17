@@ -14,7 +14,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// #1148: 読み戻したスレッド / プロフィールのカラム（開いた時点の中身が無い）は、
 /// カラムのアカウントで id から取り直す。
-class _Adapter extends Mock implements DecentralizedBackendAdapter {}
+class _Adapter extends Mock
+    implements DecentralizedBackendAdapter, GallerySupport {}
 
 class _Capabilities extends Mock implements AdapterCapabilities {}
 
@@ -87,5 +88,33 @@ void main() {
     await tester.pumpAndSettle();
     expect(calls, 1);
     expect(find.text('読み込みに失敗しました'), findsOneWidget);
+  });
+
+  testWidgets('seed の無いギャラリー・メッセージも id で取り直す (#1150)', (tester) async {
+    when(
+      () => adapter.getGalleryPostById('g1'),
+    ).thenAnswer((_) async => throw Exception('boom'));
+    await pump(tester, const GalleryPostTab('g1'));
+    await tester.pumpAndSettle();
+    verify(() => adapter.getGalleryPostById('g1')).called(1);
+    expect(find.text('読み込みに失敗しました'), findsOneWidget);
+    expect(find.text('ギャラリー'), findsOneWidget, reason: 'ヘッダーの見出し');
+
+    when(
+      () => adapter.getUserById('u1'),
+    ).thenAnswer((_) async => throw Exception('boom'));
+    await pump(tester, const ChatUserTab('u1'));
+    await tester.pumpAndSettle();
+    verify(() => adapter.getUserById('u1')).called(1);
+    expect(find.text('メッセージ'), findsOneWidget);
+  });
+
+  testWidgets('⚠ カラムのアカウントで取れない一覧は、取りに行かず案内を出す (#1150)', (tester) async {
+    // 投稿タイルの導線はアダプタが対応しているときしか出ないが、読み戻したカラムは
+    // アカウントの状態が変わっていることがある。
+    await pump(tester, const UserListTab(UserListKind.followers, 'u1'));
+    await tester.pumpAndSettle();
+    expect(find.text('このアカウントでは表示できません'), findsOneWidget);
+    expect(find.text('フォロワー'), findsOneWidget, reason: 'ヘッダーの見出し');
   });
 }

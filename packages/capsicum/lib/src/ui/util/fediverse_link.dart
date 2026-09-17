@@ -1,7 +1,6 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../url_helper.dart';
@@ -36,7 +35,7 @@ Future<void> openFediverseLink(
   // ブラウザ経路にフォールバックさせる。
   final playId = _selfHostPlayId(uri, adapter);
   if (playId != null) {
-    context.push('/play', extra: {'flashId': playId});
+    openFlash(context, flashId: playId);
     return;
   }
 

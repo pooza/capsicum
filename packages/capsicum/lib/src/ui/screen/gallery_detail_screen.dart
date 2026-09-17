@@ -10,7 +10,15 @@ import '../widget/bottom_safe_area.dart';
 class GalleryDetailScreen extends StatelessWidget {
   final GalleryPost post;
 
-  const GalleryDetailScreen({super.key, required this.post});
+  /// デッキのカラムの中身として描く (#1150)。戻るボタンを出さない（投稿の
+  /// タイトルを出すので AppBar は残す）。
+  final bool embedded;
+
+  const GalleryDetailScreen({
+    super.key,
+    required this.post,
+    this.embedded = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -18,6 +26,7 @@ class GalleryDetailScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: !embedded,
         title: Text(post.title),
         backgroundColor: theme.colorScheme.inversePrimary,
       ),

@@ -396,6 +396,38 @@ void main() {
       expect(columnsOf(tester), hasLength(3));
       expect(horizontalOffset(tester), 400, reason: 'カラム 1 本ぶん送って 3 本目を見せる');
     });
+
+    testWidgets('⚠⚠ 一覧・画面（実績等）も右隣に元のアカウントで足される (#1150)', (tester) async {
+      await pumpDeckLines(
+        tester,
+        size: const Size(1600, 600),
+        lines: const ['a|me|timeline:home', 'b|other|timeline:home'],
+        accounts: [_account('me'), _account('other')],
+      );
+
+      await tester.tap(find.byKey(const ValueKey('open-achievements-b')));
+      await tester.pumpAndSettle();
+
+      final columns = columnsOf(tester);
+      expect(columns, hasLength(3));
+      expect(columns.last.tab, const AchievementsTab('u-b'));
+      expect(columns.last.account.username, 'other');
+      expect(columns.last.seed, '名前-b', reason: '見出し用の表示名を渡す');
+    });
+
+    testWidgets('中身の画面が閉じると、デッキ画面ではなくそのカラムだけが外れる (#1150)', (tester) async {
+      await pumpDeckLines(
+        tester,
+        size: const Size(1600, 600),
+        lines: const ['a|me|timeline:home', 'b|me|timeline:local'],
+      );
+
+      await tester.tap(find.byKey(const ValueKey('close-a')));
+      await tester.pumpAndSettle();
+
+      expect(columnsOf(tester).map((c) => c.id), ['b']);
+      expect(find.byType(DeckScreen), findsOneWidget, reason: 'pop していない');
+    });
   });
 }
 
@@ -440,7 +472,7 @@ class _StubColumnState extends ConsumerState<_StubColumn> {
           account?.username ?? '-',
           key: ValueKey('account-${widget.column.id}'),
         ),
-        Row(
+        Wrap(
           children: [
             TextButton(
               key: ValueKey('sheet-$id'),
@@ -476,6 +508,21 @@ class _StubColumnState extends ConsumerState<_StubColumn> {
                 ),
               ),
               child: const Text('P'),
+            ),
+            // #1150: 一覧・画面を開く / 中身の画面が自分を閉じる。
+            TextButton(
+              key: ValueKey('open-achievements-$id'),
+              onPressed: () => openAchievements(
+                context,
+                userId: 'u-$id',
+                displayName: '名前-$id',
+              ),
+              child: const Text('A'),
+            ),
+            TextButton(
+              key: ValueKey('close-$id'),
+              onPressed: () => screenCloser(context)(),
+              child: const Text('X'),
             ),
             // #1148: 長押しシートの「プロフィールを表示」の形（シートの中から開く）。
             TextButton(

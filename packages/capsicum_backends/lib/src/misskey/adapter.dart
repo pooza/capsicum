@@ -1575,6 +1575,10 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     return data.map(_mapGalleryPost).toList();
   }
 
+  @override
+  Future<GalleryPost> getGalleryPostById(String postId) async =>
+      _mapGalleryPost(await client.showGalleryPost(postId));
+
   // PagesSupport (#186)
 
   Page _mapPage(Map<String, dynamic> p) {

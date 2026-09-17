@@ -9,10 +9,19 @@ import '../../provider/hashtag_provider.dart';
 import '../../provider/list_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/timeline_provider.dart';
+import '../screen/achievement_screen.dart';
 import '../screen/announcement_screen.dart';
+import '../screen/chat_thread_screen.dart';
+import '../screen/collection_detail_screen.dart';
+import '../screen/collections_list_screen.dart';
+import '../screen/flash_view_screen.dart';
+import '../screen/gallery_detail_screen.dart';
 import '../screen/notification_screen.dart';
 import '../screen/post_detail_screen.dart';
+import '../screen/post_list_screen.dart';
 import '../screen/profile_screen.dart';
+import '../screen/user_list_screen.dart';
+import '../util/deck_tabs.dart';
 import 'home_menu.dart' show tabLabel;
 import 'post_tile.dart';
 import 'retry_error_view.dart';
@@ -110,6 +119,69 @@ class DeckColumnView extends ConsumerWidget {
         },
         fetch: (adapter) => adapter.getUserById(userId),
         builder: (user) => ProfileScreen(user: user, embedded: true),
+      ),
+      // #1150: カラムの中から開いた一覧・画面。⚠ 取得はここでカラムのアカウントの
+      // アダプタから組み立てる（全画面の push と同じ関数を使う）。
+      final UserListTab t => switch (userListFetcher(
+        ref.watch(currentAdapterProvider),
+        t,
+      )) {
+        final fetcher? => UserListView(fetcher: fetcher),
+        null => const _DeckColumnMessage('このアカウントでは表示できません'),
+      },
+      QuotesTab(:final postId) => switch (quotesFetcher(
+        ref.watch(currentAdapterProvider),
+        postId,
+      )) {
+        final fetcher? => PostListScreen(
+          title: '引用',
+          emptyMessage: '引用している投稿はありません',
+          fetcher: fetcher,
+          embedded: true,
+        ),
+        null => const _DeckColumnMessage('このアカウントでは表示できません'),
+      },
+      AchievementsTab(:final userId) => AchievementScreen(
+        userId: userId,
+        displayName: column.seed is String ? column.seed! as String : null,
+        embedded: true,
+      ),
+      CollectionsTab(:final accountId, :final mode) => CollectionsListScreen(
+        accountId: accountId,
+        inCollections: mode == CollectionsMode.included,
+        ownerView: mode == CollectionsMode.own,
+        title: '',
+        embedded: true,
+      ),
+      CollectionTab(:final collectionId) => CollectionDetailScreen(
+        collectionId: collectionId,
+        embedded: true,
+      ),
+      GalleryPostTab(:final postId) => _DeckSeededBody<GalleryPost>(
+        seed: switch (column.seed) {
+          final GalleryPost p when p.id == postId => p,
+          _ => null,
+        },
+        fetch: (adapter) => adapter is GallerySupport
+            ? (adapter as GallerySupport).getGalleryPostById(postId)
+            : Future.error(UnsupportedError('gallery')),
+        builder: (post) => GalleryDetailScreen(post: post, embedded: true),
+      ),
+      FlashTab(:final flashId) => FlashViewScreen(
+        initialFlash: switch (column.seed) {
+          final Flash f when f.id == flashId => f,
+          _ => null,
+        },
+        flashId: flashId,
+        embedded: true,
+      ),
+      ChatUserTab(:final userId) => _DeckSeededBody<User>(
+        seed: switch (column.seed) {
+          final User u when u.id == userId => u,
+          _ => null,
+        },
+        fetch: (adapter) => adapter.getUserById(userId),
+        builder: (user) => ChatThreadScreen(otherUser: user, embedded: true),
       ),
     };
   }

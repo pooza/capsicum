@@ -42,6 +42,35 @@ void main() {
               Text('profile:${(state.extra! as User).id}'),
         ),
         GoRoute(
+          path: '/achievements',
+          builder: (context, state) =>
+              Text('achievements:${(state.extra! as Map)['displayName']}'),
+        ),
+        GoRoute(
+          path: '/channel/:id',
+          builder: (context, state) =>
+              Text('channel:${state.pathParameters['id']}:${state.extra}'),
+        ),
+        GoRoute(
+          path: '/collection',
+          builder: (context, state) => Text('collection:${state.extra}'),
+        ),
+        GoRoute(
+          path: '/gallery/:id',
+          builder: (context, state) =>
+              Text('gallery:${(state.extra! as GalleryPost).title}'),
+        ),
+        GoRoute(
+          path: '/play',
+          builder: (context, state) =>
+              Text('play:${(state.extra! as Map)['flashId']}'),
+        ),
+        GoRoute(
+          path: '/chat/user/:userId',
+          builder: (context, state) =>
+              Text('chat:${(state.extra! as User).id}'),
+        ),
+        GoRoute(
           path: '/hashtag/:tag',
           builder: (context, state) =>
               Text('hashtag:${state.pathParameters['tag']}'),
@@ -61,6 +90,41 @@ void main() {
   testWidgets('プロフィールはプロフィール画面へ遷移する', (tester) async {
     await pumpApp(tester, (context) => openProfile(context, post.author));
     expect(find.text('profile:u1'), findsOneWidget);
+  });
+
+  testWidgets('一覧・画面も今どおりの行き先と引数で遷移する (#1150)', (tester) async {
+    await pumpApp(
+      tester,
+      (context) => openAchievements(context, userId: 'u1', displayName: 'A'),
+    );
+    expect(find.text('achievements:A'), findsOneWidget);
+
+    await pumpApp(tester, (context) => openChannel(context, 'c1', '実況'));
+    expect(find.text('channel:c1:実況'), findsOneWidget);
+
+    await pumpApp(tester, (context) => openCollection(context, 'k1'));
+    expect(find.text('collection:k1'), findsOneWidget);
+
+    await pumpApp(
+      tester,
+      (context) => openGalleryPost(
+        context,
+        GalleryPost(
+          id: 'g1',
+          title: '絵',
+          author: post.author,
+          files: const [],
+          createdAt: DateTime(2026),
+        ),
+      ),
+    );
+    expect(find.text('gallery:絵'), findsOneWidget);
+
+    await pumpApp(tester, (context) => openFlash(context, flashId: 'f1'));
+    expect(find.text('play:f1'), findsOneWidget);
+
+    await pumpApp(tester, (context) => openChatWithUser(context, post.author));
+    expect(find.text('chat:u1'), findsOneWidget);
   });
 
   testWidgets('ハッシュタグはタグのタイムラインへ遷移する', (tester) async {

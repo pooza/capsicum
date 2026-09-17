@@ -16,6 +16,7 @@ import '../../provider/timeline_provider.dart';
 import '../../url_helper.dart';
 import '../util/about_dialog.dart';
 import '../util/deck_navigation.dart';
+import '../util/deck_tabs.dart';
 import '../util/post_scope_display.dart';
 import '../util/provider_scope_carrier.dart';
 import 'desktop_menu_model.dart';
@@ -92,8 +93,7 @@ String tabLabel(
     NotificationsTab() => '通知',
     AnnouncementsTab() => 'お知らせ',
     MessagesTab() => 'メッセージ',
-    PostThreadTab() => 'スレッド',
-    ProfileTab() => 'プロフィール',
+    final DeckOnlyTab t => deckOnlyTabLabel(ref, t, adapter),
   };
 }
 
@@ -798,7 +798,7 @@ Future<void> showFlashList(BuildContext context, WidgetRef ref) async {
                 // /play/<id> を開いていた (#73)。実行できない Play は
                 // 詳細画面側で「ブラウザで開く」に degrade する。
                 Navigator.pop(context);
-                context.push('/play', extra: {'flash': flash});
+                openFlash(context, flash: flash);
               },
             ),
         ],
@@ -981,7 +981,7 @@ Future<void> showListChooser(BuildContext context, WidgetRef ref) async {
 Future<void> showChannelList(BuildContext context, WidgetRef ref) async {
   final channel = await pickFollowedChannel(context, ref);
   if (channel == null || !context.mounted) return;
-  context.push('/channel/${channel.id}', extra: channel.name);
+  openChannel(context, channel.id, channel.name);
 }
 
 /// フォロー中のチャンネルを 1 つ選ばせる (#805 のクイックチューザ様式)。

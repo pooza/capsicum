@@ -56,6 +56,14 @@ sealed class TabType {
       'channel' => _parseChannelTab(value),
       'thread' => PostThreadTab(value),
       'profile' => ProfileTab(value),
+      'users' => UserListTab._parse(value),
+      'quotes' => QuotesTab(value),
+      'achievements' => AchievementsTab(value),
+      'collections' => CollectionsTab._parse(value),
+      'collection' => CollectionTab(value),
+      'gallery' => GalleryPostTab(value),
+      'play' => FlashTab(value),
+      'chat_user' => ChatUserTab(value),
       _ => null,
     };
   }
@@ -189,12 +197,20 @@ class MessagesTab extends TabType {
   int get hashCode => runtimeType.hashCode;
 }
 
-/// 投稿のスレッド (#1148)。⚠ **デッキのカラム専用で、タブ UI には出ない。**
+/// デッキのカラム専用の種別 (#1148 / #1150)。⚠ **タブ UI には出ない。**
 ///
-/// デッキのカラムから投稿を開いたとき、元のカラムの右隣に足す。保存するのは
-/// id だけで、投稿そのものはカラムのアカウントで取り直す（id はサーバーローカル
-/// なので、アカウントと組でないと意味を持たない）。
-class PostThreadTab extends TabType {
+/// デッキのカラムから開いたもの（投稿・プロフィール・一覧等）を、元のカラムの
+/// 右隣に足すときに使う（`docs/deck-ui-plan.md` 決定済み事項 9）。タブ UI 側の
+/// `switch` はこの型 1 つで受けられる。
+///
+/// ⚠ 保存するのは id だけ。id はサーバーローカルなので、中身はカラムのアカウントで
+/// 取り直す。
+sealed class DeckOnlyTab extends TabType {
+  const DeckOnlyTab();
+}
+
+/// 投稿のスレッド (#1148)。
+class PostThreadTab extends DeckOnlyTab {
   final String postId;
   const PostThreadTab(this.postId);
 
@@ -209,9 +225,8 @@ class PostThreadTab extends TabType {
   int get hashCode => postId.hashCode;
 }
 
-/// ユーザーのプロフィール (#1148)。⚠ **デッキのカラム専用で、タブ UI には出ない。**
-/// [PostThreadTab] と同じく id だけを保存する。
-class ProfileTab extends TabType {
+/// ユーザーのプロフィール (#1148)。
+class ProfileTab extends DeckOnlyTab {
   final String userId;
   const ProfileTab(this.userId);
 
@@ -221,6 +236,204 @@ class ProfileTab extends TabType {
   @override
   bool operator ==(Object other) =>
       other is ProfileTab && userId == other.userId;
+
+  @override
+  int get hashCode => userId.hashCode;
+}
+
+/// ユーザー一覧の種類 (#1150)。[UserListTab.targetId] が何の id かも決まる。
+enum UserListKind {
+  /// フォロー中（ユーザー id）
+  following,
+
+  /// フォロワー（ユーザー id）
+  followers,
+
+  /// お気に入りした人（投稿 id）。Misskey ではリアクションした人全員
+  favouritedBy,
+
+  /// ブースト / リノートした人（投稿 id）
+  rebloggedBy,
+
+  /// その絵文字でリアクションした人（投稿 id + [UserListTab.reaction]）
+  reactedBy,
+}
+
+/// ユーザー一覧 (#1150)。
+class UserListTab extends DeckOnlyTab {
+  final UserListKind kind;
+  final String targetId;
+
+  /// [UserListKind.reactedBy] のときの絵文字（`:name@.:` 等。`:` を含みうる）。
+  final String? reaction;
+
+  const UserListTab(this.kind, this.targetId, {this.reaction});
+
+  @override
+  String toKey() => reaction == null
+      ? 'users:${kind.name}:$targetId'
+      : 'users:${kind.name}:$targetId:$reaction';
+
+  static UserListTab? _parse(String value) {
+    final first = value.indexOf(':');
+    if (first <= 0) return null;
+    final kind = UserListKind.values.asNameMap()[value.substring(0, first)];
+    if (kind == null) return null;
+    final rest = value.substring(first + 1);
+    // ⚠ 絵文字は `:` を含むので、2 つ目の区切り以降はまとめて絵文字として読む。
+    final second = rest.indexOf(':');
+    final targetId = second < 0 ? rest : rest.substring(0, second);
+    if (targetId.isEmpty) return null;
+    final reaction = second < 0 ? null : rest.substring(second + 1);
+    return UserListTab(
+      kind,
+      targetId,
+      reaction: reaction == null || reaction.isEmpty ? null : reaction,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is UserListTab &&
+      kind == other.kind &&
+      targetId == other.targetId &&
+      reaction == other.reaction;
+
+  @override
+  int get hashCode => Object.hash(kind, targetId, reaction);
+}
+
+/// その投稿を引用した投稿の一覧 (#1150)。
+class QuotesTab extends DeckOnlyTab {
+  final String postId;
+  const QuotesTab(this.postId);
+
+  @override
+  String toKey() => 'quotes:$postId';
+
+  @override
+  bool operator ==(Object other) =>
+      other is QuotesTab && postId == other.postId;
+
+  @override
+  int get hashCode => postId.hashCode;
+}
+
+/// 実績の一覧 (#1150)。
+class AchievementsTab extends DeckOnlyTab {
+  final String userId;
+  const AchievementsTab(this.userId);
+
+  @override
+  String toKey() => 'achievements:$userId';
+
+  @override
+  bool operator ==(Object other) =>
+      other is AchievementsTab && userId == other.userId;
+
+  @override
+  int get hashCode => userId.hashCode;
+}
+
+/// コレクション一覧の出し方 (#1150)。
+enum CollectionsMode {
+  /// そのユーザーのコレクション
+  list,
+
+  /// 自分のコレクション（作成・編集できる）
+  own,
+
+  /// そのユーザーが載っているコレクション
+  included,
+}
+
+/// コレクションの一覧 (#1150)。
+class CollectionsTab extends DeckOnlyTab {
+  final String accountId;
+  final CollectionsMode mode;
+  const CollectionsTab(this.accountId, this.mode);
+
+  @override
+  String toKey() => 'collections:${mode.name}:$accountId';
+
+  static CollectionsTab? _parse(String value) {
+    final colon = value.indexOf(':');
+    if (colon <= 0) return null;
+    final mode = CollectionsMode.values.asNameMap()[value.substring(0, colon)];
+    final accountId = value.substring(colon + 1);
+    if (mode == null || accountId.isEmpty) return null;
+    return CollectionsTab(accountId, mode);
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is CollectionsTab &&
+      accountId == other.accountId &&
+      mode == other.mode;
+
+  @override
+  int get hashCode => Object.hash(accountId, mode);
+}
+
+/// コレクション 1 つ (#1150)。
+class CollectionTab extends DeckOnlyTab {
+  final String collectionId;
+  const CollectionTab(this.collectionId);
+
+  @override
+  String toKey() => 'collection:$collectionId';
+
+  @override
+  bool operator ==(Object other) =>
+      other is CollectionTab && collectionId == other.collectionId;
+
+  @override
+  int get hashCode => collectionId.hashCode;
+}
+
+/// ギャラリーの投稿 1 つ (#1150)。
+class GalleryPostTab extends DeckOnlyTab {
+  final String postId;
+  const GalleryPostTab(this.postId);
+
+  @override
+  String toKey() => 'gallery:$postId';
+
+  @override
+  bool operator ==(Object other) =>
+      other is GalleryPostTab && postId == other.postId;
+
+  @override
+  int get hashCode => postId.hashCode;
+}
+
+/// Misskey Play 1 つ (#1150)。
+class FlashTab extends DeckOnlyTab {
+  final String flashId;
+  const FlashTab(this.flashId);
+
+  @override
+  String toKey() => 'play:$flashId';
+
+  @override
+  bool operator ==(Object other) =>
+      other is FlashTab && flashId == other.flashId;
+
+  @override
+  int get hashCode => flashId.hashCode;
+}
+
+/// ユーザーとのメッセージ（Misskey chat）(#1150)。
+class ChatUserTab extends DeckOnlyTab {
+  final String userId;
+  const ChatUserTab(this.userId);
+
+  @override
+  String toKey() => 'chat_user:$userId';
+
+  @override
+  bool operator ==(Object other) =>
+      other is ChatUserTab && userId == other.userId;
 
   @override
   int get hashCode => userId.hashCode;

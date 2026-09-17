@@ -1199,8 +1199,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) context.push('/chat');
         });
-      case PostThreadTab():
-      case ProfileTab():
+      case DeckOnlyTab():
         // デッキのカラム専用 (#1148)。タブとしては保存されない。
         break;
     }

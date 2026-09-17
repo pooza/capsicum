@@ -119,12 +119,10 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
   void _openAchievements(BuildContext context) {
     final user = ref.read(currentAccountProvider)?.user;
     if (user == null) return;
-    context.push(
-      '/achievements',
-      extra: {
-        'userId': user.id,
-        'displayName': user.displayName ?? user.username,
-      },
+    openAchievements(
+      context,
+      userId: user.id,
+      displayName: user.displayName ?? user.username,
     );
   }
 
@@ -140,8 +138,7 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
           // Collections 通知 (#741): post を持たないため、タップで対象コレクション
           // の詳細（#742）を開く。
           : notification.collection != null
-          ? () =>
-                context.push('/collection', extra: notification.collection!.id)
+          ? () => openCollection(context, notification.collection!.id)
           // 実績解除通知 (#918): post を持たないため、タップで実績一覧を開く。
           // ⚠ **`extra` は省略できない。** `/achievements` の builder は
           // `state.extra!` で `userId` を取り出すので、付けずに push すると
