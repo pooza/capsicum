@@ -88,12 +88,20 @@ const Object _keepLoadMoreError = Object();
 
 /// 表示中の TL がどの文脈で取得されたかを表すキーを組み立てる (#758)。
 ///
-/// [kind] は TL の種別を表す識別子（メイン TL は `tl:<type>`、ハッシュタグは
-/// `tag:<spec>`、リストは `list:<id>`）。アカウントキーが無いときは null。
+/// `<アカウント>|<種別>`。種別は [TabType.toIdentityKey]（`timeline:home` /
+/// `hashtag:<spec>` / `list:<id>`）。アカウントキーが無いときは null。
 /// provider 側は build() でこのキーを TimelineState に刻み、UI 側は現在の文脈から
 /// 同じ式で組み立てたキーと照合する。両者で同一の式を使うことが前提。
-String? timelineContextKey(AccountKey? accountKey, String kind) =>
-    accountKey == null ? null : '${accountKey.toStorageKey()}|$kind';
+///
+/// ⚠ 以前は種別を文字列で受け取り、語彙が [TabType] と揃っていなかった
+/// （`tl:home` 対 `timeline:home`・`tag:` 対 `hashtag:`）。[TabType] で受けて
+/// [TabType.toIdentityKey] を使うことで、**デッキのカラムの中身のキー
+/// （`DeckColumn.contentKey`）と同じ文字列になる**（#1091・決定済み事項 4-3）。
+/// ⚠ 表示名を含む [TabType.toKey] を使わないこと（リスト名の変更でキーが変わる）。
+String? timelineContextKey(AccountKey? accountKey, TabType tab) =>
+    accountKey == null
+    ? null
+    : '${accountKey.toStorageKey()}|${tab.toIdentityKey()}';
 
 /// 自分の投稿が、指定した TL 種別に実際に載るかを判定する (#814)。
 /// 楽観挿入 ([TimelineNotifier.insertOwnPost]) が、載らないはずの投稿
@@ -702,7 +710,7 @@ class TimelineNotifier
     _lastDisconnectedAt = null;
 
     final type = key.type;
-    final contextKey = timelineContextKey(key.account, 'tl:${type.name}');
+    final contextKey = timelineContextKey(key.account, TimelineTab(type));
     // await を挟む前に確定させる (#914 §5)。以降の stale 判定はこれを見る。
     _servingContextKey = contextKey;
     // 種別はキーで固定なので watch しない。アカウントは「同じアカウントのアダプタが

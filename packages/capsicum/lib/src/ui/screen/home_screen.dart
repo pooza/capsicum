@@ -894,10 +894,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         : timelineContextKey(
             account.key,
             selectedHashtag != null
-                ? 'tag:$selectedHashtag'
+                ? HashtagTab(selectedHashtag)
                 : selectedList != null
-                ? 'list:${selectedList.id}'
-                : 'tl:${selectedType.name}',
+                ? ListTab(id: selectedList.id)
+                : TimelineTab(selectedType),
           );
 
     // 文脈切替（アカウント / タブ / ハッシュタグ / リスト変更）で TL をロード中
@@ -1848,7 +1848,7 @@ class _StreamStatusIndicatorState
     // だけを意味するようにする (#758)。
     final expectedContextKey = timelineContextKey(
       key.account,
-      'tl:${key.type.name}',
+      TimelineTab(key.type),
     );
     final stale = _timelineIsStale(async, expectedContextKey);
     // 前文脈のキャッシュや build 中は再接続カウント等を出さない（現在の文脈の

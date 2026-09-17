@@ -33,7 +33,7 @@ class ListTimelineNotifier
       ref.watch(currentAccountProvider),
       key.account,
     );
-    final contextKey = timelineContextKey(key.account, 'list:${key.id}');
+    final contextKey = timelineContextKey(key.account, ListTab(id: key.id));
     if (adapter == null || adapter is! ListSupport) {
       return TimelineState(hasMore: false, contextKey: contextKey);
     }

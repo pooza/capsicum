@@ -53,7 +53,7 @@ class HashtagTimelineNotifier
       ref.watch(currentAccountProvider),
       key.account,
     );
-    final contextKey = timelineContextKey(key.account, 'tag:${key.spec}');
+    final contextKey = timelineContextKey(key.account, HashtagTab(key.spec));
     if (adapter == null || adapter is! HashtagSupport) {
       return TimelineState(hasMore: false, contextKey: contextKey);
     }

@@ -1,6 +1,7 @@
 import 'package:capsicum/src/model/account_key.dart';
 import 'package:capsicum/src/model/deck_column.dart';
 import 'package:capsicum/src/provider/preferences_provider.dart';
+import 'package:capsicum/src/provider/timeline_provider.dart';
 import 'package:capsicum/src/util/shared_preferences_cache.dart';
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
@@ -88,6 +89,22 @@ void main() {
       expect(saved, renamed.serialize(), reason: '保存される行が表示名で変わらない');
       expect(DeckColumn.deserialize(saved)!.contentKey, renamed.contentKey);
       expect(DeckColumn.deserialize(saved)!.tab, renamed.tab);
+    });
+
+    test('カラムの中身のキーは、その TL の contextKey と同じ文字列（決定済み事項 4-3）', () {
+      for (final tab in const <TabType>[
+        TimelineTab(TimelineType.home),
+        HashtagTab('delmulin+capsicum'),
+        ListTab(id: 'l1', name: '実況'),
+      ]) {
+        final column = DeckColumn(id: 'x', account: _me, tab: tab);
+        expect(column.contentKey, timelineContextKey(_me, tab));
+      }
+      // リスト名が変わっても contextKey は変わらない（toKey を使っていない）。
+      expect(
+        timelineContextKey(_me, const ListTab(id: 'l1', name: '旧')),
+        timelineContextKey(_me, const ListTab(id: 'l1', name: '新')),
+      );
     });
 
     test('チャンネル名の変更も同じ', () {

@@ -180,7 +180,7 @@ void main() {
       host: 'example.test',
       username: 'me',
     ),
-    'tl:home',
+    const TimelineTab(TimelineType.home),
   )!;
 
   test('キャッシュがあれば REST を待たずにそれを先に返す', () async {
