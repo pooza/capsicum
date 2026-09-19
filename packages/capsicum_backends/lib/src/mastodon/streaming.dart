@@ -10,11 +10,39 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import '../streaming_backoff.dart';
 import 'extensions.dart';
 
-const _streamMap = <TimelineType, String>{
-  TimelineType.home: 'user',
-  TimelineType.local: 'public:local',
-  TimelineType.federated: 'public',
-};
+/// 購読する `stream` と、必要な追加パラメータ。対応しないタブは null (#1098)。
+///
+/// ⚠ **Mastodon の `hashtag` ストリームはタグを 1 つしか取らない。**capsicum の
+/// AND 指定（spec `"a+b"`）に当たるものが無いので、**AND のカラムは購読しない**
+/// （従来どおり再取得で更新する）。⚠⚠ 代表タグだけで購読すると、**AND を
+/// 満たさない投稿がカラムへ流れ込む** —— 「並べたのに動かない」より悪い。
+///
+/// ⚠ **チャンネルは Mastodon に存在しない。**
+typedef MastodonStreamTarget = ({String stream, String? tag, String? list});
+
+MastodonStreamTarget? mastodonStreamTarget(TabType tab) {
+  switch (tab) {
+    case TimelineTab(type: final type):
+      final name = switch (type) {
+        TimelineType.home => 'user',
+        TimelineType.local => 'public:local',
+        TimelineType.federated => 'public',
+        // DM には専用ストリームが無い。'user' へ落とすと DM タブに DM でない
+        // 投稿が混ざる (#793)。social も Mastodon には無い。
+        _ => null,
+      };
+      return name == null ? null : (stream: name, tag: null, list: null);
+    case HashtagTab(tag: final spec):
+      final tags = spec.split('+').where((t) => t.isNotEmpty).toList();
+      // AND 指定は Mastodon の streaming で表現できないので張らない。
+      if (tags.length != 1) return null;
+      return (stream: 'hashtag', tag: tags.first, list: null);
+    case ListTab(id: final id):
+      return id.isEmpty ? null : (stream: 'list', tag: null, list: id);
+    default:
+      return null;
+  }
+}
 
 class MastodonStreaming {
   final String host;
@@ -50,7 +78,7 @@ class MastodonStreaming {
   WebSocketChannel? _channel;
   StreamController<Post>? _controller;
   Timer? _reconnectTimer;
-  TimelineType? _currentType;
+  TabType? _currentTab;
   bool _disposed = false;
   bool _reconnectExhaustedNotified = false;
   StreamConnectionState? _lastConnectionState;
@@ -92,25 +120,35 @@ class MastodonStreaming {
     } catch (_) {}
   }
 
-  Stream<Post> connect(TimelineType type) {
-    _currentType = type;
+  Stream<Post> connect(TabType tab) {
+    // 対応する stream を持たないタブは購読しない (#793 / #1098)。既定の 'user'
+    // へ落とすと、そのタブが裏でホームを購読することになる。
+    if (mastodonStreamTarget(tab) == null) return const Stream.empty();
+    _currentTab = tab;
     _controller?.close();
     _controller = StreamController<Post>.broadcast(onCancel: dispose);
-    _connect(type);
+    _connect(tab);
     return _controller!.stream;
   }
 
-  void _connect(TimelineType type) {
+  void _connect(TabType tab) {
     if (_disposed) return;
     _channel?.sink.close();
     _notifyConnectionState(StreamConnectionState.connecting);
 
-    final stream = _streamMap[type] ?? 'user';
+    // connect() で対応しないタブは弾いてある。
+    final target = mastodonStreamTarget(tab);
+    if (target == null) return;
     final uri = Uri(
       scheme: 'wss',
       host: host,
       path: '/api/v1/streaming',
-      queryParameters: {'access_token': accessToken, 'stream': stream},
+      queryParameters: {
+        'access_token': accessToken,
+        'stream': target.stream,
+        if (target.tag != null) 'tag': target.tag!,
+        if (target.list != null) 'list': target.list!,
+      },
     );
 
     final factory = channelFactory;
@@ -212,8 +250,8 @@ class MastodonStreaming {
     );
     _reconnectAttempts++;
     _reconnectTimer = Timer(Duration(milliseconds: delayMs), () {
-      if (!_disposed && _currentType != null) {
-        _connect(_currentType!);
+      if (!_disposed && _currentTab != null) {
+        _connect(_currentTab!);
       }
     });
   }

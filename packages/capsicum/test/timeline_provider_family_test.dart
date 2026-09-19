@@ -53,7 +53,7 @@ class _KeyedStreamingAdapter extends _RecordingAdapter
   @override
   Stream<Post> streamTimeline(
     String key,
-    TimelineType type, {
+    TabType tab, {
     void Function(Object error, StackTrace stack)? onParseError,
     void Function(Object error, StackTrace stack)? onStreamError,
     void Function()? onReconnectExhausted,

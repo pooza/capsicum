@@ -75,10 +75,16 @@ void main() {
     test('⚠⚠ 2 本目を購読しても 1 本目にイベントが届き続ける', () async {
       final adapter = await makeAdapter();
       final home = _Collector(
-        adapter.streamTimeline('me|timeline:home', TimelineType.home),
+        adapter.streamTimeline(
+          'me|timeline:home',
+          TimelineTab(TimelineType.home),
+        ),
       );
       final local = _Collector(
-        adapter.streamTimeline('me|timeline:local', TimelineType.local),
+        adapter.streamTimeline(
+          'me|timeline:local',
+          TimelineTab(TimelineType.local),
+        ),
       );
       addTearDown(() {
         adapter.disposeStream('me|timeline:home');
@@ -96,9 +102,15 @@ void main() {
     test('片方を閉じても、もう片方には届き続ける', () async {
       final adapter = await makeAdapter();
       final home = _Collector(
-        adapter.streamTimeline('me|timeline:home', TimelineType.home),
+        adapter.streamTimeline(
+          'me|timeline:home',
+          TimelineTab(TimelineType.home),
+        ),
       );
-      adapter.streamTimeline('me|timeline:local', TimelineType.local);
+      adapter.streamTimeline(
+        'me|timeline:local',
+        TimelineTab(TimelineType.local),
+      );
       addTearDown(() => adapter.disposeStream('me|timeline:home'));
       await waitForConnections(2);
 
@@ -111,9 +123,15 @@ void main() {
     test('同じキーで張り直すと、そのキーの前の購読だけが閉じる', () async {
       final adapter = await makeAdapter();
       final home = _Collector(
-        adapter.streamTimeline('me|timeline:home', TimelineType.home),
+        adapter.streamTimeline(
+          'me|timeline:home',
+          TimelineTab(TimelineType.home),
+        ),
       );
-      adapter.streamTimeline('me|timeline:local', TimelineType.local);
+      adapter.streamTimeline(
+        'me|timeline:local',
+        TimelineTab(TimelineType.local),
+      );
       addTearDown(() {
         adapter.disposeStream('me|timeline:home');
         adapter.disposeStream('me|timeline:local');
@@ -122,7 +140,10 @@ void main() {
 
       // local を張り直す（pull-to-refresh 等で build() がやり直された形）。
       final local = _Collector(
-        adapter.streamTimeline('me|timeline:local', TimelineType.local),
+        adapter.streamTimeline(
+          'me|timeline:local',
+          TimelineTab(TimelineType.local),
+        ),
       );
       await waitForConnections(3);
 
@@ -158,14 +179,20 @@ void main() {
     test('⚠⚠ 2 本目を購読しても 1 本目にイベントが届き続ける', () async {
       final adapter = await makeAdapter();
       final home = _Collector(
-        adapter.streamTimeline('me|timeline:home', TimelineType.home),
+        adapter.streamTimeline(
+          'me|timeline:home',
+          TimelineTab(TimelineType.home),
+        ),
       );
       await waitForConnections(1);
       final homeConn = connections[0];
       final homeSub = await subscriptionIdOf(homeConn);
 
       final local = _Collector(
-        adapter.streamTimeline('me|timeline:local', TimelineType.local),
+        adapter.streamTimeline(
+          'me|timeline:local',
+          TimelineTab(TimelineType.local),
+        ),
       );
       addTearDown(() {
         adapter.disposeStream('me|timeline:home');
@@ -185,12 +212,18 @@ void main() {
     test('片方を閉じても、もう片方には届き続ける', () async {
       final adapter = await makeAdapter();
       final home = _Collector(
-        adapter.streamTimeline('me|timeline:home', TimelineType.home),
+        adapter.streamTimeline(
+          'me|timeline:home',
+          TimelineTab(TimelineType.home),
+        ),
       );
       await waitForConnections(1);
       final homeConn = connections[0];
       final homeSub = await subscriptionIdOf(homeConn);
-      adapter.streamTimeline('me|timeline:local', TimelineType.local);
+      adapter.streamTimeline(
+        'me|timeline:local',
+        TimelineTab(TimelineType.local),
+      );
       addTearDown(() => adapter.disposeStream('me|timeline:home'));
       await waitForConnections(2);
 

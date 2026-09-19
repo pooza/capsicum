@@ -11,12 +11,48 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import '../streaming_backoff.dart';
 import 'extensions.dart';
 
-const _channelMap = <TimelineType, String>{
-  TimelineType.home: 'homeTimeline',
-  TimelineType.local: 'localTimeline',
-  TimelineType.social: 'hybridTimeline',
-  TimelineType.federated: 'globalTimeline',
-};
+/// 購読するチャンネルと `params`。対応するチャンネルが無いタブは null (#1098)。
+///
+/// ⚠⚠ **`hashtag` / `userList` / `channel` は `params` が要る。**Misskey は
+/// `params` が欠けていても**例外にせず `init` が `false` を返すだけ**なので、
+/// 購読が黙って張られない（#1089 で踏んだ「黙って止まる」と同型）。
+///
+/// ⚠ `hashtag` の `q` は **AND の OR** を表す 2 次元配列。capsicum の spec
+/// `"a+b"`（AND 指定）は `[["a","b"]]` になる。
+typedef MisskeyStreamChannel = ({String channel, Map<String, dynamic>? params});
+
+MisskeyStreamChannel? misskeyStreamChannel(TabType tab) {
+  switch (tab) {
+    case TimelineTab(type: final type):
+      final name = switch (type) {
+        TimelineType.home => 'homeTimeline',
+        TimelineType.local => 'localTimeline',
+        TimelineType.social => 'hybridTimeline',
+        TimelineType.federated => 'globalTimeline',
+        // DM 等、チャンネルを持たない種別は購読しない (#793)。
+        _ => null,
+      };
+      return name == null ? null : (channel: name, params: null);
+    case HashtagTab(tag: final spec):
+      final tags = spec.split('+').where((t) => t.isNotEmpty).toList();
+      // タグが 1 つも無い spec で購読すると全件が流れうるので張らない。
+      if (tags.isEmpty) return null;
+      return (
+        channel: 'hashtag',
+        params: {
+          'q': [tags],
+        },
+      );
+    case ListTab(id: final id):
+      return id.isEmpty ? null : (channel: 'userList', params: {'listId': id});
+    case ChannelTab(id: final id):
+      return id.isEmpty
+          ? null
+          : (channel: 'channel', params: {'channelId': id});
+    default:
+      return null;
+  }
+}
 
 class MisskeyStreaming {
   final String host;
@@ -48,7 +84,7 @@ class MisskeyStreaming {
   WebSocketChannel? _channel;
   StreamController<Post>? _controller;
   Timer? _reconnectTimer;
-  TimelineType? _currentType;
+  TabType? _currentTab;
   String? _subscriptionId;
   bool _disposed = false;
   bool _reconnectExhaustedNotified = false;
@@ -87,22 +123,22 @@ class MisskeyStreaming {
     } catch (_) {}
   }
 
-  Stream<Post> connect(TimelineType type) {
-    // streaming チャンネルを持たない種別 (DM 等) は購読しない。以前は購読時に
+  Stream<Post> connect(TabType tab) {
+    // チャンネルを持たないタブ (DM 等) は購読しない。以前は購読時に
     // `_channelMap[type] ?? 'homeTimeline'` で homeTimeline に化け、DM タブが
     // 裏でホームを隠れ購読していた (#793)。Mastodon 側 (streamTimeline が DM で
     // Stream.empty を返す) と挙動を揃える。
-    if (!_channelMap.containsKey(type)) {
+    if (misskeyStreamChannel(tab) == null) {
       return const Stream.empty();
     }
-    _currentType = type;
+    _currentTab = tab;
     _controller?.close();
     _controller = StreamController<Post>.broadcast(onCancel: dispose);
-    _connect(type);
+    _connect(tab);
     return _controller!.stream;
   }
 
-  void _connect(TimelineType type) {
+  void _connect(TabType tab) {
     if (_disposed) return;
     _channel?.sink.close();
     _notifyConnectionState(StreamConnectionState.connecting);
@@ -137,11 +173,11 @@ class MisskeyStreaming {
     );
 
     // Subscribe to the timeline channel after connecting.
-    // connect() で _channelMap 未登録の種別は弾いているため、ここに来る type は
-    // 必ずマップに存在する (#793)。念のため未登録なら購読を張らず抜ける。
+    // connect() で対応しないタブは弾いているため、ここに来る tab は必ず
+    // チャンネルを持つ (#793)。念のため未対応なら購読を張らず抜ける。
     _subscriptionId = const Uuid().v4();
-    final channelName = _channelMap[type];
-    if (channelName == null) return;
+    final target = misskeyStreamChannel(tab);
+    if (target == null) return;
     final channel = _channel!;
     final subId = _subscriptionId!;
     channel.ready
@@ -152,7 +188,13 @@ class MisskeyStreaming {
           channel.sink.add(
             jsonEncode({
               'type': 'connect',
-              'body': {'channel': channelName, 'id': subId},
+              'body': {
+                'channel': target.channel,
+                'id': subId,
+                // ⚠ hashtag / userList / channel は params 必須。欠けると
+                // init が false を返すだけで、例外なしに購読が張られない。
+                if (target.params != null) 'params': target.params,
+              },
             }),
           );
           _notifyConnectionState(StreamConnectionState.live);
@@ -227,8 +269,8 @@ class MisskeyStreaming {
     );
     _reconnectAttempts++;
     _reconnectTimer = Timer(Duration(milliseconds: delayMs), () {
-      if (!_disposed && _currentType != null) {
-        _connect(_currentType!);
+      if (!_disposed && _currentTab != null) {
+        _connect(_currentTab!);
       }
     });
   }

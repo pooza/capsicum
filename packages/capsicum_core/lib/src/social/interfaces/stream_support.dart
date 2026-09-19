@@ -1,9 +1,17 @@
 import '../../model/post.dart';
 import '../../model/stream_connection_state.dart';
-import '../../model/timeline_type.dart';
+import '../../model/tab_type.dart';
 
 abstract mixin class StreamSupport {
-  /// Returns a stream of new posts for the given timeline type.
+  /// Returns a stream of new posts for the given tab.
+  ///
+  /// ⚠ [tab] は [TimelineTab] だけでなく [HashtagTab] / [ListTab] / [ChannelTab]
+  /// も取る (#1098)。デッキの主役はタグ / リスト / チャンネルのカラムなので、
+  /// 「並べたのに動かない」を無くすために購読先を種別ではなくタブで受ける。
+  ///
+  /// ⚠⚠ **対応するチャンネルを持たないタブでは空ストリームを返す**こと。
+  /// 既定のチャンネルへ黙って落とすと、そのタブが**別の TL を隠れ購読する**
+  /// （Misskey の DM タブが裏で homeTimeline を購読していた #793 が実例）。
   ///
   /// [key] は購読の識別子 (#1089 / #1090)。**同じアダプタ（＝同じアカウント）で
   /// 複数の購読を同時に持てる**よう、購読はキーごとに独立している。
@@ -36,7 +44,7 @@ abstract mixin class StreamSupport {
   /// Sentry で観測する用途を想定 (#788)。null なら無視。
   Stream<Post> streamTimeline(
     String key,
-    TimelineType type, {
+    TabType tab, {
     void Function(Object error, StackTrace stack)? onParseError,
     void Function(Object error, StackTrace stack)? onStreamError,
     void Function()? onReconnectExhausted,

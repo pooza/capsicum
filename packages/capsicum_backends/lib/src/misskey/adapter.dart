@@ -1871,7 +1871,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   @override
   Stream<Post> streamTimeline(
     String key,
-    TimelineType type, {
+    TabType tab, {
     void Function(Object error, StackTrace stack)? onParseError,
     void Function(Object error, StackTrace stack)? onStreamError,
     void Function()? onReconnectExhausted,
@@ -1894,7 +1894,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       channelFactory: timelineChannelFactory,
     );
     _streamings[key] = streaming;
-    return streaming.connect(type).map(_applyWordFilter);
+    return streaming.connect(tab).map(_applyWordFilter);
   }
 
   @override

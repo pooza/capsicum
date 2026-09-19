@@ -641,7 +641,11 @@ mixin TimelineLiveIngest<Arg>
   String get liveStreamKey;
 
   /// 何を購読するか。⚠ **系統ごとに違う 2 つ目**（#1098）。
-  TimelineType get liveStreamType;
+  ///
+  /// ⚠ [TimelineTab] だけでなく [HashtagTab] / [ListTab] / [ChannelTab] も返せる。
+  /// 対応するチャンネルを持たない組み合わせ（Mastodon のチャンネル・AND 指定の
+  /// タグ等）では、アダプタ側が空ストリームを返して購読を張らない。
+  TabType get liveStreamTab;
 
   /// 切断系イベントをサーバー別に切り分けるための観測タグ (#826)。
   /// ⚠ **挙動は host で分岐しない**（per-server workaround は入れない）。
@@ -844,7 +848,7 @@ mixin TimelineLiveIngest<Arg>
     final host = liveHost;
     final stream = adapter.streamTimeline(
       liveStreamKey,
-      liveStreamType,
+      liveStreamTab,
       onParseError: (e, st) {
         Sentry.addBreadcrumb(
           Breadcrumb(
@@ -1697,7 +1701,7 @@ class TimelineNotifier
       timelineContextKey(arg.account, TimelineTab(arg.type))!;
 
   @override
-  TimelineType get liveStreamType => arg.type;
+  TabType get liveStreamTab => TimelineTab(arg.type);
 
   @override
   String? get liveHost => arg.account?.host;

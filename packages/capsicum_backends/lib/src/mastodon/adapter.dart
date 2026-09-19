@@ -1419,7 +1419,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   @override
   Stream<Post> streamTimeline(
     String key,
-    TimelineType type, {
+    TabType tab, {
     void Function(Object error, StackTrace stack)? onParseError,
     void Function(Object error, StackTrace stack)? onStreamError,
     void Function()? onReconnectExhausted,
@@ -1428,9 +1428,9 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   }) {
     // 同じキーの前の購読だけを閉じる。他のキーには触らない (#1090)。
     _streamings.remove(key)?.dispose();
-    // DM timeline has no dedicated stream; avoid falling back to 'user'
-    // which would mix non-DM posts into the DM tab.
-    if (type == TimelineType.directMessages) return const Stream.empty();
+    // 対応するストリームが無いタブ (DM / チャンネル / AND 指定のタグ) では
+    // 接続そのものを作らない。'user' へ落とすと別の TL を隠れ購読する (#793)。
+    if (mastodonStreamTarget(tab) == null) return const Stream.empty();
     final token = client.accessToken;
     if (token == null) return const Stream.empty();
     final streaming = MastodonStreaming(
@@ -1445,7 +1445,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       channelFactory: timelineChannelFactory,
     );
     _streamings[key] = streaming;
-    return streaming.connect(type);
+    return streaming.connect(tab);
   }
 
   @override
