@@ -1,6 +1,9 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'account_manager_provider.dart';
+import 'channel_provider.dart';
+import 'hashtag_provider.dart';
 import 'list_provider.dart';
 import 'timeline_provider.dart';
 
@@ -29,3 +32,49 @@ final selectedHashtagProvider = Provider<String?>((ref) {
   final tab = ref.watch(selectedTabProvider);
   return tab is HashtagTab ? tab.tag : null;
 });
+
+/// デスクトップメニューの「タイムラインを更新」/ `Ctrl+R` (#841) が取り直すべき TL。
+///
+/// ⚠⚠ **チャンネルタブを忘れない** (#1157)。チャンネルは `ChannelTimelineView`
+/// という別の widget が描いており、本線の `RefreshIndicator` がマウントされない。
+/// 分岐が無いと `else` に落ちて **画面は変わらないのに裏で本線 TL を取り直す**。
+/// 失敗にもならないので気づけない（2026-09-19 にソースで実測）。
+///
+/// ⚠ 判定の軸は HomeScreen が body を描くときと同じ（[selectedHashtagProvider] /
+/// [selectedListProvider]）。ここを別の軸で書くと「出している TL と更新する TL が
+/// 違う」が再発する（#925 でそれを避けるために provider 層へ移した経緯がある）。
+final currentTimelineRefreshTargetProvider =
+    Provider<Refreshable<Future<TimelineState>>>(
+      (ref) {
+        final account = ref.watch(currentAccountKeyProvider);
+        final tab = ref.watch(selectedTabProvider);
+        if (tab is ChannelTab) {
+          return channelTimelineProvider((account: account, id: tab.id)).future;
+        }
+        final hashtag = ref.watch(selectedHashtagProvider);
+        if (hashtag != null) {
+          return hashtagTimelineProvider((
+            account: account,
+            spec: hashtag,
+          )).future;
+        }
+        final list = ref.watch(selectedListProvider);
+        if (list != null) {
+          return listTimelineProvider((account: account, id: list.id)).future;
+        }
+        return timelineProvider(ref.watch(currentTimelineKeyProvider)).future;
+      },
+      // ⚠ Riverpod は「読む先が dependencies を宣言していたら、それ自身を
+      // こちらの dependencies にも載せる」ことを要求する（assert で落ちる）。
+      dependencies: [
+        currentAccountProvider,
+        currentAccountKeyProvider,
+        currentTimelineKeyProvider,
+        listsProvider,
+        selectedListProvider,
+        channelTimelineProvider,
+        hashtagTimelineProvider,
+        listTimelineProvider,
+        timelineProvider,
+      ],
+    );

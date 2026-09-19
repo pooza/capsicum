@@ -968,22 +968,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     // データを残す。完了で必ず戻す。
                     setState(() => _pullRefreshing = true);
                     try {
-                      final Future<TimelineState> refreshed;
-                      if (hashtagKey != null) {
-                        refreshed = ref.refresh(
-                          hashtagTimelineProvider(hashtagKey).future,
-                        );
-                      } else if (listKey != null) {
-                        refreshed = ref.refresh(
-                          listTimelineProvider(listKey).future,
-                        );
-                      } else {
-                        refreshed = ref.refresh(
-                          timelineProvider(
-                            ref.read(currentTimelineKeyProvider),
-                          ).future,
-                        );
-                      }
+                      // ⚠ 更新先の判定は provider へ寄せてある (#1157)。ここと
+                      // メニュー / Ctrl+R の経路で分岐が二重化し、**チャンネル
+                      // タブだけ本線 TL を取り直していた**ため。
+                      final refreshed = ref.refresh(
+                        ref.read(currentTimelineRefreshTargetProvider),
+                      );
                       await refreshed;
                     } finally {
                       if (mounted) {
@@ -1114,32 +1104,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     }
     // TL がまだ build されていない（ローディング / エラーで RefreshIndicator が
     // 未マウント）ときは currentState が null。スピナーは出せないが更新は行う。
-    final selectedHashtag = ref.read(selectedHashtagProvider);
-    final selectedList = ref.read(selectedListProvider);
-    final accountKey = ref.read(currentAccountKeyProvider);
     _rearmMarkerRestore();
     if (mounted) setState(() => _pullRefreshing = true);
     try {
-      final Future<TimelineState> refreshed;
-      if (selectedHashtag != null) {
-        refreshed = ref.refresh(
-          hashtagTimelineProvider((
-            account: accountKey,
-            spec: selectedHashtag,
-          )).future,
-        );
-      } else if (selectedList != null) {
-        refreshed = ref.refresh(
-          listTimelineProvider((
-            account: accountKey,
-            id: selectedList.id,
-          )).future,
-        );
-      } else {
-        refreshed = ref.refresh(
-          timelineProvider(ref.read(currentTimelineKeyProvider)).future,
-        );
-      }
+      // ⚠⚠ **チャンネルタブはここへ必ず落ちてくる。**ChannelTimelineView が
+      // 描いており、上の RefreshIndicator がマウントされないため。以前は
+      // ハッシュタグ / リスト / 本線の 3 分岐しか無く、**画面は変わらないのに
+      // 裏で本線 TL を取り直していた** (#1157)。
+      final refreshed = ref.refresh(
+        ref.read(currentTimelineRefreshTargetProvider),
+      );
       await refreshed;
     } finally {
       if (mounted) setState(() => _pullRefreshing = false);
