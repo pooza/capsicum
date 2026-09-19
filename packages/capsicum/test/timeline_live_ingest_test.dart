@@ -65,7 +65,8 @@ class _LiveAdapter extends Mock
     TimelineQuery? query,
   }) async {
     getTimelineCalls++;
-    final page = getTimelineCalls > 1 ? (catchUpPage ?? const <Post>[])
+    final page = getTimelineCalls > 1
+        ? (catchUpPage ?? const <Post>[])
         : initialPosts;
     return TimelineResponse(
       posts: page,
@@ -141,7 +142,10 @@ void main() {
   });
 
   const key = (account: _meKey, type: TimelineType.home);
-  final streamKey = timelineContextKey(_meKey, const TimelineTab(TimelineType.home))!;
+  final streamKey = timelineContextKey(
+    _meKey,
+    const TimelineTab(TimelineType.home),
+  )!;
 
   ProviderContainer makeContainer(_LiveAdapter adapter) {
     final container = ProviderContainer(
@@ -154,9 +158,7 @@ void main() {
   }
 
   /// 画面が watch し続けている状態を作り、初回取得を待つ。
-  Future<TimelineNotifier> start(
-    ProviderContainer container,
-  ) async {
+  Future<TimelineNotifier> start(ProviderContainer container) async {
     container.listen(timelineProvider(key), (_, _) {}, fireImmediately: true);
     await container.read(timelineProvider(key).future);
     return container.read(timelineProvider(key).notifier);
@@ -177,10 +179,7 @@ void main() {
       adapter.emit(streamKey, _post('103'));
       await settle();
 
-      expect(
-        read(container).posts.map((p) => p.id),
-        ['103', '102', '101'],
-      );
+      expect(read(container).posts.map((p) => p.id), ['103', '102', '101']);
     });
 
     test('⚠ 古い id が流れてきても降順に差し込まれる（ブロック prepend ではない）', () async {
@@ -321,10 +320,12 @@ void main() {
       await settle();
       await settle();
 
-      expect(
-        read(container).posts.map((p) => p.id),
-        ['104', '103', '102', '101'],
-      );
+      expect(read(container).posts.map((p) => p.id), [
+        '104',
+        '103',
+        '102',
+        '101',
+      ]);
     });
 
     test('⚠ 補完で取れた投稿のうち、既知（since 以下）のものは混ざらない', () async {
