@@ -576,6 +576,166 @@ mixin TimelineListMutations<Arg>
   }
 }
 
+/// 本線 TL のライブ購読の「取り込み側」(#1098)。
+///
+/// streaming で届いた投稿を一覧へ入れるか未表示バッファへ積むか、重複とフィルタ
+/// をどう弾くか、接続状態をどう state へ反映するか —— **系統 (home / hashtag /
+/// list / channel) に依存しない部分**をここに集める。ハッシュタグ / リスト /
+/// チャンネルの各 TL にライブ購読を広げる (#1098・B-5) にあたり、[TimelineNotifier]
+/// だけが持っていた作りを共有できる形にするのが目的。
+///
+/// ⚠ **購読の張り方（どのチャンネルへ何のパラメータで繋ぐか）はここに含めない。**
+/// 系統ごとに違うので、[TimelineNotifier] 側に残している。
+///
+/// ⚠⚠ **[TimelineListMutations] と同じく `timeline_provider.dart` に同居させる。**
+/// [_pendingPosts] / [_dropPending] は削除・ブロック (#887) と楽観挿入 (#717 /
+/// #814) からも触られており、別ライブラリへ出すとこの 2 箇所が public な口を
+/// 通ることになって、**移動のはずの変更が API の変更に化ける**。
+mixin TimelineLiveIngest<Arg>
+    on AutoDisposeFamilyAsyncNotifier<TimelineState, Arg> {
+  /// スクロール中に届いた未表示の新着 (#296)。「新着 N 件」を開くまで一覧へは
+  /// 出さない。⚠ **本線以外からも触られる**: 削除 / ブロック (#887) は
+  /// [_dropPending] で刈り、楽観挿入 (#717 / #814) は重複判定にここを見る。
+  final List<Post> _pendingPosts = [];
+  bool _isNearTop = true;
+
+  /// 既知の最新投稿 id（先頭）。streaming 再接続時のギャップ補完 (#781) で
+  /// `since_id` の起点に使う。state.valueOrNull を直接読むと build / 接続コール
+  /// バックのレースで null を踏みうるため、prepend のたびにここへ更新して保持する。
+  String? _newestKnownId;
+
+  /// ギャップ補完 (#781) の多重実行ガード。`live` 遷移が連続しても 1 本に絞る。
+  bool _catchUpInProgress = false;
+
+  /// 切断検知回数・直近切断時刻 (#782)。インジケータへ正直に出すため notifier 側
+  /// で数え、state に反映する。build() でリセット。
+  int _reconnectCount = 0;
+  DateTime? _lastDisconnectedAt;
+
+  /// streaming 接続状態の真実の値 (#714)。build() 中（state がまだ
+  /// AsyncLoading で valueOrNull が null）に live 等が発火しても取りこぼさない
+  /// よう、callback はここへ常時記録し、build() の返り値にもこの値を反映する。
+  StreamConnectionState _streamConnectionState =
+      StreamConnectionState.connecting;
+
+  /// build() のたびにライブ購読まわりの状態を初期化する。
+  ///
+  /// ⚠ **前の文脈（アカウント / 種別）の新着を [flushPending] 経由で次の TL へ
+  /// 漏らさないため**、一覧そのものより先に捨てる。接続状態・ギャップ補完の
+  /// 起点・切断カウンタも同じ理由で build() が持ち越さない。
+  void resetLiveIngestState() {
+    _pendingPosts.clear();
+    _isNearTop = true;
+    _streamConnectionState = StreamConnectionState.connecting;
+    _newestKnownId = null;
+    _catchUpInProgress = false;
+    _reconnectCount = 0;
+    _lastDisconnectedAt = null;
+  }
+
+  /// 接続ライフサイクルを notifier フィールドと（データがあれば）state に
+  /// 反映する。build() 中に onConnectionState が取りこぼさないための常時記録と
+  /// 同じ理由で、まずフィールドへ、次に state があれば更新する。
+  void _setStreamConnectionState(StreamConnectionState connState) {
+    _streamConnectionState = connState;
+    final current = state.valueOrNull;
+    if (current == null) return;
+    state = AsyncData(current.copyWith(streamConnectionState: connState));
+  }
+
+  /// Called by the UI when the user's scroll position changes.
+  void setNearTop(bool nearTop) {
+    _isNearTop = nearTop;
+    if (nearTop) flushPending();
+  }
+
+  /// Flush queued posts into the timeline.
+  void flushPending() {
+    if (_pendingPosts.isEmpty) return;
+    final current = state.valueOrNull;
+    if (current == null) return;
+    // pending は順不同で積まれうる (#781: streaming 単発とギャップ補完バッチが
+    // 混在)。id でデデュープしつつ降順に整列して取り込む。
+    final seen = <String>{};
+    final merged = <Post>[];
+    for (final post in [..._pendingPosts, ...current.posts]) {
+      if (seen.add(post.id)) merged.add(post);
+    }
+    merged.sort((a, b) => comparePostIdDesc(a.id, b.id));
+    _pendingPosts.clear();
+    if (merged.isNotEmpty) _newestKnownId = merged.first.id;
+    state = AsyncData(current.copyWith(posts: merged, pendingCount: 0));
+  }
+
+  /// streaming 受信とギャップ補完 (#781) の共通取り込み口。
+  ///
+  /// フィルタ (hide / hideLivecure) と重複排除 (表示中 + pending + バッチ内) を
+  /// 単発受信・バッチ補完で同一に適用する。[newPosts] は **新しい順**（先頭が
+  /// 最新）で渡す。near-top なら先頭へブロック prepend、スクロール中なら
+  /// streaming と同じく pending キューへ積んでジャンプを防ぐ。
+  ///
+  /// 戻り値は実際に取り込んだ（フィルタ・重複排除を通過した）件数。ギャップ
+  /// 補完の実効を観測する (#784) のに使う。
+  int _ingestLivePosts(List<Post> newPosts) {
+    if (newPosts.isEmpty) return 0;
+    final current = state.valueOrNull;
+    if (current == null) return 0;
+    final hideLivecure = ref.read(hideLivecureProvider);
+    final existingIds = {for (final p in current.posts) p.id};
+    final pendingIds = {for (final p in _pendingPosts) p.id};
+    final accepted = <Post>[];
+    final acceptedIds = <String>{};
+    for (final post in newPosts) {
+      if (post.filterAction == FilterAction.hide) continue;
+      if (hideLivecure && hasLivecureTag(post)) continue;
+      if (existingIds.contains(post.id) || pendingIds.contains(post.id)) {
+        continue;
+      }
+      if (!acceptedIds.add(post.id)) continue; // バッチ内重複
+      accepted.add(post);
+    }
+    if (accepted.isEmpty) return 0;
+
+    if (_isNearTop) {
+      // accepted を現在リストへマージし id 降順を保つ。単発 streaming（常に最新）
+      // では実質 prepend だが、ギャップ補完バッチが streaming の prepend と
+      // 競合（fetch 待ちの間に新しい投稿が先に載る）しても順序が崩れないよう、
+      // ブロック prepend ではなくマージ＋ソートにする (#781)。タイムラインは
+      // 元々 id 降順なのでソートはほぼ冪等で、件数も数百どまり。
+      final merged = [...accepted, ...current.posts]
+        ..sort((a, b) => comparePostIdDesc(a.id, b.id));
+      _newestKnownId = merged.first.id;
+      state = AsyncData(current.copyWith(posts: merged));
+    } else {
+      // User is scrolling — queue to avoid jumping. flushPending で id 降順に
+      // 整列して取り込むため、ここでは順不同で積んでよい。
+      _pendingPosts.addAll(accepted);
+      _newestKnownId = _maxPostId(_newestKnownId, accepted.first.id);
+      state = AsyncData(current.copyWith(pendingCount: _pendingPosts.length));
+    }
+    return accepted.length;
+  }
+
+  /// 2 つの id のうち新しい（降順で前に来る）方を返す (#781)。
+  String _maxPostId(String? a, String b) {
+    if (a == null) return b;
+    return comparePostIdDesc(a, b) <= 0 ? a : b;
+  }
+
+  /// 未表示バッファ [_pendingPosts] から条件に合う投稿を落とし、新しい
+  /// `pendingCount` を返す。
+  ///
+  /// TL 上部から離れている間、streaming の新着は表示中の一覧ではなく
+  /// [_pendingPosts] に溜まる（「新着 N 件」で開くまで出さない、#296）。
+  /// 一覧からだけ消してここを掃除しないと、**削除済み投稿やブロックした相手の
+  /// 投稿が「新着 N 件」を開いた瞬間に現れる**。ブロックは安全のための操作なので
+  /// 「見えているどの TL からも消える」保証 (#887) を穴のない形にする。
+  int _dropPending(bool Function(Post) matches) {
+    _pendingPosts.removeWhere(matches);
+    return _pendingPosts.length;
+  }
+}
+
 /// Notifier that manages paginated timeline fetching with optional streaming.
 ///
 /// ⚠ **`(アカウント, 種別)` ごとに別インスタンス** (#1087)。以前は family を持たない
@@ -583,15 +743,14 @@ mixin TimelineListMutations<Arg>
 /// 今は切替で**別のインスタンスへ移り**、前のものは誰も watch しなくなって
 /// autoDispose で破棄される（`autoDispose` の扱い自体は変えていない）。
 class TimelineNotifier
-    extends AutoDisposeFamilyAsyncNotifier<TimelineState, TimelineKey> {
+    extends AutoDisposeFamilyAsyncNotifier<TimelineState, TimelineKey>
+    with TimelineLiveIngest<TimelineKey> {
   static const _pageSize = 20;
 
   /// ホーム TL の初回描画を 1 プロセス 1 回だけ計測するためのフラグ (#716)。
   /// AutoDispose で Notifier は作り直されるため static に持つ。
   static bool _homeFirstPaintReported = false;
   StreamSubscription<Post>? _streamSubscription;
-  final List<Post> _pendingPosts = [];
-  bool _isNearTop = true;
 
   /// provider が破棄済みか (#890)。キャッシュ先出しの裏で走る初回取得が、
   /// 破棄後に state を触らないようにするための番兵。build() のたびに false へ
@@ -625,14 +784,6 @@ class TimelineNotifier
     _startupCacheServed = false;
     _homeFirstPaintReported = false;
   }
-
-  /// 既知の最新投稿 id（先頭）。streaming 再接続時のギャップ補完 (#781) で
-  /// `since_id` の起点に使う。state.valueOrNull を直接読むと build / 接続コール
-  /// バックのレースで null を踏みうるため、prepend のたびにここへ更新して保持する。
-  String? _newestKnownId;
-
-  /// ギャップ補完 (#781) の多重実行ガード。`live` 遷移が連続しても 1 本に絞る。
-  bool _catchUpInProgress = false;
 
   /// キャッシュ先出し中で、裏の初回取得がまだ state を差し替えていない (#921)。
   /// この窓（実測 p50 475ms / p75 639ms）に行われた操作を記録し、差し替え時に
@@ -676,17 +827,6 @@ class TimelineNotifier
     _windowBlockedUserIds.clear();
   }
 
-  /// 切断検知回数・直近切断時刻 (#782)。インジケータへ正直に出すため notifier 側
-  /// で数え、state に反映する。build() でリセット。
-  int _reconnectCount = 0;
-  DateTime? _lastDisconnectedAt;
-
-  /// streaming 接続状態の真実の値 (#714)。build() 中（state がまだ
-  /// AsyncLoading で valueOrNull が null）に live 等が発火しても取りこぼさない
-  /// よう、callback はここへ常時記録し、build() の返り値にもこの値を反映する。
-  StreamConnectionState _streamConnectionState =
-      StreamConnectionState.connecting;
-
   /// このインスタンスが担当するアカウントのアダプタ（[adapterForTimelineKey]）。
   DecentralizedBackendAdapter? _adapterFor(Account? current) =>
       adapterForTimelineKey(current, arg.account);
@@ -696,18 +836,12 @@ class TimelineNotifier
     // build() reruns when the serving account's adapter changes. Reset
     // stream-side state so queued posts from a previous timeline context cannot
     // leak into the new one via flushPending().
-    _pendingPosts.clear();
-    _isNearTop = true;
+    resetLiveIngestState();
     _disposed = false;
     // 前の文脈の窓の記録を持ち越さない (#921)。
     _resetSnapshotWindow(awaiting: false);
     _backgroundInitialLoad = null;
     final generation = ++_buildGeneration;
-    _streamConnectionState = StreamConnectionState.connecting;
-    _newestKnownId = null;
-    _catchUpInProgress = false;
-    _reconnectCount = 0;
-    _lastDisconnectedAt = null;
 
     final type = key.type;
     final contextKey = timelineContextKey(key.account, TimelineTab(type));
@@ -1271,16 +1405,6 @@ class TimelineNotifier
   DateTime? _lastDisconnectCapture;
   static const _captureThrottle = Duration(seconds: 60);
 
-  /// 接続ライフサイクルを notifier フィールドと（データがあれば）state に
-  /// 反映する。build() 中に onConnectionState が取りこぼさないための常時記録と
-  /// 同じ理由で、まずフィールドへ、次に state があれば更新する。
-  void _setStreamConnectionState(StreamConnectionState connState) {
-    _streamConnectionState = connState;
-    final current = state.valueOrNull;
-    if (current == null) return;
-    state = AsyncData(current.copyWith(streamConnectionState: connState));
-  }
-
   /// ライブ更新トグルを OFF にしたときの接続解除 (#904)。build() を再走させず
   /// WebSocket の購読だけを止め、インジケータを disabled にする。
   void _stopStreaming(StreamSupport adapter) {
@@ -1489,61 +1613,6 @@ class TimelineNotifier
     );
   }
 
-  /// streaming 受信とギャップ補完 (#781) の共通取り込み口。
-  ///
-  /// フィルタ (hide / hideLivecure) と重複排除 (表示中 + pending + バッチ内) を
-  /// 単発受信・バッチ補完で同一に適用する。[newPosts] は **新しい順**（先頭が
-  /// 最新）で渡す。near-top なら先頭へブロック prepend、スクロール中なら
-  /// streaming と同じく pending キューへ積んでジャンプを防ぐ。
-  ///
-  /// 戻り値は実際に取り込んだ（フィルタ・重複排除を通過した）件数。ギャップ
-  /// 補完の実効を観測する (#784) のに使う。
-  int _ingestLivePosts(List<Post> newPosts) {
-    if (newPosts.isEmpty) return 0;
-    final current = state.valueOrNull;
-    if (current == null) return 0;
-    final hideLivecure = ref.read(hideLivecureProvider);
-    final existingIds = {for (final p in current.posts) p.id};
-    final pendingIds = {for (final p in _pendingPosts) p.id};
-    final accepted = <Post>[];
-    final acceptedIds = <String>{};
-    for (final post in newPosts) {
-      if (post.filterAction == FilterAction.hide) continue;
-      if (hideLivecure && _hasLivecureTag(post)) continue;
-      if (existingIds.contains(post.id) || pendingIds.contains(post.id)) {
-        continue;
-      }
-      if (!acceptedIds.add(post.id)) continue; // バッチ内重複
-      accepted.add(post);
-    }
-    if (accepted.isEmpty) return 0;
-
-    if (_isNearTop) {
-      // accepted を現在リストへマージし id 降順を保つ。単発 streaming（常に最新）
-      // では実質 prepend だが、ギャップ補完バッチが streaming の prepend と
-      // 競合（fetch 待ちの間に新しい投稿が先に載る）しても順序が崩れないよう、
-      // ブロック prepend ではなくマージ＋ソートにする (#781)。タイムラインは
-      // 元々 id 降順なのでソートはほぼ冪等で、件数も数百どまり。
-      final merged = [...accepted, ...current.posts]
-        ..sort((a, b) => comparePostIdDesc(a.id, b.id));
-      _newestKnownId = merged.first.id;
-      state = AsyncData(current.copyWith(posts: merged));
-    } else {
-      // User is scrolling — queue to avoid jumping. flushPending で id 降順に
-      // 整列して取り込むため、ここでは順不同で積んでよい。
-      _pendingPosts.addAll(accepted);
-      _newestKnownId = _maxPostId(_newestKnownId, accepted.first.id);
-      state = AsyncData(current.copyWith(pendingCount: _pendingPosts.length));
-    }
-    return accepted.length;
-  }
-
-  /// 2 つの id のうち新しい（降順で前に来る）方を返す (#781)。
-  String _maxPostId(String? a, String b) {
-    if (a == null) return b;
-    return comparePostIdDesc(a, b) <= 0 ? a : b;
-  }
-
   /// WS が live になった時点で、未接続の窓に流れて取りこぼした投稿を
   /// `since_id` で取り直してマージする (#781)。
   ///
@@ -1613,30 +1682,6 @@ class TimelineNotifier
     }
   }
 
-  /// Called by the UI when the user's scroll position changes.
-  void setNearTop(bool nearTop) {
-    _isNearTop = nearTop;
-    if (nearTop) flushPending();
-  }
-
-  /// Flush queued posts into the timeline.
-  void flushPending() {
-    if (_pendingPosts.isEmpty) return;
-    final current = state.valueOrNull;
-    if (current == null) return;
-    // pending は順不同で積まれうる (#781: streaming 単発とギャップ補完バッチが
-    // 混在)。id でデデュープしつつ降順に整列して取り込む。
-    final seen = <String>{};
-    final merged = <Post>[];
-    for (final post in [..._pendingPosts, ...current.posts]) {
-      if (seen.add(post.id)) merged.add(post);
-    }
-    merged.sort((a, b) => comparePostIdDesc(a.id, b.id));
-    _pendingPosts.clear();
-    if (merged.isNotEmpty) _newestKnownId = merged.first.id;
-    state = AsyncData(current.copyWith(posts: merged, pendingCount: 0));
-  }
-
   static bool _hasLivecureTag(Post post) => hasLivecureTag(post);
 
   /// Replace a post in the list by ID (e.g. after reacting).
@@ -1668,19 +1713,6 @@ class TimelineNotifier
         pendingCount: _dropPending((p) => p.id == id),
       ),
     );
-  }
-
-  /// 未表示バッファ [_pendingPosts] から条件に合う投稿を落とし、新しい
-  /// `pendingCount` を返す。
-  ///
-  /// TL 上部から離れている間、streaming の新着は表示中の一覧ではなく
-  /// [_pendingPosts] に溜まる（「新着 N 件」で開くまで出さない、#296）。
-  /// 一覧からだけ消してここを掃除しないと、**削除済み投稿やブロックした相手の
-  /// 投稿が「新着 N 件」を開いた瞬間に現れる**。ブロックは安全のための操作なので
-  /// 「見えているどの TL からも消える」保証 (#887) を穴のない形にする。
-  int _dropPending(bool Function(Post) matches) {
-    _pendingPosts.removeWhere(matches);
-    return _pendingPosts.length;
   }
 
   /// 自分の投稿を即座に**現在アクティブな TL** の先頭へ楽観的挿入する (#717)。
