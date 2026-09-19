@@ -9,6 +9,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../util/deck_layout.dart';
 import '../util/deck_navigation.dart';
+import '../util/mouse_drag_scroll_behavior.dart';
 import '../util/provider_scope_carrier.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/deck_column_view.dart';
@@ -198,7 +199,15 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
     ];
     _disposeUnused(used);
 
-    return Scaffold(
+    // ⚠⚠ デスクトップでは引っ張って更新ができなかった (#1157)。マウスと
+    // トラックパッドは既定の dragDevices に入っておらず、2 本指スクロールは
+    // ポインタスクロールとして届くので **RefreshIndicator が起動しない**。
+    // カラムには引っ張る以外の再読み込みの入口も無いので、実機検証 (#1098) では
+    // 「カラムを閉じて足し直す」で代替するしかなかった。
+    // ⚠ **設定 (#574) に従う**（2026-09-19 pooza 判断）。既定の OFF では
+    // トラックパッド 2 本指スワイプの既存挙動をそのまま維持する。
+    final mouseDragEnabled = ref.watch(mouseDragScrollProvider);
+    final scaffold = Scaffold(
       appBar: AppBar(
         title: const Text('デッキ'),
         actions: [
@@ -260,5 +269,11 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
               ),
       ),
     );
+    return mouseDragEnabled
+        ? ScrollConfiguration(
+            behavior: const MouseDragScrollBehavior(),
+            child: scaffold,
+          )
+        : scaffold;
   }
 }
