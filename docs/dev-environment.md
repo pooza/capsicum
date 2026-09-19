@@ -233,6 +233,21 @@ flutter run -d <device-id> --dart-define=RELAY_SECRET=$RELAY_SECRET
 | `TOKEN=$(...)` の変数代入から始める | トークンは**単独のコマンドで 1 回読んで**、以降のコマンドへ直接埋める |
 | `pgrep -f <パターン>` / `pkill -f <パターン>` をそのまま叩く | **`ps -u "$(id -u)" -o pid=,cmd=` + `grep '[p]attern'`**（bracket trick）。⚠⚠ **`-f` は全コマンドラインを見るので、そのパターン文字列を含む自分のシェルにも一致する** —— `pgrep` は毎回違う PID を返して「プロセスが増殖している」ように見え、`pkill` は**自分を殺す**（2026-09-13 に両方踏んだ）。対象を絞るときは**プロセス名（`pgrep -x`）と併せて二重に**当てる。⚠ `comm` は **15 文字で切り詰められる**（`gnome-keyring-daemon` は `gnome-keyring-d`）ので、`-x` には切り詰め後の名前を渡す |
 
+### ⚠⚠ 検査コマンドをパイプに繋がない（exit code が消える）
+
+**2026-09-19 に、`dart analyze` の失敗を見落としたままコミットした**（push 前に気づいて直した）。
+
+```sh
+# ⚠ これは常に成功する。パイプラインの exit code は最後の tail のもの
+dart analyze packages 2>&1 | tail -2 && git commit ...
+```
+
+⚠⚠ **CI は `dart analyze --fatal-infos` なので、info 1 件でも赤になる。**このときは `unnecessary_brace_in_string_interps` が 3 件出ていたが、`| tail -2` で握り潰されて `git commit` まで通った。
+
+- **合否を見るコマンドは、そのまま実行する**（出力が長くても `tail` に繋がない）。長さが気になるなら `dart analyze packages; echo "exit=$?"` のように**終了コードを明示的に出す**
+- ⚠ **`&&` で後続に繋ぐときは特に危ない。**「検査 → コミット」を 1 行にすると、検査が実質無効になっていても気づけない
+- ⚠ `flutter test` も同じ。**`| tail -3` で「All tests passed!」だけを見る書き方は、失敗時に行が流れて見落とす**ので、失敗の有無は終了コードで確かめる
+
 ### ⚠⚠ `cd` は次のツール呼び出しにも残る（外部リポジトリへの誤爆を起こした）
 
 **2026-09-04 に、上流の `mastodon/mastodon` へコメントを投稿する誤爆を起こした。**約 1 分で削除したが、**公開リポジトリに他プロジェクトのメモが載った**。
