@@ -34,6 +34,10 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
     // Sync server lists / followed channels into tab config after the
     // current frame, and again whenever each set changes.
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // ⚠ 開くたびに取り直す (#1156)。デッキのカラム編集シートと同じ理由で、
+      // followedChannelsProvider は自分では古くならない。
+      ref.invalidate(listsProvider);
+      ref.invalidate(followedChannelsProvider);
       _syncLists();
       _syncChannels();
       ref.listenManual(listsProvider, (_, _) {

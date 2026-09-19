@@ -34,6 +34,21 @@ class _DeckColumnsSheetState extends ConsumerState<DeckColumnsSheet> {
   /// カラムを足すアカウント。null なら現在のアカウント。
   AccountKey? _selectedAccount;
 
+  @override
+  void initState() {
+    super.initState();
+    // ⚠⚠ 開くたびにリスト / チャンネルを取り直す (#1156)。followedChannelsProvider
+    // は autoDispose を付けられない（[visibleTabsProvider] が常時 watch している）
+    // ので、放っておくと **アプリを再起動するまで更新されない**。サーバーで
+    // チャンネルをフォローしても候補に出てこなかった。
+    // ⚠ build の外で呼ぶ（provider の変更を build 中に起こさない）。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.invalidate(listsProvider);
+      ref.invalidate(followedChannelsProvider);
+    });
+  }
+
   Widget _sectionHeader(ThemeData theme, String title) =>
       _DeckSheetSectionHeader(title: title);
 
@@ -289,11 +304,15 @@ class _DeckColumnCandidatesState extends ConsumerState<_DeckColumnCandidates> {
     _hashtagController.clear();
   }
 
-  /// 足せるカラムの候補。
+  /// すぐ出せる候補（サーバーへ問い合わせずに決まるもの）。
   ///
   /// ⚠ **メッセージは出さない。**フィードを持たない遷移トリガー (#439) なので
   /// カラムにならない。
-  List<TabType> _candidates() {
+  ///
+  /// ⚠⚠ **リストとチャンネルはここに混ぜない。**取得を伴うので、読み込み中 /
+  /// 失敗 / 0 件を出し分ける必要がある (#1155)。混ぜると `valueOrNull ?? []` で
+  /// 3 つとも「行が無い」に潰れ、**入口が無いように見える**。
+  List<TabType> _localCandidates() {
     final adapter = ref.watch(currentAdapterProvider);
     final storageKey = ref.watch(currentAccountKeyProvider)?.toStorageKey();
     final supported =
@@ -305,34 +324,95 @@ class _DeckColumnCandidatesState extends ConsumerState<_DeckColumnCandidates> {
             for (final e in ref.watch(tabConfigProvider(storageKey)))
               if (e.tab is HashtagTab) e.tab,
           ];
-    final lists = adapter is ListSupport
-        ? ref.watch(listsProvider).valueOrNull ?? const <PostList>[]
-        : const <PostList>[];
-    final channels = adapter is ChannelSupport
-        ? ref.watch(followedChannelsProvider).valueOrNull ?? const <Channel>[]
-        : const <Channel>[];
     return [
       for (final type in TimelineType.values)
         if (supported.contains(type)) TimelineTab(type),
       const NotificationsTab(),
       const AnnouncementsTab(),
       ...pinnedHashtags,
-      for (final list in lists) ListTab(id: list.id, name: list.title),
-      for (final ch in channels) ChannelTab(id: ch.id, name: ch.name),
     ];
   }
 
+  /// 取得を伴う候補の状態表示 (#1155)。
+  ///
+  /// ⚠ **候補一覧ごと待たせない。**種別・通知・お知らせ・ハッシュタグは即座に
+  /// 選べるまま、この節だけが読み込み中 / 失敗を出す。
+  List<Widget> _asyncCandidateSection<T>({
+    required String noun,
+    required AsyncValue<List<T>> async,
+    required TabType Function(T) toTab,
+    required VoidCallback onRetry,
+  }) {
+    return async.when(
+      data: (items) => items.isEmpty
+          ? [
+              ListTile(
+                key: ValueKey('candidates-empty-$noun'),
+                enabled: false,
+                leading: const Icon(Icons.remove),
+                title: Text('$nounがありません'),
+              ),
+            ]
+          : [for (final item in items) _candidateTile(toTab(item))],
+      // ⚠ 「読み込み中」と「0 件」を必ず書き分ける。どちらも行が無いと、
+      // 待てば出るのか無いのかが利用者に分からない。
+      loading: () => [
+        ListTile(
+          key: ValueKey('candidates-loading-$noun'),
+          enabled: false,
+          leading: const SizedBox(
+            width: 24,
+            height: 24,
+            child: Center(
+              child: SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          ),
+          title: Text('$nounを読み込んでいます…'),
+        ),
+      ],
+      // ⚠ 失敗したら再試行の手段を出す。無いとシートを開き直すしかない。
+      error: (_, _) => [
+        ListTile(
+          key: ValueKey('candidates-error-$noun'),
+          leading: const Icon(Icons.error_outline),
+          title: Text('$nounを取得できませんでした'),
+          trailing: TextButton(onPressed: onRetry, child: const Text('再試行')),
+        ),
+      ],
+    );
+  }
+
+  Widget _candidateTile(TabType tab) => ListTile(
+    key: ValueKey('candidate-${tab.toIdentityKey()}'),
+    leading: Icon(_tabIcon(tab)),
+    title: Text(_labelInScope(ref, tab)),
+    trailing: const Icon(Icons.add),
+    onTap: () => _add(tab),
+  );
+
   @override
   Widget build(BuildContext context) {
+    final adapter = ref.watch(currentAdapterProvider);
     return Column(
       children: [
-        for (final tab in _candidates())
-          ListTile(
-            key: ValueKey('candidate-${tab.toIdentityKey()}'),
-            leading: Icon(_tabIcon(tab)),
-            title: Text(_labelInScope(ref, tab)),
-            trailing: const Icon(Icons.add),
-            onTap: () => _add(tab),
+        for (final tab in _localCandidates()) _candidateTile(tab),
+        if (adapter is ListSupport)
+          ..._asyncCandidateSection<PostList>(
+            noun: 'リスト',
+            async: ref.watch(listsProvider),
+            toTab: (l) => ListTab(id: l.id, name: l.title),
+            onRetry: () => ref.invalidate(listsProvider),
+          ),
+        if (adapter is ChannelSupport)
+          ..._asyncCandidateSection<Channel>(
+            noun: 'チャンネル',
+            async: ref.watch(followedChannelsProvider),
+            toTab: (c) => ChannelTab(id: c.id, name: c.name),
+            onRetry: () => ref.invalidate(followedChannelsProvider),
           ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),

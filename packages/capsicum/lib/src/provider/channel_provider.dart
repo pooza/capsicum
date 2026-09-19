@@ -159,12 +159,18 @@ final channelTimelineProvider = AsyncNotifierProvider.autoDispose
 
 /// 現在アカウントがフォロー中のチャンネル一覧 (#334 タブ管理から参照)。
 /// ChannelSupport を持たない adapter では空配列を返す。
+/// フォロー中のチャンネル。
+///
+/// ⚠ **失敗を握り潰さない** (#1156)。以前は `catch` で空を返しており、**取得に
+/// 失敗しても「フォローしているチャンネルが 0 件」と同じ**になっていた。候補や
+/// タブに何も出ないのに理由が分からず、再試行の機会も無かった。読む側は
+/// `valueOrNull` で受けているので、エラーは「未確定」として扱われる
+/// （[visibleTabsProvider] は capability 判定だけにフォールバックする）。
+///
+/// ⚠ `autoDispose` を付けていないのは [visibleTabsProvider] が常時 watch して
+/// いるため。**取り直しは明示的に `ref.invalidate` で行う**（シートを開いたとき）。
 final followedChannelsProvider = FutureProvider<List<Channel>>((ref) async {
   final adapter = ref.watch(currentAdapterProvider);
   if (adapter is! ChannelSupport) return const [];
-  try {
-    return await (adapter as ChannelSupport).getFollowedChannels();
-  } catch (_) {
-    return const [];
-  }
+  return (adapter as ChannelSupport).getFollowedChannels();
 }, dependencies: [currentAdapterProvider]);
