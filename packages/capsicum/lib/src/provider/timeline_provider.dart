@@ -633,6 +633,31 @@ mixin TimelineLiveIngest<Arg>
     _lastDisconnectedAt = null;
   }
 
+  /// アダプタ側の購読キー (#1089 / #1090)。TL の文脈キー
+  /// （`<アカウント>|<タブ>`）をそのまま使う。
+  ///
+  /// ⚠ 購読を張る / 閉じるのはアダプタを得られたとき（＝キーのアカウントが
+  /// 現在のアカウントと一致したとき）だけなので、null にはならない。
+  String get liveStreamKey;
+
+  /// 何を購読するか。⚠ **系統ごとに違う 2 つ目**（#1098）。
+  TimelineType get liveStreamType;
+
+  /// 切断系イベントをサーバー別に切り分けるための観測タグ (#826)。
+  /// ⚠ **挙動は host で分岐しない**（per-server workaround は入れない）。
+  String? get liveHost;
+
+  /// ギャップ補完 (#781) の 1 ページを取りに行く。
+  ///
+  /// ⚠ **系統 (home / hashtag / list / channel) ごとに違うのはここだけ**なので、
+  /// 実装側の口にしている (#1098)。返すのは **新しい順**の 1 ページで、
+  /// 取りに行けない（担当アカウントのアダプタが無い等）なら null を返す。
+  Future<CatchUpPage?> fetchCatchUpPage(String? maxId);
+
+  /// ギャップ補完で 1 ページに要求する件数。満ページ未満を「これ以上古い投稿が
+  /// 無い」の判定に使うため、実際の取得件数と一致させること。
+  int get catchUpPageSize;
+
   /// 接続ライフサイクルを notifier フィールドと（データがあれば）state に
   /// 反映する。build() 中に onConnectionState が取りこぼさないための常時記録と
   /// 同じ理由で、まずフィールドへ、次に state があれば更新する。
@@ -734,6 +759,280 @@ mixin TimelineLiveIngest<Arg>
     _pendingPosts.removeWhere(matches);
     return _pendingPosts.length;
   }
+
+  /// WS が live になった時点で、未接続の窓に流れて取りこぼした投稿を
+  /// `since_id` で取り直してマージする (#781)。
+  ///
+  /// 初回 REST スナップショット〜WS live、および各再接続の切断窓に作られた
+  /// 投稿はどの経路でも届かず永久欠落するため、live 遷移ごとにここで埋める。
+  /// [_newestKnownId] を起点に、ギャップが 1 ページを超える場合は max_id で
+  /// 下方向にページングして [kMaxVisibilityPageFetches] ページまで遡る。
+  ///
+  /// 初期可視リストが空（新規/空 TL・全件フィルタ・page-cap）で [_newestKnownId]
+  /// が null のときも、REST→live 窓に作られた投稿を取りこぼさないよう最新ページ
+  /// 1 枚だけ取得してシードする (Codex #783)。
+  Future<void> _catchUpSinceTop() async {
+    if (_catchUpInProgress) return;
+    final since = _newestKnownId;
+    // await 中にアカウント/種別が切り替わると build() が rerun して notifier が
+    // 新文脈に作り直されるが、この future はキャンセルされない。旧文脈で取得した
+    // 投稿を新文脈へマージしないよう、開始時の contextKey を捕捉し ingest 直前に
+    // 照合する (#758 / _deferIsCatEnrich と同型・Codex #783)。
+    final capturedContextKey = state.valueOrNull?.contextKey;
+    _catchUpInProgress = true;
+    try {
+      final gap = await collectCatchUpGap(
+        since: since,
+        pageSize: catchUpPageSize,
+        maxFetches: kMaxVisibilityPageFetches,
+        fetch: (maxId) async {
+          final page = await fetchCatchUpPage(maxId);
+          // 取りに行けない（担当アカウントのアダプタが無い等）ときは空ページを
+          // 返す。rawCount が pageSize 未満なので collectCatchUpGap は 1 回で
+          // 打ち切り、gap は空のまま下の早期 return に落ちる。
+          return page ?? (posts: const <Post>[], rawCount: 0, rawLastId: null);
+        },
+      );
+
+      if (gap.isEmpty) return;
+      // await 中に文脈が変わっていたら破棄（旧文脈の投稿の混入・_newestKnownId
+      // 汚染を防ぐ）。_ingestLivePosts は同期なので照合後の混入はない。
+      if (state.valueOrNull?.contextKey != capturedContextKey) return;
+      // getTimeline は新しい順・ページも新しい方から取得するため gap は新しい順。
+      // 取り込み時に再度 state を読み、最新 state へマージする。
+      final recovered = _ingestLivePosts(gap);
+      // 再接続のたびに何件を補完できたかを観測する (#784 item 3)。resilience
+      // (#784) × catch-up (#781) の実効を本番で追跡するための軽量シグナル。
+      // PII を載せない（件数のみ）。
+      if (recovered > 0) {
+        Sentry.addBreadcrumb(
+          Breadcrumb(
+            message: 'timeline.stream.catchup',
+            category: 'timeline.stream',
+            level: SentryLevel.info,
+            data: {'recovered': recovered, 'fetched': gap.length},
+          ),
+        );
+      }
+    } catch (_) {
+      // 補完の失敗で本筋を止めない。次の live 遷移 / pull-to-refresh で再試行。
+    } finally {
+      _catchUpInProgress = false;
+    }
+  }
+
+  StreamSubscription<Post>? _streamSubscription;
+
+  // throttle して切断中の連発 spam を防ぐ。host 分岐は入れない (全サーバー共通
+  // の計装)。バケットは性質ごとに分離 (#602): connect エラー後 60s 以内に
+  // listener 経路の例外 (_applyWordFilter 異常等) が出ても抑制しないように、
+  // _lastListenCapture を独立に持つ。
+  DateTime? _lastParseCapture;
+  DateTime? _lastConnectCapture;
+  DateTime? _lastListenCapture;
+  // 切断 (onDone) の closeCode 観測用バケット (#788)。性質が違うので
+  // connect/parse/listen とは独立に持つ。
+  DateTime? _lastDisconnectCapture;
+  static const _captureThrottle = Duration(seconds: 60);
+
+  void _startStreaming(StreamSupport adapter) {
+    _streamSubscription?.cancel();
+    // 切断系イベント (disconnected / reconnect_exhausted) を Sentry 上で
+    // サーバー別に切り分けられるよう host を控える (#826)。挙動は host で分岐
+    // しない (per-server workaround は入れない)。付与するのは観測タグのみで、
+    // push.host と同型に host のみ載せ生 URL / トークンは載せない。
+    final host = liveHost;
+    final stream = adapter.streamTimeline(
+      liveStreamKey,
+      liveStreamType,
+      onParseError: (e, st) {
+        Sentry.addBreadcrumb(
+          Breadcrumb(
+            category: 'timeline.stream.parse',
+            level: SentryLevel.warning,
+            // 例外型のみ。FormatException.toString() はパース対象の生データ
+            // 断片（投稿本文を含みうる）を持つため breadcrumb には載せない。
+            // 詳細は下の captureException(scrubException(e)) で送る。
+            message: e.runtimeType.toString(),
+          ),
+        );
+        final now = DateTime.now();
+        if (_lastParseCapture != null &&
+            now.difference(_lastParseCapture!) < _captureThrottle) {
+          return;
+        }
+        _lastParseCapture = now;
+        Sentry.captureException(
+          scrubException(e),
+          stackTrace: st,
+          withScope: (scope) {
+            scope.setTag('timeline.stream.parse', 'failed');
+            scope.fingerprint = [
+              'timeline.stream.parse',
+              e.runtimeType.toString(),
+            ];
+          },
+        );
+      },
+      onStreamError: (e, st) {
+        Sentry.addBreadcrumb(
+          Breadcrumb(
+            category: 'timeline.stream.connect',
+            level: SentryLevel.warning,
+            message: e.runtimeType.toString(),
+          ),
+        );
+        final now = DateTime.now();
+        if (_lastConnectCapture != null &&
+            now.difference(_lastConnectCapture!) < _captureThrottle) {
+          return;
+        }
+        _lastConnectCapture = now;
+        Sentry.captureException(
+          scrubException(e),
+          stackTrace: st,
+          withScope: (scope) {
+            scope.setTag('timeline.stream.connect', 'failed');
+            scope.fingerprint = [
+              'timeline.stream.connect',
+              e.runtimeType.toString(),
+            ];
+          },
+        );
+      },
+      onReconnectExhausted: () {
+        Sentry.captureMessage(
+          'timeline.stream.reconnect_exhausted',
+          level: SentryLevel.warning,
+          withScope: (scope) {
+            scope.setTag('timeline.stream', 'reconnect_exhausted');
+            if (host != null) scope.setTag('timeline.stream.host', host);
+            scope.fingerprint = ['timeline.stream.reconnect_exhausted'];
+          },
+        );
+        // 無言の「ライブ更新が止まったまま」状態を state に出す。REST 取得済み
+        // 投稿は残るので AsyncError にはせず、フラグだけ立てて UI が気付ける
+        // ようにする。pull-to-refresh / タブ再選択の build() でクリアされる。
+        final current = state.valueOrNull;
+        if (current != null && !current.streamReconnectExhausted) {
+          state = AsyncData(current.copyWith(streamReconnectExhausted: true));
+        }
+      },
+      // 接続ライフサイクルを state に反映し、常時インジケータへ流す (#714)。
+      // build() 中（state が AsyncLoading で valueOrNull が null）に発火しても
+      // 取りこぼさないよう、まず notifier フィールドへ常時記録する。state に
+      // データがあればそれも更新する。
+      onConnectionState: (connState) {
+        _streamConnectionState = connState;
+        // 切断を検知したら回数・時刻を記録する (#782)。source 側で同一状態は
+        // dedup されるため、disconnected の発火 = 1 回の接続失敗サイクル。
+        if (connState == StreamConnectionState.disconnected) {
+          _reconnectCount++;
+          _lastDisconnectedAt = DateTime.now();
+        }
+        // WS が live になるたび（初回接続・各再接続）、接続が確立していなかった
+        // 窓に流れた投稿を since_id で取り直す (#781)。これが無いと「初回 REST →
+        // WS live までの窓」「切断〜再接続の窓」に入った投稿が永久に欠落する
+        // （実況中の取りこぼし報告の根因）。装飾でなく本機能なので最新 state へ
+        // マージする。
+        if (connState == StreamConnectionState.live) {
+          unawaited(_catchUpSinceTop());
+        }
+        final current = state.valueOrNull;
+        if (current == null) return;
+        state = AsyncData(
+          current.copyWith(
+            streamConnectionState: connState,
+            reconnectCount: _reconnectCount,
+            lastDisconnectedAt: _lastDisconnectedAt,
+            // #784 で give-up せず再試行を続けるため、live 復帰時に exhausted
+            // フラグをクリアする。これが無いと一度 exhausted を踏むと復帰後も
+            // 「停止」表示が残り、次の枯渇で false→true の SnackBar も出なく
+            // なる (Codex #780)。live 以外では現状維持（null）。
+            streamReconnectExhausted: connState == StreamConnectionState.live
+                ? false
+                : null,
+          ),
+        );
+      },
+      // 「どんな切れ方をしているか」を本番で観測する (#788)。現象すら未把握な
+      // ので原因対処はせず計器のみ。実測 (2026-07-11) では close_code 1002
+      // (protocol error) が支配的で、1001 (going away) / 1000 (正常) /
+      // 1006 (異常) が続く。host タグで発生サーバーを切り分ける (#826) が、
+      // 挙動は host で分岐しない (per-server workaround は入れない)。closeReason
+      // はサーバー任意文字列を持ちうるため内容は載せず、有無のみ。throttle で
+      // 切断連発の spam を抑える。
+      onDisconnect: (closeCode, closeReason) {
+        final now = DateTime.now();
+        if (_lastDisconnectCapture != null &&
+            now.difference(_lastDisconnectCapture!) < _captureThrottle) {
+          return;
+        }
+        _lastDisconnectCapture = now;
+        final code = closeCode?.toString() ?? 'none';
+        Sentry.captureMessage(
+          'timeline.stream.disconnected',
+          level: SentryLevel.info,
+          withScope: (scope) {
+            scope.setTag('timeline.stream', 'disconnected');
+            if (host != null) scope.setTag('timeline.stream.host', host);
+            scope.setTag('timeline.stream.close_code', code);
+            scope.setTag(
+              'timeline.stream.has_reason',
+              (closeReason != null && closeReason.isNotEmpty).toString(),
+            );
+            scope.fingerprint = ['timeline.stream.disconnected', code];
+          },
+        );
+      },
+    );
+    _streamSubscription = stream.listen(
+      (newPost) => _ingestLivePosts([newPost]),
+      onError: (Object e, StackTrace st) {
+        // controller 自体は error を流さない設計だが、adapter 側の .map
+        // (_applyWordFilter 等) が投げると listener の error として届く。
+        // 握り潰すと「ストリーミング来ない」だけになるので観測層へ流す
+        // (#586)。state は AsyncError にせず (REST 投稿は生きている)
+        // breadcrumb + throttle 付き captureException のみ。
+        // throttle バケットは _lastListenCapture を独立に持つ (#602): connect
+        // エラーの throttle に巻き込まれて listener 側の例外 (_applyWordFilter
+        // 異常等) を取りこぼさないようにする。
+        Sentry.addBreadcrumb(
+          Breadcrumb(
+            category: 'timeline.stream.listen',
+            level: SentryLevel.warning,
+            message: e.runtimeType.toString(),
+          ),
+        );
+        final now = DateTime.now();
+        if (_lastListenCapture != null &&
+            now.difference(_lastListenCapture!) < _captureThrottle) {
+          return;
+        }
+        _lastListenCapture = now;
+        Sentry.captureException(
+          scrubException(e),
+          stackTrace: st,
+          withScope: (scope) {
+            scope.setTag('timeline.stream.listen', 'failed');
+            scope.fingerprint = [
+              'timeline.stream.listen',
+              e.runtimeType.toString(),
+            ];
+          },
+        );
+      },
+    );
+  }
+
+  /// ライブ更新トグルを OFF にしたときの接続解除 (#904)。build() を再走させず
+  /// WebSocket の購読だけを止め、インジケータを disabled にする。
+  void _stopStreaming(StreamSupport adapter) {
+    _streamSubscription?.cancel();
+    _streamSubscription = null;
+    adapter.disposeStream(liveStreamKey);
+    _setStreamConnectionState(StreamConnectionState.disabled);
+  }
 }
 
 /// Notifier that manages paginated timeline fetching with optional streaming.
@@ -750,7 +1049,6 @@ class TimelineNotifier
   /// ホーム TL の初回描画を 1 プロセス 1 回だけ計測するためのフラグ (#716)。
   /// AutoDispose で Notifier は作り直されるため static に持つ。
   static bool _homeFirstPaintReported = false;
-  StreamSubscription<Post>? _streamSubscription;
 
   /// provider が破棄済みか (#890)。キャッシュ先出しの裏で走る初回取得が、
   /// 破棄後に state を触らないようにするための番兵。build() のたびに false へ
@@ -865,7 +1163,7 @@ class TimelineNotifier
       if (adapter is StreamSupport) {
         // ⚠ このインスタンスのキーの購読だけを閉じる (#1089 / #1090)。同じ
         // アカウントの別の TL（デッキの隣のカラム）の購読には触らない。
-        (adapter as StreamSupport).disposeStream(_streamKey);
+        (adapter as StreamSupport).disposeStream(liveStreamKey);
       }
     });
 
@@ -879,7 +1177,7 @@ class TimelineNotifier
       ref.listen(streamingEnabledProvider, (_, enabled) {
         if (enabled) {
           _setStreamConnectionState(StreamConnectionState.connecting);
-          _startStreaming(streamAdapter, type);
+          _startStreaming(streamAdapter);
         } else {
           _stopStreaming(streamAdapter);
         }
@@ -1012,7 +1310,7 @@ class TimelineNotifier
     // フェッチ・スクロール位置リセット・_pendingPosts.clear 等）を誘発し、可視の
     // スクロールジャンプを起こす (#904)。切替の張り/解除は build() 側の listen。
     if (adapter is StreamSupport && ref.read(streamingEnabledProvider)) {
-      _startStreaming(adapter as StreamSupport, type);
+      _startStreaming(adapter as StreamSupport);
     }
 
     fetchSw?.stop();
@@ -1393,293 +1691,33 @@ class TimelineNotifier
 
   // streaming 内部の parse / 接続 / listen error を観測層へ流す (#586)。
   // chat_provider (#448 / #552) と同型: breadcrumb は毎回、captureException は
-  // throttle して切断中の連発 spam を防ぐ。host 分岐は入れない (全サーバー共通
-  // の計装)。バケットは性質ごとに分離 (#602): connect エラー後 60s 以内に
-  // listener 経路の例外 (_applyWordFilter 異常等) が出ても抑制しないように、
-  // _lastListenCapture を独立に持つ。
-  DateTime? _lastParseCapture;
-  DateTime? _lastConnectCapture;
-  DateTime? _lastListenCapture;
-  // 切断 (onDone) の closeCode 観測用バケット (#788)。性質が違うので
-  // connect/parse/listen とは独立に持つ。
-  DateTime? _lastDisconnectCapture;
-  static const _captureThrottle = Duration(seconds: 60);
 
-  /// ライブ更新トグルを OFF にしたときの接続解除 (#904)。build() を再走させず
-  /// WebSocket の購読だけを止め、インジケータを disabled にする。
-  void _stopStreaming(StreamSupport adapter) {
-    _streamSubscription?.cancel();
-    _streamSubscription = null;
-    adapter.disposeStream(_streamKey);
-    _setStreamConnectionState(StreamConnectionState.disabled);
-  }
-
-  /// アダプタ側の購読キー (#1089 / #1090)。TL の文脈キー
-  /// （`<アカウント>|timeline:<種別>`）をそのまま使う。
-  ///
-  /// ⚠ null にならないのは、購読を張る / 閉じるのがアダプタを得られたとき
-  /// （＝キーのアカウントが現在のアカウントと一致したとき・[adapterForTimelineKey]）
-  /// だけだから。
-  String get _streamKey =>
+  @override
+  String get liveStreamKey =>
       timelineContextKey(arg.account, TimelineTab(arg.type))!;
 
-  void _startStreaming(StreamSupport adapter, TimelineType type) {
-    _streamSubscription?.cancel();
-    // 切断系イベント (disconnected / reconnect_exhausted) を Sentry 上で
-    // サーバー別に切り分けられるよう host を控える (#826)。挙動は host で分岐
-    // しない (per-server workaround は入れない)。付与するのは観測タグのみで、
-    // push.host と同型に host のみ載せ生 URL / トークンは載せない。
-    final host = arg.account?.host;
-    final stream = adapter.streamTimeline(
-      _streamKey,
-      type,
-      onParseError: (e, st) {
-        Sentry.addBreadcrumb(
-          Breadcrumb(
-            category: 'timeline.stream.parse',
-            level: SentryLevel.warning,
-            // 例外型のみ。FormatException.toString() はパース対象の生データ
-            // 断片（投稿本文を含みうる）を持つため breadcrumb には載せない。
-            // 詳細は下の captureException(scrubException(e)) で送る。
-            message: e.runtimeType.toString(),
-          ),
-        );
-        final now = DateTime.now();
-        if (_lastParseCapture != null &&
-            now.difference(_lastParseCapture!) < _captureThrottle) {
-          return;
-        }
-        _lastParseCapture = now;
-        Sentry.captureException(
-          scrubException(e),
-          stackTrace: st,
-          withScope: (scope) {
-            scope.setTag('timeline.stream.parse', 'failed');
-            scope.fingerprint = [
-              'timeline.stream.parse',
-              e.runtimeType.toString(),
-            ];
-          },
-        );
-      },
-      onStreamError: (e, st) {
-        Sentry.addBreadcrumb(
-          Breadcrumb(
-            category: 'timeline.stream.connect',
-            level: SentryLevel.warning,
-            message: e.runtimeType.toString(),
-          ),
-        );
-        final now = DateTime.now();
-        if (_lastConnectCapture != null &&
-            now.difference(_lastConnectCapture!) < _captureThrottle) {
-          return;
-        }
-        _lastConnectCapture = now;
-        Sentry.captureException(
-          scrubException(e),
-          stackTrace: st,
-          withScope: (scope) {
-            scope.setTag('timeline.stream.connect', 'failed');
-            scope.fingerprint = [
-              'timeline.stream.connect',
-              e.runtimeType.toString(),
-            ];
-          },
-        );
-      },
-      onReconnectExhausted: () {
-        Sentry.captureMessage(
-          'timeline.stream.reconnect_exhausted',
-          level: SentryLevel.warning,
-          withScope: (scope) {
-            scope.setTag('timeline.stream', 'reconnect_exhausted');
-            if (host != null) scope.setTag('timeline.stream.host', host);
-            scope.fingerprint = ['timeline.stream.reconnect_exhausted'];
-          },
-        );
-        // 無言の「ライブ更新が止まったまま」状態を state に出す。REST 取得済み
-        // 投稿は残るので AsyncError にはせず、フラグだけ立てて UI が気付ける
-        // ようにする。pull-to-refresh / タブ再選択の build() でクリアされる。
-        final current = state.valueOrNull;
-        if (current != null && !current.streamReconnectExhausted) {
-          state = AsyncData(current.copyWith(streamReconnectExhausted: true));
-        }
-      },
-      // 接続ライフサイクルを state に反映し、常時インジケータへ流す (#714)。
-      // build() 中（state が AsyncLoading で valueOrNull が null）に発火しても
-      // 取りこぼさないよう、まず notifier フィールドへ常時記録する。state に
-      // データがあればそれも更新する。
-      onConnectionState: (connState) {
-        _streamConnectionState = connState;
-        // 切断を検知したら回数・時刻を記録する (#782)。source 側で同一状態は
-        // dedup されるため、disconnected の発火 = 1 回の接続失敗サイクル。
-        if (connState == StreamConnectionState.disconnected) {
-          _reconnectCount++;
-          _lastDisconnectedAt = DateTime.now();
-        }
-        // WS が live になるたび（初回接続・各再接続）、接続が確立していなかった
-        // 窓に流れた投稿を since_id で取り直す (#781)。これが無いと「初回 REST →
-        // WS live までの窓」「切断〜再接続の窓」に入った投稿が永久に欠落する
-        // （実況中の取りこぼし報告の根因）。装飾でなく本機能なので最新 state へ
-        // マージする。
-        if (connState == StreamConnectionState.live) {
-          unawaited(_catchUpSinceTop());
-        }
-        final current = state.valueOrNull;
-        if (current == null) return;
-        state = AsyncData(
-          current.copyWith(
-            streamConnectionState: connState,
-            reconnectCount: _reconnectCount,
-            lastDisconnectedAt: _lastDisconnectedAt,
-            // #784 で give-up せず再試行を続けるため、live 復帰時に exhausted
-            // フラグをクリアする。これが無いと一度 exhausted を踏むと復帰後も
-            // 「停止」表示が残り、次の枯渇で false→true の SnackBar も出なく
-            // なる (Codex #780)。live 以外では現状維持（null）。
-            streamReconnectExhausted: connState == StreamConnectionState.live
-                ? false
-                : null,
-          ),
-        );
-      },
-      // 「どんな切れ方をしているか」を本番で観測する (#788)。現象すら未把握な
-      // ので原因対処はせず計器のみ。実測 (2026-07-11) では close_code 1002
-      // (protocol error) が支配的で、1001 (going away) / 1000 (正常) /
-      // 1006 (異常) が続く。host タグで発生サーバーを切り分ける (#826) が、
-      // 挙動は host で分岐しない (per-server workaround は入れない)。closeReason
-      // はサーバー任意文字列を持ちうるため内容は載せず、有無のみ。throttle で
-      // 切断連発の spam を抑える。
-      onDisconnect: (closeCode, closeReason) {
-        final now = DateTime.now();
-        if (_lastDisconnectCapture != null &&
-            now.difference(_lastDisconnectCapture!) < _captureThrottle) {
-          return;
-        }
-        _lastDisconnectCapture = now;
-        final code = closeCode?.toString() ?? 'none';
-        Sentry.captureMessage(
-          'timeline.stream.disconnected',
-          level: SentryLevel.info,
-          withScope: (scope) {
-            scope.setTag('timeline.stream', 'disconnected');
-            if (host != null) scope.setTag('timeline.stream.host', host);
-            scope.setTag('timeline.stream.close_code', code);
-            scope.setTag(
-              'timeline.stream.has_reason',
-              (closeReason != null && closeReason.isNotEmpty).toString(),
-            );
-            scope.fingerprint = ['timeline.stream.disconnected', code];
-          },
-        );
-      },
+  @override
+  TimelineType get liveStreamType => arg.type;
+
+  @override
+  String? get liveHost => arg.account?.host;
+
+  @override
+  int get catchUpPageSize => _pageSize;
+
+  @override
+  Future<CatchUpPage?> fetchCatchUpPage(String? maxId) async {
+    final adapter = _adapterFor(ref.read(currentAccountProvider));
+    if (adapter == null) return null;
+    final response = await adapter.getTimeline(
+      arg.type,
+      query: TimelineQuery(maxId: maxId, limit: _pageSize),
     );
-    _streamSubscription = stream.listen(
-      (newPost) => _ingestLivePosts([newPost]),
-      onError: (Object e, StackTrace st) {
-        // controller 自体は error を流さない設計だが、adapter 側の .map
-        // (_applyWordFilter 等) が投げると listener の error として届く。
-        // 握り潰すと「ストリーミング来ない」だけになるので観測層へ流す
-        // (#586)。state は AsyncError にせず (REST 投稿は生きている)
-        // breadcrumb + throttle 付き captureException のみ。
-        // throttle バケットは _lastListenCapture を独立に持つ (#602): connect
-        // エラーの throttle に巻き込まれて listener 側の例外 (_applyWordFilter
-        // 異常等) を取りこぼさないようにする。
-        Sentry.addBreadcrumb(
-          Breadcrumb(
-            category: 'timeline.stream.listen',
-            level: SentryLevel.warning,
-            message: e.runtimeType.toString(),
-          ),
-        );
-        final now = DateTime.now();
-        if (_lastListenCapture != null &&
-            now.difference(_lastListenCapture!) < _captureThrottle) {
-          return;
-        }
-        _lastListenCapture = now;
-        Sentry.captureException(
-          scrubException(e),
-          stackTrace: st,
-          withScope: (scope) {
-            scope.setTag('timeline.stream.listen', 'failed');
-            scope.fingerprint = [
-              'timeline.stream.listen',
-              e.runtimeType.toString(),
-            ];
-          },
-        );
-      },
+    return (
+      posts: response.posts,
+      rawCount: response.rawCount,
+      rawLastId: response.rawLastId,
     );
-  }
-
-  /// WS が live になった時点で、未接続の窓に流れて取りこぼした投稿を
-  /// `since_id` で取り直してマージする (#781)。
-  ///
-  /// 初回 REST スナップショット〜WS live、および各再接続の切断窓に作られた
-  /// 投稿はどの経路でも届かず永久欠落するため、live 遷移ごとにここで埋める。
-  /// [_newestKnownId] を起点に、ギャップが 1 ページを超える場合は max_id で
-  /// 下方向にページングして [kMaxVisibilityPageFetches] ページまで遡る。
-  ///
-  /// 初期可視リストが空（新規/空 TL・全件フィルタ・page-cap）で [_newestKnownId]
-  /// が null のときも、REST→live 窓に作られた投稿を取りこぼさないよう最新ページ
-  /// 1 枚だけ取得してシードする (Codex #783)。
-  Future<void> _catchUpSinceTop() async {
-    if (_catchUpInProgress) return;
-    final since = _newestKnownId;
-    // await 中にアカウント/種別が切り替わると build() が rerun して notifier が
-    // 新文脈に作り直されるが、この future はキャンセルされない。旧文脈で取得した
-    // 投稿を新文脈へマージしないよう、開始時の contextKey を捕捉し ingest 直前に
-    // 照合する (#758 / _deferIsCatEnrich と同型・Codex #783)。
-    final capturedContextKey = state.valueOrNull?.contextKey;
-    _catchUpInProgress = true;
-    try {
-      final adapter = _adapterFor(ref.read(currentAccountProvider));
-      final type = arg.type;
-      if (adapter == null) return;
-
-      final gap = await collectCatchUpGap(
-        since: since,
-        pageSize: _pageSize,
-        maxFetches: kMaxVisibilityPageFetches,
-        fetch: (maxId) async {
-          final response = await adapter.getTimeline(
-            type,
-            query: TimelineQuery(maxId: maxId, limit: _pageSize),
-          );
-          return (
-            posts: response.posts,
-            rawCount: response.rawCount,
-            rawLastId: response.rawLastId,
-          );
-        },
-      );
-
-      if (gap.isEmpty) return;
-      // await 中に文脈が変わっていたら破棄（旧文脈の投稿の混入・_newestKnownId
-      // 汚染を防ぐ）。_ingestLivePosts は同期なので照合後の混入はない。
-      if (state.valueOrNull?.contextKey != capturedContextKey) return;
-      // getTimeline は新しい順・ページも新しい方から取得するため gap は新しい順。
-      // 取り込み時に再度 state を読み、最新 state へマージする。
-      final recovered = _ingestLivePosts(gap);
-      // 再接続のたびに何件を補完できたかを観測する (#784 item 3)。resilience
-      // (#784) × catch-up (#781) の実効を本番で追跡するための軽量シグナル。
-      // PII を載せない（件数のみ）。
-      if (recovered > 0) {
-        Sentry.addBreadcrumb(
-          Breadcrumb(
-            message: 'timeline.stream.catchup',
-            category: 'timeline.stream',
-            level: SentryLevel.info,
-            data: {'recovered': recovered, 'fetched': gap.length},
-          ),
-        );
-      }
-    } catch (_) {
-      // 補完の失敗で本筋を止めない。次の live 遷移 / pull-to-refresh で再試行。
-    } finally {
-      _catchUpInProgress = false;
-    }
   }
 
   static bool _hasLivecureTag(Post post) => hasLivecureTag(post);
