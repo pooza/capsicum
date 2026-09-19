@@ -111,6 +111,10 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
           children: [
             const Text('AND条件で絞り込むタグをカンマ区切りで入力してください。'),
             const Text('空にするとAND条件を解除します。'),
+            // ⚠ 追加欄は `+` 区切り、ここはカンマ区切りで記法が違う (#1158)。
+            // ⚠⚠ カンマ区切りは `+` をタグの一部として書けるので、`#c++` の
+            // ような Misskey のタグを AND に混ぜられるのはこちらだけ (#1159)。
+            const Text('タグ自体に + が入る場合もここから入力できます。'),
             const SizedBox(height: 12),
             TextField(
               controller: andController,
@@ -412,6 +416,9 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
                             controller: _controller,
                             decoration: const InputDecoration(
                               hintText: 'ハッシュタグを入力',
+                              // ⚠ デッキのカラム編集と同じ文言にする (#1158)。
+                              helperText: '+ でつなぐと AND（例: nitiasa+precure）',
+                              helperMaxLines: 2,
                               prefixText: '#',
                               isDense: true,
                             ),

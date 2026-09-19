@@ -427,6 +427,10 @@ class _DeckColumnCandidatesState extends ConsumerState<_DeckColumnCandidates> {
                   controller: _hashtagController,
                   decoration: const InputDecoration(
                     hintText: 'ハッシュタグを入力',
+                    // ⚠ AND 指定できることが画面のどこにも書かれておらず、
+                    // 入口が無いと受け取られていた (#1158)。
+                    helperText: '+ でつなぐと AND（例: nitiasa+precure）',
+                    helperMaxLines: 2,
                     prefixText: '#',
                     isDense: true,
                   ),

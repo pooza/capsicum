@@ -228,4 +228,14 @@ void main() {
       expect(adapter.listCalls, greaterThan(first));
     });
   });
+
+  group('#1158 AND 指定の案内', () {
+    testWidgets('⚠ 入力欄に「+ でつなぐと AND」と出る（案内が無く入口が無いと受け取られた）', (tester) async {
+      final adapter = _Adapter(lists: const [], channels: const []);
+      await pumpSheet(tester, adapter);
+      await tester.pumpAndSettle();
+
+      expect(find.text('+ でつなぐと AND（例: nitiasa+precure）'), findsOneWidget);
+    });
+  });
 }
