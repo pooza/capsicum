@@ -32,8 +32,9 @@ MastodonStreamTarget? mastodonStreamTarget(TabType tab) {
         _ => null,
       };
       return name == null ? null : (stream: name, tag: null, list: null);
-    case HashtagTab(tag: final spec):
-      final tags = spec.split('+').where((t) => t.isNotEmpty).toList();
+    case HashtagTab() && final tab:
+      // ⚠ 割り方の正本は capsicum_core の hashtagSpecTags (#1159)。
+      final tags = tab.tags;
       // AND 指定は Mastodon の streaming で表現できないので張らない。
       if (tags.length != 1) return null;
       return (stream: 'hashtag', tag: tags.first, list: null);

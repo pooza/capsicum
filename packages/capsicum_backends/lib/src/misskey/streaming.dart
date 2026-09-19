@@ -33,8 +33,10 @@ MisskeyStreamChannel? misskeyStreamChannel(TabType tab) {
         _ => null,
       };
       return name == null ? null : (channel: name, params: null);
-    case HashtagTab(tag: final spec):
-      final tags = spec.split('+').where((t) => t.isNotEmpty).toList();
+    case HashtagTab() && final tab:
+      // ⚠ 割り方の正本は capsicum_core の hashtagSpecTags (#1159)。タグに含まれる
+      // `+` はエスケープされているので、ここで素の split をしない。
+      final tags = tab.tags;
       // タグが 1 つも無い spec で購読すると全件が流れうるので張らない。
       if (tags.isEmpty) return null;
       return (

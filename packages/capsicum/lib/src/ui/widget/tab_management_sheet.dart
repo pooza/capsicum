@@ -88,7 +88,10 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
   void _addHashtag() {
     final text = _controller.text.trim().replaceFirst(RegExp('^#'), '');
     if (text.isEmpty) return;
-    _notifier.addTab(HashtagTab(text));
+    // ⚠ 入力欄では `+` が AND の区切り (#1158)。組み立ては 1 箇所へ (#1159)。
+    final spec = hashtagSpecFromTags(text.split('+'));
+    if (spec.isEmpty) return;
+    _notifier.addTab(HashtagTab(spec));
     _controller.clear();
   }
 
@@ -135,9 +138,9 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
                         .map((t) => t.replaceFirst(RegExp('^#'), '').trim())
                         .where((t) => t.isNotEmpty)
                         .toList();
-              final newSpec = andTags.isEmpty
-                  ? primary
-                  : '$primary+${andTags.join('+')}';
+              // ⚠ タグに `+` が含まれうるので、連結は hashtagSpecFromTags へ
+              // 寄せる (#1159)。
+              final newSpec = hashtagSpecFromTags([primary, ...andTags]);
               _notifier.replaceTab(
                 HashtagTab(currentSpec),
                 HashtagTab(newSpec),

@@ -6,16 +6,21 @@ import 'account_manager_provider.dart';
 import 'preferences_provider.dart';
 import 'timeline_provider.dart';
 
-/// Parse a pinned hashtag spec ("tag" or "tag+and1+and2") into parts.
+/// spec（"tag" または "tag+and1+and2"）を、代表タグと AND 条件へ分ける。
+///
+/// ⚠ **割り方の正本は [hashtagSpecTags]**（capsicum_core・#1159）。`+` を含む
+/// タグ（Misskey の `#c++` 等）はエスケープされているので、ここで素の
+/// `split('+')` をしないこと。
 (String, List<String>?) parseHashtagSpec(String spec) {
-  final parts = spec.split('+');
-  final primary = parts.first;
-  final all = parts.length > 1 ? parts.sublist(1) : null;
-  return (primary, all);
+  final tags = hashtagSpecTags(spec);
+  if (tags.isEmpty) return ('', null);
+  final all = tags.length > 1 ? tags.sublist(1) : null;
+  return (tags.first, all);
 }
 
-/// Format a display label for a hashtag spec.
-String hashtagSpecLabel(String spec) => '#${spec.replaceAll('+', ' + #')}';
+/// spec の表示ラベル（`#a + #b`）。
+String hashtagSpecLabel(String spec) =>
+    hashtagSpecTags(spec).map((t) => '#$t').join(' + ');
 
 /// ハッシュタグ TL の family キー (#1088)。
 ///

@@ -108,6 +108,17 @@ void main() {
       expect(query['list'], '42');
     });
 
+    test('⚠⚠ `+` を含むタグ（#c++）は 1 つのタグとして購読する (#1159)', () async {
+      final adapter = await makeAdapter();
+      adapter.streamTimeline('me|hashtag:c%2B%2B', HashtagTab.single('c++'));
+      addTearDown(() => adapter.disposeStream('me|hashtag:c%2B%2B'));
+      await waitForConnections(1);
+
+      final query = connections.single.uri.queryParameters;
+      expect(query['stream'], 'hashtag');
+      expect(query['tag'], 'c++', reason: '⚠ AND 指定として割れると別のタグを購読してしまう');
+    });
+
     test('⚠⚠ AND 指定のタグは購読しない（代表タグだけで繋ぐと AND 外が流れ込む）', () async {
       final adapter = await makeAdapter();
       final stream = adapter.streamTimeline(
@@ -181,6 +192,21 @@ void main() {
 
       connections.single.socket.add(note(body['id'] as String, 't1'));
       expect(await posts.next(), 't1');
+    });
+
+    test('⚠⚠ `+` を含むタグ（#c++）は 1 つのタグとして購読する (#1159)', () async {
+      final adapter = await makeAdapter();
+      adapter.streamTimeline('me|hashtag:c%2B%2B', HashtagTab.single('c++'));
+      addTearDown(() => adapter.disposeStream('me|hashtag:c%2B%2B'));
+      await waitForConnections(1);
+
+      final body = await connectBody(connections.single);
+      expect(body['channel'], 'hashtag');
+      expect(body['params'], {
+        'q': [
+          ['c++'],
+        ],
+      }, reason: '⚠ `c` と空タグへ割れると、そのタグの TL にならない');
     });
 
     test('AND 指定は q の内側に並べる（AND の OR）', () async {

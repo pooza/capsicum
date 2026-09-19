@@ -1,3 +1,4 @@
+import 'hashtag_spec.dart';
 import 'timeline_type.dart';
 
 /// Represents any kind of tab that can appear in the home screen tab bar.
@@ -120,8 +121,20 @@ class ListTab extends TabType {
 }
 
 class HashtagTab extends TabType {
+  /// `+` で連結した spec。⚠ **タグ名そのものではない** —— AND 指定なら複数の
+  /// タグが入り、タグに含まれる `+` はエスケープされている (#1159)。
+  /// **割るときは [tags]、作るときは [HashtagTab.single] / [hashtagSpecFromTags]。**
   final String tag;
   const HashtagTab(this.tag);
+
+  /// サーバーから受け取ったタグ名 1 つからタブを作る (#1159)。
+  ///
+  /// ⚠⚠ **`+` を含むタグ（Misskey の `#c++` 等）を素のまま [HashtagTab] へ渡すと、
+  /// AND 指定として割れて別物になる。**タグ名を持っているときは必ずこちらを使う。
+  HashtagTab.single(String tag) : tag = hashtagSpecFromTag(tag);
+
+  /// この指定が表すタグの列。単独なら 1 つ、AND 指定なら 2 つ以上。
+  List<String> get tags => hashtagSpecTags(tag);
 
   @override
   String toKey() => 'hashtag:$tag';

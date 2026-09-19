@@ -107,12 +107,22 @@ void openProfile(BuildContext context, User user) => openColumnOrPush(
 
 /// ハッシュタグのタイムラインを開く (#1148)。
 ///
-/// [tag] は先頭の `#` を除いたタグ名（AND 条件の `a+b` もそのまま）。
-void openHashtag(BuildContext context, String tag) => openColumnOrPush(
-  context,
-  HashtagTab(tag),
-  push: () => context.push('/hashtag/$tag'),
-);
+/// [tag] は先頭の `#` を除いた **タグ名 1 つ**。呼び出し側は投稿の本文・トレンド・
+/// 検索結果など、**サーバー由来のタグ名**を渡す。
+///
+/// ⚠⚠ **タグ名をそのまま spec にしない** (#1159)。Misskey のタグは `+` を含みうる
+/// （`#c++` が実在）ので、素のまま渡すと AND 指定として割れて別物になる。
+///
+/// ⚠ URL へは **spec をもう一度エスケープして**載せる。go_router がパスパラメータを
+/// URL デコードするため、`%2B` を素で置くと `+` に戻ってしまう。
+void openHashtag(BuildContext context, String tag) {
+  final spec = hashtagSpecFromTag(tag);
+  openColumnOrPush(
+    context,
+    HashtagTab(spec),
+    push: () => context.push('/hashtag/${Uri.encodeComponent(spec)}'),
+  );
+}
 
 /// チャンネルのタイムラインを開く (#1150)。
 void openChannel(BuildContext context, String id, String? name) =>

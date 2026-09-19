@@ -300,7 +300,11 @@ class _DeckColumnCandidatesState extends ConsumerState<_DeckColumnCandidates> {
   void _addHashtag() {
     final text = _hashtagController.text.trim().replaceFirst(RegExp('^#'), '');
     if (text.isEmpty) return;
-    _add(HashtagTab(text));
+    // ⚠ 入力欄では `+` が AND の区切り (#1158)。spec の組み立ては
+    // hashtagSpecFromTags に寄せる（空のタグを落とす・#1159）。
+    final spec = hashtagSpecFromTags(text.split('+'));
+    if (spec.isEmpty) return;
+    _add(HashtagTab(spec));
     _hashtagController.clear();
   }
 
