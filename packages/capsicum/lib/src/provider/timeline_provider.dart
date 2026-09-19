@@ -587,12 +587,20 @@ mixin TimelineListMutations<Arg>
 /// ⚠ **購読の張り方（どのチャンネルへ何のパラメータで繋ぐか）はここに含めない。**
 /// 系統ごとに違うので、[TimelineNotifier] 側に残している。
 ///
+/// ⚠⚠ **[TimelineListMutations] より後に適用する。**未表示バッファを持つ TL では
+/// 削除・ブロックがバッファも刈らないと「見えているどの TL からも消える」保証
+/// (#887) に穴が空くため、[removePost] / [removePostsByUser] をここで上書きする。
+/// **`on TimelineListMutations` を宣言しているので、順序を間違えるとコンパイル
+/// エラーになる**（黙って穴が開くのを防ぐため、規約ではなく型で縛る）。
+///
 /// ⚠⚠ **[TimelineListMutations] と同じく `timeline_provider.dart` に同居させる。**
 /// [_pendingPosts] / [_dropPending] は削除・ブロック (#887) と楽観挿入 (#717 /
 /// #814) からも触られており、別ライブラリへ出すとこの 2 箇所が public な口を
 /// 通ることになって、**移動のはずの変更が API の変更に化ける**。
 mixin TimelineLiveIngest<Arg>
-    on AutoDisposeFamilyAsyncNotifier<TimelineState, Arg> {
+    on
+        AutoDisposeFamilyAsyncNotifier<TimelineState, Arg>,
+        TimelineListMutations<Arg> {
   /// スクロール中に届いた未表示の新着 (#296)。「新着 N 件」を開くまで一覧へは
   /// 出さない。⚠ **本線以外からも触られる**: 削除 / ブロック (#887) は
   /// [_dropPending] で刈り、楽観挿入 (#717 / #814) は重複判定にここを見る。
@@ -762,6 +770,93 @@ mixin TimelineLiveIngest<Arg>
   int _dropPending(bool Function(Post) matches) {
     _pendingPosts.removeWhere(matches);
     return _pendingPosts.length;
+  }
+
+  /// 削除された投稿を、一覧と未表示バッファの両方から取り除く (#887)。
+  ///
+  /// ⚠ [TimelineListMutations.removePost] は一覧しか見ない。**一覧からだけ消すと、
+  /// 削除済みの投稿が「新着 N 件」を開いた瞬間に現れる。**
+  @override
+  void removePost(String id) {
+    final current = state.valueOrNull;
+    if (current == null) return;
+    final posts = postsWithoutId(current.posts, id);
+    final pendingCount = _dropPending((p) => p.id == id);
+    // 一覧も未表示バッファも変わらないなら触らない（元の早期 return を保つ）。
+    if (posts.length == current.posts.length &&
+        pendingCount == current.pendingCount) {
+      return;
+    }
+    state = AsyncData(
+      current.copyWith(posts: posts, pendingCount: pendingCount),
+    );
+  }
+
+  /// ブロック / ミュートした相手の投稿を、一覧と未表示バッファの両方から取り除く。
+  ///
+  /// ⚠⚠ **ブロックは安全のための操作**なので、[removePost] より穴を開けられない。
+  @override
+  void removePostsByUser(String userId) {
+    final current = state.valueOrNull;
+    if (current == null) return;
+    final posts = postsWithoutUser(current.posts, userId);
+    final pendingCount = _dropPending((p) => postIsByUser(p, userId));
+    if (posts.length == current.posts.length &&
+        pendingCount == current.pendingCount) {
+      return;
+    }
+    state = AsyncData(
+      current.copyWith(posts: posts, pendingCount: pendingCount),
+    );
+  }
+
+  /// いまの接続状態 (#714)。⚠ **別ライブラリの TL から読むための公開口。**
+  /// build() の返り値へ反映しないと、インジケータが取得完了で connecting に
+  /// 戻ってしまう。
+  StreamConnectionState get streamConnectionState => _streamConnectionState;
+
+  /// 初回取得のあと、ギャップ補完 (#781) の起点を確定させる。
+  ///
+  /// ⚠ **これを呼ばないと、live 遷移のたびに「最新ページ 1 枚だけシード」の
+  /// 経路へ落ちる**（アンカー未確立の扱い）。切断窓が 1 ページを超えたときに
+  /// 取りこぼす。
+  void seedLiveIngestAnchor(List<Post> posts) {
+    _newestKnownId = posts.firstOrNull?.id;
+  }
+
+  /// 未表示バッファに同じ投稿が既にあるか。楽観挿入の重複判定に使う (#717)。
+  bool hasPendingPost(String id) => _pendingPosts.any((p) => p.id == id);
+
+  /// build() から張るライブ更新トグル (#854 / #904) の配線。
+  ///
+  /// ⚠ **初回接続はここではなく、取得が終わってから [startLiveStreamIfEnabled]**。
+  /// トグルを watch すると、切替が build() 全体（REST 再フェッチ・スクロール位置
+  /// リセット・未表示バッファの破棄）を誘発して可視のジャンプになる (#904)。
+  void listenLiveStreamToggle(StreamSupport adapter) {
+    if (!ref.read(streamingEnabledProvider)) {
+      _streamConnectionState = StreamConnectionState.disabled;
+    }
+    ref.listen(streamingEnabledProvider, (_, enabled) {
+      if (enabled) {
+        _setStreamConnectionState(StreamConnectionState.connecting);
+        _startStreaming(adapter);
+      } else {
+        _stopStreaming(adapter);
+      }
+    });
+  }
+
+  /// 取得が終わったあとの初回接続。OFF のときは張らない (#854)。
+  void startLiveStreamIfEnabled(StreamSupport adapter) {
+    if (!ref.read(streamingEnabledProvider)) return;
+    _startStreaming(adapter);
+  }
+
+  /// 破棄時の後始末。⚠ **このインスタンスのキーの購読だけ**を閉じる
+  /// (#1089 / #1090)。同じアカウントの別のカラムの購読には触らない。
+  void disposeLiveStream(StreamSupport adapter) {
+    _streamSubscription?.cancel();
+    adapter.disposeStream(liveStreamKey);
   }
 
   /// WS が live になった時点で、未接続の窓に流れて取りこぼした投稿を
@@ -1047,7 +1142,7 @@ mixin TimelineLiveIngest<Arg>
 /// autoDispose で破棄される（`autoDispose` の扱い自体は変えていない）。
 class TimelineNotifier
     extends AutoDisposeFamilyAsyncNotifier<TimelineState, TimelineKey>
-    with TimelineLiveIngest<TimelineKey> {
+    with TimelineListMutations<TimelineKey>, TimelineLiveIngest<TimelineKey> {
   static const _pageSize = 20;
 
   /// ホーム TL の初回描画を 1 プロセス 1 回だけ計測するためのフラグ (#716)。
@@ -1163,29 +1258,17 @@ class TimelineNotifier
 
     ref.onDispose(() {
       _disposed = true;
-      _streamSubscription?.cancel();
       if (adapter is StreamSupport) {
-        // ⚠ このインスタンスのキーの購読だけを閉じる (#1089 / #1090)。同じ
-        // アカウントの別の TL（デッキの隣のカラム）の購読には触らない。
-        (adapter as StreamSupport).disposeStream(liveStreamKey);
+        disposeLiveStream(adapter as StreamSupport);
+      } else {
+        _streamSubscription?.cancel();
       }
     });
 
     // ライブ更新トグルの購読は build() 側で張る（rebuild のたびに Riverpod が
     // 前回ぶんを破棄してくれる）。初回接続は取得完了後 ([_loadInitial]) に行う。
     if (adapter is StreamSupport) {
-      final streamAdapter = adapter as StreamSupport;
-      if (!ref.read(streamingEnabledProvider)) {
-        _streamConnectionState = StreamConnectionState.disabled;
-      }
-      ref.listen(streamingEnabledProvider, (_, enabled) {
-        if (enabled) {
-          _setStreamConnectionState(StreamConnectionState.connecting);
-          _startStreaming(streamAdapter);
-        } else {
-          _stopStreaming(streamAdapter);
-        }
-      });
+      listenLiveStreamToggle(adapter as StreamSupport);
     }
 
     // 起動直後の 1 回だけ、前回のホーム TL をディスクから先出しする (#890)。
@@ -1313,8 +1396,8 @@ class TimelineNotifier
     // 初期判定は read で行う。watch すると、トグル切替が build() 全体（REST 再
     // フェッチ・スクロール位置リセット・_pendingPosts.clear 等）を誘発し、可視の
     // スクロールジャンプを起こす (#904)。切替の張り/解除は build() 側の listen。
-    if (adapter is StreamSupport && ref.read(streamingEnabledProvider)) {
-      _startStreaming(adapter as StreamSupport);
+    if (adapter is StreamSupport) {
+      startLiveStreamIfEnabled(adapter as StreamSupport);
     }
 
     fetchSw?.stop();
@@ -1727,6 +1810,7 @@ class TimelineNotifier
   static bool _hasLivecureTag(Post post) => hasLivecureTag(post);
 
   /// Replace a post in the list by ID (e.g. after reacting).
+  @override
   void updatePost(Post updated) {
     final current = state.valueOrNull;
     if (current == null) return;
@@ -1738,6 +1822,7 @@ class TimelineNotifier
   }
 
   /// Remove a post from the list by ID (e.g. after deletion).
+  @override
   void removePost(String id) {
     // 取得中の save がこの削除を跨いで書き戻さないよう世代を進める (#958)。state が
     // まだ null（初回取得中）でも in-flight の [_loadInitial] は save に到達するので、
@@ -1796,6 +1881,7 @@ class TimelineNotifier
   }
 
   /// Remove all posts by a user (e.g. after block/mute).
+  @override
   void removePostsByUser(String userId) {
     // 取得中の save がこのブロックを跨いで書き戻さないよう世代を進める (#958)。
     // state が null（初回取得中）でも in-flight の [_loadInitial] は save に到達する

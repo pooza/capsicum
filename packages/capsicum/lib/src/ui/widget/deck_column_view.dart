@@ -80,6 +80,11 @@ class DeckColumnView extends ConsumerWidget {
           timeline: p,
           loadMore: (ref) => ref.read(p.notifier).loadMore(),
           refresh: (ref) => ref.refresh(p.future),
+          // ライブ購読が載ったので、本線 TL と同じくスクロール中は未表示バッファ
+          // へ退避し、「新着 N 件」で開く (#1098)。
+          setNearTop: (ref, nearTop) =>
+              ref.read(p.notifier).setNearTop(nearTop),
+          flushPending: (ref) => ref.read(p.notifier).flushPending(),
         );
       }(),
       ListTab(:final id) => () {
@@ -88,6 +93,11 @@ class DeckColumnView extends ConsumerWidget {
           timeline: p,
           loadMore: (ref) => ref.read(p.notifier).loadMore(),
           refresh: (ref) => ref.refresh(p.future),
+          // ライブ購読が載ったので、本線 TL と同じくスクロール中は未表示バッファ
+          // へ退避し、「新着 N 件」で開く (#1098)。
+          setNearTop: (ref, nearTop) =>
+              ref.read(p.notifier).setNearTop(nearTop),
+          flushPending: (ref) => ref.read(p.notifier).flushPending(),
         );
       }(),
       ChannelTab(:final id) => () {
@@ -96,6 +106,11 @@ class DeckColumnView extends ConsumerWidget {
           timeline: p,
           loadMore: (ref) => ref.read(p.notifier).loadMore(),
           refresh: (ref) => ref.refresh(p.future),
+          // ライブ購読が載ったので、本線 TL と同じくスクロール中は未表示バッファ
+          // へ退避し、「新着 N 件」で開く (#1098)。
+          setNearTop: (ref, nearTop) =>
+              ref.read(p.notifier).setNearTop(nearTop),
+          flushPending: (ref) => ref.read(p.notifier).flushPending(),
         );
       }(),
       NotificationsTab() => const NotificationView(),

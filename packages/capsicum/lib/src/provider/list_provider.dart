@@ -24,11 +24,48 @@ typedef ListTimelineKey = ({AccountKey? account, String id});
 /// Notifier that manages paginated list timeline fetching.
 class ListTimelineNotifier
     extends AutoDisposeFamilyAsyncNotifier<TimelineState, ListTimelineKey>
-    with TimelineListMutations<ListTimelineKey> {
+    with
+        TimelineListMutations<ListTimelineKey>,
+        TimelineLiveIngest<ListTimelineKey> {
   static const _pageSize = 20;
 
   @override
+  String get liveStreamKey =>
+      timelineContextKey(arg.account, ListTab(id: arg.id))!;
+
+  @override
+  TabType get liveStreamTab => ListTab(id: arg.id);
+
+  @override
+  String? get liveHost => arg.account?.host;
+
+  @override
+  int get catchUpPageSize => _pageSize;
+
+  /// ⚠ 生のサーバー件数が取れない件は [HashtagTimelineNotifier.fetchCatchUpPage]
+  /// と同じ。
+  @override
+  Future<CatchUpPage?> fetchCatchUpPage(String? maxId) async {
+    final adapter = adapterForTimelineKey(
+      ref.read(currentAccountProvider),
+      arg.account,
+    );
+    if (adapter == null || adapter is! ListSupport) return null;
+    final posts = await (adapter as ListSupport).getListTimeline(
+      arg.id,
+      query: TimelineQuery(maxId: maxId, limit: _pageSize),
+    );
+    return (
+      posts: posts,
+      rawCount: posts.length,
+      rawLastId: posts.lastOrNull?.id,
+    );
+  }
+
+  @override
   Future<TimelineState> build(ListTimelineKey key) async {
+    // 前のリスト / アカウントの新着を、このカラムへ漏らさない (#1098)。
+    resetLiveIngestState();
     final adapter = adapterForTimelineKey(
       ref.watch(currentAccountProvider),
       key.account,
@@ -36,6 +73,13 @@ class ListTimelineNotifier
     final contextKey = timelineContextKey(key.account, ListTab(id: key.id));
     if (adapter == null || adapter is! ListSupport) {
       return TimelineState(hasMore: false, contextKey: contextKey);
+    }
+
+    // ⚠ 配線は取得の前・初回接続は取得の後（理由は #904・ハッシュタグ側と同じ）。
+    if (adapter is StreamSupport) {
+      final streamAdapter = adapter as StreamSupport;
+      ref.onDispose(() => disposeLiveStream(streamAdapter));
+      listenLiveStreamToggle(streamAdapter);
     }
 
     final hideLivecure = ref.watch(hideLivecureProvider);
@@ -47,7 +91,14 @@ class ListTimelineNotifier
         query: TimelineQuery(maxId: maxId, limit: _pageSize),
       ),
     );
-    return result.copyWith(contextKey: contextKey);
+    seedLiveIngestAnchor(result.posts);
+    if (adapter is StreamSupport) {
+      startLiveStreamIfEnabled(adapter as StreamSupport);
+    }
+    return result.copyWith(
+      contextKey: contextKey,
+      streamConnectionState: streamConnectionState,
+    );
   }
 
   Future<void> loadMore() async {

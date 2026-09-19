@@ -29,8 +29,48 @@ typedef HashtagTimelineKey = ({AccountKey? account, String spec});
 /// Notifier that manages paginated hashtag timeline fetching.
 class HashtagTimelineNotifier
     extends AutoDisposeFamilyAsyncNotifier<TimelineState, HashtagTimelineKey>
-    with TimelineListMutations<HashtagTimelineKey> {
+    with
+        TimelineListMutations<HashtagTimelineKey>,
+        TimelineLiveIngest<HashtagTimelineKey> {
   static const _pageSize = 20;
+
+  @override
+  String get liveStreamKey =>
+      timelineContextKey(arg.account, HashtagTab(arg.spec))!;
+
+  @override
+  TabType get liveStreamTab => HashtagTab(arg.spec);
+
+  @override
+  String? get liveHost => arg.account?.host;
+
+  @override
+  int get catchUpPageSize => _pageSize;
+
+  /// ⚠ `getPostsByHashtag` は生のサーバー件数を返さない（本線 TL の
+  /// `getTimeline` だけが [TimelineResponse] を返す）。フィルタ後の件数を
+  /// `rawCount` に使うので、**サーバーが満ページを返したのに手元で削られた回は
+  /// 1 ページで打ち切る**。ギャップの古い側を取りこぼしうるが、次の live 遷移と
+  /// pull-to-refresh で埋まる。
+  @override
+  Future<CatchUpPage?> fetchCatchUpPage(String? maxId) async {
+    final adapter = adapterForTimelineKey(
+      ref.read(currentAccountProvider),
+      arg.account,
+    );
+    if (adapter == null || adapter is! HashtagSupport) return null;
+    final (primary, all) = parseHashtagSpec(arg.spec);
+    final posts = await (adapter as HashtagSupport).getPostsByHashtag(
+      primary,
+      query: TimelineQuery(maxId: maxId, limit: _pageSize),
+      all: all,
+    );
+    return (
+      posts: posts,
+      rawCount: posts.length,
+      rawLastId: posts.lastOrNull?.id,
+    );
+  }
 
   /// 自分の投稿をこのハッシュタグ TL の先頭へ楽観的に挿入する (#887)。
   ///
@@ -44,11 +84,17 @@ class HashtagTimelineNotifier
     if (post.filterAction == FilterAction.hide) return;
     if (ref.read(hideLivecureProvider) && hasLivecureTag(post)) return;
     if (current.posts.any((p) => p.id == post.id)) return;
+    // ライブ購読 (#1098) が入ったので、未表示バッファに居るぶんも重複になる。
+    if (hasPendingPost(post.id)) return;
+    // ⚠ 自分の投稿は位置に関わらず即座に先頭へ出す（意図的に near-top を見ない）。
+    seedLiveIngestAnchor([post, ...current.posts]);
     state = AsyncData(current.copyWith(posts: [post, ...current.posts]));
   }
 
   @override
   Future<TimelineState> build(HashtagTimelineKey key) async {
+    // 前のタグ / アカウントの新着を、このカラムへ漏らさない (#1098)。
+    resetLiveIngestState();
     final adapter = adapterForTimelineKey(
       ref.watch(currentAccountProvider),
       key.account,
@@ -56,6 +102,14 @@ class HashtagTimelineNotifier
     final contextKey = timelineContextKey(key.account, HashtagTab(key.spec));
     if (adapter == null || adapter is! HashtagSupport) {
       return TimelineState(hasMore: false, contextKey: contextKey);
+    }
+
+    // ⚠ 配線は取得の前。トグルは watch しない（切替が build() 全体を誘発して
+    // 可視のジャンプになる・#904）。初回接続は取得の後に張る。
+    if (adapter is StreamSupport) {
+      final streamAdapter = adapter as StreamSupport;
+      ref.onDispose(() => disposeLiveStream(streamAdapter));
+      listenLiveStreamToggle(streamAdapter);
     }
 
     final (primary, all) = parseHashtagSpec(key.spec);
@@ -69,7 +123,14 @@ class HashtagTimelineNotifier
         all: all,
       ),
     );
-    return result.copyWith(contextKey: contextKey);
+    seedLiveIngestAnchor(result.posts);
+    if (adapter is StreamSupport) {
+      startLiveStreamIfEnabled(adapter as StreamSupport);
+    }
+    return result.copyWith(
+      contextKey: contextKey,
+      streamConnectionState: streamConnectionState,
+    );
   }
 
   Future<void> loadMore() async {

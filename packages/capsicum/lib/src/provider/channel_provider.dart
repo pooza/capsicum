@@ -13,27 +13,82 @@ typedef ChannelTimelineKey = ({AccountKey? account, String id});
 /// Notifier that manages paginated channel timeline fetching.
 class ChannelTimelineNotifier
     extends AutoDisposeFamilyAsyncNotifier<TimelineState, ChannelTimelineKey>
-    with TimelineListMutations<ChannelTimelineKey> {
+    with
+        TimelineListMutations<ChannelTimelineKey>,
+        TimelineLiveIngest<ChannelTimelineKey> {
   static const _pageSize = 20;
 
   @override
+  String get liveStreamKey =>
+      timelineContextKey(arg.account, ChannelTab(id: arg.id))!;
+
+  @override
+  TabType get liveStreamTab => ChannelTab(id: arg.id);
+
+  @override
+  String? get liveHost => arg.account?.host;
+
+  @override
+  int get catchUpPageSize => _pageSize;
+
+  /// ⚠ 生のサーバー件数が取れない件は [HashtagTimelineNotifier.fetchCatchUpPage]
+  /// と同じ。
+  @override
+  Future<CatchUpPage?> fetchCatchUpPage(String? maxId) async {
+    final adapter = adapterForTimelineKey(
+      ref.read(currentAccountProvider),
+      arg.account,
+    );
+    if (adapter == null || adapter is! ChannelSupport) return null;
+    final posts = await (adapter as ChannelSupport).getChannelTimeline(
+      arg.id,
+      query: TimelineQuery(maxId: maxId, limit: _pageSize),
+    );
+    return (
+      posts: posts,
+      rawCount: posts.length,
+      rawLastId: posts.lastOrNull?.id,
+    );
+  }
+
+  @override
   Future<TimelineState> build(ChannelTimelineKey key) async {
+    // 前のチャンネル / アカウントの新着を、このカラムへ漏らさない (#1098)。
+    resetLiveIngestState();
     final adapter = adapterForTimelineKey(
       ref.watch(currentAccountProvider),
       key.account,
     );
+    // ⚠ contextKey はギャップ補完 (#781) の stale 判定が読む。ここだけ空のまま
+    // だったので、他の TL と同じく入れる。
+    final contextKey = timelineContextKey(key.account, ChannelTab(id: key.id));
     if (adapter == null || adapter is! ChannelSupport) {
-      return const TimelineState(hasMore: false);
+      return TimelineState(hasMore: false, contextKey: contextKey);
+    }
+
+    // ⚠ 配線は取得の前・初回接続は取得の後（理由は #904・ハッシュタグ側と同じ）。
+    if (adapter is StreamSupport) {
+      final streamAdapter = adapter as StreamSupport;
+      ref.onDispose(() => disposeLiveStream(streamAdapter));
+      listenLiveStreamToggle(streamAdapter);
     }
 
     final hideLivecure = ref.watch(hideLivecureProvider);
-    return fetchUntilVisible(
+    final result = await fetchUntilVisible(
       pageSize: _pageSize,
       hideLivecure: hideLivecure,
       fetch: (maxId) => (adapter as ChannelSupport).getChannelTimeline(
         key.id,
         query: TimelineQuery(maxId: maxId, limit: _pageSize),
       ),
+    );
+    seedLiveIngestAnchor(result.posts);
+    if (adapter is StreamSupport) {
+      startLiveStreamIfEnabled(adapter as StreamSupport);
+    }
+    return result.copyWith(
+      contextKey: contextKey,
+      streamConnectionState: streamConnectionState,
     );
   }
 
