@@ -2,7 +2,6 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../constants.dart';
 import '../../provider/account_manager_provider.dart';
@@ -10,6 +9,7 @@ import '../../provider/server_config_provider.dart';
 import '../../url_helper.dart';
 import '../../util/exception_scrub.dart';
 import '../../util/user_acct.dart';
+import '../util/deck_navigation.dart';
 import '../util/fediverse_link.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/emoji_text.dart';
@@ -357,7 +357,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
       itemBuilder: (context, index) {
         final user = users[index];
         return ListTile(
-          onTap: () => context.push('/profile', extra: user),
+          onTap: () => openProfile(context, user),
           leading: UserAvatar(user: user, size: 40),
           title: EmojiText(
             user.displayName ?? user.username,
@@ -388,7 +388,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
         return ListTile(
           leading: const Icon(Icons.tag),
           title: Text('#$tag'),
-          onTap: () => context.push('/hashtag/$tag'),
+          onTap: () => openHashtag(context, tag),
         );
       },
     );

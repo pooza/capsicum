@@ -1126,6 +1126,15 @@ class MisskeyClient {
     return (response.data as List).cast<Map<String, dynamic>>();
   }
 
+  /// POST /api/gallery/posts/show
+  Future<Map<String, dynamic>> showGalleryPost(String postId) async {
+    final response = await dio.post(
+      '/api/gallery/posts/show',
+      data: createBody({'postId': postId}),
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
   /// POST /api/users/gallery/posts
   Future<List<Map<String, dynamic>>> getUserGalleryPosts(
     String userId, {

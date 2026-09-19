@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../main.dart' show appLaunchStopwatch;
+import '../model/account.dart';
 import '../model/account_key.dart';
 import '../service/timeline_cache.dart';
 import '../util/conversion_skip_report.dart';
@@ -37,18 +38,70 @@ final selectedTimelineTypeProvider = Provider<TimelineType>((ref) {
   return tab is TimelineTab ? tab.type : TimelineType.home;
 });
 
+/// 本線 TL（[timelineProvider]）の family キー (#1087)。
+///
+/// ⚠ **値のまま持つ。文字列にしない**（`docs/deck-ui-plan.md` 決定済み事項 4）。
+/// [AccountKey] も [TimelineType] も値で比較できるので、record の `==` がそのまま
+/// 「同じカラムか」になる。
+///
+/// ⚠ 種別は [TabType] ではなく [TimelineType] で持つ。本線 TL が扱えるのは
+/// [TimelineTab] だけで、ハッシュタグ / リスト / チャンネルは別の family
+/// （#1088 でそれぞれのキーに [AccountKey] を足す）。[TabType] で持つと、
+/// チャンネルタブ等へ切り替えたときに「中身は同じホーム TL なのに別インスタンス」
+/// になって REST を取り直す（[selectedTimelineTypeProvider] は非 TL タブを home に
+/// 畳むので、これまでは再取得していなかった）。
+///
+/// [account] が null になるのはアカウントが 1 つも無いときだけで、そのインスタンスは
+/// 何も取得しない（従来の「アダプタが無い」と同じ）。
+typedef TimelineKey = ({AccountKey? account, TimelineType type});
+
+/// HomeScreen が表示している本線 TL のキー (#1087)。
+///
+/// デッキ導入前の「アカウント 1 つ・タブ 1 本」の画面は、これで [timelineProvider] を
+/// 引く。record は値で比較されるので、アカウントもタブも変わらない限り同じ
+/// インスタンスを指し続ける。
+final currentTimelineKeyProvider = Provider<TimelineKey>((ref) {
+  return (
+    account: ref.watch(currentAccountKeyProvider),
+    type: ref.watch(selectedTimelineTypeProvider),
+  );
+}, dependencies: [currentAccountKeyProvider]);
+
+/// TL の family キーが指すアカウントのアダプタ (#1087 / #1088)。
+///
+/// ⚠⚠ **現在のアカウントがキーのアカウントと一致するときだけ返す。**アカウントを
+/// 切り替えた直後は、破棄される前の旧キーのインスタンスがまだ生きていることがある。
+/// そこで `currentAdapterProvider` をそのまま読むと、**旧キーのインスタンスが
+/// 新しいアカウントの TL を取りに行く**（REST の無駄打ち・別アカウントの投稿が
+/// 旧キーの一覧に入る）。本線 / ハッシュタグ / リスト / チャンネルの 4 系統で共有する。
+///
+/// 解決元を `currentAccountProvider` にしておくのは、フェーズ 2（#1095 / #1096）で
+/// カラムごとに `ProviderScope` で上書きする対象がこれだから。
+DecentralizedBackendAdapter? adapterForTimelineKey(
+  Account? current,
+  AccountKey? account,
+) => current != null && current.key == account ? current.adapter : null;
+
 /// `null` 自体が「明示的にクリア」を意味する nullable フィールドを
 /// `copyWith` で保持／差し替えするための sentinel (#455 / #450 と同型)。
 const Object _keepLoadMoreError = Object();
 
 /// 表示中の TL がどの文脈で取得されたかを表すキーを組み立てる (#758)。
 ///
-/// [kind] は TL の種別を表す識別子（メイン TL は `tl:<type>`、ハッシュタグは
-/// `tag:<spec>`、リストは `list:<id>`）。アカウントキーが無いときは null。
+/// `<アカウント>|<種別>`。種別は [TabType.toIdentityKey]（`timeline:home` /
+/// `hashtag:<spec>` / `list:<id>`）。アカウントキーが無いときは null。
 /// provider 側は build() でこのキーを TimelineState に刻み、UI 側は現在の文脈から
 /// 同じ式で組み立てたキーと照合する。両者で同一の式を使うことが前提。
-String? timelineContextKey(AccountKey? accountKey, String kind) =>
-    accountKey == null ? null : '${accountKey.toStorageKey()}|$kind';
+///
+/// ⚠ 以前は種別を文字列で受け取り、語彙が [TabType] と揃っていなかった
+/// （`tl:home` 対 `timeline:home`・`tag:` 対 `hashtag:`）。[TabType] で受けて
+/// [TabType.toIdentityKey] を使うことで、**デッキのカラムの中身のキー
+/// （`DeckColumn.contentKey`）と同じ文字列になる**（#1091・決定済み事項 4-3）。
+/// ⚠ 表示名を含む [TabType.toKey] を使わないこと（リスト名の変更でキーが変わる）。
+String? timelineContextKey(AccountKey? accountKey, TabType tab) =>
+    accountKey == null
+    ? null
+    : '${accountKey.toStorageKey()}|${tab.toIdentityKey()}';
 
 /// 自分の投稿が、指定した TL 種別に実際に載るかを判定する (#814)。
 /// 楽観挿入 ([TimelineNotifier.insertOwnPost]) が、載らないはずの投稿
@@ -523,16 +576,578 @@ mixin TimelineListMutations<Arg>
   }
 }
 
+/// 本線 TL のライブ購読の「取り込み側」(#1098)。
+///
+/// streaming で届いた投稿を一覧へ入れるか未表示バッファへ積むか、重複とフィルタ
+/// をどう弾くか、接続状態をどう state へ反映するか —— **系統 (home / hashtag /
+/// list / channel) に依存しない部分**をここに集める。ハッシュタグ / リスト /
+/// チャンネルの各 TL にライブ購読を広げる (#1098・B-5) にあたり、[TimelineNotifier]
+/// だけが持っていた作りを共有できる形にするのが目的。
+///
+/// ⚠ **購読の張り方（どのチャンネルへ何のパラメータで繋ぐか）はここに含めない。**
+/// 系統ごとに違うので、[TimelineNotifier] 側に残している。
+///
+/// ⚠⚠ **[TimelineListMutations] より後に適用する。**未表示バッファを持つ TL では
+/// 削除・ブロックがバッファも刈らないと「見えているどの TL からも消える」保証
+/// (#887) に穴が空くため、[removePost] / [removePostsByUser] をここで上書きする。
+/// **`on TimelineListMutations` を宣言しているので、順序を間違えるとコンパイル
+/// エラーになる**（黙って穴が開くのを防ぐため、規約ではなく型で縛る）。
+///
+/// ⚠⚠ **[TimelineListMutations] と同じく `timeline_provider.dart` に同居させる。**
+/// [_pendingPosts] / [_dropPending] は削除・ブロック (#887) と楽観挿入 (#717 /
+/// #814) からも触られており、別ライブラリへ出すとこの 2 箇所が public な口を
+/// 通ることになって、**移動のはずの変更が API の変更に化ける**。
+mixin TimelineLiveIngest<Arg>
+    on
+        AutoDisposeFamilyAsyncNotifier<TimelineState, Arg>,
+        TimelineListMutations<Arg> {
+  /// スクロール中に届いた未表示の新着 (#296)。「新着 N 件」を開くまで一覧へは
+  /// 出さない。⚠ **本線以外からも触られる**: 削除 / ブロック (#887) は
+  /// [_dropPending] で刈り、楽観挿入 (#717 / #814) は重複判定にここを見る。
+  final List<Post> _pendingPosts = [];
+  bool _isNearTop = true;
+
+  /// 既知の最新投稿 id（先頭）。streaming 再接続時のギャップ補完 (#781) で
+  /// `since_id` の起点に使う。state.valueOrNull を直接読むと build / 接続コール
+  /// バックのレースで null を踏みうるため、prepend のたびにここへ更新して保持する。
+  String? _newestKnownId;
+
+  /// ギャップ補完 (#781) の多重実行ガード。`live` 遷移が連続しても 1 本に絞る。
+  bool _catchUpInProgress = false;
+
+  /// 切断検知回数・直近切断時刻 (#782)。インジケータへ正直に出すため notifier 側
+  /// で数え、state に反映する。build() でリセット。
+  int _reconnectCount = 0;
+  DateTime? _lastDisconnectedAt;
+
+  /// streaming 接続状態の真実の値 (#714)。build() 中（state がまだ
+  /// AsyncLoading で valueOrNull が null）に live 等が発火しても取りこぼさない
+  /// よう、callback はここへ常時記録し、build() の返り値にもこの値を反映する。
+  StreamConnectionState _streamConnectionState =
+      StreamConnectionState.connecting;
+
+  /// build() のたびにライブ購読まわりの状態を初期化する。
+  ///
+  /// ⚠ **前の文脈（アカウント / 種別）の新着を [flushPending] 経由で次の TL へ
+  /// 漏らさないため**、一覧そのものより先に捨てる。接続状態・ギャップ補完の
+  /// 起点・切断カウンタも同じ理由で build() が持ち越さない。
+  void resetLiveIngestState() {
+    _pendingPosts.clear();
+    _isNearTop = true;
+    _streamConnectionState = StreamConnectionState.connecting;
+    _newestKnownId = null;
+    _catchUpInProgress = false;
+    _reconnectCount = 0;
+    _lastDisconnectedAt = null;
+  }
+
+  /// アダプタ側の購読キー (#1089 / #1090)。TL の文脈キー
+  /// （`<アカウント>|<タブ>`）をそのまま使う。
+  ///
+  /// ⚠ 購読を張る / 閉じるのはアダプタを得られたとき（＝キーのアカウントが
+  /// 現在のアカウントと一致したとき）だけなので、null にはならない。
+  String get liveStreamKey;
+
+  /// 何を購読するか。⚠ **系統ごとに違う 2 つ目**（#1098）。
+  ///
+  /// ⚠ [TimelineTab] だけでなく [HashtagTab] / [ListTab] / [ChannelTab] も返せる。
+  /// 対応するチャンネルを持たない組み合わせ（Mastodon のチャンネル・AND 指定の
+  /// タグ等）では、アダプタ側が空ストリームを返して購読を張らない。
+  TabType get liveStreamTab;
+
+  /// 切断系イベントをサーバー別に切り分けるための観測タグ (#826)。
+  /// ⚠ **挙動は host で分岐しない**（per-server workaround は入れない）。
+  String? get liveHost;
+
+  /// ギャップ補完 (#781) の 1 ページを取りに行く。
+  ///
+  /// ⚠ **系統 (home / hashtag / list / channel) ごとに違うのはここだけ**なので、
+  /// 実装側の口にしている (#1098)。返すのは **新しい順**の 1 ページで、
+  /// 取りに行けない（担当アカウントのアダプタが無い等）なら null を返す。
+  Future<CatchUpPage?> fetchCatchUpPage(String? maxId);
+
+  /// ギャップ補完で 1 ページに要求する件数。満ページ未満を「これ以上古い投稿が
+  /// 無い」の判定に使うため、実際の取得件数と一致させること。
+  int get catchUpPageSize;
+
+  /// 接続ライフサイクルを notifier フィールドと（データがあれば）state に
+  /// 反映する。build() 中に onConnectionState が取りこぼさないための常時記録と
+  /// 同じ理由で、まずフィールドへ、次に state があれば更新する。
+  void _setStreamConnectionState(StreamConnectionState connState) {
+    _streamConnectionState = connState;
+    final current = state.valueOrNull;
+    if (current == null) return;
+    state = AsyncData(current.copyWith(streamConnectionState: connState));
+  }
+
+  /// Called by the UI when the user's scroll position changes.
+  void setNearTop(bool nearTop) {
+    _isNearTop = nearTop;
+    if (nearTop) flushPending();
+  }
+
+  /// Flush queued posts into the timeline.
+  void flushPending() {
+    if (_pendingPosts.isEmpty) return;
+    final current = state.valueOrNull;
+    if (current == null) return;
+    // pending は順不同で積まれうる (#781: streaming 単発とギャップ補完バッチが
+    // 混在)。id でデデュープしつつ降順に整列して取り込む。
+    final seen = <String>{};
+    final merged = <Post>[];
+    for (final post in [..._pendingPosts, ...current.posts]) {
+      if (seen.add(post.id)) merged.add(post);
+    }
+    merged.sort((a, b) => comparePostIdDesc(a.id, b.id));
+    _pendingPosts.clear();
+    if (merged.isNotEmpty) _newestKnownId = merged.first.id;
+    state = AsyncData(current.copyWith(posts: merged, pendingCount: 0));
+  }
+
+  /// streaming 受信とギャップ補完 (#781) の共通取り込み口。
+  ///
+  /// フィルタ (hide / hideLivecure) と重複排除 (表示中 + pending + バッチ内) を
+  /// 単発受信・バッチ補完で同一に適用する。[newPosts] は **新しい順**（先頭が
+  /// 最新）で渡す。near-top なら先頭へブロック prepend、スクロール中なら
+  /// streaming と同じく pending キューへ積んでジャンプを防ぐ。
+  ///
+  /// 戻り値は実際に取り込んだ（フィルタ・重複排除を通過した）件数。ギャップ
+  /// 補完の実効を観測する (#784) のに使う。
+  int _ingestLivePosts(List<Post> newPosts) {
+    if (newPosts.isEmpty) return 0;
+    final current = state.valueOrNull;
+    if (current == null) return 0;
+    final hideLivecure = ref.read(hideLivecureProvider);
+    final existingIds = {for (final p in current.posts) p.id};
+    final pendingIds = {for (final p in _pendingPosts) p.id};
+    final accepted = <Post>[];
+    final acceptedIds = <String>{};
+    for (final post in newPosts) {
+      if (post.filterAction == FilterAction.hide) continue;
+      if (hideLivecure && hasLivecureTag(post)) continue;
+      if (existingIds.contains(post.id) || pendingIds.contains(post.id)) {
+        continue;
+      }
+      if (!acceptedIds.add(post.id)) continue; // バッチ内重複
+      accepted.add(post);
+    }
+    if (accepted.isEmpty) return 0;
+
+    if (_isNearTop) {
+      // accepted を現在リストへマージし id 降順を保つ。単発 streaming（常に最新）
+      // では実質 prepend だが、ギャップ補完バッチが streaming の prepend と
+      // 競合（fetch 待ちの間に新しい投稿が先に載る）しても順序が崩れないよう、
+      // ブロック prepend ではなくマージ＋ソートにする (#781)。タイムラインは
+      // 元々 id 降順なのでソートはほぼ冪等で、件数も数百どまり。
+      final merged = [...accepted, ...current.posts]
+        ..sort((a, b) => comparePostIdDesc(a.id, b.id));
+      _newestKnownId = merged.first.id;
+      state = AsyncData(current.copyWith(posts: merged));
+    } else {
+      // User is scrolling — queue to avoid jumping. flushPending で id 降順に
+      // 整列して取り込むため、ここでは順不同で積んでよい。
+      _pendingPosts.addAll(accepted);
+      _newestKnownId = _maxPostId(_newestKnownId, accepted.first.id);
+      state = AsyncData(current.copyWith(pendingCount: _pendingPosts.length));
+    }
+    return accepted.length;
+  }
+
+  /// 2 つの id のうち新しい（降順で前に来る）方を返す (#781)。
+  String _maxPostId(String? a, String b) {
+    if (a == null) return b;
+    return comparePostIdDesc(a, b) <= 0 ? a : b;
+  }
+
+  /// 未表示バッファ [_pendingPosts] から条件に合う投稿を落とし、新しい
+  /// `pendingCount` を返す。
+  ///
+  /// TL 上部から離れている間、streaming の新着は表示中の一覧ではなく
+  /// [_pendingPosts] に溜まる（「新着 N 件」で開くまで出さない、#296）。
+  /// 一覧からだけ消してここを掃除しないと、**削除済み投稿やブロックした相手の
+  /// 投稿が「新着 N 件」を開いた瞬間に現れる**。ブロックは安全のための操作なので
+  /// 「見えているどの TL からも消える」保証 (#887) を穴のない形にする。
+  int _dropPending(bool Function(Post) matches) {
+    _pendingPosts.removeWhere(matches);
+    return _pendingPosts.length;
+  }
+
+  /// 削除された投稿を、一覧と未表示バッファの両方から取り除く (#887)。
+  ///
+  /// ⚠ [TimelineListMutations.removePost] は一覧しか見ない。**一覧からだけ消すと、
+  /// 削除済みの投稿が「新着 N 件」を開いた瞬間に現れる。**
+  @override
+  void removePost(String id) {
+    final current = state.valueOrNull;
+    if (current == null) return;
+    final posts = postsWithoutId(current.posts, id);
+    final pendingCount = _dropPending((p) => p.id == id);
+    // 一覧も未表示バッファも変わらないなら触らない（元の早期 return を保つ）。
+    if (posts.length == current.posts.length &&
+        pendingCount == current.pendingCount) {
+      return;
+    }
+    state = AsyncData(
+      current.copyWith(posts: posts, pendingCount: pendingCount),
+    );
+  }
+
+  /// ブロック / ミュートした相手の投稿を、一覧と未表示バッファの両方から取り除く。
+  ///
+  /// ⚠⚠ **ブロックは安全のための操作**なので、[removePost] より穴を開けられない。
+  @override
+  void removePostsByUser(String userId) {
+    final current = state.valueOrNull;
+    if (current == null) return;
+    final posts = postsWithoutUser(current.posts, userId);
+    final pendingCount = _dropPending((p) => postIsByUser(p, userId));
+    if (posts.length == current.posts.length &&
+        pendingCount == current.pendingCount) {
+      return;
+    }
+    state = AsyncData(
+      current.copyWith(posts: posts, pendingCount: pendingCount),
+    );
+  }
+
+  /// いまの接続状態 (#714)。⚠ **別ライブラリの TL から読むための公開口。**
+  /// build() の返り値へ反映しないと、インジケータが取得完了で connecting に
+  /// 戻ってしまう。
+  StreamConnectionState get streamConnectionState => _streamConnectionState;
+
+  /// 初回取得のあと、ギャップ補完 (#781) の起点を確定させる。
+  ///
+  /// ⚠ **これを呼ばないと、live 遷移のたびに「最新ページ 1 枚だけシード」の
+  /// 経路へ落ちる**（アンカー未確立の扱い）。切断窓が 1 ページを超えたときに
+  /// 取りこぼす。
+  void seedLiveIngestAnchor(List<Post> posts) {
+    _newestKnownId = posts.firstOrNull?.id;
+  }
+
+  /// 未表示バッファに同じ投稿が既にあるか。楽観挿入の重複判定に使う (#717)。
+  bool hasPendingPost(String id) => _pendingPosts.any((p) => p.id == id);
+
+  /// build() から張るライブ更新トグル (#854 / #904) の配線。
+  ///
+  /// ⚠ **初回接続はここではなく、取得が終わってから [startLiveStreamIfEnabled]**。
+  /// トグルを watch すると、切替が build() 全体（REST 再フェッチ・スクロール位置
+  /// リセット・未表示バッファの破棄）を誘発して可視のジャンプになる (#904)。
+  void listenLiveStreamToggle(StreamSupport adapter) {
+    if (!ref.read(streamingEnabledProvider)) {
+      _streamConnectionState = StreamConnectionState.disabled;
+    }
+    ref.listen(streamingEnabledProvider, (_, enabled) {
+      if (enabled) {
+        _setStreamConnectionState(StreamConnectionState.connecting);
+        _startStreaming(adapter);
+      } else {
+        _stopStreaming(adapter);
+      }
+    });
+  }
+
+  /// 取得が終わったあとの初回接続。OFF のときは張らない (#854)。
+  void startLiveStreamIfEnabled(StreamSupport adapter) {
+    if (!ref.read(streamingEnabledProvider)) return;
+    _startStreaming(adapter);
+  }
+
+  /// 破棄時の後始末。⚠ **このインスタンスのキーの購読だけ**を閉じる
+  /// (#1089 / #1090)。同じアカウントの別のカラムの購読には触らない。
+  void disposeLiveStream(StreamSupport adapter) {
+    _streamSubscription?.cancel();
+    adapter.disposeStream(liveStreamKey);
+  }
+
+  /// WS が live になった時点で、未接続の窓に流れて取りこぼした投稿を
+  /// `since_id` で取り直してマージする (#781)。
+  ///
+  /// 初回 REST スナップショット〜WS live、および各再接続の切断窓に作られた
+  /// 投稿はどの経路でも届かず永久欠落するため、live 遷移ごとにここで埋める。
+  /// [_newestKnownId] を起点に、ギャップが 1 ページを超える場合は max_id で
+  /// 下方向にページングして [kMaxVisibilityPageFetches] ページまで遡る。
+  ///
+  /// 初期可視リストが空（新規/空 TL・全件フィルタ・page-cap）で [_newestKnownId]
+  /// が null のときも、REST→live 窓に作られた投稿を取りこぼさないよう最新ページ
+  /// 1 枚だけ取得してシードする (Codex #783)。
+  Future<void> _catchUpSinceTop() async {
+    if (_catchUpInProgress) return;
+    final since = _newestKnownId;
+    // await 中にアカウント/種別が切り替わると build() が rerun して notifier が
+    // 新文脈に作り直されるが、この future はキャンセルされない。旧文脈で取得した
+    // 投稿を新文脈へマージしないよう、開始時の contextKey を捕捉し ingest 直前に
+    // 照合する (#758 / _deferIsCatEnrich と同型・Codex #783)。
+    final capturedContextKey = state.valueOrNull?.contextKey;
+    _catchUpInProgress = true;
+    try {
+      final gap = await collectCatchUpGap(
+        since: since,
+        pageSize: catchUpPageSize,
+        maxFetches: kMaxVisibilityPageFetches,
+        fetch: (maxId) async {
+          final page = await fetchCatchUpPage(maxId);
+          // 取りに行けない（担当アカウントのアダプタが無い等）ときは空ページを
+          // 返す。rawCount が pageSize 未満なので collectCatchUpGap は 1 回で
+          // 打ち切り、gap は空のまま下の早期 return に落ちる。
+          return page ?? (posts: const <Post>[], rawCount: 0, rawLastId: null);
+        },
+      );
+
+      if (gap.isEmpty) return;
+      // await 中に文脈が変わっていたら破棄（旧文脈の投稿の混入・_newestKnownId
+      // 汚染を防ぐ）。_ingestLivePosts は同期なので照合後の混入はない。
+      if (state.valueOrNull?.contextKey != capturedContextKey) return;
+      // getTimeline は新しい順・ページも新しい方から取得するため gap は新しい順。
+      // 取り込み時に再度 state を読み、最新 state へマージする。
+      final recovered = _ingestLivePosts(gap);
+      // 再接続のたびに何件を補完できたかを観測する (#784 item 3)。resilience
+      // (#784) × catch-up (#781) の実効を本番で追跡するための軽量シグナル。
+      // PII を載せない（件数のみ）。
+      if (recovered > 0) {
+        Sentry.addBreadcrumb(
+          Breadcrumb(
+            message: 'timeline.stream.catchup',
+            category: 'timeline.stream',
+            level: SentryLevel.info,
+            data: {'recovered': recovered, 'fetched': gap.length},
+          ),
+        );
+      }
+    } catch (_) {
+      // 補完の失敗で本筋を止めない。次の live 遷移 / pull-to-refresh で再試行。
+    } finally {
+      _catchUpInProgress = false;
+    }
+  }
+
+  StreamSubscription<Post>? _streamSubscription;
+
+  // throttle して切断中の連発 spam を防ぐ。host 分岐は入れない (全サーバー共通
+  // の計装)。バケットは性質ごとに分離 (#602): connect エラー後 60s 以内に
+  // listener 経路の例外 (_applyWordFilter 異常等) が出ても抑制しないように、
+  // _lastListenCapture を独立に持つ。
+  DateTime? _lastParseCapture;
+  DateTime? _lastConnectCapture;
+  DateTime? _lastListenCapture;
+  // 切断 (onDone) の closeCode 観測用バケット (#788)。性質が違うので
+  // connect/parse/listen とは独立に持つ。
+  DateTime? _lastDisconnectCapture;
+  static const _captureThrottle = Duration(seconds: 60);
+
+  void _startStreaming(StreamSupport adapter) {
+    _streamSubscription?.cancel();
+    // 切断系イベント (disconnected / reconnect_exhausted) を Sentry 上で
+    // サーバー別に切り分けられるよう host を控える (#826)。挙動は host で分岐
+    // しない (per-server workaround は入れない)。付与するのは観測タグのみで、
+    // push.host と同型に host のみ載せ生 URL / トークンは載せない。
+    final host = liveHost;
+    final stream = adapter.streamTimeline(
+      liveStreamKey,
+      liveStreamTab,
+      onParseError: (e, st) {
+        Sentry.addBreadcrumb(
+          Breadcrumb(
+            category: 'timeline.stream.parse',
+            level: SentryLevel.warning,
+            // 例外型のみ。FormatException.toString() はパース対象の生データ
+            // 断片（投稿本文を含みうる）を持つため breadcrumb には載せない。
+            // 詳細は下の captureException(scrubException(e)) で送る。
+            message: e.runtimeType.toString(),
+          ),
+        );
+        final now = DateTime.now();
+        if (_lastParseCapture != null &&
+            now.difference(_lastParseCapture!) < _captureThrottle) {
+          return;
+        }
+        _lastParseCapture = now;
+        Sentry.captureException(
+          scrubException(e),
+          stackTrace: st,
+          withScope: (scope) {
+            scope.setTag('timeline.stream.parse', 'failed');
+            scope.fingerprint = [
+              'timeline.stream.parse',
+              e.runtimeType.toString(),
+            ];
+          },
+        );
+      },
+      onStreamError: (e, st) {
+        Sentry.addBreadcrumb(
+          Breadcrumb(
+            category: 'timeline.stream.connect',
+            level: SentryLevel.warning,
+            message: e.runtimeType.toString(),
+          ),
+        );
+        final now = DateTime.now();
+        if (_lastConnectCapture != null &&
+            now.difference(_lastConnectCapture!) < _captureThrottle) {
+          return;
+        }
+        _lastConnectCapture = now;
+        Sentry.captureException(
+          scrubException(e),
+          stackTrace: st,
+          withScope: (scope) {
+            scope.setTag('timeline.stream.connect', 'failed');
+            scope.fingerprint = [
+              'timeline.stream.connect',
+              e.runtimeType.toString(),
+            ];
+          },
+        );
+      },
+      onReconnectExhausted: () {
+        Sentry.captureMessage(
+          'timeline.stream.reconnect_exhausted',
+          level: SentryLevel.warning,
+          withScope: (scope) {
+            scope.setTag('timeline.stream', 'reconnect_exhausted');
+            if (host != null) scope.setTag('timeline.stream.host', host);
+            scope.fingerprint = ['timeline.stream.reconnect_exhausted'];
+          },
+        );
+        // 無言の「ライブ更新が止まったまま」状態を state に出す。REST 取得済み
+        // 投稿は残るので AsyncError にはせず、フラグだけ立てて UI が気付ける
+        // ようにする。pull-to-refresh / タブ再選択の build() でクリアされる。
+        final current = state.valueOrNull;
+        if (current != null && !current.streamReconnectExhausted) {
+          state = AsyncData(current.copyWith(streamReconnectExhausted: true));
+        }
+      },
+      // 接続ライフサイクルを state に反映し、常時インジケータへ流す (#714)。
+      // build() 中（state が AsyncLoading で valueOrNull が null）に発火しても
+      // 取りこぼさないよう、まず notifier フィールドへ常時記録する。state に
+      // データがあればそれも更新する。
+      onConnectionState: (connState) {
+        _streamConnectionState = connState;
+        // 切断を検知したら回数・時刻を記録する (#782)。source 側で同一状態は
+        // dedup されるため、disconnected の発火 = 1 回の接続失敗サイクル。
+        if (connState == StreamConnectionState.disconnected) {
+          _reconnectCount++;
+          _lastDisconnectedAt = DateTime.now();
+        }
+        // WS が live になるたび（初回接続・各再接続）、接続が確立していなかった
+        // 窓に流れた投稿を since_id で取り直す (#781)。これが無いと「初回 REST →
+        // WS live までの窓」「切断〜再接続の窓」に入った投稿が永久に欠落する
+        // （実況中の取りこぼし報告の根因）。装飾でなく本機能なので最新 state へ
+        // マージする。
+        if (connState == StreamConnectionState.live) {
+          unawaited(_catchUpSinceTop());
+        }
+        final current = state.valueOrNull;
+        if (current == null) return;
+        state = AsyncData(
+          current.copyWith(
+            streamConnectionState: connState,
+            reconnectCount: _reconnectCount,
+            lastDisconnectedAt: _lastDisconnectedAt,
+            // #784 で give-up せず再試行を続けるため、live 復帰時に exhausted
+            // フラグをクリアする。これが無いと一度 exhausted を踏むと復帰後も
+            // 「停止」表示が残り、次の枯渇で false→true の SnackBar も出なく
+            // なる (Codex #780)。live 以外では現状維持（null）。
+            streamReconnectExhausted: connState == StreamConnectionState.live
+                ? false
+                : null,
+          ),
+        );
+      },
+      // 「どんな切れ方をしているか」を本番で観測する (#788)。現象すら未把握な
+      // ので原因対処はせず計器のみ。実測 (2026-07-11) では close_code 1002
+      // (protocol error) が支配的で、1001 (going away) / 1000 (正常) /
+      // 1006 (異常) が続く。host タグで発生サーバーを切り分ける (#826) が、
+      // 挙動は host で分岐しない (per-server workaround は入れない)。closeReason
+      // はサーバー任意文字列を持ちうるため内容は載せず、有無のみ。throttle で
+      // 切断連発の spam を抑える。
+      onDisconnect: (closeCode, closeReason) {
+        final now = DateTime.now();
+        if (_lastDisconnectCapture != null &&
+            now.difference(_lastDisconnectCapture!) < _captureThrottle) {
+          return;
+        }
+        _lastDisconnectCapture = now;
+        final code = closeCode?.toString() ?? 'none';
+        Sentry.captureMessage(
+          'timeline.stream.disconnected',
+          level: SentryLevel.info,
+          withScope: (scope) {
+            scope.setTag('timeline.stream', 'disconnected');
+            if (host != null) scope.setTag('timeline.stream.host', host);
+            scope.setTag('timeline.stream.close_code', code);
+            scope.setTag(
+              'timeline.stream.has_reason',
+              (closeReason != null && closeReason.isNotEmpty).toString(),
+            );
+            scope.fingerprint = ['timeline.stream.disconnected', code];
+          },
+        );
+      },
+    );
+    _streamSubscription = stream.listen(
+      (newPost) => _ingestLivePosts([newPost]),
+      onError: (Object e, StackTrace st) {
+        // controller 自体は error を流さない設計だが、adapter 側の .map
+        // (_applyWordFilter 等) が投げると listener の error として届く。
+        // 握り潰すと「ストリーミング来ない」だけになるので観測層へ流す
+        // (#586)。state は AsyncError にせず (REST 投稿は生きている)
+        // breadcrumb + throttle 付き captureException のみ。
+        // throttle バケットは _lastListenCapture を独立に持つ (#602): connect
+        // エラーの throttle に巻き込まれて listener 側の例外 (_applyWordFilter
+        // 異常等) を取りこぼさないようにする。
+        Sentry.addBreadcrumb(
+          Breadcrumb(
+            category: 'timeline.stream.listen',
+            level: SentryLevel.warning,
+            message: e.runtimeType.toString(),
+          ),
+        );
+        final now = DateTime.now();
+        if (_lastListenCapture != null &&
+            now.difference(_lastListenCapture!) < _captureThrottle) {
+          return;
+        }
+        _lastListenCapture = now;
+        Sentry.captureException(
+          scrubException(e),
+          stackTrace: st,
+          withScope: (scope) {
+            scope.setTag('timeline.stream.listen', 'failed');
+            scope.fingerprint = [
+              'timeline.stream.listen',
+              e.runtimeType.toString(),
+            ];
+          },
+        );
+      },
+    );
+  }
+
+  /// ライブ更新トグルを OFF にしたときの接続解除 (#904)。build() を再走させず
+  /// WebSocket の購読だけを止め、インジケータを disabled にする。
+  void _stopStreaming(StreamSupport adapter) {
+    _streamSubscription?.cancel();
+    _streamSubscription = null;
+    adapter.disposeStream(liveStreamKey);
+    _setStreamConnectionState(StreamConnectionState.disabled);
+  }
+}
+
 /// Notifier that manages paginated timeline fetching with optional streaming.
-class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
+///
+/// ⚠ **`(アカウント, 種別)` ごとに別インスタンス** (#1087)。以前は family を持たない
+/// singleton で、アカウント / 種別の切替は同じインスタンスの build() 再実行だった。
+/// 今は切替で**別のインスタンスへ移り**、前のものは誰も watch しなくなって
+/// autoDispose で破棄される（`autoDispose` の扱い自体は変えていない）。
+class TimelineNotifier
+    extends AutoDisposeFamilyAsyncNotifier<TimelineState, TimelineKey>
+    with TimelineListMutations<TimelineKey>, TimelineLiveIngest<TimelineKey> {
   static const _pageSize = 20;
 
   /// ホーム TL の初回描画を 1 プロセス 1 回だけ計測するためのフラグ (#716)。
   /// AutoDispose で Notifier は作り直されるため static に持つ。
   static bool _homeFirstPaintReported = false;
-  StreamSubscription<Post>? _streamSubscription;
-  final List<Post> _pendingPosts = [];
-  bool _isNearTop = true;
 
   /// provider が破棄済みか (#890)。キャッシュ先出しの裏で走る初回取得が、
   /// 破棄後に state を触らないようにするための番兵。build() のたびに false へ
@@ -566,14 +1181,6 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     _startupCacheServed = false;
     _homeFirstPaintReported = false;
   }
-
-  /// 既知の最新投稿 id（先頭）。streaming 再接続時のギャップ補完 (#781) で
-  /// `since_id` の起点に使う。state.valueOrNull を直接読むと build / 接続コール
-  /// バックのレースで null を踏みうるため、prepend のたびにここへ更新して保持する。
-  String? _newestKnownId;
-
-  /// ギャップ補完 (#781) の多重実行ガード。`live` 遷移が連続しても 1 本に絞る。
-  bool _catchUpInProgress = false;
 
   /// キャッシュ先出し中で、裏の初回取得がまだ state を差し替えていない (#921)。
   /// この窓（実測 p50 475ms / p75 639ms）に行われた操作を記録し、差し替え時に
@@ -617,43 +1224,29 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     _windowBlockedUserIds.clear();
   }
 
-  /// 切断検知回数・直近切断時刻 (#782)。インジケータへ正直に出すため notifier 側
-  /// で数え、state に反映する。build() でリセット。
-  int _reconnectCount = 0;
-  DateTime? _lastDisconnectedAt;
-
-  /// streaming 接続状態の真実の値 (#714)。build() 中（state がまだ
-  /// AsyncLoading で valueOrNull が null）に live 等が発火しても取りこぼさない
-  /// よう、callback はここへ常時記録し、build() の返り値にもこの値を反映する。
-  StreamConnectionState _streamConnectionState =
-      StreamConnectionState.connecting;
+  /// このインスタンスが担当するアカウントのアダプタ（[adapterForTimelineKey]）。
+  DecentralizedBackendAdapter? _adapterFor(Account? current) =>
+      adapterForTimelineKey(current, arg.account);
 
   @override
-  Future<TimelineState> build() async {
-    // build() reruns when adapter / timeline type changes. Reset stream-side
-    // state so queued posts from a previous timeline context cannot leak
-    // into the new one via flushPending().
-    _pendingPosts.clear();
-    _isNearTop = true;
+  Future<TimelineState> build(TimelineKey key) async {
+    // build() reruns when the serving account's adapter changes. Reset
+    // stream-side state so queued posts from a previous timeline context cannot
+    // leak into the new one via flushPending().
+    resetLiveIngestState();
     _disposed = false;
     // 前の文脈の窓の記録を持ち越さない (#921)。
     _resetSnapshotWindow(awaiting: false);
     _backgroundInitialLoad = null;
     final generation = ++_buildGeneration;
-    _streamConnectionState = StreamConnectionState.connecting;
-    _newestKnownId = null;
-    _catchUpInProgress = false;
-    _reconnectCount = 0;
-    _lastDisconnectedAt = null;
 
-    final adapter = ref.watch(currentAdapterProvider);
-    final type = ref.watch(selectedTimelineTypeProvider);
-    final contextKey = timelineContextKey(
-      ref.watch(currentAccountProvider)?.key,
-      'tl:${type.name}',
-    );
+    final type = key.type;
+    final contextKey = timelineContextKey(key.account, TimelineTab(type));
     // await を挟む前に確定させる (#914 §5)。以降の stale 判定はこれを見る。
     _servingContextKey = contextKey;
+    // 種別はキーで固定なので watch しない。アカウントは「同じアカウントのアダプタが
+    // 作り直された」（再接続等）ときに build() をやり直すため watch する。
+    final adapter = _adapterFor(ref.watch(currentAccountProvider));
     if (adapter == null) return TimelineState(contextKey: contextKey);
 
     // #716 計測: ホーム TL の初回描画を fetch (サーバー応答) / enrich (isCat) /
@@ -665,27 +1258,17 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
 
     ref.onDispose(() {
       _disposed = true;
-      _streamSubscription?.cancel();
       if (adapter is StreamSupport) {
-        (adapter as StreamSupport).disposeStream();
+        disposeLiveStream(adapter as StreamSupport);
+      } else {
+        _streamSubscription?.cancel();
       }
     });
 
     // ライブ更新トグルの購読は build() 側で張る（rebuild のたびに Riverpod が
     // 前回ぶんを破棄してくれる）。初回接続は取得完了後 ([_loadInitial]) に行う。
     if (adapter is StreamSupport) {
-      final streamAdapter = adapter as StreamSupport;
-      if (!ref.read(streamingEnabledProvider)) {
-        _streamConnectionState = StreamConnectionState.disabled;
-      }
-      ref.listen(streamingEnabledProvider, (_, enabled) {
-        if (enabled) {
-          _setStreamConnectionState(StreamConnectionState.connecting);
-          _startStreaming(streamAdapter, type);
-        } else {
-          _stopStreaming(streamAdapter);
-        }
-      });
+      listenLiveStreamToggle(adapter as StreamSupport);
     }
 
     // 起動直後の 1 回だけ、前回のホーム TL をディスクから先出しする (#890)。
@@ -813,8 +1396,8 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     // 初期判定は read で行う。watch すると、トグル切替が build() 全体（REST 再
     // フェッチ・スクロール位置リセット・_pendingPosts.clear 等）を誘発し、可視の
     // スクロールジャンプを起こす (#904)。切替の張り/解除は build() 側の listen。
-    if (adapter is StreamSupport && ref.read(streamingEnabledProvider)) {
-      _startStreaming(adapter as StreamSupport, type);
+    if (adapter is StreamSupport) {
+      startLiveStreamIfEnabled(adapter as StreamSupport);
     }
 
     fetchSw?.stop();
@@ -1195,377 +1778,39 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
 
   // streaming 内部の parse / 接続 / listen error を観測層へ流す (#586)。
   // chat_provider (#448 / #552) と同型: breadcrumb は毎回、captureException は
-  // throttle して切断中の連発 spam を防ぐ。host 分岐は入れない (全サーバー共通
-  // の計装)。バケットは性質ごとに分離 (#602): connect エラー後 60s 以内に
-  // listener 経路の例外 (_applyWordFilter 異常等) が出ても抑制しないように、
-  // _lastListenCapture を独立に持つ。
-  DateTime? _lastParseCapture;
-  DateTime? _lastConnectCapture;
-  DateTime? _lastListenCapture;
-  // 切断 (onDone) の closeCode 観測用バケット (#788)。性質が違うので
-  // connect/parse/listen とは独立に持つ。
-  DateTime? _lastDisconnectCapture;
-  static const _captureThrottle = Duration(seconds: 60);
 
-  /// 接続ライフサイクルを notifier フィールドと（データがあれば）state に
-  /// 反映する。build() 中に onConnectionState が取りこぼさないための常時記録と
-  /// 同じ理由で、まずフィールドへ、次に state があれば更新する。
-  void _setStreamConnectionState(StreamConnectionState connState) {
-    _streamConnectionState = connState;
-    final current = state.valueOrNull;
-    if (current == null) return;
-    state = AsyncData(current.copyWith(streamConnectionState: connState));
-  }
+  @override
+  String get liveStreamKey =>
+      timelineContextKey(arg.account, TimelineTab(arg.type))!;
 
-  /// ライブ更新トグルを OFF にしたときの接続解除 (#904)。build() を再走させず
-  /// WebSocket の購読だけを止め、インジケータを disabled にする。
-  void _stopStreaming(StreamSupport adapter) {
-    _streamSubscription?.cancel();
-    _streamSubscription = null;
-    adapter.disposeStream();
-    _setStreamConnectionState(StreamConnectionState.disabled);
-  }
+  @override
+  TabType get liveStreamTab => TimelineTab(arg.type);
 
-  void _startStreaming(StreamSupport adapter, TimelineType type) {
-    _streamSubscription?.cancel();
-    // 切断系イベント (disconnected / reconnect_exhausted) を Sentry 上で
-    // サーバー別に切り分けられるよう host を控える (#826)。挙動は host で分岐
-    // しない (per-server workaround は入れない)。付与するのは観測タグのみで、
-    // push.host と同型に host のみ載せ生 URL / トークンは載せない。
-    final host = ref.read(currentAccountProvider)?.key.host;
-    final stream = adapter.streamTimeline(
-      type,
-      onParseError: (e, st) {
-        Sentry.addBreadcrumb(
-          Breadcrumb(
-            category: 'timeline.stream.parse',
-            level: SentryLevel.warning,
-            // 例外型のみ。FormatException.toString() はパース対象の生データ
-            // 断片（投稿本文を含みうる）を持つため breadcrumb には載せない。
-            // 詳細は下の captureException(scrubException(e)) で送る。
-            message: e.runtimeType.toString(),
-          ),
-        );
-        final now = DateTime.now();
-        if (_lastParseCapture != null &&
-            now.difference(_lastParseCapture!) < _captureThrottle) {
-          return;
-        }
-        _lastParseCapture = now;
-        Sentry.captureException(
-          scrubException(e),
-          stackTrace: st,
-          withScope: (scope) {
-            scope.setTag('timeline.stream.parse', 'failed');
-            scope.fingerprint = [
-              'timeline.stream.parse',
-              e.runtimeType.toString(),
-            ];
-          },
-        );
-      },
-      onStreamError: (e, st) {
-        Sentry.addBreadcrumb(
-          Breadcrumb(
-            category: 'timeline.stream.connect',
-            level: SentryLevel.warning,
-            message: e.runtimeType.toString(),
-          ),
-        );
-        final now = DateTime.now();
-        if (_lastConnectCapture != null &&
-            now.difference(_lastConnectCapture!) < _captureThrottle) {
-          return;
-        }
-        _lastConnectCapture = now;
-        Sentry.captureException(
-          scrubException(e),
-          stackTrace: st,
-          withScope: (scope) {
-            scope.setTag('timeline.stream.connect', 'failed');
-            scope.fingerprint = [
-              'timeline.stream.connect',
-              e.runtimeType.toString(),
-            ];
-          },
-        );
-      },
-      onReconnectExhausted: () {
-        Sentry.captureMessage(
-          'timeline.stream.reconnect_exhausted',
-          level: SentryLevel.warning,
-          withScope: (scope) {
-            scope.setTag('timeline.stream', 'reconnect_exhausted');
-            if (host != null) scope.setTag('timeline.stream.host', host);
-            scope.fingerprint = ['timeline.stream.reconnect_exhausted'];
-          },
-        );
-        // 無言の「ライブ更新が止まったまま」状態を state に出す。REST 取得済み
-        // 投稿は残るので AsyncError にはせず、フラグだけ立てて UI が気付ける
-        // ようにする。pull-to-refresh / タブ再選択の build() でクリアされる。
-        final current = state.valueOrNull;
-        if (current != null && !current.streamReconnectExhausted) {
-          state = AsyncData(current.copyWith(streamReconnectExhausted: true));
-        }
-      },
-      // 接続ライフサイクルを state に反映し、常時インジケータへ流す (#714)。
-      // build() 中（state が AsyncLoading で valueOrNull が null）に発火しても
-      // 取りこぼさないよう、まず notifier フィールドへ常時記録する。state に
-      // データがあればそれも更新する。
-      onConnectionState: (connState) {
-        _streamConnectionState = connState;
-        // 切断を検知したら回数・時刻を記録する (#782)。source 側で同一状態は
-        // dedup されるため、disconnected の発火 = 1 回の接続失敗サイクル。
-        if (connState == StreamConnectionState.disconnected) {
-          _reconnectCount++;
-          _lastDisconnectedAt = DateTime.now();
-        }
-        // WS が live になるたび（初回接続・各再接続）、接続が確立していなかった
-        // 窓に流れた投稿を since_id で取り直す (#781)。これが無いと「初回 REST →
-        // WS live までの窓」「切断〜再接続の窓」に入った投稿が永久に欠落する
-        // （実況中の取りこぼし報告の根因）。装飾でなく本機能なので最新 state へ
-        // マージする。
-        if (connState == StreamConnectionState.live) {
-          unawaited(_catchUpSinceTop());
-        }
-        final current = state.valueOrNull;
-        if (current == null) return;
-        state = AsyncData(
-          current.copyWith(
-            streamConnectionState: connState,
-            reconnectCount: _reconnectCount,
-            lastDisconnectedAt: _lastDisconnectedAt,
-            // #784 で give-up せず再試行を続けるため、live 復帰時に exhausted
-            // フラグをクリアする。これが無いと一度 exhausted を踏むと復帰後も
-            // 「停止」表示が残り、次の枯渇で false→true の SnackBar も出なく
-            // なる (Codex #780)。live 以外では現状維持（null）。
-            streamReconnectExhausted: connState == StreamConnectionState.live
-                ? false
-                : null,
-          ),
-        );
-      },
-      // 「どんな切れ方をしているか」を本番で観測する (#788)。現象すら未把握な
-      // ので原因対処はせず計器のみ。実測 (2026-07-11) では close_code 1002
-      // (protocol error) が支配的で、1001 (going away) / 1000 (正常) /
-      // 1006 (異常) が続く。host タグで発生サーバーを切り分ける (#826) が、
-      // 挙動は host で分岐しない (per-server workaround は入れない)。closeReason
-      // はサーバー任意文字列を持ちうるため内容は載せず、有無のみ。throttle で
-      // 切断連発の spam を抑える。
-      onDisconnect: (closeCode, closeReason) {
-        final now = DateTime.now();
-        if (_lastDisconnectCapture != null &&
-            now.difference(_lastDisconnectCapture!) < _captureThrottle) {
-          return;
-        }
-        _lastDisconnectCapture = now;
-        final code = closeCode?.toString() ?? 'none';
-        Sentry.captureMessage(
-          'timeline.stream.disconnected',
-          level: SentryLevel.info,
-          withScope: (scope) {
-            scope.setTag('timeline.stream', 'disconnected');
-            if (host != null) scope.setTag('timeline.stream.host', host);
-            scope.setTag('timeline.stream.close_code', code);
-            scope.setTag(
-              'timeline.stream.has_reason',
-              (closeReason != null && closeReason.isNotEmpty).toString(),
-            );
-            scope.fingerprint = ['timeline.stream.disconnected', code];
-          },
-        );
-      },
+  @override
+  String? get liveHost => arg.account?.host;
+
+  @override
+  int get catchUpPageSize => _pageSize;
+
+  @override
+  Future<CatchUpPage?> fetchCatchUpPage(String? maxId) async {
+    final adapter = _adapterFor(ref.read(currentAccountProvider));
+    if (adapter == null) return null;
+    final response = await adapter.getTimeline(
+      arg.type,
+      query: TimelineQuery(maxId: maxId, limit: _pageSize),
     );
-    _streamSubscription = stream.listen(
-      (newPost) => _ingestLivePosts([newPost]),
-      onError: (Object e, StackTrace st) {
-        // controller 自体は error を流さない設計だが、adapter 側の .map
-        // (_applyWordFilter 等) が投げると listener の error として届く。
-        // 握り潰すと「ストリーミング来ない」だけになるので観測層へ流す
-        // (#586)。state は AsyncError にせず (REST 投稿は生きている)
-        // breadcrumb + throttle 付き captureException のみ。
-        // throttle バケットは _lastListenCapture を独立に持つ (#602): connect
-        // エラーの throttle に巻き込まれて listener 側の例外 (_applyWordFilter
-        // 異常等) を取りこぼさないようにする。
-        Sentry.addBreadcrumb(
-          Breadcrumb(
-            category: 'timeline.stream.listen',
-            level: SentryLevel.warning,
-            message: e.runtimeType.toString(),
-          ),
-        );
-        final now = DateTime.now();
-        if (_lastListenCapture != null &&
-            now.difference(_lastListenCapture!) < _captureThrottle) {
-          return;
-        }
-        _lastListenCapture = now;
-        Sentry.captureException(
-          scrubException(e),
-          stackTrace: st,
-          withScope: (scope) {
-            scope.setTag('timeline.stream.listen', 'failed');
-            scope.fingerprint = [
-              'timeline.stream.listen',
-              e.runtimeType.toString(),
-            ];
-          },
-        );
-      },
+    return (
+      posts: response.posts,
+      rawCount: response.rawCount,
+      rawLastId: response.rawLastId,
     );
-  }
-
-  /// streaming 受信とギャップ補完 (#781) の共通取り込み口。
-  ///
-  /// フィルタ (hide / hideLivecure) と重複排除 (表示中 + pending + バッチ内) を
-  /// 単発受信・バッチ補完で同一に適用する。[newPosts] は **新しい順**（先頭が
-  /// 最新）で渡す。near-top なら先頭へブロック prepend、スクロール中なら
-  /// streaming と同じく pending キューへ積んでジャンプを防ぐ。
-  ///
-  /// 戻り値は実際に取り込んだ（フィルタ・重複排除を通過した）件数。ギャップ
-  /// 補完の実効を観測する (#784) のに使う。
-  int _ingestLivePosts(List<Post> newPosts) {
-    if (newPosts.isEmpty) return 0;
-    final current = state.valueOrNull;
-    if (current == null) return 0;
-    final hideLivecure = ref.read(hideLivecureProvider);
-    final existingIds = {for (final p in current.posts) p.id};
-    final pendingIds = {for (final p in _pendingPosts) p.id};
-    final accepted = <Post>[];
-    final acceptedIds = <String>{};
-    for (final post in newPosts) {
-      if (post.filterAction == FilterAction.hide) continue;
-      if (hideLivecure && _hasLivecureTag(post)) continue;
-      if (existingIds.contains(post.id) || pendingIds.contains(post.id)) {
-        continue;
-      }
-      if (!acceptedIds.add(post.id)) continue; // バッチ内重複
-      accepted.add(post);
-    }
-    if (accepted.isEmpty) return 0;
-
-    if (_isNearTop) {
-      // accepted を現在リストへマージし id 降順を保つ。単発 streaming（常に最新）
-      // では実質 prepend だが、ギャップ補完バッチが streaming の prepend と
-      // 競合（fetch 待ちの間に新しい投稿が先に載る）しても順序が崩れないよう、
-      // ブロック prepend ではなくマージ＋ソートにする (#781)。タイムラインは
-      // 元々 id 降順なのでソートはほぼ冪等で、件数も数百どまり。
-      final merged = [...accepted, ...current.posts]
-        ..sort((a, b) => comparePostIdDesc(a.id, b.id));
-      _newestKnownId = merged.first.id;
-      state = AsyncData(current.copyWith(posts: merged));
-    } else {
-      // User is scrolling — queue to avoid jumping. flushPending で id 降順に
-      // 整列して取り込むため、ここでは順不同で積んでよい。
-      _pendingPosts.addAll(accepted);
-      _newestKnownId = _maxPostId(_newestKnownId, accepted.first.id);
-      state = AsyncData(current.copyWith(pendingCount: _pendingPosts.length));
-    }
-    return accepted.length;
-  }
-
-  /// 2 つの id のうち新しい（降順で前に来る）方を返す (#781)。
-  String _maxPostId(String? a, String b) {
-    if (a == null) return b;
-    return comparePostIdDesc(a, b) <= 0 ? a : b;
-  }
-
-  /// WS が live になった時点で、未接続の窓に流れて取りこぼした投稿を
-  /// `since_id` で取り直してマージする (#781)。
-  ///
-  /// 初回 REST スナップショット〜WS live、および各再接続の切断窓に作られた
-  /// 投稿はどの経路でも届かず永久欠落するため、live 遷移ごとにここで埋める。
-  /// [_newestKnownId] を起点に、ギャップが 1 ページを超える場合は max_id で
-  /// 下方向にページングして [kMaxVisibilityPageFetches] ページまで遡る。
-  ///
-  /// 初期可視リストが空（新規/空 TL・全件フィルタ・page-cap）で [_newestKnownId]
-  /// が null のときも、REST→live 窓に作られた投稿を取りこぼさないよう最新ページ
-  /// 1 枚だけ取得してシードする (Codex #783)。
-  Future<void> _catchUpSinceTop() async {
-    if (_catchUpInProgress) return;
-    final since = _newestKnownId;
-    // await 中にアカウント/種別が切り替わると build() が rerun して notifier が
-    // 新文脈に作り直されるが、この future はキャンセルされない。旧文脈で取得した
-    // 投稿を新文脈へマージしないよう、開始時の contextKey を捕捉し ingest 直前に
-    // 照合する (#758 / _deferIsCatEnrich と同型・Codex #783)。
-    final capturedContextKey = state.valueOrNull?.contextKey;
-    _catchUpInProgress = true;
-    try {
-      final adapter = ref.read(currentAdapterProvider);
-      final type = ref.read(selectedTimelineTypeProvider);
-      if (adapter == null) return;
-
-      final gap = await collectCatchUpGap(
-        since: since,
-        pageSize: _pageSize,
-        maxFetches: kMaxVisibilityPageFetches,
-        fetch: (maxId) async {
-          final response = await adapter.getTimeline(
-            type,
-            query: TimelineQuery(maxId: maxId, limit: _pageSize),
-          );
-          return (
-            posts: response.posts,
-            rawCount: response.rawCount,
-            rawLastId: response.rawLastId,
-          );
-        },
-      );
-
-      if (gap.isEmpty) return;
-      // await 中に文脈が変わっていたら破棄（旧文脈の投稿の混入・_newestKnownId
-      // 汚染を防ぐ）。_ingestLivePosts は同期なので照合後の混入はない。
-      if (state.valueOrNull?.contextKey != capturedContextKey) return;
-      // getTimeline は新しい順・ページも新しい方から取得するため gap は新しい順。
-      // 取り込み時に再度 state を読み、最新 state へマージする。
-      final recovered = _ingestLivePosts(gap);
-      // 再接続のたびに何件を補完できたかを観測する (#784 item 3)。resilience
-      // (#784) × catch-up (#781) の実効を本番で追跡するための軽量シグナル。
-      // PII を載せない（件数のみ）。
-      if (recovered > 0) {
-        Sentry.addBreadcrumb(
-          Breadcrumb(
-            message: 'timeline.stream.catchup',
-            category: 'timeline.stream',
-            level: SentryLevel.info,
-            data: {'recovered': recovered, 'fetched': gap.length},
-          ),
-        );
-      }
-    } catch (_) {
-      // 補完の失敗で本筋を止めない。次の live 遷移 / pull-to-refresh で再試行。
-    } finally {
-      _catchUpInProgress = false;
-    }
-  }
-
-  /// Called by the UI when the user's scroll position changes.
-  void setNearTop(bool nearTop) {
-    _isNearTop = nearTop;
-    if (nearTop) flushPending();
-  }
-
-  /// Flush queued posts into the timeline.
-  void flushPending() {
-    if (_pendingPosts.isEmpty) return;
-    final current = state.valueOrNull;
-    if (current == null) return;
-    // pending は順不同で積まれうる (#781: streaming 単発とギャップ補完バッチが
-    // 混在)。id でデデュープしつつ降順に整列して取り込む。
-    final seen = <String>{};
-    final merged = <Post>[];
-    for (final post in [..._pendingPosts, ...current.posts]) {
-      if (seen.add(post.id)) merged.add(post);
-    }
-    merged.sort((a, b) => comparePostIdDesc(a.id, b.id));
-    _pendingPosts.clear();
-    if (merged.isNotEmpty) _newestKnownId = merged.first.id;
-    state = AsyncData(current.copyWith(posts: merged, pendingCount: 0));
   }
 
   static bool _hasLivecureTag(Post post) => hasLivecureTag(post);
 
   /// Replace a post in the list by ID (e.g. after reacting).
+  @override
   void updatePost(Post updated) {
     final current = state.valueOrNull;
     if (current == null) return;
@@ -1577,6 +1822,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   }
 
   /// Remove a post from the list by ID (e.g. after deletion).
+  @override
   void removePost(String id) {
     // 取得中の save がこの削除を跨いで書き戻さないよう世代を進める (#958)。state が
     // まだ null（初回取得中）でも in-flight の [_loadInitial] は save に到達するので、
@@ -1596,22 +1842,9 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     );
   }
 
-  /// 未表示バッファ [_pendingPosts] から条件に合う投稿を落とし、新しい
-  /// `pendingCount` を返す。
-  ///
-  /// TL 上部から離れている間、streaming の新着は表示中の一覧ではなく
-  /// [_pendingPosts] に溜まる（「新着 N 件」で開くまで出さない、#296）。
-  /// 一覧からだけ消してここを掃除しないと、**削除済み投稿やブロックした相手の
-  /// 投稿が「新着 N 件」を開いた瞬間に現れる**。ブロックは安全のための操作なので
-  /// 「見えているどの TL からも消える」保証 (#887) を穴のない形にする。
-  int _dropPending(bool Function(Post) matches) {
-    _pendingPosts.removeWhere(matches);
-    return _pendingPosts.length;
-  }
-
   /// 自分の投稿を即座に**現在アクティブな TL** の先頭へ楽観的挿入する (#717)。
-  /// 投稿成功直後に呼ぶ。この provider は [selectedTimelineTypeProvider] を
-  /// watch するため、挿入先は home 固定ではなく今表示中の TL（home / local /
+  /// 投稿成功直後に呼ぶ。呼び出し側は表示中のキー（[currentTimelineKeyProvider]）で
+  /// インスタンスを引くので、挿入先は home 固定ではなく今表示中の TL（home / local /
   /// social / federated）になる。
   ///
   /// 旧実装は投稿後に `invalidate(timelineProvider)` で REST 全再取得していたが、
@@ -1630,8 +1863,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     // build 中・未構築なら何もしない（後続の REST / streaming が拾う）。
     if (current == null) return;
     // 表示中の TL 種別にこの投稿が実際に載るか（種別 × 公開範囲）で弾く (#814)。
-    final type = ref.read(selectedTimelineTypeProvider);
-    if (!ownPostAppearsInTimeline(type, post)) return;
+    if (!ownPostAppearsInTimeline(arg.type, post)) return;
     if (post.filterAction == FilterAction.hide) return;
     final hideLivecure = ref.read(hideLivecureProvider);
     if (hideLivecure && _hasLivecureTag(post)) return;
@@ -1649,6 +1881,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   }
 
   /// Remove all posts by a user (e.g. after block/mute).
+  @override
   void removePostsByUser(String userId) {
     // 取得中の save がこのブロックを跨いで書き戻さないよう世代を進める (#958)。
     // state が null（初回取得中）でも in-flight の [_loadInitial] は save に到達する
@@ -1727,8 +1960,8 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
 
     for (var attempt = 0; attempt <= loadMoreMaxRetries; attempt++) {
       try {
-        final adapter = ref.read(currentAdapterProvider);
-        final type = ref.read(selectedTimelineTypeProvider);
+        final adapter = _adapterFor(ref.read(currentAccountProvider));
+        final type = arg.type;
         if (adapter == null) {
           _resetLoading();
           return;
@@ -1874,7 +2107,13 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   IsCatEnricher get _isCatEnricher => ref.read(isCatEnricherProvider);
 }
 
-final timelineProvider =
-    AsyncNotifierProvider.autoDispose<TimelineNotifier, TimelineState>(
+/// 本線 TL（ホーム / ローカル / ソーシャル / 連合）。キーは [TimelineKey] (#1087)。
+///
+/// 表示中の TL を引くときは `timelineProvider(ref.watch(currentTimelineKeyProvider))`。
+/// ⚠ `ref.invalidate(timelineProvider)`（引数なし）は **family の全インスタンス**を
+/// 作り直す。表示中の 1 本だけで良ければキーを渡す。
+final timelineProvider = AsyncNotifierProvider.autoDispose
+    .family<TimelineNotifier, TimelineState, TimelineKey>(
       TimelineNotifier.new,
+      dependencies: [currentAccountProvider, isCatEnricherProvider],
     );

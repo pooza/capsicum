@@ -1,6 +1,7 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../model/account_key.dart';
 import 'account_manager_provider.dart';
 import 'preferences_provider.dart';
 import 'timeline_provider.dart';
@@ -10,23 +11,75 @@ final listsProvider = FutureProvider.autoDispose<List<PostList>>((ref) async {
   final adapter = ref.watch(currentAdapterProvider);
   if (adapter == null || adapter is! ListSupport) return [];
   return (adapter as ListSupport).getLists();
-});
+}, dependencies: [currentAdapterProvider]);
+
+/// リスト TL の family キー (#1088)。
+///
+/// ⚠ **[id] だけを持ち、リスト名は混ぜない。**サーバー側でリスト名を変えると、
+/// 同じリストなのにキーだけ別物になる（`ListTab.toKey()` が表示名を含むのに
+/// `==` は id しか見ていない件・設計書 決定済み事項 4）。アカウントを含める理由は
+/// [HashtagTimelineKey] と同じ。
+typedef ListTimelineKey = ({AccountKey? account, String id});
 
 /// Notifier that manages paginated list timeline fetching.
 class ListTimelineNotifier
-    extends AutoDisposeFamilyAsyncNotifier<TimelineState, String>
-    with TimelineListMutations<String> {
+    extends AutoDisposeFamilyAsyncNotifier<TimelineState, ListTimelineKey>
+    with
+        TimelineListMutations<ListTimelineKey>,
+        TimelineLiveIngest<ListTimelineKey> {
   static const _pageSize = 20;
 
   @override
-  Future<TimelineState> build(String arg) async {
-    final adapter = ref.watch(currentAdapterProvider);
-    final contextKey = timelineContextKey(
-      ref.watch(currentAccountProvider)?.key,
-      'list:$arg',
+  String get liveStreamKey =>
+      timelineContextKey(arg.account, ListTab(id: arg.id))!;
+
+  @override
+  TabType get liveStreamTab => ListTab(id: arg.id);
+
+  @override
+  String? get liveHost => arg.account?.host;
+
+  @override
+  int get catchUpPageSize => _pageSize;
+
+  /// ⚠ 生のサーバー件数が取れない件は [HashtagTimelineNotifier.fetchCatchUpPage]
+  /// と同じ。
+  @override
+  Future<CatchUpPage?> fetchCatchUpPage(String? maxId) async {
+    final adapter = adapterForTimelineKey(
+      ref.read(currentAccountProvider),
+      arg.account,
     );
+    if (adapter == null || adapter is! ListSupport) return null;
+    final posts = await (adapter as ListSupport).getListTimeline(
+      arg.id,
+      query: TimelineQuery(maxId: maxId, limit: _pageSize),
+    );
+    return (
+      posts: posts,
+      rawCount: posts.length,
+      rawLastId: posts.lastOrNull?.id,
+    );
+  }
+
+  @override
+  Future<TimelineState> build(ListTimelineKey key) async {
+    // 前のリスト / アカウントの新着を、このカラムへ漏らさない (#1098)。
+    resetLiveIngestState();
+    final adapter = adapterForTimelineKey(
+      ref.watch(currentAccountProvider),
+      key.account,
+    );
+    final contextKey = timelineContextKey(key.account, ListTab(id: key.id));
     if (adapter == null || adapter is! ListSupport) {
       return TimelineState(hasMore: false, contextKey: contextKey);
+    }
+
+    // ⚠ 配線は取得の前・初回接続は取得の後（理由は #904・ハッシュタグ側と同じ）。
+    if (adapter is StreamSupport) {
+      final streamAdapter = adapter as StreamSupport;
+      ref.onDispose(() => disposeLiveStream(streamAdapter));
+      listenLiveStreamToggle(streamAdapter);
     }
 
     final hideLivecure = ref.watch(hideLivecureProvider);
@@ -34,11 +87,18 @@ class ListTimelineNotifier
       pageSize: _pageSize,
       hideLivecure: hideLivecure,
       fetch: (maxId) => (adapter as ListSupport).getListTimeline(
-        arg,
+        key.id,
         query: TimelineQuery(maxId: maxId, limit: _pageSize),
       ),
     );
-    return result.copyWith(contextKey: contextKey);
+    seedLiveIngestAnchor(result.posts);
+    if (adapter is StreamSupport) {
+      startLiveStreamIfEnabled(adapter as StreamSupport);
+    }
+    return result.copyWith(
+      contextKey: contextKey,
+      streamConnectionState: streamConnectionState,
+    );
   }
 
   Future<void> loadMore() async {
@@ -49,7 +109,10 @@ class ListTimelineNotifier
 
     for (var attempt = 0; attempt <= loadMoreMaxRetries; attempt++) {
       try {
-        final adapter = ref.read(currentAdapterProvider);
+        final adapter = adapterForTimelineKey(
+          ref.read(currentAccountProvider),
+          arg.account,
+        );
         if (adapter == null || adapter is! ListSupport) {
           state = AsyncData(current.copyWith(isLoadingMore: false));
           return;
@@ -59,7 +122,7 @@ class ListTimelineNotifier
         final lastId = base.posts.last.id;
         final hideLivecure = ref.read(hideLivecureProvider);
         final raw = await (adapter as ListSupport).getListTimeline(
-          arg,
+          arg.id,
           query: TimelineQuery(maxId: lastId, limit: _pageSize),
         );
         final older = hideLivecure
@@ -96,6 +159,7 @@ class ListTimelineNotifier
 }
 
 final listTimelineProvider = AsyncNotifierProvider.autoDispose
-    .family<ListTimelineNotifier, TimelineState, String>(
+    .family<ListTimelineNotifier, TimelineState, ListTimelineKey>(
       ListTimelineNotifier.new,
+      dependencies: [currentAccountProvider],
     );

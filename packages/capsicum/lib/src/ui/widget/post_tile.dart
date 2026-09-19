@@ -21,11 +21,13 @@ import '../../service/tco_resolver.dart';
 import '../../service/url_preview_cache.dart';
 import '../../util/exception_scrub.dart';
 import '../../util/user_acct.dart';
+import '../util/deck_navigation.dart';
 import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
 import '../util/post_action_error.dart';
 import '../util/post_actions.dart';
 import '../util/post_scope_display.dart';
+import '../util/provider_scope_carrier.dart';
 import '../util/reaction_acceptance.dart';
 import '../util/relative_time.dart';
 import '../util/visible_timeline.dart';
@@ -339,7 +341,7 @@ class _PostTileState extends ConsumerState<PostTile> {
     try {
       final user = await adapter.getUser(username, host);
       if (user != null && mounted) {
-        context.push('/profile', extra: user);
+        openProfile(context, user);
       }
     } on Exception catch (e) {
       debugLogException('Failed to look up mention $mention', e);
@@ -493,9 +495,7 @@ class _PostTileState extends ConsumerState<PostTile> {
           ? colorScheme.primaryContainer.withValues(alpha: 0.3)
           : null,
       child: InkWell(
-        onTap: widget.tappable
-            ? () => context.push('/post', extra: post)
-            : null,
+        onTap: widget.tappable ? () => openPost(context, post) : null,
         onLongPress: () => _showActionMenu(context),
         // デスクトップでは右クリックも長押しと同じアクションメニューを開く。
         onSecondaryTap: () => _showActionMenu(context),
@@ -521,10 +521,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                             // onTap（/post 遷移）より内側の GestureDetector を優先。
                             : GestureDetector(
                                 behavior: HitTestBehavior.opaque,
-                                onTap: () => context.push(
-                                  '/profile',
-                                  extra: post.author,
-                                ),
+                                onTap: () => openProfile(context, post.author),
                                 child: EmojiText(
                                   '${post.author.displayName ?? post.author.username} が${ref.watch(reblogLabelProvider)}',
                                   emojis: post.author.emojis,
@@ -653,9 +650,10 @@ class _PostTileState extends ConsumerState<PostTile> {
                         padding: const EdgeInsets.only(top: 2),
                         child: GestureDetector(
                           onTap: displayPost.channelId != null
-                              ? () => context.push(
-                                  '/channel/${displayPost.channelId}',
-                                  extra: displayPost.channelName,
+                              ? () => openChannel(
+                                  context,
+                                  displayPost.channelId!,
+                                  displayPost.channelName,
                                 )
                               : null,
                           child: Row(
@@ -1073,8 +1071,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                 left: 0,
                 top: 0,
                 child: GestureDetector(
-                  onTap: () =>
-                      context.push('/profile', extra: displayPost.author),
+                  onTap: () => openProfile(context, displayPost.author),
                   child: UserAvatar(user: displayPost.author, size: 40),
                 ),
               ),
@@ -1295,8 +1292,12 @@ class _PostTileState extends ConsumerState<PostTile> {
                 item(
                   leading: const Icon(Icons.reply),
                   title: const Text('返信'),
-                  onSelected: () =>
-                      context.push('/compose', extra: {'replyTo': targetPost}),
+                  onSelected: () => context.push(
+                    '/compose',
+                    extra: extraWithProviderScope(context, {
+                      'replyTo': targetPost,
+                    }),
+                  ),
                 ),
                 if (targetPost.quotable)
                   item(
@@ -1304,7 +1305,9 @@ class _PostTileState extends ConsumerState<PostTile> {
                     title: const Text('引用'),
                     onSelected: () => context.push(
                       '/compose',
-                      extra: {'quoteTo': targetPost},
+                      extra: extraWithProviderScope(context, {
+                        'quoteTo': targetPost,
+                      }),
                     ),
                   ),
                 if (adapter is FavoriteSupport)
@@ -1647,6 +1650,11 @@ class _PostTileState extends ConsumerState<PostTile> {
     if (adapter == null) return;
     final messenger = ScaffoldMessenger.of(context);
     final router = GoRouter.of(context);
+    // ⚠ await の後では context が使えないことがあるので、再編集フォームへ渡す
+    // スコープ（開いたカラムのアカウント・#1149）も先に取っておく。
+    final redraftExtra = extraWithProviderScope(context, {
+      'redraft': targetPost,
+    });
     // 理由は [_confirmDelete] の同名コメント (#990 / #1009)。
     final timeline = readVisibleTimelines(ref);
     final postLabel = ref.read(postLabelProvider);
@@ -1670,7 +1678,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                 if (mounted) setState(() => _deletedPostId = targetPost.id);
                 if (context.mounted) _popIfInThread(context);
                 if (mounted) {
-                  router.push('/compose', extra: {'redraft': targetPost});
+                  router.push('/compose', extra: redraftExtra);
                 }
               }, '$postLabelを削除しました');
             },
@@ -2072,34 +2080,13 @@ class _PostTileState extends ConsumerState<PostTile> {
     return '${diff.inDays ~/ 365}年前';
   }
 
-  void _showFavouritedBy(BuildContext context, Post post) {
-    final adapter = ref.read(currentAdapterProvider);
-    if (adapter == null) return;
-    final label = adapter is ReactionSupport ? 'リアクション' : 'お気に入り';
-    if (adapter is MastodonAdapter) {
-      context.push(
-        '/users',
-        extra: {
-          'title': label,
-          'fetcher': (String? cursor) => adapter.getFavouritedBy(
-            post.id,
-            query: TimelineQuery(maxId: cursor, limit: 20),
-          ),
-        },
-      );
-    } else if (adapter is MisskeyAdapter) {
-      context.push(
-        '/users',
-        extra: {
-          'title': label,
-          'fetcher': (String? cursor) => adapter.getReactedBy(
-            post.id,
-            query: TimelineQuery(maxId: cursor, limit: 20),
-          ),
-        },
-      );
-    }
-  }
+  // ⚠ 取得先（Mastodon / Misskey で API が違う）と見出しは `deck_tabs.dart` が
+  // 持つ。デッキのカラムと全画面で同じものを出すため (#1150)。
+  void _showFavouritedBy(BuildContext context, Post post) => openUserList(
+    context,
+    ref,
+    UserListTab(UserListKind.favouritedBy, post.id),
+  );
 
   /// 引用している投稿の一覧を開く (#1072)。
   ///
@@ -2107,51 +2094,14 @@ class _PostTileState extends ConsumerState<PostTile> {
   /// ユーザー一覧（`/users`）だが、引用は「引用した投稿」なので投稿一覧
   /// （`/posts`）になる。BottomSheet ではなく独立画面にしたのはそのため
   /// （投稿タイルは高さがあり、シートに収めると 2〜3 件しか見えない）。
-  void _showQuotes(BuildContext context, Post post) {
-    final adapter = ref.read(currentAdapterProvider);
-    if (adapter is! QuoteSupport) return;
-    final quote = adapter as QuoteSupport;
-    context.push(
-      '/posts',
-      extra: {
-        'title': '引用',
-        'emptyMessage': '引用している投稿はありません',
-        'fetcher': (String? cursor) => quote.getQuotesOf(
-          post.id,
-          query: TimelineQuery(maxId: cursor, limit: 20),
-        ),
-      },
-    );
-  }
+  void _showQuotes(BuildContext context, Post post) =>
+      openQuotes(context, ref, post.id);
 
-  void _showRebloggedBy(BuildContext context, Post post) {
-    final adapter = ref.read(currentAdapterProvider);
-    if (adapter == null) return;
-    final label = ref.read(reblogLabelProvider);
-    if (adapter is MastodonAdapter) {
-      context.push(
-        '/users',
-        extra: {
-          'title': label,
-          'fetcher': (String? cursor) => adapter.getRebloggedBy(
-            post.id,
-            query: TimelineQuery(maxId: cursor, limit: 20),
-          ),
-        },
-      );
-    } else if (adapter is MisskeyAdapter) {
-      context.push(
-        '/users',
-        extra: {
-          'title': label,
-          'fetcher': (String? cursor) => adapter.getRenotedBy(
-            post.id,
-            query: TimelineQuery(maxId: cursor, limit: 20),
-          ),
-        },
-      );
-    }
-  }
+  void _showRebloggedBy(BuildContext context, Post post) => openUserList(
+    context,
+    ref,
+    UserListTab(UserListKind.rebloggedBy, post.id),
+  );
 
   /// グループ（AP Group アクター）が Announce した投稿のリブログヘッダー (#811)。
   /// 通常の「X がブースト」と区別し、グループアイコン＋「〇〇 グループに投稿」を出す。
@@ -2161,7 +2111,7 @@ class _PostTileState extends ConsumerState<PostTile> {
     final style = Theme.of(context).textTheme.bodySmall;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () => context.push('/profile', extra: post.author),
+      onTap: () => openProfile(context, post.author),
       child: Row(
         children: [
           Icon(Icons.groups, size: 14, color: style?.color),
@@ -2799,7 +2749,7 @@ class _ReactionChipState extends ConsumerState<_ReactionChip>
                 title: const Text('リアクションした人'),
                 onTap: () {
                   Navigator.pop(sheetContext);
-                  _showReactedBy(context, reactorsAdapter);
+                  _showReactedBy(context);
                 },
               ),
           ],
@@ -2810,19 +2760,15 @@ class _ReactionChipState extends ConsumerState<_ReactionChip>
 
   /// リアクションチップの「リアクションした人」一覧を [UserListScreen]（/users）
   /// で開く。この絵文字に限定するため getReactedBy に type を渡す。
-  void _showReactedBy(BuildContext context, MisskeyAdapter adapter) {
-    context.push(
-      '/users',
-      extra: {
-        'title': 'リアクション',
-        'fetcher': (String? cursor) => adapter.getReactedBy(
-          widget.post.id,
-          type: widget.reactionKey,
-          query: TimelineQuery(maxId: cursor, limit: 20),
-        ),
-      },
-    );
-  }
+  void _showReactedBy(BuildContext context) => openUserList(
+    context,
+    ref,
+    UserListTab(
+      UserListKind.reactedBy,
+      widget.post.id,
+      reaction: widget.reactionKey,
+    ),
+  );
 
   /// コピー用ショートコード文字列。カスタム絵文字はローカル（`@.`）なら
   /// `:name:`、リモートは `:name@host:`。Unicode 絵文字はその文字自体。
@@ -3274,7 +3220,7 @@ class _QuoteCardState extends ConsumerState<_QuoteCard> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return GestureDetector(
-      onTap: () => context.push('/post', extra: quote),
+      onTap: () => openPost(context, quote),
       child: Container(
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
@@ -3288,7 +3234,7 @@ class _QuoteCardState extends ConsumerState<_QuoteCard> {
               children: [
                 if (quote.author.avatarUrl != null)
                   GestureDetector(
-                    onTap: () => context.push('/profile', extra: quote.author),
+                    onTap: () => openProfile(context, quote.author),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(4),
                       child: Image.network(
@@ -3444,12 +3390,12 @@ class _AttachmentThumbnailsState extends ConsumerState<_AttachmentThumbnails> {
   ) async {
     final result = await context.push<List<Attachment>>(
       '/media',
-      extra: {
+      extra: extraWithProviderScope(context, {
         'attachments': attachments,
         'initialIndex': index,
         'postAuthorId': widget.postAuthorId,
         'postId': widget.postId,
-      },
+      }),
     );
     if (result != null) {
       widget.onAttachmentsUpdated?.call(result);

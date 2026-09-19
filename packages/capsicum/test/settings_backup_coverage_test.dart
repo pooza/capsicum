@@ -45,6 +45,8 @@ void main() {
       // 移った。⚠ **prefix はこちらにも入るので、和集合から外すと検査が
       // 素通りする。**
       ...accountScopedSettings.map((s) => s.prefix),
+      // 判断待ち（#1101 等）。書き出さないが「漏れ」ではないことを明示する。
+      ...pendingBackupDecisionKeys,
     };
     final missing = keys.difference(covered);
 
@@ -69,6 +71,11 @@ void main() {
     expect(accountScoped.intersection(accountScopedKeys), isEmpty);
     expect(accountScoped.intersection(deviceLocalKeys), isEmpty);
     expect(accountScoped.intersection(exported), isEmpty);
+    // 判断待ちは、どの仕分けにも入っていないこと（入っていたら判断が済んでいる）。
+    expect(pendingBackupDecisionKeys.intersection(exported), isEmpty);
+    expect(pendingBackupDecisionKeys.intersection(deviceLocalKeys), isEmpty);
+    expect(pendingBackupDecisionKeys.intersection(accountScopedKeys), isEmpty);
+    expect(pendingBackupDecisionKeys.intersection(accountScoped), isEmpty);
   });
 
   test('アカウント別設定の prefix は末尾が _ で、YAML キーはそれを落としたもの', () {

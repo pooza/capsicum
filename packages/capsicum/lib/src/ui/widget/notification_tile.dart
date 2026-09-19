@@ -11,11 +11,13 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../service/tco_resolver.dart';
+import '../util/deck_navigation.dart';
 import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
 import '../util/notification_type_display.dart';
 import '../util/post_actions.dart';
 import '../util/post_scope_display.dart';
+import '../util/provider_scope_carrier.dart';
 import '../util/reaction_acceptance.dart';
 import '../util/relative_time.dart';
 import '../util/visible_timeline.dart';
@@ -117,12 +119,10 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
   void _openAchievements(BuildContext context) {
     final user = ref.read(currentAccountProvider)?.user;
     if (user == null) return;
-    context.push(
-      '/achievements',
-      extra: {
-        'userId': user.id,
-        'displayName': user.displayName ?? user.username,
-      },
+    openAchievements(
+      context,
+      userId: user.id,
+      displayName: user.displayName ?? user.username,
     );
   }
 
@@ -134,12 +134,11 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
 
     return InkWell(
       onTap: notification.post != null
-          ? () => context.push('/post', extra: notification.post!)
+          ? () => openPost(context, notification.post!)
           // Collections 通知 (#741): post を持たないため、タップで対象コレクション
           // の詳細（#742）を開く。
           : notification.collection != null
-          ? () =>
-                context.push('/collection', extra: notification.collection!.id)
+          ? () => openCollection(context, notification.collection!.id)
           // 実績解除通知 (#918): post を持たないため、タップで実績一覧を開く。
           // ⚠ **`extra` は省略できない。** `/achievements` の builder は
           // `state.extra!` で `userId` を取り出すので、付けずに push すると
@@ -245,7 +244,12 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
                 title: const Text('返信'),
                 onTap: () {
                   Navigator.pop(sheetContext);
-                  context.push('/compose', extra: {'replyTo': targetPost});
+                  context.push(
+                    '/compose',
+                    extra: extraWithProviderScope(context, {
+                      'replyTo': targetPost,
+                    }),
+                  );
                 },
               ),
               if (targetPost.quotable)
@@ -254,7 +258,12 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
                   title: const Text('引用'),
                   onTap: () {
                     Navigator.pop(sheetContext);
-                    context.push('/compose', extra: {'quoteTo': targetPost});
+                    context.push(
+                      '/compose',
+                      extra: extraWithProviderScope(context, {
+                        'quoteTo': targetPost,
+                      }),
+                    );
                   },
                 ),
               if (adapter is FavoriteSupport)
@@ -534,7 +543,7 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
     return Row(
       children: [
         GestureDetector(
-          onTap: () => context.push('/profile', extra: user),
+          onTap: () => openProfile(context, user),
           child: UserAvatar(user: user, size: 24, borderRadius: 4),
         ),
         const SizedBox(width: 8),

@@ -16,8 +16,10 @@ import '../../service/tco_resolver.dart';
 import '../../url_helper.dart';
 import '../../util/exception_scrub.dart';
 import '../../util/user_acct.dart';
+import '../util/deck_navigation.dart';
 import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
+import '../util/provider_scope_carrier.dart';
 import '../util/relative_time.dart';
 import '../util/visible_timeline.dart';
 import '../widget/bottom_safe_area.dart';
@@ -37,7 +39,11 @@ enum _ProfileTab { posts, media, gallery, pages }
 class ProfileScreen extends ConsumerStatefulWidget {
   final User user;
 
-  const ProfileScreen({super.key, required this.user});
+  /// デッキのカラムの中身として描く (#1148)。戻るボタンを出さない（閉じるのは
+  /// カラムのヘッダー）。⚠ 戻るボタンの `pop` はデッキ画面ごと閉じてしまう。
+  final bool embedded;
+
+  const ProfileScreen({super.key, required this.user, this.embedded = false});
 
   @override
   ConsumerState<ProfileScreen> createState() => _ProfileScreenState();
@@ -529,16 +535,22 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
               expandedHeight: 200,
               pinned: true,
               backgroundColor: colorScheme.inversePrimary,
-              leading: Padding(
-                padding: const EdgeInsets.all(8),
-                child: CircleAvatar(
-                  backgroundColor: Colors.black38,
-                  child: IconButton(
-                    icon: const Icon(Icons.arrow_back, color: Colors.white),
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                ),
-              ),
+              automaticallyImplyLeading: !widget.embedded,
+              leading: widget.embedded
+                  ? null
+                  : Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: CircleAvatar(
+                        backgroundColor: Colors.black38,
+                        child: IconButton(
+                          icon: const Icon(
+                            Icons.arrow_back,
+                            color: Colors.white,
+                          ),
+                          onPressed: () => Navigator.of(context).pop(),
+                        ),
+                      ),
+                    ),
               flexibleSpace: FlexibleSpaceBar(
                 background: GestureDetector(
                   behavior: HitTestBehavior.opaque,
@@ -749,7 +761,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
               child: Card(
                 clipBehavior: Clip.antiAlias,
                 child: InkWell(
-                  onTap: () => context.push('/gallery/${post.id}', extra: post),
+                  onTap: () => openGalleryPost(context, post),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -1078,38 +1090,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
               if (user.hideCollections != true) ...[
                 const SizedBox(width: 24),
                 GestureDetector(
-                  onTap: () {
-                    final adapter =
-                        ref.read(currentAdapterProvider)! as FollowSupport;
-                    context.push(
-                      '/users',
-                      extra: {
-                        'title': 'フォロー',
-                        'fetcher': (String? cursor) => adapter.getFollowing(
-                          user.id,
-                          query: TimelineQuery(maxId: cursor, limit: 20),
-                        ),
-                      },
-                    );
-                  },
+                  onTap: () => openUserList(
+                    context,
+                    ref,
+                    UserListTab(UserListKind.following, user.id),
+                  ),
                   child: _statItem(context, 'フォロー', user.followingCount),
                 ),
                 const SizedBox(width: 24),
                 GestureDetector(
-                  onTap: () {
-                    final adapter =
-                        ref.read(currentAdapterProvider)! as FollowSupport;
-                    context.push(
-                      '/users',
-                      extra: {
-                        'title': 'フォロワー',
-                        'fetcher': (String? cursor) => adapter.getFollowers(
-                          user.id,
-                          query: TimelineQuery(maxId: cursor, limit: 20),
-                        ),
-                      },
-                    );
-                  },
+                  onTap: () => openUserList(
+                    context,
+                    ref,
+                    UserListTab(UserListKind.followers, user.id),
+                  ),
                   child: _statItem(context, 'フォロワー', user.followersCount),
                 ),
               ],
@@ -1285,12 +1279,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     if (adapter is AchievementSupport) {
       actions.add(
         OutlinedButton.icon(
-          onPressed: () => context.push(
-            '/achievements',
-            extra: {
-              'userId': user.id,
-              'displayName': user.displayName ?? user.username,
-            },
+          onPressed: () => openAchievements(
+            context,
+            userId: user.id,
+            displayName: user.displayName ?? user.username,
           ),
           icon: const Icon(Icons.emoji_events, size: 16),
           label: const Text('実績'),
@@ -1302,7 +1294,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       actions.add(
         OutlinedButton.icon(
           onPressed: () async {
-            final updatedUser = await context.push<User>('/profile/edit');
+            // ⚠ 編集フォームはカラムにしない（投稿フォームと同じ）。開く側の
+            // アカウントのスコープを運ぶ (#1150)。運ばないと、別アカウントの
+            // カラムにある自分のプロフィールから、現在のアカウントを編集する。
+            final updatedUser = await context.push<User>(
+              '/profile/edit',
+              extra: extraWithProviderScope(context),
+            );
             if (updatedUser != null && mounted) {
               setState(() => _user = updatedUser);
             }
@@ -1316,7 +1314,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       if (_canStartChatWith(user)) {
         actions.add(
           OutlinedButton.icon(
-            onPressed: () => context.push('/chat/user/${user.id}', extra: user),
+            onPressed: () => openChatWithUser(context, user),
             icon: const Icon(Icons.chat_bubble_outline, size: 16),
             label: const Text('メッセージを送る'),
           ),
@@ -1375,7 +1373,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             case 'mention_compose':
               context.push(
                 '/compose',
-                extra: {'initialText': '@${userAcct(widget.user)} '},
+                extra: extraWithProviderScope(context, {
+                  'initialText': '@${userAcct(widget.user)} ',
+                }),
               );
             case 'mute':
               final ok = await _performAction(
@@ -1398,17 +1398,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             case 'report':
               await _confirmAndReportUser();
             case 'view_collections':
-              _openCollections(
-                inCollections: false,
-                ownerView: false,
-                title: 'コレクション',
-              );
+              _openCollections(CollectionsMode.list);
             case 'view_in_collections':
-              _openCollections(
-                inCollections: true,
-                ownerView: false,
-                title: '載っているコレクション',
-              );
+              _openCollections(CollectionsMode.included);
           }
         },
         itemBuilder: (_) => [
@@ -1471,17 +1463,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           case 'copy_url':
             _copyUrl(context);
           case 'my_collections':
-            _openCollections(
-              inCollections: false,
-              ownerView: true,
-              title: '自分のコレクション',
-            );
+            _openCollections(CollectionsMode.own);
           case 'in_collections':
-            _openCollections(
-              inCollections: true,
-              ownerView: false,
-              title: '載っているコレクション',
-            );
+            _openCollections(CollectionsMode.included);
         }
       },
       itemBuilder: (_) => [
@@ -1522,7 +1506,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   void _openImageViewer(String url, String? description) {
     context.push(
       '/media',
-      extra: {
+      extra: extraWithProviderScope(context, {
         'attachments': [
           Attachment(
             id: 'profile-image',
@@ -1532,25 +1516,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           ),
         ],
         'initialIndex': 0,
-      },
+      }),
     );
   }
 
-  void _openCollections({
-    required bool inCollections,
-    required bool ownerView,
-    required String title,
-  }) {
-    context.push(
-      '/collections',
-      extra: {
-        'accountId': widget.user.id,
-        'inCollections': inCollections,
-        'ownerView': ownerView,
-        'title': title,
-      },
-    );
-  }
+  void _openCollections(CollectionsMode mode) =>
+      openCollections(context, ref, accountId: widget.user.id, mode: mode);
 
   void _copyAcct(BuildContext context) {
     Clipboard.setData(ClipboardData(text: '@${userAcct(widget.user)}'));
@@ -1731,7 +1702,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     try {
       final user = await adapter.getUser(username, host);
       if (user != null && mounted) {
-        context.push('/profile', extra: user);
+        openProfile(context, user);
       }
     } on Exception catch (e) {
       debugLogException('Failed to look up mention $mention', e);

@@ -1,10 +1,10 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../service/sentry_op_failure.dart';
+import '../util/deck_navigation.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/cursor_paged_list_view.dart';
 
@@ -131,7 +131,7 @@ class _FollowedHashtagsScreenState
             leading: const Icon(Icons.tag),
             title: Text('#$tag'),
             // 一覧からタグのタイムラインへ飛べる（完了条件のひとつ）。
-            onTap: () => context.push('/hashtag/$tag'),
+            onTap: () => openHashtag(context, tag),
             trailing: _trailing(support, tag),
           ),
         ),

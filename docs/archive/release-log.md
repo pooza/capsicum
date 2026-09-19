@@ -7,6 +7,18 @@
 マイルストーン移行時に旧「最新リリース」を本ファイル先頭へ移すトリム手順は [milestone-transition.md](../milestone-transition.md) を参照。
 
 ---
+**v1.64.0**（2026-09-12 タグ、build 183、pubspec 1.64.0+183、リリース PR [#1102](https://github.com/pooza/capsicum/pull/1102)、merge `a1e9e5e4`）。**大更新なし — ユーザー報告と実機検証で出た不具合を消化する枠**（Android のログイン復帰と Linux のキーリングが中心）。**全 5 プラットフォーム公開済み**（2026-09-12 実測）: iOS / macOS とも 1.64.0 が `READY_FOR_SALE` / Android は production track の versionCode 183 が `completed` / Windows は `9AFBB08E.capsicum_1.64.183.0_x64` / Linux AppImage は [GitHub Release v1.64.0](https://github.com/pooza/capsicum/releases/tag/v1.64.0)。⚠ **build 180〜182 はナイトリーで報告者に渡した番号なので、製品版は 183 から**。マイルストーン [#78](https://github.com/pooza/capsicum/milestone/78)・消化 18 件。
+
+⚠⚠ **実機で検証するまで、報告者のサーバーだけが直っていなかった**（[#1113](https://github.com/pooza/capsicum/issues/1113)）。carry-over の「宣言」と「compose が読む」はガードで固定してあったのに、**アダプターが `Post` へ実際に入れているか**は誰も見ていなかった。Misskey の `Note → Post` 変換が `inReplyToId` を落としており、**報告元がダイスキー（Misskey）なので報告の本丸が未修正のまま**だった。⚠ **ガードの層が 1 つ抜けると、通っているテストの数は増えても守られていない。**
+
+⚠⚠ **Play の foreground service（#1108 の `shortService`）の用途申告は求められなかった**（2026-09-12 実測）。「アプリのコンテンツ」に項目が出ず、production への昇格も止められず公開された。⚠ **この件は「不要」→「必要」→「実測では求められなかった」と 2 回ひっくり返っている**ので、**次に触るときは実測を優先する**。
+
+⚠⚠ **「手元は緑・CI は赤」を 2 回目に踏んだ**（`widget_test`）。`Platform.isLinux` でだけ通る疎通確認を足したため、macOS の手元は分岐を素通りし、Linux の CI だけ 800ms のタイマーが残って落ちた。⚠ **直し方を「macOS では skip」にしない** —— 守っている本体（Linux）を手元で一度も踏まなくなる。**テストは「その OS のふり」をして通す**（`debug*Override`）。
+
+⚠ **リリース前レビュー（5 観点・1 巡）の赤は、この枠で入れた変更からは出なかった**（v1.59〜v1.63 と逆の出方で、赤 1 件は既存の Misskey フォロー一覧のページング）。代わりに**セキュリティが 3 件**出ている。⚠ **いずれも「前の版で入れた対策の隣」から出ている。**
+
+⚠⚠ **#1085 は最初「ハング」しか塞いでいなかった**。libsecret が**例外で断る**経路は残っており、Sentry（`CAPSICUM-53`）で実発生して #1104 になった。⚠ **報告どおりの症状が消えても、同じ入口の別の分岐は開いている**ことがある。
+
 
 **v1.63.0**（2026-09-04 タグ、build 179、pubspec 1.63.0+179、リリース PR [#1069](https://github.com/pooza/capsicum/pull/1069)、merge `d99b3b53`）。**大更新なし — 棚卸し 3 本（#993 / #991 / #992）の成果を消化する枠**。**全 5 プラットフォーム公開済み**（2026-09-05 実測）: iOS / macOS とも 1.63.0 が `READY_FOR_SALE`（ASC API のプラットフォーム別 `appStoreState`）/ Android は production track の versionCode 179 が `completed`（Play API）/ Windows は Microsoft Store の現行パッケージが `9AFBB08E.capsicum_1.63.179.0_x64`（displaycatalog）/ Linux AppImage は [GitHub Release v1.63.0](https://github.com/pooza/capsicum/releases/tag/v1.63.0)（Latest）。マイルストーン [#77](https://github.com/pooza/capsicum/milestone/77)。消化（11 件）: [#1039](https://github.com/pooza/capsicum/issues/1039) ブロック・ミュートの一覧と解除（**この枠の主役**）/ [#1040](https://github.com/pooza/capsicum/issues/1040) フォローリクエストの承認・拒否 / [#1041](https://github.com/pooza/capsicum/issues/1041) Misskey の本文検索 / [#1043](https://github.com/pooza/capsicum/issues/1043) 「指名」を選択肢から外す / [#1044](https://github.com/pooza/capsicum/issues/1044) リアクションが黙って ❤️ へ差し替えられる / [#1045](https://github.com/pooza/capsicum/issues/1045) 通知取得でサーバー側の未読が消える / [#1068](https://github.com/pooza/capsicum/issues/1068) CW 内のハッシュタグをクリッカブルに / [#1070](https://github.com/pooza/capsicum/issues/1070) フォロー中のハッシュタグの一覧 / [#1071](https://github.com/pooza/capsicum/issues/1071) お気に入りの一覧 / [#1072](https://github.com/pooza/capsicum/issues/1072) 引用の一覧 / [#1080](https://github.com/pooza/capsicum/issues/1080) 通知の取得が異常に遅い（**ユーザー報告由来**）。**relay は v1.63 で触っていない**（open Issue 0 件・同名マイルストーン無し）。⚠ [#1076](https://github.com/pooza/capsicum/issues/1076) は**起票時点で実装済み**と判明して close、[#1042](https://github.com/pooza/capsicum/issues/1042) は**前提が誤り**（絞る UI がそもそも無い）で v2.0 へ移送。
 

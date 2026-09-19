@@ -72,6 +72,7 @@ Color? _parseHexColor(String hex) {
 /// 「現在アカウントの文脈で解決する」ぶんだけを持つ。
 final postLabelProvider = Provider<String>(
   (ref) => postLabelFrom(ref.watch(currentMulukhiyaProvider)),
+  dependencies: [currentMulukhiyaProvider],
 );
 
 /// The label to use for "boost/renote" actions (e.g. "リキュア" on precure.fun).
@@ -84,6 +85,7 @@ final reblogLabelProvider = Provider<String>(
     ref.watch(currentMulukhiyaProvider),
     ref.watch(currentAdapterProvider),
   ),
+  dependencies: [currentMulukhiyaProvider, currentAdapterProvider],
 );
 
 /// The label to use for "bookmark" actions.
@@ -98,20 +100,20 @@ final reblogLabelProvider = Provider<String>(
 final bookmarkLabelProvider = Provider<String>((ref) {
   final adapter = ref.watch(currentAdapterProvider);
   return adapter is ReactionSupport ? 'お気に入り' : 'ブックマーク';
-});
+}, dependencies: [currentAdapterProvider]);
 
 /// The label to use for "favourite/reaction" actions.
 final favouriteLabelProvider = Provider<String>((ref) {
   final adapter = ref.watch(currentAdapterProvider);
   return adapter is ReactionSupport ? 'リアクション' : 'お気に入り';
-});
+}, dependencies: [currentAdapterProvider]);
 
 /// Maximum post content length from mulukhiya, falling back to adapter default.
 final maxPostLengthProvider = Provider<int?>((ref) {
   final mulukhiya = ref.watch(currentMulukhiyaProvider);
   final adapter = ref.watch(currentAdapterProvider);
   return mulukhiya?.maxPostLength ?? adapter?.capabilities.maxPostContentLength;
-});
+}, dependencies: [currentMulukhiyaProvider, currentAdapterProvider]);
 
 /// 本文カウンタの**数え方** (#1034)。
 ///
@@ -130,7 +132,7 @@ final maxPostLengthProvider = Provider<int?>((ref) {
 final postLengthRuleProvider = Provider<PostLengthRule>((ref) {
   final adapter = ref.watch(currentAdapterProvider);
   return adapter?.capabilities.postLengthRule ?? PostLengthRule.codePoints;
-});
+}, dependencies: [currentAdapterProvider]);
 
 /// Theme seed color: user override > mulukhiya > default green.
 final themeSeedColorProvider = Provider<Color>((ref) {
@@ -151,7 +153,7 @@ final themeSeedColorProvider = Provider<Color>((ref) {
     } catch (_) {}
   }
   return Colors.green;
-});
+}, dependencies: [currentAccountProvider, currentMulukhiyaProvider]);
 
 /// URL of the :sabacan: custom emoji on the current server (null if unavailable).
 ///
@@ -165,7 +167,7 @@ final themeSeedColorProvider = Provider<Color>((ref) {
 final sabacanUrlProvider = FutureProvider<String?>((ref) async {
   final emojis = await ref.watch(customEmojisProvider.future);
   return emojis.where((e) => e.shortcode == 'sabacan').firstOrNull?.url;
-});
+}, dependencies: [customEmojisProvider]);
 
 /// カスタム絵文字の取得が一過性の失敗で落ちたときの、自動再取得の刻み (#988)。
 ///
@@ -270,7 +272,7 @@ final customEmojisProvider = FutureProvider<List<CustomEmoji>>((ref) async {
       rethrow;
     }
   }
-});
+}, dependencies: [currentAdapterProvider]);
 
 /// カスタム絵文字が失敗状態で止まっていたら取り直す (#988)。
 ///
@@ -309,4 +311,4 @@ final localTimelineNameProvider = Provider<String>((ref) {
   final mulukhiya = ref.watch(currentMulukhiyaProvider);
   final tag = mulukhiya?.defaultHashtag;
   return tag != null ? '#$tag' : 'ローカル';
-});
+}, dependencies: [currentMulukhiyaProvider]);

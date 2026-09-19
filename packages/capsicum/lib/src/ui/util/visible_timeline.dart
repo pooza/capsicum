@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../provider/account_manager_provider.dart';
 import '../../provider/channel_provider.dart';
 import '../../provider/hashtag_provider.dart';
 import '../../provider/list_provider.dart';
@@ -159,19 +160,31 @@ bool mainTimelineIsVisible(TabType tab, {required bool listResolved}) {
 VisibleTimelineMutator readVisibleTimelines(WidgetRef ref) {
   final tab = ref.read(selectedTabProvider);
   final resolvedList = ref.read(selectedListProvider);
+  final account = ref.read(currentAccountKeyProvider);
   return VisibleTimelineMutator._(
     main: mainTimelineIsVisible(tab, listResolved: resolvedList != null)
-        ? ref.read(timelineProvider.notifier)
+        ? ref.read(
+            timelineProvider(ref.read(currentTimelineKeyProvider)).notifier,
+          )
         : null,
     hashtag: tab is HashtagTab
-        ? ref.read(hashtagTimelineProvider(tab.tag).notifier)
+        ? ref.read(
+            hashtagTimelineProvider((account: account, spec: tab.tag)).notifier,
+          )
         : null,
     hashtagSpec: tab is HashtagTab ? tab.tag : null,
     list: resolvedList != null
-        ? ref.read(listTimelineProvider(resolvedList.id).notifier)
+        ? ref.read(
+            listTimelineProvider((
+              account: account,
+              id: resolvedList.id,
+            )).notifier,
+          )
         : null,
     channel: tab is ChannelTab
-        ? ref.read(channelTimelineProvider(tab.id).notifier)
+        ? ref.read(
+            channelTimelineProvider((account: account, id: tab.id)).notifier,
+          )
         : null,
   );
 }

@@ -22,7 +22,15 @@ import '../widget/user_avatar.dart';
 class ChatThreadScreen extends ConsumerStatefulWidget {
   final User otherUser;
 
-  const ChatThreadScreen({super.key, required this.otherUser});
+  /// デッキのカラムの中身として描く (#1150)。戻るボタンを出さない（相手を
+  /// 出すので AppBar は残す）。
+  final bool embedded;
+
+  const ChatThreadScreen({
+    super.key,
+    required this.otherUser,
+    this.embedded = false,
+  });
 
   @override
   ConsumerState<ChatThreadScreen> createState() => _ChatThreadScreenState();
@@ -181,6 +189,7 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: !widget.embedded,
         title: Row(
           children: [
             UserAvatar(user: widget.otherUser, size: 32),

@@ -10,6 +10,7 @@ import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../../util/reentrancy_guard.dart';
 import '../util/livecure_snackbar.dart';
+import '../util/provider_scope_carrier.dart';
 import '../util/shortcode_warning_controller.dart';
 import '../util/visible_timeline.dart';
 import 'desktop_menu_model.dart';
@@ -176,7 +177,7 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar>
     }
     final posted = await context.push<bool>(
       '/compose',
-      extra: extra.isNotEmpty ? extra : null,
+      extra: extraWithProviderScope(context, extra),
     );
     if (posted == true && mounted) {
       _controller.clear();

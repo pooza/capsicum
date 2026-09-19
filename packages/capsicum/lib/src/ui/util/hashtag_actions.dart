@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:go_router/go_router.dart';
+
+import 'deck_navigation.dart';
 
 /// ハッシュタグのタップ時に「タグタイムラインを開く / ハッシュタグをコピー」を
 /// 選べるドロワーを出す共通導線（#794）。従来はタップ即遷移だった。
@@ -26,7 +27,7 @@ void showHashtagActionMenu(BuildContext context, String tag) {
             title: const Text('タグタイムラインを開く'),
             onTap: () {
               Navigator.pop(sheetContext);
-              context.push('/hashtag/$tag');
+              openHashtag(context, tag);
             },
           ),
           ListTile(

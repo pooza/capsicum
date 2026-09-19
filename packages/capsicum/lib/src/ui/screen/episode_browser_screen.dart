@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../util/exception_scrub.dart';
 import '../util/annict_link.dart';
+import '../util/deck_navigation.dart';
 import '../widget/bottom_safe_area.dart';
 import 'annict_record_screen.dart';
 import 'annict_review_screen.dart';
@@ -254,7 +255,7 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
   }
 
   void _openHashtagTimeline(String hashtag) {
-    context.push('/hashtag/${_bareHashtag(hashtag)}');
+    openHashtag(context, _bareHashtag(hashtag));
   }
 
   /// エピソード行の操作 (#593)。コピー / TL 遷移 / 感想投稿を PopupMenuButton に

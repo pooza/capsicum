@@ -15,7 +15,10 @@ import '../../provider/supporter_purchase_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../../url_helper.dart';
 import '../util/about_dialog.dart';
+import '../util/deck_navigation.dart';
+import '../util/deck_tabs.dart';
 import '../util/post_scope_display.dart';
+import '../util/provider_scope_carrier.dart';
 import 'desktop_menu_model.dart';
 
 /// デスクトップメニューの /（Ctrl+R）の「タイムラインを更新」から、現在表示中の
@@ -90,6 +93,7 @@ String tabLabel(
     NotificationsTab() => '通知',
     AnnouncementsTab() => 'お知らせ',
     MessagesTab() => 'メッセージ',
+    final DeckOnlyTab t => deckOnlyTabLabel(ref, t, adapter),
   };
 }
 
@@ -141,6 +145,13 @@ List<HomeNavItem> buildHomeNavItems(
         icon: Icons.notifications_active_outlined,
         onSelected: () => act(() => context.push('/notifications/all')),
       ),
+    // デッキ (#720 / #1092)。⚠ タブ UI とは別画面（`docs/deck-ui-plan.md`
+    // 決定済み事項 8）。
+    HomeNavItem(
+      title: 'デッキ',
+      icon: Icons.view_week_outlined,
+      onSelected: () => act(() => context.push('/deck')),
+    ),
     HomeNavItem(
       title: ref.read(bookmarkLabelProvider),
       icon: Icons.bookmark_outline,
@@ -485,7 +496,8 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
           icon: Icons.edit_outlined,
           shortcut: const MenuShortcut(LogicalKeyboardKey.keyN),
           globalShortcut: true,
-          onSelected: () => context.push('/compose'),
+          onSelected: () =>
+              context.push('/compose', extra: extraWithProviderScope(context)),
         ),
         const MenuGroupSeparator(),
         for (final item in navItems.where((i) => i.title != '設定'))
@@ -508,7 +520,7 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
             MenuActionEntry(
               label: 'プロフィール',
               icon: Icons.person_outline,
-              onSelected: () => context.push('/profile', extra: current.user),
+              onSelected: () => openProfile(context, current.user),
             ),
           if (current != null && otherAccounts.isNotEmpty)
             const MenuGroupSeparator(),
@@ -664,7 +676,7 @@ Future<void> showFavoriteTags(BuildContext context, WidgetRef ref) async {
                 dense: true,
                 onTap: () {
                   Navigator.pop(context);
-                  context.push('/hashtag/${tag.name}');
+                  openHashtag(context, tag.name);
                 },
               ),
           ],
@@ -786,7 +798,7 @@ Future<void> showFlashList(BuildContext context, WidgetRef ref) async {
                 // /play/<id> を開いていた (#73)。実行できない Play は
                 // 詳細画面側で「ブラウザで開く」に degrade する。
                 Navigator.pop(context);
-                context.push('/play', extra: {'flash': flash});
+                openFlash(context, flash: flash);
               },
             ),
         ],
@@ -969,7 +981,7 @@ Future<void> showListChooser(BuildContext context, WidgetRef ref) async {
 Future<void> showChannelList(BuildContext context, WidgetRef ref) async {
   final channel = await pickFollowedChannel(context, ref);
   if (channel == null || !context.mounted) return;
-  context.push('/channel/${channel.id}', extra: channel.name);
+  openChannel(context, channel.id, channel.name);
 }
 
 /// フォロー中のチャンネルを 1 つ選ばせる (#805 のクイックチューザ様式)。

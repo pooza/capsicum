@@ -9,6 +9,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../util/fediverse_link.dart';
 import '../util/pages_error.dart';
+import '../util/provider_scope_carrier.dart';
 import 'content_parser.dart';
 import 'post_tile.dart';
 
@@ -279,10 +280,10 @@ class _ImageBlock extends ConsumerWidget {
   void _openMediaViewer(BuildContext context, Attachment file) {
     context.push(
       '/media',
-      extra: {
+      extra: extraWithProviderScope(context, {
         'attachments': <Attachment>[file],
         'initialIndex': 0,
-      },
+      }),
     );
   }
 

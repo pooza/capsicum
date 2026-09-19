@@ -27,6 +27,7 @@ import 'ui/screen/clip_notes_screen.dart';
 import 'ui/screen/collection_detail_screen.dart';
 import 'ui/screen/collections_list_screen.dart';
 import 'ui/screen/compose_screen.dart';
+import 'ui/screen/deck_screen.dart';
 import 'ui/screen/drafts_screen.dart';
 import 'ui/screen/drive_manager_screen.dart';
 import 'ui/screen/episode_browser_screen.dart';
@@ -70,6 +71,7 @@ import 'ui/screen/splash_screen.dart';
 import 'ui/screen/templates_manage_screen.dart';
 import 'ui/screen/unified_notification_screen.dart';
 import 'ui/screen/user_list_screen.dart';
+import 'ui/util/provider_scope_carrier.dart';
 import 'ui/widget/desktop_menu_bar.dart';
 
 /// Navigator key exposed for navigation from notification taps.
@@ -264,11 +266,15 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/media',
         builder: (context, state) {
           final extra = state.extra! as Map<String, dynamic>;
-          return MediaViewerScreen(
-            attachments: extra['attachments'] as List<Attachment>,
-            initialIndex: extra['initialIndex'] as int? ?? 0,
-            postAuthorId: extra['postAuthorId'] as String?,
-            postId: extra['postId'] as String?,
+          // 開いた側（デッキのカラム）のアカウントで動かす (#1149)。
+          return withExtraProviderScope(
+            extra,
+            MediaViewerScreen(
+              attachments: extra['attachments'] as List<Attachment>,
+              initialIndex: extra['initialIndex'] as int? ?? 0,
+              postAuthorId: extra['postAuthorId'] as String?,
+              postId: extra['postId'] as String?,
+            ),
           );
         },
       ),
@@ -282,6 +288,11 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/home',
             builder: (context, state) => const HomeScreen(),
+          ),
+          // デッキ (#1092)。タブ UI とは別画面（決定済み事項 8）。
+          GoRoute(
+            path: '/deck',
+            builder: (context, state) => const DeckScreen(),
           ),
           GoRoute(
             path: '/settings',
@@ -356,19 +367,23 @@ final routerProvider = Provider<GoRouter>((ref) {
               // (#833)。compose 側は _effectiveChannelId / _quotedPost / 送信経路が
               // これらの widget フィールドを既に参照するため本体は無改修。明示 extra
               // （通常のリプライ/引用起動）があればそちらを優先する。
-              return ComposeScreen(
-                redraft: extra?['redraft'] as Post?,
-                replyTo: extra?['replyTo'] as Post? ?? restoreDraft?.reply,
-                quoteTo: extra?['quoteTo'] as Post? ?? restoreDraft?.renote,
-                channelId:
-                    extra?['channelId'] as String? ?? restoreDraft?.channelId,
-                channelName:
-                    extra?['channelName'] as String? ??
-                    restoreDraft?.channelName,
-                sharedText: extra?['sharedText'] as String?,
-                initialText: extra?['initialText'] as String?,
-                restoreDraft: restoreDraft,
-                template: extra?['template'] as ComposeTemplate?,
+              // ⚠⚠ 開いた側（デッキのカラム）のアカウントで投稿する (#1149)。
+              return withExtraProviderScope(
+                extra,
+                ComposeScreen(
+                  redraft: extra?['redraft'] as Post?,
+                  replyTo: extra?['replyTo'] as Post? ?? restoreDraft?.reply,
+                  quoteTo: extra?['quoteTo'] as Post? ?? restoreDraft?.renote,
+                  channelId:
+                      extra?['channelId'] as String? ?? restoreDraft?.channelId,
+                  channelName:
+                      extra?['channelName'] as String? ??
+                      restoreDraft?.channelName,
+                  sharedText: extra?['sharedText'] as String?,
+                  initialText: extra?['initialText'] as String?,
+                  restoreDraft: restoreDraft,
+                  template: extra?['template'] as ComposeTemplate?,
+                ),
               );
             },
           ),
@@ -451,7 +466,9 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: '/profile/edit',
-            builder: (context, state) => const ProfileEditScreen(),
+            // ⚠ 開いた側（デッキのカラム）のアカウントを編集する (#1150)。
+            builder: (context, state) =>
+                withExtraProviderScope(state.extra, const ProfileEditScreen()),
           ),
           // ⚠⚠ **`extra` はプロセスをまたいで残らない (#1083-F)。**この 2 本は
           // 「タイトルと fetcher（クロージャ）」を `extra` で渡す汎用画面なので、

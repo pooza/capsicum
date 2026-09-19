@@ -7,6 +7,8 @@ import 'package:go_router/go_router.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../url_helper.dart';
 import '../../util/exception_scrub.dart';
+import '../util/deck_navigation.dart';
+import '../util/provider_scope_carrier.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/emoji_text.dart';
 
@@ -524,10 +526,10 @@ class _MediaDetailSheet extends ConsumerWidget {
     Navigator.of(context).pop(); // close bottom sheet
     context.push(
       '/media',
-      extra: {
+      extra: extraWithProviderScope(context, {
         'attachments': [attachment],
         'initialIndex': 0,
-      },
+      }),
     );
   }
 
@@ -542,7 +544,7 @@ class _MediaDetailSheet extends ConsumerWidget {
     try {
       final user = await adapter.getUser(username);
       if (user != null && context.mounted) {
-        context.push('/profile', extra: user);
+        openProfile(context, user);
       }
     } catch (e) {
       debugLogException('Failed to open profile', e);

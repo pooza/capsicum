@@ -2,10 +2,10 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../service/sentry_op_failure.dart';
+import '../util/deck_navigation.dart';
 import '../widget/account_multi_select_sheet.dart';
 import '../widget/bottom_safe_area.dart';
 
@@ -20,12 +20,16 @@ class CollectionsListScreen extends ConsumerStatefulWidget {
   final bool ownerView;
   final String title;
 
+  /// デッキのカラムの中身として描く (#1150)。AppBar を出さない。
+  final bool embedded;
+
   const CollectionsListScreen({
     super.key,
     required this.accountId,
     required this.inCollections,
     required this.ownerView,
     required this.title,
+    this.embedded = false,
   });
 
   @override
@@ -137,12 +141,17 @@ class _CollectionsListScreenState extends ConsumerState<CollectionsListScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.title),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-      ),
+      appBar: widget.embedded
+          ? null
+          : AppBar(
+              title: Text(widget.title),
+              backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+            ),
       floatingActionButton: widget.ownerView
           ? FloatingActionButton(
+              // ⚠ カラムでは同じ画面が並びうるので hero を外す（同じ route に
+              // 同じ tag の Hero が 2 つあると遷移時に落ちる）。
+              heroTag: widget.embedded ? null : 'collections_create',
               onPressed: _showCreateDialog,
               tooltip: 'コレクションを作成',
               child: const Icon(Icons.add),
@@ -193,7 +202,7 @@ class _CollectionsListScreenState extends ConsumerState<CollectionsListScreen> {
                 : null,
             trailing: c.itemCount != null ? Text('${c.itemCount}') : null,
             onTap: () async {
-              await context.push('/collection', extra: c.id);
+              await openCollection(context, c.id);
               if (mounted) _load();
             },
           );
@@ -241,7 +250,7 @@ class _CollectionsListScreenState extends ConsumerState<CollectionsListScreen> {
       );
       if (!mounted) return;
       await _load();
-      if (mounted) await context.push('/collection', extra: collection.id);
+      if (mounted) await openCollection(context, collection.id);
       if (mounted) _load();
     } on DioException catch (e, st) {
       reportOpFailure(

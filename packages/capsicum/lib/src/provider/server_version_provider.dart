@@ -14,4 +14,4 @@ final serverVersionStatusProvider = FutureProvider<ServerVersionStatus?>((
   final host = ref.watch(currentAccountProvider)?.key.host;
   if (host == null) return null;
   return ServerVersionChecker.check(host);
-});
+}, dependencies: [currentAccountProvider]);
