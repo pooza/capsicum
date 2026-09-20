@@ -6,6 +6,7 @@ import '../../model/account.dart';
 import '../../model/account_key.dart';
 import '../../model/deck_column.dart';
 import '../../provider/account_manager_provider.dart';
+import '../../provider/deck_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../util/deck_layout.dart';
 import '../util/deck_navigation.dart';
@@ -65,8 +66,43 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
   /// 直近の割り付け。足したカラムを見える位置まで送るのに使う。
   DeckLayout? _layout;
 
+  /// ルートのコンテナ。⚠ [dispose] の時点では `ref` が使えないので、開いている
+  /// 間の数 ([mountedDeckCountProvider]) を戻す口を initState で掴んでおく。
+  late final ProviderContainer _root;
+
+  /// 開いている数を [delta] だけ動かす (#1099)。
+  ///
+  /// ⚠⚠ **フレームの後で行う。**initState / dispose の最中に provider を書き換え
+  /// ると Riverpod が assert で落とす（「Tried to modify a provider while the
+  /// widget tree was building」）。
+  ///
+  /// ⚠ **`mounted` で握り潰さない。**開いた直後に閉じた場合でも、増やす側が
+  /// 飛んで減らす側だけが走ると数が負に振り切れる。予約の順は保たれるので、
+  /// 対称に投げておけば辻褄が合う。
+  void _shiftMountedDecks(int delta) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      try {
+        _root.read(mountedDeckCountProvider.notifier).update((n) => n + delta);
+      } on StateError {
+        // ⚠ 減らす側の予約が、ルートのコンテナごと畳まれた後のフレームで走ること
+        // がある（アプリの終了・テストのツリー差し替え）。戻す先そのものが無く
+        // なっているので、握って構わない。
+      }
+    });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _root = ProviderScope.containerOf(context, listen: false);
+    // ⚠ 投稿・ブロックの反映先がカラム列から解決されるようになる (#1099)。
+    // 閉じている間に列を読むと、片づいたはずの TL provider を起こしてしまう。
+    _shiftMountedDecks(1);
+  }
+
   @override
   void dispose() {
+    _shiftMountedDecks(-1);
     _scrollController.dispose();
     for (final container in _containers.values) {
       container.dispose();
@@ -123,7 +159,12 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
       _containerAccounts[key] = account;
       return _containers[key] = ProviderContainer(
         parent: ProviderScope.containerOf(context, listen: false),
-        overrides: [currentAccountProvider.overrideWithValue(account)],
+        overrides: [
+          currentAccountProvider.overrideWithValue(account),
+          // ⚠ ここが「カラムのスコープ」の目印 (#1099)。投稿・ブロックの反映先を
+          // 解決するとき、ルートで選ばれているタブをこのアカウントに当てない。
+          inDeckColumnProvider.overrideWithValue(true),
+        ],
       );
     }
     if (!identical(_containerAccounts[key], account)) {
@@ -135,6 +176,7 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
         if (!mounted || _containers[key] != existing) return;
         existing.updateOverrides([
           currentAccountProvider.overrideWithValue(account),
+          inDeckColumnProvider.overrideWithValue(true),
         ]);
       });
     }
