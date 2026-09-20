@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:capsicum/src/model/account.dart';
 import 'package:capsicum/src/model/account_key.dart';
 import 'package:capsicum/src/provider/account_manager_provider.dart';
+import 'package:capsicum/src/provider/deck_provider.dart';
 import 'package:capsicum/src/provider/timeline_provider.dart';
 import 'package:capsicum/src/service/timeline_cache.dart';
 import 'package:capsicum/src/util/shared_preferences_cache.dart';
@@ -276,6 +277,70 @@ void main() {
       saved = await TimelineCache.load(contextKeyFor(), now: DateTime.now());
     }
     expect(saved?.map((e) => e['id']), ['new1', 'new2']);
+  });
+
+  /// #1100 (B-6): デッキのカラムは起動キャッシュの担当ではない。
+  ///
+  /// [TimelineCache] は**単一ファイルに 1 本ぶん**しか持たない。デッキに別
+  /// アカウントのホームカラムを置くと、そのカラムも `type == home` なので
+  /// 取得のたびに `save` し、**ファイルをそのアカウントの中身で上書きする**。
+  /// 次の起動で HomeScreen が自分の `contextKey` で `load` すると一致せず、
+  /// `_discard()` が**ファイルごと消す** —— カラムを 1 本置いただけで
+  /// #890 の先出しが恒久的に無効化される。
+  ///
+  /// ⚠ N スロット化ではなく「先出しの対象を 1 本に絞る」で通す
+  /// （`docs/deck-ui-plan.md` 1-5 / 未決事項 3-3）。
+  test('⚠⚠ デッキのカラム（別アカウントのホーム）は起動キャッシュを上書きしない (#1100)', () async {
+    // 前回の起動で書かれた、現在のアカウントのホーム TL。
+    await TimelineCache.save(contextKeyFor(), [
+      {'id': 'cached1', 'content': '前回の投稿'},
+    ], now: DateTime.now());
+
+    // ⚠ ルートは購読を張らない（HomeScreen ぶんの取得を走らせると、こちらの
+    // save でキャッシュが正当に置き換わってしまい、カラムの書き込みと区別が
+    // つかなくなる）。
+    final root = ProviderContainer(
+      overrides: [
+        _selectedAccount.overrideWith(
+          (ref) => _accountFor(_FakeAdapter(fresh: [_post('new1')])),
+        ),
+        currentAccountProvider.overrideWith(
+          (ref) => ref.watch(_selectedAccount),
+        ),
+      ],
+    );
+    addTearDown(root.dispose);
+
+    // デッキのカラムのスコープ（`DeckScreen` がアカウントごとに作るもの）。
+    final columnAdapter = _FakeAdapter(fresh: [_post('other1')]);
+    final other = _accountFor(columnAdapter, username: 'other');
+    final scope = ProviderContainer(
+      parent: root,
+      overrides: [
+        currentAccountProvider.overrideWithValue(other),
+        inDeckColumnProvider.overrideWithValue(true),
+      ],
+    );
+    addTearDown(scope.dispose);
+
+    final columnKey = (account: other.key, type: TimelineType.home);
+    scope.listen(timelineProvider(columnKey), (_, _) {}, fireImmediately: true);
+    final state = await scope.read(timelineProvider(columnKey).future);
+
+    // 前提: カラムの取得は実際に完走している（空振りするテストにしない）。
+    expect(state.posts.map((p) => p.id), ['other1']);
+    expect(columnAdapter.fetchCount, greaterThan(0));
+
+    // 保存は unawaited なので、書かれうる時間を与えてから見る。
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+
+    final saved = await TimelineCache.load(
+      contextKeyFor(),
+      now: DateTime.now(),
+    );
+    expect(saved?.map((e) => e['id']), [
+      'cached1',
+    ], reason: 'HomeScreen が次の起動で先出しするぶんが、カラムに奪われていない');
   });
 
   test('先出しは 1 プロセス 1 回だけ（セッション中の切替で古い一覧を出さない）', () async {

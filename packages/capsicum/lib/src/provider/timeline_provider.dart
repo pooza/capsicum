@@ -12,6 +12,7 @@ import '../util/conversion_skip_report.dart';
 import '../util/exception_scrub.dart';
 import '../util/startup_trace.dart';
 import 'account_manager_provider.dart';
+import 'deck_provider.dart';
 import 'is_cat_provider.dart';
 import 'preferences_provider.dart';
 
@@ -1174,6 +1175,27 @@ class TimelineNotifier
   /// 作り直されるため static に持つ（[_homeFirstPaintReported] と同じ理由）。
   static bool _startupCacheServed = false;
 
+  /// このインスタンスが起動時キャッシュ (#890) を読み書きしてよいか (#1100・B-6)。
+  ///
+  /// ⚠⚠ **[TimelineCache] は単一ファイルに 1 本ぶんしか持たない。**デッキで
+  /// **別アカウントのホームカラム**を置くと、そのカラムも `type == home` なので
+  /// 取得のたびに `save` し、**ファイルをそのアカウントの中身で上書きする**。
+  /// 次の起動で HomeScreen が自分の `contextKey` で `load` すると一致せず、
+  /// `_discard()` が**ファイルごと消す** —— つまり**デッキに別アカウントの
+  /// ホームを 1 本置いただけで、先出しが恒久的に効かなくなる**。
+  ///
+  /// ⚠ **N スロット化はしない**（`docs/deck-ui-plan.md` 1-5 / 未決事項 3-3）。
+  /// #890 の狙いは起動体感で、起動直後に見えるのは HomeScreen の 1 本だけ。
+  /// スロットを増やしてもそこには効かず、ファイルが太って「どれを捨てるか」の
+  /// 判断（B-7 の穴）まで抱え込む。**先出しの対象を 1 本に絞るほうを採る。**
+  ///
+  /// ⚠ 読み出し側は [_startupCacheServed]（static・1 プロセス 1 回）で既に守られて
+  /// いるが、**書き込み側には何の保護も無かった**。ここは意味で切る。
+  ///
+  /// **現在のアカウントのカラムはルートのコンテナを共有する**（デッキのスコープに
+  /// 入らない）ので、そのホームカラムは従来どおり読み書きする。
+  bool _servesStartupCache = true;
+
   /// テストから「起動直後」の状態に戻すためのフック。プロセス 1 回の制約
   /// （[_startupCacheServed] / [_homeFirstPaintReported]）を解除する。
   @visibleForTesting
@@ -1244,6 +1266,8 @@ class TimelineNotifier
     final contextKey = timelineContextKey(key.account, TimelineTab(type));
     // await を挟む前に確定させる (#914 §5)。以降の stale 判定はこれを見る。
     _servingContextKey = contextKey;
+    // 起動キャッシュを担当するインスタンスか (#1100)。⚠ これも await の前に。
+    _servesStartupCache = !ref.read(inDeckColumnProvider);
     // 種別はキーで固定なので watch しない。アカウントは「同じアカウントのアダプタが
     // 作り直された」（再接続等）ときに build() をやり直すため watch する。
     final adapter = _adapterFor(ref.watch(currentAccountProvider));
@@ -1448,7 +1472,12 @@ class TimelineNotifier
     final windowHadRemovals =
         _windowRemovedIds.isNotEmpty || _windowBlockedUserIds.isNotEmpty;
     final removalDuringFetch = _removalSeq != removalSeqAtStart;
-    if (type == TimelineType.home &&
+    //
+    // ⚠⚠ **デッキのカラムは書かない (#1100)。**単一ファイルなので、別アカウントの
+    // ホームカラムが上書きすると次の起動で HomeScreen 側の load が一致せず、
+    // `_discard()` がファイルごと消す（[_servesStartupCache]）。
+    if (_servesStartupCache &&
+        type == TimelineType.home &&
         contextKey != null &&
         allRaw.isNotEmpty &&
         !windowHadRemovals &&
@@ -1616,6 +1645,10 @@ class TimelineNotifier
   }) async {
     if (type != TimelineType.home) return null;
     if (contextKey == null) return null;
+    // ⚠ デッキのカラムは先出しの担当ではない (#1100)。[_startupCacheServed] が
+    // static なので実際には HomeScreen が先に消費しているが、**意味で切っておく**
+    // （static フラグの意味が変わったときにここへ穴が開かないように）。
+    if (!_servesStartupCache) return null;
     if (_startupCacheServed) return null;
     if (adapter is! TimelineCacheSupport) return null;
     _startupCacheServed = true;
@@ -2115,5 +2148,11 @@ class TimelineNotifier
 final timelineProvider = AsyncNotifierProvider.autoDispose
     .family<TimelineNotifier, TimelineState, TimelineKey>(
       TimelineNotifier.new,
-      dependencies: [currentAccountProvider, isCatEnricherProvider],
+      // ⚠ `inDeckColumnProvider` はカラムのスコープで上書きされる (#1100)。宣言が
+      // 無いとカラムの中でもルートの値（false）で動き、起動キャッシュを奪い合う。
+      dependencies: [
+        currentAccountProvider,
+        isCatEnricherProvider,
+        inDeckColumnProvider,
+      ],
     );
