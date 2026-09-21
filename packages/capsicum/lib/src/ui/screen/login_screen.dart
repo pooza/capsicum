@@ -134,13 +134,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   ///
   /// #654 で macOS は [_authenticateViaLocalhostServer]（システムブラウザ +
   /// 自前 localhost HTTP サーバ）に切り替えたため、このゲッターは
-  /// `!Platform.isMacOS` 分岐でのみ消費される。Linux / Windows の localhost
+  /// 自前サーバを立てない（fwa2 の server impl で受ける）分岐でのみ消費される。Linux / Windows の localhost
   /// callback では flutter_web_auth_2 の server impl が完全な
   /// `http://localhost:{port}/{path}` URL を期待するため、その URL を返す。
   /// （macOS で本ゲッターが評価された場合のフォールバック値として custom
   /// scheme を残すが、現状 macOS では参照されない。）
   String get _authCallbackUrlScheme {
-    if (_useLocalhostCallback && !Platform.isMacOS) {
+    // ⚠ UI 層に `Platform.isX` を直書きしない (#650 / #1144)。自前サーバを立てる
+    // macOS / Android はこのゲッターを通らないので、機能名の合成で同じ意味になる。
+    if (_useLocalhostCallback && !usesSelfHostedOAuthLoopbackServer) {
       return AppConstants.localhostOAuthCallbackUrl;
     }
     return AppConstants.callbackUrlScheme;

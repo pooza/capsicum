@@ -43,7 +43,7 @@ class PushKeyStore {
   ///
   /// ⚠ **区画（access group + accessibility）はこの店のものを保つ。**揃えると
   /// 既存 item が見えなくなる / 消せなくなる（#392 / #656）。共有するのは関所だけ。
-  static const _gate = SecureStorageGate(
+  static const _gate = ReportingSecureStorageGate(
     FlutterSecureStorage(
       iOptions: IOSOptions(
         groupId: _appleAccessGroup,
@@ -54,6 +54,7 @@ class PushKeyStore {
         accessibility: KeychainAccessibility.first_unlock,
       ),
     ),
+    phase: 'push_key',
   );
 
   static const _prefix = 'capsicum_push_';

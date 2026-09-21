@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../provider/preferences_provider.dart';
+import '../../../provider/server_config_provider.dart';
 
 /// タイムライン上の投稿に対するタッチ操作（タイル上の小ボタン）を
 /// アクション別に有効化する設定画面 (#565)。
@@ -13,6 +14,9 @@ class TouchActionSettingsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final enabled = ref.watch(postTouchActionsProvider);
+    // ⚠ 「ブースト」「リノート」を直書きしない (#1027-C2 / #1144)。キュアスタ！では
+    // 「リキュア！」で、この画面だけ他の全 UI と食い違っていた。
+    final reblogLabel = ref.watch(reblogLabelProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -32,7 +36,7 @@ class TouchActionSettingsScreen extends ConsumerWidget {
           ),
           for (final action in PostTouchAction.values)
             SwitchListTile(
-              title: Text(_label(action)),
+              title: Text(_label(action, reblogLabel)),
               subtitle: _subtitle(action) != null
                   ? Text(_subtitle(action)!)
                   : null,
@@ -46,13 +50,13 @@ class TouchActionSettingsScreen extends ConsumerWidget {
     );
   }
 
-  String _label(PostTouchAction action) {
+  String _label(PostTouchAction action, String reblogLabel) {
     return switch (action) {
       PostTouchAction.reply => '返信',
       PostTouchAction.favorite => 'お気に入り',
       PostTouchAction.reaction => 'リアクション',
       PostTouchAction.bookmark => 'ブックマーク',
-      PostTouchAction.boost => 'ブースト / リノート',
+      PostTouchAction.boost => reblogLabel,
       PostTouchAction.quote => '引用',
     };
   }

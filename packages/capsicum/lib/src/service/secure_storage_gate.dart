@@ -152,3 +152,69 @@ class SecureStorageGate {
     );
   }
 }
+
+/// 待ちの打ち切りを [SecureStorageHealth] へ記録する関所 (#1144)。
+///
+/// ⚠⚠ **`AccountStorage` 以外の店の打ち切りが、案内カードにも Sentry にも
+/// 出ていなかった。**`PushKeyStore` / `DeviceInstallId` は関所を通るように
+/// なった（#1136）が記録はしておらず、#1136 が実測した「アカウント削除の裏で
+/// `PushKeyStore.delete` が固まる」経路のタイムアウトが、どこにも残らなかった。
+///
+/// ⚠ **呼ぶ側に思い出させない**（#1136 と同じ理由）。店がこの関所を持てば、
+/// どの操作の打ち切りも記録される。`AccountStorage` は打ち切りに合わせて別の
+/// 処理（オフライン保持への切り替え等）をするので、自分で記録する素の関所の
+/// ままにしている。
+class ReportingSecureStorageGate extends SecureStorageGate {
+  const ReportingSecureStorageGate(super.storage, {required this.phase});
+
+  /// Sentry の `phase` タグ（どの店の処理か）。
+  final String phase;
+
+  Future<T> _report<T>(Future<T> operation) async {
+    try {
+      return await operation;
+    } on TimeoutException catch (e) {
+      SecureStorageHealth.markUnavailable(e, phase: phase);
+      rethrow;
+    }
+  }
+
+  @override
+  Future<String?> read({
+    required String key,
+    IOSOptions? iOptions,
+    MacOsOptions? mOptions,
+  }) => _report(super.read(key: key, iOptions: iOptions, mOptions: mOptions));
+
+  @override
+  Future<bool> containsKey({
+    required String key,
+    IOSOptions? iOptions,
+    MacOsOptions? mOptions,
+  }) => _report(
+    super.containsKey(key: key, iOptions: iOptions, mOptions: mOptions),
+  );
+
+  @override
+  Future<Map<String, String>> readAll({
+    IOSOptions? iOptions,
+    MacOsOptions? mOptions,
+  }) => _report(super.readAll(iOptions: iOptions, mOptions: mOptions));
+
+  @override
+  Future<void> write({
+    required String key,
+    required String? value,
+    IOSOptions? iOptions,
+    MacOsOptions? mOptions,
+  }) => _report(
+    super.write(key: key, value: value, iOptions: iOptions, mOptions: mOptions),
+  );
+
+  @override
+  Future<void> delete({
+    required String key,
+    IOSOptions? iOptions,
+    MacOsOptions? mOptions,
+  }) => _report(super.delete(key: key, iOptions: iOptions, mOptions: mOptions));
+}

@@ -254,7 +254,7 @@ class AccountStorage {
       e,
     );
     _reportOnce('secret:$accountKey:$secretStoreTag', e, st, code: code);
-    if (usesSecretServiceKeyring) SecureStorageHealth.markRefused(e);
+    if (usesSecretService) SecureStorageHealth.markRefused(e);
   }
 
   /// ⚠⚠ **Secret Service の読み取りには必ず上限を掛ける (#1085)。**Linux の

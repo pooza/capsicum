@@ -84,7 +84,7 @@ class DeviceInstallId {
   /// ⚠ **区画（`first_unlock_this_device`）はこの店のもの。**ThisDeviceOnly を
   /// 崩すと ID がバックアップに乗り、#952（復元先が同じ ID を送る）が戻る。
   /// 共有するのは関所だけ。
-  static const _gate = SecureStorageGate(
+  static const _gate = ReportingSecureStorageGate(
     FlutterSecureStorage(
       iOptions: IOSOptions(
         accessibility: KeychainAccessibility.first_unlock_this_device,
@@ -93,6 +93,7 @@ class DeviceInstallId {
         accessibility: KeychainAccessibility.first_unlock_this_device,
       ),
     ),
+    phase: 'device_install_id',
   );
 
   /// 生成レースを塞ぐためのメモ。プッシュ登録はアカウントごとに走るため
