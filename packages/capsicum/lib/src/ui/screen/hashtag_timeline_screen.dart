@@ -23,6 +23,16 @@ class _HashtagTimelineScreenState extends ConsumerState<HashtagTimelineScreen> {
   final _scrollController = ScrollController();
   bool? _following;
 
+  /// フォローの対象になるタグ名。単独のタグのときだけ非 null。
+  ///
+  /// ⚠⚠ **[HashtagTimelineScreen.hashtag] は spec**（`c%2B%2B` / `a+b`）なので、
+  /// そのままサーバーへ渡さない (#1159)。`#c%2B%2B` という別のタグをフォロー
+  /// してしまう。⚠ AND 指定はサーバー側に「組のフォロー」が無いので出さない。
+  String? get _followTarget {
+    final tags = hashtagSpecTags(widget.hashtag);
+    return tags.length == 1 ? tags.single : null;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -39,10 +49,11 @@ class _HashtagTimelineScreenState extends ConsumerState<HashtagTimelineScreen> {
 
   Future<void> _loadFollowState() async {
     final adapter = ref.read(currentAdapterProvider);
-    if (adapter is! HashtagSupport) return;
+    final target = _followTarget;
+    if (adapter is! HashtagSupport || target == null) return;
     try {
       final following = await (adapter as HashtagSupport).isFollowingHashtag(
-        widget.hashtag,
+        target,
       );
       if (mounted) setState(() => _following = following);
     } catch (_) {
@@ -52,9 +63,11 @@ class _HashtagTimelineScreenState extends ConsumerState<HashtagTimelineScreen> {
 
   Future<void> _toggleFollow() async {
     final adapter = ref.read(currentAdapterProvider);
-    if (adapter is! HashtagSupport || _following == null) return;
+    final hashtag = _followTarget;
+    if (adapter is! HashtagSupport || _following == null || hashtag == null) {
+      return;
+    }
 
-    final hashtag = widget.hashtag;
     final support = adapter as HashtagSupport;
     try {
       if (_following!) {
@@ -119,7 +132,7 @@ class _HashtagTimelineScreenState extends ConsumerState<HashtagTimelineScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('#${widget.hashtag}'),
+        title: Text(hashtagSpecLabel(widget.hashtag)),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
           _buildPinButton(),
@@ -168,7 +181,7 @@ class _HashtagTimelineScreenState extends ConsumerState<HashtagTimelineScreen> {
             ),
           ),
           SimplePostBar(
-            hashtag: widget.hashtag,
+            hashtags: hashtagSpecTags(widget.hashtag),
             onPosted: () => ref.invalidate(hashtagTimelineProvider(key)),
           ),
         ],

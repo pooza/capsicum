@@ -24,8 +24,12 @@ class SimplePostBar extends ConsumerStatefulWidget {
   /// Channel name for display in compose screen.
   final String? channelName;
 
-  /// Hashtag to prepend to the post content.
-  final String? hashtag;
+  /// 投稿の末尾に付けるハッシュタグ（`#` を除いたタグ名の列）。
+  ///
+  /// ⚠ **spec（`c%2B%2B` / `a+b`）を渡さない** (#1159)。spec はエスケープと
+  /// AND 連結を含む内部表現なので、そのまま付けると `#c%2B%2B` のような
+  /// 存在しないタグで投稿してしまう。[hashtagSpecTags] で分解してから渡す。
+  final List<String> hashtags;
 
   /// Called after a successful post (for refreshing the caller's timeline).
   final VoidCallback? onPosted;
@@ -34,7 +38,7 @@ class SimplePostBar extends ConsumerStatefulWidget {
     super.key,
     this.channelId,
     this.channelName,
-    this.hashtag,
+    this.hashtags = const [],
     this.onPosted,
   });
 
@@ -130,9 +134,9 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar>
     final adapter = ref.read(currentAdapterProvider);
     if (adapter == null) return;
 
-    final content = widget.hashtag != null
-        ? '$text\n\n#${widget.hashtag}'
-        : text;
+    final content = widget.hashtags.isEmpty
+        ? text
+        : '$text\n\n${widget.hashtags.map((t) => '#$t').join(' ')}';
 
     setState(() => _sending = true);
     try {
