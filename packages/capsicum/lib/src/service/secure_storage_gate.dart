@@ -1,11 +1,57 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../constants.dart';
 import '../platform/platform_info.dart';
 import 'secret_service_probe.dart';
 import 'secure_storage_health.dart';
+
+/// Android の secure storage の振る舞い (#1120)。**3 つの店すべてに同じ値を渡す。**
+///
+/// ⚠⚠ **既定値のまま使わない。**`flutter_secure_storage` 10 は 9.x の暗号方式
+/// （RSA PKCS1 / AES-CBC）で保存されたデータを初回アクセスで新方式へ移すが、
+/// 既定のままだと 2 通りにトークンを失う:
+///
+/// - **`resetOnError` の既定が true に変わった**（9.x は false）。移行や復号に
+///   失敗すると**全データを消す**＝利用者は黙ってログアウトさせられる。false なら
+///   例外として返り、データは残るので次回起動で移行をやり直せる
+/// - **バックアップ無しの移行は、古い鍵を消してから書き直す。**その間にアプリが
+///   落ちると戻らない。`migrateWithBackup` は先に控えを作るので途中から再開できる
+///
+/// ⚠ **店ごとに違う値にしない。**3 つとも名前空間無しの同じ保存ファイルを共有して
+/// いる（`IOSOptions` / `MacOsOptions` と違い、Android には区画の分け方が無い）。
+const kSecureStorageAndroidOptions = AndroidOptions(
+  resetOnError: false,
+  migrateWithBackup: true,
+);
+
+/// Android の移行が失敗し続けているとき、**ログインで保存する 1 回だけ**に渡す
+/// 設定（v1.66 リリース前レビュー・2026-09-21 pooza 判断）。
+///
+/// ⚠⚠ **`deleteAll()` では抜け出せない。**プラグインは初期化（＝移行）が成功
+/// してから各操作を実行する作りなので、移行が失敗し続ける端末では `deleteAll`
+/// も同じ例外で落ちる。`resetOnError: true` を付けた呼び出しだけが、初期化での
+/// 失敗時にプラグイン自身の全消去（`deleteAllDataAndKeys`）を経て書き込みに
+/// 進める。⚠ Android の 3 店は同じ保存ファイルなので、**他の店のぶんも消える**
+/// （push 鍵は作り直され、インストール ID は新しくなる）。
+const kSecureStorageAndroidResetOptions = AndroidOptions(
+  resetOnError: true,
+  migrateWithBackup: true,
+);
+
+/// Android で `flutter_secure_storage` 10 の暗号方式の移行が失敗したときの例外か。
+///
+/// プラグインは `PlatformException(code: 'Exception encountered', message: …)` で
+/// 返し、message は `Migration failed after algorithm change (…)` か
+/// `Key mismatch after algorithm change (…)`（`FlutterSecureStorage.java`）。
+bool isAndroidSecureStorageMigrationFailure(Object error) {
+  if (error is! PlatformException) return false;
+  final message = error.message ?? '';
+  return message.contains('Migration failed after algorithm change') ||
+      message.contains('Key mismatch after algorithm change');
+}
 
 /// secure storage へ触る**唯一の入口** (#1136)。
 ///
@@ -40,6 +86,8 @@ import 'secure_storage_health.dart';
 ///   （#643 / #656 / #392 が実際に踏んだ -25299 と「旧 item が列挙できない」）。
 ///   だから options は各店が持つ [FlutterSecureStorage] のまま、**関所だけ**を
 ///   共有する。
+/// - ⚠ **`AndroidOptions` だけは統一する**（[kSecureStorageAndroidOptions]・#1120）。
+///   Android には区画の分け方が無く、3 店が同じ保存ファイルを共有しているため。
 ///
 /// ## ⚠ 上限は Secret Service のときだけ
 ///
@@ -93,11 +141,15 @@ class SecureStorageGate {
 
   /// 書き込み。⚠ **投げる側に倒す** —— 黙って落とすと「ログインできたのに
   /// トークンが無い」を作る (#1117-C)。
+  ///
+  /// [aOptions] は [kSecureStorageAndroidResetOptions] 専用（Android の移行失敗からの
+  /// 回復）。それ以外では渡さない（店の設定 [kSecureStorageAndroidOptions] を使う）。
   Future<void> write({
     required String key,
     required String? value,
     IOSOptions? iOptions,
     MacOsOptions? mOptions,
+    AndroidOptions? aOptions,
   }) => _guard(
     kSecureStorageWriteTimeout,
     'write',
@@ -106,6 +158,7 @@ class SecureStorageGate {
       value: value,
       iOptions: iOptions,
       mOptions: mOptions,
+      aOptions: aOptions,
     ),
   );
 
@@ -120,6 +173,24 @@ class SecureStorageGate {
     'delete',
     () => _storage.delete(key: key, iOptions: iOptions, mOptions: mOptions),
   );
+
+  /// 上限で打ち切ったときの [TimeoutException] のメッセージ。
+  static String timeoutMessage(String operation) =>
+      'secure storage $operation timed out';
+
+  /// [error] が**この関所が投げた**待ちの打ち切りか (#1141)。
+  ///
+  /// 触る前の疎通確認で諦めた（[SecureStorageHealth.probeSkipMessage]）場合と、
+  /// 触って上限に達した場合の 2 つ。⚠ **`TimeoutException` を丸ごと拾わない**
+  /// —— 別経路の timeout（通信など）をキーリングのせいにしないため、メッセージの
+  /// 形で見分ける。形はここ（投げる側）だけが知っている。
+  static bool isGateTimeout(Object error) {
+    if (error is! TimeoutException) return false;
+    final message = error.message;
+    if (message == null) return false;
+    return message == SecureStorageHealth.probeSkipMessage ||
+        RegExp(r'^secure storage \w+ timed out$').hasMatch(message);
+  }
 
   /// 触る前に聞き、触ったら上限を掛ける。
   ///
@@ -147,8 +218,81 @@ class SecureStorageGate {
         // 実際の呼び出しが固まった、という窓が実在する。覚えないと**後続の
         // アカウントが 1 件ごとに上限を払う**（10 件で 50 秒）。
         SecretServiceProbe.markUnresponsive();
-        throw TimeoutException('secure storage $operation timed out', limit);
+        throw TimeoutException(timeoutMessage(operation), limit);
       },
     );
   }
+}
+
+/// 待ちの打ち切りを [SecureStorageHealth] へ記録する関所 (#1144)。
+///
+/// ⚠⚠ **`AccountStorage` 以外の店の打ち切りが、案内カードにも Sentry にも
+/// 出ていなかった。**`PushKeyStore` / `DeviceInstallId` は関所を通るように
+/// なった（#1136）が記録はしておらず、#1136 が実測した「アカウント削除の裏で
+/// `PushKeyStore.delete` が固まる」経路のタイムアウトが、どこにも残らなかった。
+///
+/// ⚠ **呼ぶ側に思い出させない**（#1136 と同じ理由）。店がこの関所を持てば、
+/// どの操作の打ち切りも記録される。`AccountStorage` は打ち切りに合わせて別の
+/// 処理（オフライン保持への切り替え等）をするので、自分で記録する素の関所の
+/// ままにしている。
+class ReportingSecureStorageGate extends SecureStorageGate {
+  const ReportingSecureStorageGate(super.storage, {required this.phase});
+
+  /// Sentry の `phase` タグ（どの店の処理か）。
+  final String phase;
+
+  Future<T> _report<T>(Future<T> operation) async {
+    try {
+      return await operation;
+    } on TimeoutException catch (e) {
+      SecureStorageHealth.markUnavailable(e, phase: phase);
+      rethrow;
+    }
+  }
+
+  @override
+  Future<String?> read({
+    required String key,
+    IOSOptions? iOptions,
+    MacOsOptions? mOptions,
+  }) => _report(super.read(key: key, iOptions: iOptions, mOptions: mOptions));
+
+  @override
+  Future<bool> containsKey({
+    required String key,
+    IOSOptions? iOptions,
+    MacOsOptions? mOptions,
+  }) => _report(
+    super.containsKey(key: key, iOptions: iOptions, mOptions: mOptions),
+  );
+
+  @override
+  Future<Map<String, String>> readAll({
+    IOSOptions? iOptions,
+    MacOsOptions? mOptions,
+  }) => _report(super.readAll(iOptions: iOptions, mOptions: mOptions));
+
+  @override
+  Future<void> write({
+    required String key,
+    required String? value,
+    IOSOptions? iOptions,
+    MacOsOptions? mOptions,
+    AndroidOptions? aOptions,
+  }) => _report(
+    super.write(
+      key: key,
+      value: value,
+      iOptions: iOptions,
+      mOptions: mOptions,
+      aOptions: aOptions,
+    ),
+  );
+
+  @override
+  Future<void> delete({
+    required String key,
+    IOSOptions? iOptions,
+    MacOsOptions? mOptions,
+  }) => _report(super.delete(key: key, iOptions: iOptions, mOptions: mOptions));
 }

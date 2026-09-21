@@ -45,6 +45,9 @@ MastodonStatus _$MastodonStatusFromJson(
   editedAt: json['edited_at'] == null
       ? null
       : DateTime.parse(json['edited_at'] as String),
+  mentions: (json['mentions'] as List<dynamic>?)
+      ?.map((e) => e as Map<String, dynamic>)
+      .toList(),
 );
 
 Map<String, dynamic> _$MastodonStatusToJson(MastodonStatus instance) =>
@@ -75,4 +78,5 @@ Map<String, dynamic> _$MastodonStatusToJson(MastodonStatus instance) =>
       'language': instance.language,
       'url': instance.url,
       'edited_at': instance.editedAt?.toIso8601String(),
+      'mentions': instance.mentions,
     };

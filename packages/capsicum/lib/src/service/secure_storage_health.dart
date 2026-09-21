@@ -73,9 +73,33 @@ class SecureStorageHealth {
   static const probeSkipMessage =
       'secret service did not answer before the read';
 
+  /// 関所の打ち切りのメッセージ（`secure storage <操作> timed out`）から操作名を
+  /// 取る (#1144)。
+  static final _gateTimeout = RegExp(r'^secure storage (\w+) timed out$');
+
+  /// どの段で応答が無かったか。`probe`（触る前に諦めた）か、触った操作の名前
+  /// （`read` / `write` / `delete` / `readAll` / `containsKey`）。
+  ///
+  /// ⚠⚠ **以前は `probe` / `read` の 2 値だった (#1144)。**関所を write / delete へ
+  /// 広げたのに stage が追従しておらず、**削除中のタイムアウトが `stage=read`
+  /// として上がっていた**。
+  @visibleForTesting
+  static String stageOf(TimeoutException cause) {
+    final message = cause.message;
+    if (message == probeSkipMessage) return 'probe';
+    return _gateTimeout.firstMatch(message ?? '')?.group(1) ?? 'read';
+  }
+
   /// 応答が無かったことを記録する。
-  static void markUnavailable(TimeoutException cause) {
-    final stage = cause.message == probeSkipMessage ? 'probe' : 'read';
+  ///
+  /// [phase] はどの処理の途中だったか。既定の `startup_secret` はアカウントの
+  /// secret（起動時の復元・保存・削除）。push 鍵 / インストール ID は別の値を
+  /// 渡す (#1144)。
+  static void markUnavailable(
+    TimeoutException cause, {
+    String phase = 'startup_secret',
+  }) {
+    final stage = stageOf(cause);
     debugPrint(
       stage == 'probe'
           ? 'capsicum: secret service did not answer; secure storage skipped'
@@ -91,13 +115,13 @@ class SecureStorageHealth {
         'secure_storage.timeout',
         level: SentryLevel.warning,
         withScope: (scope) {
-          scope.setTag('phase', 'startup_secret');
+          scope.setTag('phase', phase);
           scope.setTag('secure_storage_stage', stage);
           // ⚠ 鍵の名前もアカウントも載せない。知りたいのは「応答しない環境が
           // 実在するか」だけで、どの item かは関係ない。
           scope.setContexts('secure_storage', {
             'stage': stage,
-            if (stage == 'read') 'timeout_ms': cause.duration?.inMilliseconds,
+            if (stage != 'probe') 'timeout_ms': cause.duration?.inMilliseconds,
           });
         },
       ),

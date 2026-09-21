@@ -13,6 +13,20 @@ void main() {
   setUp(LoginAttempts.resetForTest);
 
   Future<void> noop() async {}
+  final screenA = Object();
+  final screenB = Object();
+
+  Future<LoginTakeOver> take(
+    int seq, {
+    Object? owner,
+    Future<void> Function()? teardown,
+    DateTime? now,
+  }) => LoginAttempts.takeOver(
+    seq,
+    owner: owner ?? screenA,
+    teardown: teardown ?? noop,
+    now: now,
+  );
 
   test('番号はプロセス通しで増える（同じ操作で 2 回走ったのが番号で見える）', () {
     expect(LoginAttempts.nextSequence(), 1);
@@ -21,46 +35,47 @@ void main() {
   });
 
   test('走っていなければ takeOver は「前の試行なし」を返す', () async {
-    final previous = await LoginAttempts.takeOver(
-      LoginAttempts.nextSequence(),
-      noop,
-    );
+    final result = await take(LoginAttempts.nextSequence());
 
-    expect(previous, isNull);
+    expect(result.overlap, isNull);
+    expect(result.superseded, isFalse);
     expect(LoginAttempts.activeSequence, 1);
   });
 
   test('⚠ 重なったら前の番号を返し、前の後片づけを呼ぶ', () async {
     var tornDown = 0;
-    await LoginAttempts.takeOver(LoginAttempts.nextSequence(), () async {
-      tornDown++;
-    });
-
-    final previous = await LoginAttempts.takeOver(
+    await take(
       LoginAttempts.nextSequence(),
-      noop,
+      teardown: () async {
+        tornDown++;
+      },
     );
 
-    expect(previous, 1, reason: '重なりの記録に前の試行番号を載せるため');
+    final result = await take(LoginAttempts.nextSequence());
+
+    expect(result.overlap?.previousSequence, 1, reason: '重なりの記録に前の番号を載せる');
     expect(tornDown, 1, reason: 'ポート 7099 と keep-alive を先に畳む');
     expect(LoginAttempts.activeSequence, 2, reason: '新しい方が生きる');
   });
 
-  test('⚠ 後片づけを待ってから差し替える（ポート解放待ちを飛ばさない）', () async {
+  test('⚠ 後片づけを待ってから戻る（ポート解放待ちを飛ばさない）', () async {
     var finished = false;
-    await LoginAttempts.takeOver(LoginAttempts.nextSequence(), () async {
-      await Future<void>.delayed(const Duration(milliseconds: 10));
-      finished = true;
-    });
+    await take(
+      LoginAttempts.nextSequence(),
+      teardown: () async {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        finished = true;
+      },
+    );
 
-    await LoginAttempts.takeOver(LoginAttempts.nextSequence(), noop);
+    await take(LoginAttempts.nextSequence());
 
     expect(finished, isTrue);
   });
 
   test('release で降りる', () async {
     final seq = LoginAttempts.nextSequence();
-    await LoginAttempts.takeOver(seq, noop);
+    await take(seq);
 
     LoginAttempts.release(seq);
 
@@ -68,12 +83,11 @@ void main() {
   });
 
   test('⚠⚠ 古い試行の release は新しい試行を消さない', () async {
-    // `a4d86f64` の keep-alive 世代ガードと同じ理由。1 本目の finally が
-    // 2 本目を消すと、生きている試行が登録簿から消えて後片づけが迷子になる。
+    // `a4d86f64` の keep-alive 世代ガードと同じ理由。
     final first = LoginAttempts.nextSequence();
-    await LoginAttempts.takeOver(first, noop);
+    await take(first);
     final second = LoginAttempts.nextSequence();
-    await LoginAttempts.takeOver(second, noop);
+    await take(second);
 
     LoginAttempts.release(first);
 
@@ -82,27 +96,102 @@ void main() {
 
   test('⚠ 降りたあとの試行は「重なった」と記録されない', () async {
     final first = LoginAttempts.nextSequence();
-    await LoginAttempts.takeOver(first, noop);
+    await take(first);
     LoginAttempts.release(first);
 
-    final previous = await LoginAttempts.takeOver(
-      LoginAttempts.nextSequence(),
-      noop,
-    );
+    final result = await take(LoginAttempts.nextSequence());
 
-    expect(previous, isNull);
+    expect(result.overlap, isNull);
   });
 
   test('release は前の試行の後片づけを呼ばない（畳むのは takeOver の仕事）', () async {
     var tornDown = 0;
     final seq = LoginAttempts.nextSequence();
-    await LoginAttempts.takeOver(seq, () async {
-      tornDown++;
-    });
+    await take(
+      seq,
+      teardown: () async {
+        tornDown++;
+      },
+    );
 
     LoginAttempts.release(seq);
 
-    // 自分の資源は自分の finally が閉じる。登録簿は次の試行のためだけに持つ。
     expect(tornDown, 0);
+  });
+
+  group('#1144', () {
+    test('⚠⚠ 3 本重なると、追い越された 2 本目は superseded を受け取る', () async {
+      // Codex P2 / PR #1118。1 本目の後片づけを待っている間に 3 本目が来る。
+      await take(
+        LoginAttempts.nextSequence(),
+        teardown: () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      final second = take(LoginAttempts.nextSequence());
+      final third = await take(LoginAttempts.nextSequence());
+      final secondResult = await second;
+
+      expect(secondResult.superseded, isTrue, reason: '2 本目は降りる');
+      expect(third.superseded, isFalse, reason: '最後に押したものが生きる');
+      expect(LoginAttempts.activeSequence, 3);
+    });
+
+    test('isCurrent は資源を掴む直前の確認に使える', () async {
+      final first = LoginAttempts.nextSequence();
+      await take(first);
+      expect(LoginAttempts.isCurrent(first), isTrue);
+
+      await take(LoginAttempts.nextSequence());
+      expect(LoginAttempts.isCurrent(first), isFalse);
+    });
+
+    test('⚠ 重なりの情報は定数ではない（同じ画面か・経過・最後のステップ）', () async {
+      final t0 = DateTime.utc(2026, 9, 21, 12);
+      final first = LoginAttempts.nextSequence();
+      await take(first, owner: screenA, now: t0);
+      LoginAttempts.markStep(first, 'oauth_server.listening');
+
+      final sameScreen = await take(
+        LoginAttempts.nextSequence(),
+        owner: screenA,
+        now: t0.add(const Duration(seconds: 30)),
+      );
+      expect(sameScreen.overlap!.sameOwner, isTrue);
+      expect(sameScreen.overlap!.previousAge, const Duration(seconds: 30));
+      expect(sameScreen.overlap!.previousStep, 'oauth_server.listening');
+      expect(sameScreen.overlap!.isRapid, isFalse, reason: '良性の入り直し');
+
+      final otherScreen = await take(
+        LoginAttempts.nextSequence(),
+        owner: screenB,
+        now: t0.add(const Duration(seconds: 30, milliseconds: 300)),
+      );
+      expect(otherScreen.overlap!.sameOwner, isFalse, reason: '画面が作り直された');
+      expect(otherScreen.overlap!.isRapid, isTrue, reason: '#1112 の本命の形');
+    });
+
+    test('⚠ 追い越された試行の markStep は新しい試行の記録を上書きしない', () async {
+      final first = LoginAttempts.nextSequence();
+      await take(first);
+      final second = LoginAttempts.nextSequence();
+      await take(second);
+      LoginAttempts.markStep(second, 'login.start');
+      LoginAttempts.markStep(first, 'oauth_server.listening');
+
+      final third = await take(LoginAttempts.nextSequence());
+
+      expect(third.overlap!.previousStep, 'login.start');
+    });
+
+    test('⚠ 前の後片づけが投げても、新しい試行は止まらない', () async {
+      await take(
+        LoginAttempts.nextSequence(),
+        teardown: () async => throw StateError('boom'),
+      );
+
+      final result = await take(LoginAttempts.nextSequence());
+
+      expect(result.superseded, isFalse);
+      expect(LoginAttempts.activeSequence, 2);
+    });
   });
 }

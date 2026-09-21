@@ -3,6 +3,7 @@ import 'package:capsicum/src/service/settings_backup.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shared_preferences_platform_interface/shared_preferences_platform_interface.dart';
 
 /// #1119: アカウント別設定（タブ構成・ピン留めタグ・リストの並び・絵文字
 /// パレット等）をバックアップに含める。
@@ -243,11 +244,15 @@ void main() {
   });
 
   test('⚠ 書き出したファイルを読み込むと元に戻る（ラウンドトリップ）', () async {
+    // ⚠⚠ **画面が読むキーで書く (#1144)。**絵文字パレットの実キーは
+    // `emoji_palette_<host>`。以前このテストは `emoji_palette_<アカウント>` で
+    // 往復させており、**書き出しも読み込みも同じ誤りなので緑だった**。
     final source = await prefsWith({
       'capsicum_account_keys_v2': '["$alice","$bob"]',
       'tab_order_$alice': ['home', 'local'],
       'hidden_list_ids_$alice': ['3'],
-      'emoji_palette_$bob': [':capsicum:', ':precure:'],
+      'emoji_palette_misskey.example': [':capsicum:', ':precure:'],
+      'emoji_reaction_palette_misskey.example': [':capsicum:'],
       'theme_color_$bob': 4278190080,
     });
     final yaml = yamlOf(source);
@@ -257,12 +262,86 @@ void main() {
 
     expect(target.getStringList('tab_order_$alice'), ['home', 'local']);
     expect(target.getStringList('hidden_list_ids_$alice'), ['3']);
-    expect(target.getStringList('emoji_palette_$bob'), [
+    expect(target.getStringList('emoji_palette_misskey.example'), [
       ':capsicum:',
       ':precure:',
     ]);
+    expect(target.getStringList('emoji_reaction_palette_misskey.example'), [
+      ':capsicum:',
+    ]);
     expect(target.getInt('theme_color_$bob'), 4278190080);
+    // 誰も読まないキーへは書かない。
+    expect(
+      target.getKeys().where((k) => k.startsWith('emoji_palette_misskey:')),
+      isEmpty,
+    );
   });
+
+  group('ホストで引く設定 (#1144)', () {
+    test('⚠ パレットが書き出しに載る（以前は 1 行も載らなかった）', () async {
+      final prefs = await prefsWith({
+        'capsicum_account_keys_v2': '["$bob"]',
+        'emoji_palette_misskey.example': [':capsicum:'],
+      });
+
+      final yaml = yamlOf(prefs);
+
+      expect(yaml, contains('    emoji_palette:'));
+      expect(yaml, contains('      - ":capsicum:"'));
+    });
+
+    test('⚠ 同じサーバーの 2 アカウントでも、読み込んだ件数を水増ししない', () async {
+      const bob2 = 'misskey://bob2@misskey.example';
+      final source = await prefsWith({
+        'capsicum_account_keys_v2': '["$bob","$bob2"]',
+        'emoji_palette_misskey.example': [':capsicum:'],
+      });
+      final yaml = yamlOf(source);
+
+      final target = await prefsWith({});
+      final result = await apply(target, yaml);
+
+      expect(
+        result.applied.where((k) => k == 'emoji_palette_misskey.example'),
+        hasLength(1),
+      );
+    });
+  });
+
+  test('⚠ 書けなかった設定を「形式が合わない」と言わない (#1144)', () async {
+    SharedPreferencesStorePlatform.instance = _RejectTabOrderStore();
+    addTearDown(() {
+      SharedPreferencesStorePlatform.instance =
+          InMemorySharedPreferencesStore.empty();
+    });
+    final prefs = await SharedPreferences.getInstance();
+
+    final result = await apply(prefs, '''
+version: 1
+accounts:
+  - "$alice"
+account_settings:
+  "$alice":
+    tab_order:
+      - home
+settings: {}
+''');
+
+    expect(result.skipped['account_settings'], contains('端末に保存できませんでした'));
+    expect(result.skipped['account_settings'], isNot(contains('形式が合いませんでした')));
+  });
+}
+
+/// `tab_order_` だけ書き込みを拒む（索引などは通す）。setter は失敗しても投げず
+/// false を返すので、この形でしか再現できない。
+class _RejectTabOrderStore extends InMemorySharedPreferencesStore {
+  _RejectTabOrderStore() : super.empty();
+
+  @override
+  Future<bool> setValue(String valueType, String key, Object value) async {
+    if (key.contains('tab_order_')) return false;
+    return super.setValue(valueType, key, value);
+  }
 }
 
 /// 残骸 secret が無い状態を与える（`purgeStaleSecrets` の fail-closed を避ける）。
@@ -270,11 +349,11 @@ class _NoSecretsStorage extends FlutterSecureStorage {
   @override
   Future<bool> containsKey({
     required String key,
-    IOSOptions? iOptions,
+    AppleOptions? iOptions,
     AndroidOptions? aOptions,
     LinuxOptions? lOptions,
     WebOptions? webOptions,
-    MacOsOptions? mOptions,
+    AppleOptions? mOptions,
     WindowsOptions? wOptions,
   }) async => false;
 }

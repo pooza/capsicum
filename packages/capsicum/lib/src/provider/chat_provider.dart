@@ -446,8 +446,9 @@ class ChatRoomTimelineNotifier
           continue;
         }
         reportOpFailure(
-          tagKey: 'chat.room.load_more',
-          operation: 'failed',
+          // ⚠ 一覧の取得は `<領域>.list` (#1117-E / #1144)。
+          tagKey: 'chat.room.list',
+          operation: 'load_more',
           error: e,
           stackTrace: st,
           account: ref.accountForReport,
@@ -701,8 +702,9 @@ class ChatThreadNotifier
         // 最終失敗: Sentry へ計装し、loadMoreError 番兵で次回スクロール再入
         // を止める。drive_provider と同じ形 (#442 / #430 と同型)。
         reportOpFailure(
-          tagKey: 'chat.load_more',
-          operation: 'failed',
+          // ⚠ 一覧の取得は `<領域>.list` (#1117-E / #1144)。
+          tagKey: 'chat.list',
+          operation: 'load_more',
           error: e,
           stackTrace: st,
           account: ref.accountForReport,

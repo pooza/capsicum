@@ -1229,18 +1229,33 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     // `expect` を書くと、**掃除が終わる前に assert して落ちる flaky テスト**に
     // なる（v1.65 のリリース PR の CI で 3 回中 2 回落ちた）。⚠ **本番の挙動は
     // 変えない** —— 保持するだけで、ここでは待たない。
+    //
+    // ⚠⚠ **掃除どうしも巻き込まない (#1144)。**以前は 2 つを同じ `try` で直列に
+    // 並べており、`forgetAccountLocally` が投げると（relay への DELETE が圏外で
+    // 失敗 / Linux でキーリングが応答しない）**ラベルの掃除に到達しなかった**。
+    // 上のコメントが言う「失敗が削除を巻き込まない」は、掃除どうしでは成り立って
+    // いなかった。⚠ **どちらが失敗したかは観測で分ける**（1 つに畳まない）。
     lastOfflineArtifactCleanup = () async {
       try {
         await PushRegistrationService.forgetAccountLocally(key);
-        // 通知ラベルの表示名キャッシュ (#770 / #1024)。残すと同じ
-        // `@user@host` へ入り直したときに古いラベルを引きうる。
-        await NotificationLabelCache.remove(_notificationLabelKey(key));
       } catch (e, st) {
         // ⚠ **握りつぶさず観測は残す。**削除自体は成立しているので UI は
         // 止めないが、端末に痕跡が残ったことは分かるようにする。
         reportOpFailure(
           tagKey: 'account.op',
-          operation: 'forget_offline_artifacts',
+          operation: 'forget_offline_push',
+          error: e,
+          stackTrace: st,
+        );
+      }
+      try {
+        // 通知ラベルの表示名キャッシュ (#770 / #1024)。残すと同じ
+        // `@user@host` へ入り直したときに古いラベルを引きうる。
+        await NotificationLabelCache.remove(_notificationLabelKey(key));
+      } catch (e, st) {
+        reportOpFailure(
+          tagKey: 'account.op',
+          operation: 'forget_offline_label',
           error: e,
           stackTrace: st,
         );

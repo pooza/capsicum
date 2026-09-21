@@ -1,6 +1,7 @@
 ---
 name: sync-procedure
 description: capsicum のセッション開始時の同期。git / Issue / PR / ユーザーフィードバック / マイルストーン / Codex / Sentry / 関連リポジトリを順に確認し、MEMORY.md を更新して報告する。「進捗を同期して」と言われたらこれを回す。capsicum-relay も同列に扱う。
+disable-model-invocation: true
 ---
 
 # セッション開始時の同期手順

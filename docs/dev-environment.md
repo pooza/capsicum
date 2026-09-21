@@ -293,7 +293,7 @@ dart analyze packages 2>&1 | tail -2 && git commit ...
 - Xcode → Settings → Accounts で Apple ID 追加 → Manage Certificates → Apple Distribution 証明書を作成
 - `gem install fastlane`（rbenv の Ruby を使用）
 - Android 署名鍵 `android/key.properties` を配置（git 管理外、手動配置）
-- リポジトリルートの `.sentryclirc`（git 管理外）に dSYM アップロード用トークンを配置（`sentry_dart_plugin` が自動参照）
+- リポジトリルートの `.sentryclirc`（git 管理外）に dSYM アップロード用トークンを配置（iOS / macOS の `fastlane upload_dsyms_to_sentry` が呼ぶ `sentry-cli` が親ディレクトリを辿って拾う・#1134）
 - `~/.sentryclirc` に Issue 読み取り用トークン（`event:read` / `event:write` / `project:read`）を配置
 
 ### 新規の macOS app-extension ターゲット追加後のプロビジョニング（#673）
@@ -625,7 +625,7 @@ powercfg /S SCHEME_CURRENT
 - 組織アカウントの Sentry を利用（プロジェクト `capsicum`、有料プラン契約済み。ダッシュボード URL は非公開）
 - DSN は公開鍵相当（送信専用）なのでビルドへの埋め込みは問題なし
 - 環境切り替え: `--dart-define=SENTRY_ENV=production`（デフォルト `debug`）
-- dSYM / ProGuard マッピング自動アップロード: `sentry_dart_plugin` 導入済み。リポジトリルートの `.sentryclirc`（git 管理外）でトークン管理。環境変数 `SENTRY_AUTH_TOKEN` はプロジェクトごとのトークン使い分けのため使わない
+- Apple の dSYM: iOS / macOS の `fastlane beta` が TestFlight へ上げる前に `upload_dsyms_to_sentry` レーンで上げる（#1134）。⚠ **`pubspec.yaml` の `sentry: upload_debug_symbols` は `sentry_dart_plugin` の設定で、Apple の dSYM は対象外**（2026-09-21 まで Sentry に dSYM が 0 件で、capsicum 自身のフレームが復元されていなかった）。⚠ `sentry_dart_plugin` は依存に入っているが、`dart run sentry_dart_plugin` を回す手順はどこにも無い（Android の ProGuard マッピング等が上がっているかは未確認）。リポジトリルートの `.sentryclirc`（git 管理外）でトークン管理。環境変数 `SENTRY_AUTH_TOKEN` はプロジェクトごとのトークン使い分けのため使わない
 
 ### 活用戦略
 

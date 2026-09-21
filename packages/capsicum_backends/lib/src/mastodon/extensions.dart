@@ -164,6 +164,7 @@ extension CapsicumMastodonStatusExtension on MastodonStatus {
       language: language,
       url: url,
       editedAt: editedAt,
+      mentions: _parseMentions(mentions),
     );
   }
 }
@@ -190,6 +191,13 @@ String? parseMastodonQuoteApprovalPolicy(Map<String, dynamic>? quoteApproval) {
   if (automatic.contains('followers')) return 'followers';
   return 'nobody';
 }
+
+/// 宛先のメンション (#1161)。`id` か `acct` が欠けた要素は捨てる。
+List<PostMention> _parseMentions(List<Map<String, dynamic>>? raw) => [
+  for (final m in raw ?? const <Map<String, dynamic>>[])
+    if (m['id'] is String && m['acct'] is String)
+      PostMention(id: m['id'] as String, acct: m['acct'] as String),
+];
 
 bool _isQuotable(Map<String, dynamic>? quoteApproval) {
   if (quoteApproval == null) return true;

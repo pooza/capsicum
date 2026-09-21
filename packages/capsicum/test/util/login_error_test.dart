@@ -1,5 +1,8 @@
+import 'dart:async';
 import 'dart:io';
 
+import 'package:capsicum/src/service/secure_storage_gate.dart';
+import 'package:capsicum/src/service/secure_storage_health.dart';
 import 'package:capsicum/src/util/login_error.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
@@ -83,6 +86,78 @@ void main() {
       final r = classifyLoginFailure(StateError('boom'));
       expect(r.kind, LoginFailureKind.unknown);
       expect(r.message, 'ログインに失敗しました');
+    });
+  });
+
+  // #1141: Linux のキーリングの失敗を「ログインに失敗しました」に落とさない。
+  group('classifyLoginFailure — Linux のキーリング (#1141)', () {
+    void expectKeyring(Object error) {
+      final r = classifyLoginFailure(error);
+      expect(r.kind, LoginFailureKind.secureStorage, reason: '$error');
+      expect(r.message, contains('キーリング / Secret Service'));
+    }
+
+    test('関所が触って上限に達した（2026-09-17 の実測の形）', () {
+      // 関所が実際に投げるメッセージで作る。形を二重に書くと片方だけ変わる。
+      expectKeyring(
+        TimeoutException(
+          SecureStorageGate.timeoutMessage('write'),
+          const Duration(seconds: 5),
+        ),
+      );
+    });
+
+    test('触る前の疎通確認で諦めた', () {
+      expectKeyring(TimeoutException(SecureStorageHealth.probeSkipMessage));
+    });
+
+    test('libsecret が断った / プラグイン内部の失敗', () {
+      expectKeyring(
+        PlatformException(
+          code: 'Libsecret error',
+          message: 'Failed to unlock the keyring',
+        ),
+      );
+      expectKeyring(PlatformException(code: 'StorageError', message: 'x'));
+    });
+
+    test('ロックされている → 解錠を促す', () {
+      final r = classifyLoginFailure(
+        PlatformException(code: 'KeyringLocked', message: 'KeyringLocked'),
+      );
+      expect(r.kind, LoginFailureKind.secureStorage);
+      expect(r.message, contains('ロックされている'));
+      expect(r.message, contains('解錠'));
+    });
+
+    test('⚠ 関所以外の TimeoutException はキーリングのせいにしない', () {
+      for (final e in [
+        TimeoutException('Future not completed'),
+        TimeoutException(null),
+        // 形が似ていても、関所の語彙でなければ拾わない。
+        TimeoutException('secure storage write timed out after retry'),
+      ]) {
+        expect(classifyLoginFailure(e).kind, LoginFailureKind.unknown);
+      }
+    });
+
+    test('⚠ Apple の Keychain の文言は変えない', () {
+      final r = classifyLoginFailure(
+        PlatformException(
+          code: '-25308',
+          message: 'errSecInteractionNotAllowed',
+        ),
+      );
+      expect(r.message, 'ログイン情報の保存に失敗しました');
+    });
+
+    test('⚠ 復元の扱いは変わらない（キーリングの失敗でアカウントを消さない側）', () {
+      expect(
+        classifyRestoreFailure(
+          TimeoutException(SecureStorageHealth.probeSkipMessage),
+        ),
+        RestoreOutcome.giveUp,
+      );
     });
   });
 

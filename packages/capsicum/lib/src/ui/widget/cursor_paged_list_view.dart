@@ -99,7 +99,7 @@ class CursorPagedListView<T> extends ConsumerStatefulWidget {
   /// ⚠ **一覧が空になる失敗を観測できるようにするため必須にしてある。**
   /// 集約前の 5 画面はどれも `debugLogException` 止まりで、**release では
   /// breadcrumb にしかならない**（別のイベントが送られない限り Sentry に出ない）。
-  /// `chat_provider` には `chat.room.load_more` / `chat.load_more` という先例が
+  /// `chat_provider` には `chat.room.list` / `chat.list`（旧 `…load_more`）という先例が
   /// あったのに、新しい一覧はそれに倣っていなかった。
   ///
   /// 形は `<領域>.op` / `<領域>.<経路>`（正本は `sentry_op_failure.dart` の

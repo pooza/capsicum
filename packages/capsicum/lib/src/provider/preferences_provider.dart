@@ -2231,3 +2231,27 @@ final backedUpPreferenceProviders = <ProviderOrFamily>[
   recentEmojisProvider,
   composeTemplateHistoryProvider,
 ];
+
+/// 取り込んだ**アカウント別設定**を画面へ反映するための provider (#1144)。
+///
+/// ⚠⚠ **[backedUpPreferenceProviders] だけだとアカウント別設定が反映されない。**
+/// #1119 で `accountScopedSettings` を足したときにこちらを作らなかったので、
+/// **タブ構成もアカウント色も再起動するまで変わらなかった**。
+///
+/// ⚠ **1 つの prefix を複数の provider が読む**（`tab_order_` はタブ構成と並び順の
+/// 両方）ので、件数の 1:1 ではなく「prefix → それを読む provider」で持つ。キーの
+/// 集合が `accountScopedSettings` と一致することは
+/// `test/settings_backup_account_scoped_providers_test.dart` が見張る。family は丸ごと invalidate
+/// する（どのアカウントの値が変わったかを追わない）。
+final backedUpAccountScopedProviders = <String, List<ProviderOrFamily>>{
+  _themeColorPrefix: [accountThemeColorProvider],
+  _tabConfigPrefix: [tabConfigProvider],
+  _tabOrderPrefix: [tabConfigProvider, tabOrderProvider],
+  _hiddenTimelineTypesPrefix: [tabConfigProvider, hiddenTimelineTypesProvider],
+  _listOrderPrefix: [tabConfigProvider, listOrderProvider],
+  _hiddenListIdsPrefix: [tabConfigProvider, hiddenListIdsProvider],
+  _pinnedHashtagsPrefix: [tabConfigProvider, pinnedHashtagsProvider],
+  // ⚠ リアクション用パレットは、未設定なら通常のパレットへ戻る。
+  _emojiPalettePrefix: [emojiPaletteProvider, emojiReactionPaletteProvider],
+  _emojiReactionPalettePrefix: [emojiReactionPaletteProvider],
+};

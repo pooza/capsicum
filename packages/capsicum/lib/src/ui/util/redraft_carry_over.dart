@@ -59,6 +59,8 @@ const redraftCarryOverPolicy = <String, RedraftCarryOver>{
   'skipMulukhiya': RedraftCarryOver.notInPost,
   'scheduledAt': RedraftCarryOver.drop,
   'quoteApprovalPolicy': RedraftCarryOver.carry,
+  // ⚠ 指名の宛先 (#1161)。画面に出ない状態なので、落とすと無言で宛先が減る。
+  'visibleUserIds': RedraftCarryOver.carry,
 };
 
 /// `carry` 以外を選んだ理由。⚠ **理由の無い `drop` は検査で落とす。**

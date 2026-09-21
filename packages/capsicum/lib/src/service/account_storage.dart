@@ -99,6 +99,7 @@ class AccountStorage {
               mOptions: MacOsOptions(
                 accessibility: KeychainAccessibility.first_unlock,
               ),
+              aOptions: kSecureStorageAndroidOptions,
             ),
       );
 
@@ -254,7 +255,7 @@ class AccountStorage {
       e,
     );
     _reportOnce('secret:$accountKey:$secretStoreTag', e, st, code: code);
-    if (usesSecretServiceKeyring) SecureStorageHealth.markRefused(e);
+    if (usesSecretService) SecureStorageHealth.markRefused(e);
   }
 
   /// ⚠⚠ **Secret Service の読み取りには必ず上限を掛ける (#1085)。**Linux の
@@ -375,7 +376,7 @@ class AccountStorage {
     } catch (e, st) {
       // JSON parse 失敗等。legacy データ自体が壊れているので削除。
       _reportOnce('index', e, st);
-      await _gate.delete(key: _legacyAccountListKey);
+      await _deleteLegacyIndexQuietly();
       return [];
     }
     try {
@@ -386,8 +387,24 @@ class AccountStorage {
       return list;
     }
     // ここまで来たら新 index への書き込みが完了している。legacy を削除。
-    await _gate.delete(key: _legacyAccountListKey);
+    await _deleteLegacyIndexQuietly();
     return list;
+  }
+
+  /// 旧索引（secure storage 側）を消す。⚠ **投げない (#1144)。**
+  ///
+  /// 以前は `try` の外で直に消しており、関所が `TimeoutException` を投げるように
+  /// なって（#1117-C）から `getAccountKeys()` ごと投げうる状態だった。そうなると
+  /// `restoreSessions` が落ちて**アカウント 0 件のままホームに着き**、Sentry には
+  /// 何も上がらない（`splash_screen` の catch は `debugLogException` だけ）。
+  /// 消せなくても実害は無い —— 新しい索引は prefs に書けており、次の起動は
+  /// そちらを読むので旧索引は参照されない。
+  Future<void> _deleteLegacyIndexQuietly() async {
+    try {
+      await _gate.delete(key: _legacyAccountListKey);
+    } catch (e, st) {
+      _reportOnce('legacy_index_delete', e, st);
+    }
   }
 
   /// v1.30 以前に書き込んだアカウント secret / client credentials は旧 Keychain
@@ -666,7 +683,11 @@ class AccountStorage {
     // ⚠ **関所を通す (#1117-C)。**キーリングが応答しない環境では write も固まる。
     try {
       await _gate.write(key: key, value: value);
-    } on PlatformException catch (e) {
+    } on PlatformException catch (e, st) {
+      if (isAndroidSecureStorageMigrationFailure(e)) {
+        await _recoverFromAndroidMigrationFailure(key, value, e, st);
+        return;
+      }
       if (!_isKeychainDuplicate(e)) rethrow;
       // ⚠ **`$key` を生で書かない。**`secret_<username@host>` そのものなので、
       // release では breadcrumb 化され、以後の任意の Sentry イベントにハンドルが
@@ -841,6 +862,41 @@ class AccountStorage {
   /// -25299) を表す `PlatformException` を識別する。`_isKeychainTransient` と
   /// 同様、code が数値文字列のケースと message に埋め込まれるケースの両方を
   /// 拾う。
+  /// Android で `flutter_secure_storage` 10 の暗号方式の移行が失敗し続けている
+  /// ときの書き込みを、保存領域を消してから書き直して通す（v1.66 リリース前
+  /// レビュー・2026-09-21 pooza 判断）。
+  ///
+  /// ⚠⚠ **なぜ消してよいのか。**[kSecureStorageAndroidOptions] は移行に失敗しても
+  /// 消さない（`resetOnError: false`・#1120）。黙ってログアウトさせないためだが、
+  /// 失敗が続く端末では**読み書きがすべて同じ例外で失敗し続け**、ログインし
+  /// 直しても保存できず、アプリの中に抜け出す手段が無かった（OS 側でアプリの
+  /// データを消すしかない）。消えるのは**もう読めないトークン**だけで、ここは
+  /// 利用者がいまログインして**新しいトークンで上書きする**場面。#1104 の「消して
+  /// よいのは再ログインで上書きされるときだけ」と同じ線。
+  ///
+  /// ⚠ **1 回だけ試す。**消しても書けなければ例外をそのまま返す。⚠ **実機では
+  /// 未検証**（移行が失敗し続ける端末を作れない）。プラグインのソースで、
+  /// `resetOnError: true` の呼び出しが初期化の失敗時に全消去を経て操作へ進む
+  /// ことを確かめた。
+  Future<void> _recoverFromAndroidMigrationFailure(
+    String key,
+    String value,
+    PlatformException cause,
+    StackTrace st,
+  ) async {
+    debugLogException(
+      'capsicum: secure storage migration failed; resetting before write',
+      cause,
+    );
+    _reportOnce('android_migration_reset', cause, st);
+    // ⚠ `deleteAll()` では抜け出せない（[kSecureStorageAndroidResetOptions] の doc）。
+    await _gate.write(
+      key: key,
+      value: value,
+      aOptions: kSecureStorageAndroidResetOptions,
+    );
+  }
+
   static bool _isKeychainDuplicate(PlatformException e) {
     if (e.code == '-25299') return true;
     final msg = '${e.message ?? ''} ${e.details ?? ''}';

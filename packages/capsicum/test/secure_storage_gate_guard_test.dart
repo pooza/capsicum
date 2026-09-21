@@ -40,8 +40,10 @@ Set<String> secureStorageBindings(String code) {
   final names = <String>{};
   // (a) 型として宣言した名前: `final FlutterSecureStorage _storage;` /
   //     `FlutterSecureStorage? storage` / `FlutterSecureStorage s = …`
+  //     ⚠ `static FlutterSecureStorage get _box => …`（getter）は `get` を名前と
+  //     読んでいた (#1144)。`get` の次の識別子を名前とする。
   for (final m in RegExp(
-    r'FlutterSecureStorage\s*\??\s+([A-Za-z_$][A-Za-z0-9_$]*)',
+    r'FlutterSecureStorage\s*\??\s+(?:get\s+)?([A-Za-z_$][A-Za-z0-9_$]*)',
   ).allMatches(code)) {
     names.add(m.group(1)!);
   }
@@ -60,6 +62,22 @@ Set<String> secureStorageBindings(String code) {
 /// しない。**次に増えたメソッドが黙って通る**ので、`.` そのものを見る。
 List<String> directSecureStorageUses(String code) {
   final hits = <String>[];
+  // ⚠ **名前に束ねずに直に叩く形 (#1144)。**`const FlutterSecureStorage().delete(…)`
+  // はどの名前にも束ねないので、下の名前ベースの検査を素通りしていた
+  // （レビューで一時ファイルを置いて実際に素通りすることを確認済み）。生成の
+  // 閉じ括弧の直後が `.` なら直に叩いている。
+  var inline = 0;
+  for (final m in RegExp(r'FlutterSecureStorage\s*\(').allMatches(code)) {
+    var depth = 1;
+    var i = m.end;
+    while (i < code.length && depth > 0) {
+      if (code[i] == '(') depth++;
+      if (code[i] == ')') depth--;
+      i++;
+    }
+    if (RegExp(r'^\s*\??\.').hasMatch(code.substring(i))) inline++;
+  }
+  if (inline > 0) hits.add('(その場で生成) ($inline 箇所)');
   for (final name in secureStorageBindings(code)) {
     final uses = RegExp(
       '(?<![A-Za-z0-9_\$.])${RegExp.escape(name)}\\s*\\.',
@@ -163,6 +181,29 @@ Future<String?> read(String k) => _storage.read(key: k);
         directSecureStorageUses('''
 static const _storage = FlutterSecureStorage();
 static Future<void> delete(String k) => _storage.delete(key: k);
+'''),
+        isNotEmpty,
+      );
+      // ⚠ **その場で生成して叩く (#1144)。**名前に束ねないので以前は素通りした。
+      expect(
+        directSecureStorageUses('''
+static Future<void> f() => const FlutterSecureStorage().delete(key: 'x');
+'''),
+        isNotEmpty,
+      );
+      expect(
+        directSecureStorageUses('''
+static Future<void> f() =>
+    const FlutterSecureStorage(iOptions: IOSOptions(groupId: 'g'))
+        .read(key: 'x');
+'''),
+        isNotEmpty,
+      );
+      // ⚠ **getter で束ねる (#1144)。**以前は `get` を名前と読んで素通りした。
+      expect(
+        directSecureStorageUses('''
+static FlutterSecureStorage get _box => const FlutterSecureStorage();
+static Future<void> f() => _box.delete(key: 'x');
 '''),
         isNotEmpty,
       );

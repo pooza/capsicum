@@ -152,6 +152,7 @@ extension CapsicumMisskeyNoteExtension on MisskeyNote {
       // ⚠ `?? ''` は不要 (#1083-F)。`Map<String, _>[null]` は null を返すので、
       // 空文字へ落としても結果は同じ「表に無い＝制限なし」。
       reactionAcceptance: misskeyReactionAcceptanceRosetta[reactionAcceptance],
+      visibleUserIds: visibleUserIds ?? const [],
     );
   }
 }

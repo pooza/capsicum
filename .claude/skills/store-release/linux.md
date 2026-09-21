@@ -25,6 +25,8 @@ draft で生成するのは「リリース作業の委託範囲」(自動公開�
 gh workflow run linux-release.yml --repo pooza/capsicum --ref develop
 ```
 
+⚠ **v2.0 開発中の 1.x は release ブランチで回す**（`--ref release/x.y.z`）。develop は 2.x 線なので、そこで作った AppImage は 1.x の検証にならない（docs/CLAUDE.md「develop が次リリース対象でないときの出し方」）。⚠ **main 向けのリリース PR ではこの workflow は走らない**（#1146。タグビルドとツリーが同一で、成果物が Release に載らないため）。
+
 ⚠ **Release への添付は `if: startsWith(github.ref, 'refs/tags/')` で tag 限定**なので、develop で回しても**公開物は一切生まれない**。⚠ **artifact のダウンロードには GitHub ログインが要る**。⚠ **ビルド番号を先に上げてから回す** — 報告者が「どちらを試したか」を版で言えなくなる。
 
 ⚠ **「手元に Linux のビルド環境が無いから検証が回せない」は誤り**（[#1085](https://github.com/pooza/capsicum/issues/1085) / [#1104](https://github.com/pooza/capsicum/issues/1104) の確認がこれで 2 日止まった）。

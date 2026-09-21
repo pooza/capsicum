@@ -37,6 +37,9 @@ class MisskeyNote {
   /// （新しい受付条件が上流に増えても投稿の変換ごと落とさないため）。
   final String? reactionAcceptance;
 
+  /// 指名（`specified`）ノートの宛先 (#1161)。それ以外の公開範囲では null。
+  final List<String>? visibleUserIds;
+
   const MisskeyNote({
     required this.id,
     required this.createdAt,
@@ -59,6 +62,7 @@ class MisskeyNote {
     this.channel,
     this.localOnly,
     this.reactionAcceptance,
+    this.visibleUserIds,
   });
 
   factory MisskeyNote.fromJson(Map<String, dynamic> json) =>
