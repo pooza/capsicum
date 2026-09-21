@@ -35,6 +35,16 @@ namespace capsicum {
 //   ⚠ **通常の通知と同じ bgtask.shown に合流させない**。「bgtask.shown が
 //   無ければ bg task 未起動」というトリアージ規則は通知 push の母数の上で
 //   成り立っており、発火契機の違うお知らせを混ぜると母数が濁る。
+//   本文を落とされた通知 (capsicum-relay#65。5000B 超過で relay が degrade):
+//   bgtask.degraded_shown       : 汎用文面のトースト表示成功（正常・info）
+//   bgtask.degraded_show_failed : 表示失敗（warning）
+//   bgtask.degraded_bad_payload : 目印はあるが account 欠落等（warning）
+//   起動中（wns_push.cpp の HandleDegradedInProcess。着いてから数秒待って判断）:
+//   wns.degraded_skipped        : 同じアカウント宛を WebSocket 経路が前後に
+//                                 出していたので出さなかった（正常・info）
+//   wns.degraded_shown          : WebSocket が生きている証拠が無かったので
+//                                 汎用文面で出した（正常・info）
+//   wns.degraded_show_failed    : 表示失敗（warning）
 //   bgtask.not_raw      : raw push trigger に RawNotification 以外が来た（info。
 //                         起動した事実のみ残す）
 //   bgtask.no_keyset    : LocalState に鍵セット未同期（Option A 未実行・warning）

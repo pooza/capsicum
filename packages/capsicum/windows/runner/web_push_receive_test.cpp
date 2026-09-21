@@ -356,6 +356,84 @@ int main() {
              "お知らせは暗号化経路では表示されない（起動中の二重表示防止）");
   }
 
+  // ---- 本文を落とされた通知 (capsicum-relay#65) ----
+  // relay の WnsClient#degraded_payload が組み立てる形。値はすべて文字列
+  // （ParseFlatObject は文字列以外の値を含むエンベロープを丸ごと捨てる）。
+  const std::string degraded_envelope =
+      "{" + JsonStr("server") + ":" + JsonStr("https://example.test") + "," +
+      JsonStr("account") + ":" + JsonStr(kAccount) + "," + JsonStr("degraded") +
+      ":" + JsonStr("1") + "}";
+
+  // 16) 汎用文面を作る。文面は Android の fallback / relay の APNs degrade と同じ。
+  {
+    capsicum::PushDisplay d;
+    std::string err;
+    bool ok = TryBuildDegradedDisplay(degraded_envelope, &d, &err);
+    if (ok) {
+      std::printf("  ok   - degrade エンベロープを受理する\n");
+    } else {
+      std::printf("  FAIL - degrade エンベロープを受理しない (err=\"%s\")\n",
+                  err.c_str());
+      ++g_failures;
+    }
+    CheckEq(d.title, "capsicum", "title は capsicum");
+    CheckEq(d.body,
+            std::string(kAccount) +
+                " \xe3\x81\xab\xe9\x80\x9a\xe7\x9f\xa5\xe3\x81\x8c\xe3\x81\x82"
+                "\xe3\x82\x8a\xe3\x81\xbe\xe3\x81\x99",
+            "本文は「<account> に通知があります」");
+    CheckEq(d.account, kAccount, "account を載せる（観測の host に使う）");
+    CheckEq(d.notification_id, "", "notification_id は空（Tag を付けない #956）");
+  }
+
+  // 17) ⚠⚠ 本丸の逆向き: degrade エンベロープは**暗号化経路では何も出ない**。
+  //     #65 以前は bg task がここへ回して黙って捨てていた。bg task / 起動中の
+  //     どちらも、暗号化経路より先に TryBuildDegradedDisplay を通すこと。
+  {
+    capsicum::PushDisplay d;
+    std::string err;
+    bool ok = HandleWnsRawPayload(degraded_envelope, dat, &d, &err);
+    CheckErr(ok, err, "not an encrypted notification",
+             "degrade は暗号化経路では表示材料にならない（専用の判定が要る）");
+  }
+
+  // 18) 普通の暗号化通知は degrade と取り違えない。
+  {
+    capsicum::PushDisplay d;
+    std::string err;
+    bool ok = TryBuildDegradedDisplay(Envelope(kAccount, "aes128gcm", kBody),
+                                      &d, &err);
+    CheckErr(ok, err, "not degraded", "暗号化通知は degrade ではない");
+  }
+
+  // 19) 目印があっても暗号化 body を持つなら復号できる方を優先する。
+  {
+    capsicum::PushDisplay d;
+    std::string err;
+    std::string env = Envelope(kAccount, "aes128gcm", kBody);
+    env.insert(env.size() - 1, "," + JsonStr("degraded") + ":" + JsonStr("1"));
+    bool ok = TryBuildDegradedDisplay(env, &d, &err);
+    CheckErr(ok, err, "not degraded", "body を持つなら目印があっても復号側へ");
+  }
+
+  // 20) お知らせも degrade と取り違えない（目印を持たない）。
+  {
+    capsicum::PushDisplay d;
+    std::string err;
+    bool ok = TryBuildDegradedDisplay(
+        AnnouncementEnvelope(kAccount, "42", "SUMMARIZED BODY"), &d, &err);
+    CheckErr(ok, err, "not degraded", "お知らせは degrade ではない");
+  }
+
+  // 21) 目印はあるが account が無い。
+  {
+    capsicum::PushDisplay d;
+    std::string err;
+    bool ok = TryBuildDegradedDisplay(
+        "{" + JsonStr("degraded") + ":" + JsonStr("1") + "}", &d, &err);
+    CheckErr(ok, err, "missing account", "degrade でも account は必須");
+  }
+
   _wremove(dat.c_str());
 
   if (g_failures == 0) {

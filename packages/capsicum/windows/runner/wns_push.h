@@ -60,4 +60,10 @@ void SyncWnsPushLabelsToLocalState(const std::string& labels_json);
 // 渡す（Dart が Sentry へ吸い上げる）。レコードが無ければ false。
 bool ConsumePushDiagnosticsJson(std::string* out_json);
 
+// 起動中に受けて判断待ち（数秒の猶予中）の「本文を落とされた通知」
+// (capsicum-relay#65) を、待たずに処理しきる。main のメッセージループを抜けた
+// 後に呼ぶ。⚠ これが無いと、猶予中にアプリを閉じたとき detached スレッドごと
+// 打ち切られ、bg task も Cancel 済みなので通知が消える（Codex P2 / PR #1169）。
+void FlushPendingDegradedNotifications();
+
 #endif  // RUNNER_WNS_PUSH_H_

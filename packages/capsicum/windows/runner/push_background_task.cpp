@@ -142,6 +142,35 @@ bool HandleAnnouncementContent(const std::string& content) {
   return true;
 }
 
+// relay が 5000B 超過で本文を落とした通知 (capsicum-relay#65) を汎用文面で
+// 表示する。degrade でなければ false を返し、呼び出し側が暗号化経路へ回す。
+//
+// ⚠ 以前は暗号化経路で "not an encrypted notification" となり**何も出さずに
+// 捨てていた**（relay 側は 413 で drop していたので実害は同じだった）。
+// ⚠ 通常の通知と**同じ bgtask.shown に合流させない**（お知らせと同じ理由。
+// 「本文の読めない通知がどれだけ出たか」を分けて数えたい）。
+bool HandleDegradedContent(const std::string& content) {
+  capsicum::PushDisplay degraded;
+  std::string error;
+  if (!capsicum::TryBuildDegradedDisplay(content, &degraded, &error)) {
+    if (error == "not degraded") {
+      return false;  // 暗号化通知。復号経路へ。
+    }
+    // 目印はあるのに account が無い等。暗号化経路へ回すと
+    // "missing account" / "not an encrypted notification" に紛れるので専用に残す。
+    RecordBgDiagnostic("bgtask.degraded_bad_payload", std::string());
+    return true;
+  }
+  // 通知 ID を持たないので Tag は付けない (#956)。付けると同じアカウント宛の
+  // 汎用トーストが 1 件に潰れる。
+  const bool shown = capsicum::ShowRawToast(
+      degraded.title, degraded.body, /*launch_arg=*/"", /*tag=*/std::string());
+  RecordBgDiagnostic(
+      shown ? "bgtask.degraded_shown" : "bgtask.degraded_show_failed",
+      capsicum::PushDiagnosticHostFromAccount(degraded.account));
+  return true;
+}
+
 // 暗号化された通知 push を復号して表示する。
 void HandleEncryptedContent(const std::string& content) {
   // 鍵は FullTrust 本体が LocalState に同期した push_keys.json から読む
@@ -199,7 +228,10 @@ struct PushBackgroundTask
         // お知らせ push は無暗号化なので**鍵より先に**判定する (#978)。鍵セット
         // の同期が遅れていてもお知らせは出せるし、読む必要のない
         // push_keys.json を開かずに済む。
-        if (!HandleAnnouncementContent(content)) {
+        // 本文を落とされた通知 (capsicum-relay#65) も鍵を要さないので、同じく
+        // 復号より先に判定する。
+        if (!HandleAnnouncementContent(content) &&
+            !HandleDegradedContent(content)) {
           HandleEncryptedContent(content);
         }
       } else {
