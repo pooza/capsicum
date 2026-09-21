@@ -911,19 +911,19 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           label: 'このアカウントは凍結されています',
           emphasized: true,
         ),
+      // ⚠ 「サイレンス」と言い切らない (#1144)。Misskey の `isSilenced` は
+      // モデレーションのサイレンスではなく「公開投稿できないロール」で、新規
+      // アカウントの制限ロール等でも立つ。Mastodon の制限（公開 TL に出ない）にも
+      // 当てはまる言い方にする。
       if (user.silenced)
         _stateBadge(
           theme,
           icon: Icons.visibility_off,
-          label: 'このアカウントはサイレンスされています',
+          label: 'このアカウントは公開範囲が制限されています',
         ),
-      if (user.deleted)
-        _stateBadge(
-          theme,
-          icon: Icons.person_off,
-          label: 'このアカウントは削除済みです',
-          emphasized: true,
-        ),
+      // ⚠ `user.deleted` のバッジは出さない (#1144)。Misskey は `isDeleted` を
+      // **自分自身にしか返さず**、削除済みのアカウントは自分のプロフィールを
+      // 見られないので、出る場面が無い（実質デッドコードだった）。
     ];
   }
 
