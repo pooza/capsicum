@@ -140,6 +140,24 @@ class SecureStorageGate {
     () => _storage.delete(key: key, iOptions: iOptions, mOptions: mOptions),
   );
 
+  /// 上限で打ち切ったときの [TimeoutException] のメッセージ。
+  static String timeoutMessage(String operation) =>
+      'secure storage $operation timed out';
+
+  /// [error] が**この関所が投げた**待ちの打ち切りか (#1141)。
+  ///
+  /// 触る前の疎通確認で諦めた（[SecureStorageHealth.probeSkipMessage]）場合と、
+  /// 触って上限に達した場合の 2 つ。⚠ **`TimeoutException` を丸ごと拾わない**
+  /// —— 別経路の timeout（通信など）をキーリングのせいにしないため、メッセージの
+  /// 形で見分ける。形はここ（投げる側）だけが知っている。
+  static bool isGateTimeout(Object error) {
+    if (error is! TimeoutException) return false;
+    final message = error.message;
+    if (message == null) return false;
+    return message == SecureStorageHealth.probeSkipMessage ||
+        RegExp(r'^secure storage \w+ timed out$').hasMatch(message);
+  }
+
   /// 触る前に聞き、触ったら上限を掛ける。
   ///
   /// ⚠⚠ **順序が逆だと意味が無い (#1085)。**`flutter_secure_storage_linux` は
@@ -166,7 +184,7 @@ class SecureStorageGate {
         // 実際の呼び出しが固まった、という窓が実在する。覚えないと**後続の
         // アカウントが 1 件ごとに上限を払う**（10 件で 50 秒）。
         SecretServiceProbe.markUnresponsive();
-        throw TimeoutException('secure storage $operation timed out', limit);
+        throw TimeoutException(timeoutMessage(operation), limit);
       },
     );
   }
