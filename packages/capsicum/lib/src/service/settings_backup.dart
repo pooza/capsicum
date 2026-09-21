@@ -169,14 +169,40 @@ const deviceLocalKeys = <String>{
 ///   する意味が無く、`addAccount` がログイン直後に上書きする（#1057）。
 const accountScopedKeys = <String>{'background_opacity', 'last_tab_'};
 
-/// アカウントごとの設定 1 件 (#1119)。実体の保存キーは `<prefix><アカウント>`。
+/// アカウント別設定の保存キーに付ける引数の種別 (#1144)。
+enum SettingKeyedBy {
+  /// `<prefix><アカウントの storage key>`。
+  account,
+
+  /// `<prefix><ホスト名>`。同じサーバーのアカウントで共有する（絵文字パレット）。
+  host,
+}
+
+/// アカウントごとの設定 1 件 (#1119)。実体の保存キーは [storageKeyFor] が組む。
 class AccountScopedSetting {
-  const AccountScopedSetting(this.prefix, this.type);
+  const AccountScopedSetting(
+    this.prefix,
+    this.type, {
+    this.keyedBy = SettingKeyedBy.account,
+  });
 
   /// `preferences_provider.dart` の `_…Prefix` と一致させる（末尾の `_` を含む）。
   final String prefix;
 
   final BackupValueType type;
+
+  /// ⚠⚠ **prefix の後ろに何を付けるか (#1144)。**絵文字パレットは実キーが
+  /// `emoji_palette_<host>` なのに `<prefix><アカウント>` で引いており、
+  /// **パレットは 1 行もファイルに載らないのに「読み込みました」と出ていた**。
+  /// prefix の文字列が一致していても、引数が違えば誰も読まないキーになる。
+  final SettingKeyedBy keyedBy;
+
+  /// [account]（正規形の storage key）のアカウントについての保存キー。
+  String storageKeyFor(String account) => switch (keyedBy) {
+    SettingKeyedBy.account => '$prefix$account',
+    // ⚠ 画面は `account.key.host` で引く（`emoji_picker.dart`）。
+    SettingKeyedBy.host => '$prefix${AccountKey.fromStorageKey(account).host}',
+  };
 
   /// YAML 上のキー。⚠ **末尾の `_` を落としたもの**（`tab_order_` → `tab_order`）。
   /// アカウントの下にぶら下がるので、キー側にアカウントを書く必要がない。
@@ -198,8 +224,16 @@ const accountScopedSettings = <AccountScopedSetting>[
   AccountScopedSetting('list_order_', BackupValueType.textList),
   AccountScopedSetting('hidden_list_ids_', BackupValueType.textList),
   AccountScopedSetting('pinned_hashtags_', BackupValueType.textList),
-  AccountScopedSetting('emoji_palette_', BackupValueType.textList),
-  AccountScopedSetting('emoji_reaction_palette_', BackupValueType.textList),
+  AccountScopedSetting(
+    'emoji_palette_',
+    BackupValueType.textList,
+    keyedBy: SettingKeyedBy.host,
+  ),
+  AccountScopedSetting(
+    'emoji_reaction_palette_',
+    BackupValueType.textList,
+    keyedBy: SettingKeyedBy.host,
+  ),
 ];
 
 /// 読み込み結果。
@@ -320,8 +354,9 @@ void _writeAccountSettings(StringBuffer buffer, SharedPreferences prefs) {
       // ⚠ **prefs 側のキーは正規形。**索引には非正規形（大文字ホスト等）が
       // 入りうるが、画面は `account.key.toStorageKey()`＝正規形で読み書きする
       // （`account_settings_screen.dart`）。索引が既に正規形なら no-op。
-      final key =
-          '${setting.prefix}${_canonicalAccountKey(account) ?? account}';
+      final key = setting.storageKeyFor(
+        _canonicalAccountKey(account) ?? account,
+      );
       switch (setting.type) {
         case BackupValueType.textList:
           final list = prefs.getStringList(key);
@@ -713,6 +748,10 @@ Future<List<String>> _mergeAccountSettings(
   final applied = <String>[];
   var unknownAccounts = 0;
   var rejected = 0;
+  // ⚠ **書けなかったぶんを「形式が合わない」に混ぜない (#1144)。**setter
+  // が false を返す（ストレージ逼迫等）と全件がここに来るのに、以前は
+  // 「形式が合いませんでした」と出ていた。利用者はファイルを疑う。
+  var writeFailures = 0;
   for (final entry in node.nodes.entries) {
     final rawAccount = entry.key.toString();
     final account = _canonicalAccountKey(rawAccount);
@@ -737,28 +776,38 @@ Future<List<String>> _mergeAccountSettings(
       // ほか。`Account.key` は `AccountKey.fromStorageKey(索引)` 由来）。生の key
       // で書くと、非正規形の端末から移行したとき**誰も読まないキーへ書いて
       // 「取り込みました」と報告する**。索引が既に正規形なら no-op。
-      final storageKey = '${scoped.prefix}$account';
+      final storageKey = scoped.storageKeyFor(account);
       final reason = await _writeAccountValue(
         prefs,
         scoped,
         storageKey,
         setting.value.value,
       );
+      if (reason == _accountWriteFailed) {
+        writeFailures++;
+        continue;
+      }
       if (reason != null) {
         rejected++;
         continue;
       }
-      applied.add(storageKey);
+      // ⚠ ホストで引く設定は、同じサーバーのアカウントが同じキーへ書く。
+      // 件数を水増ししない。
+      if (!applied.contains(storageKey)) applied.add(storageKey);
     }
   }
 
   final reasons = <String>[
     if (unknownAccounts > 0) '$unknownAccounts 件はこの端末に無いアカウントの設定でした',
     if (rejected > 0) '$rejected 件は設定の形式が合いませんでした',
+    if (writeFailures > 0) '$writeFailures 件は端末に保存できませんでした',
   ];
   if (reasons.isNotEmpty) skipped['account_settings'] = reasons.join(' / ');
   return applied;
 }
+
+/// [_writeAccountValue] の「書けなかった」。形式違いと数え分けるために名前を持つ。
+const _accountWriteFailed = '設定を保存できませんでした';
 
 /// アカウント別設定 1 件を書く。書けたら null、書かなかったら理由 (#1119)。
 ///
@@ -770,7 +819,7 @@ Future<String?> _writeAccountValue(
   Object? value,
 ) async {
   const typeMismatch = '値の形式が設定と合いません';
-  const writeFailed = '設定を保存できませんでした';
+  const writeFailed = _accountWriteFailed;
   switch (setting.type) {
     case BackupValueType.boolean:
       if (value is! bool) return typeMismatch;

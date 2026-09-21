@@ -29,6 +29,11 @@ void applyImportedSettingsBackup(WidgetRef ref, SettingsImportResult result) {
   for (final provider in backedUpPreferenceProviders) {
     ref.invalidate(provider);
   }
+  // ⚠ アカウント別設定 (#1144)。同じ family が複数の prefix に出てくるので畳む。
+  for (final provider
+      in backedUpAccountScopedProviders.values.expand((p) => p).toSet()) {
+    ref.invalidate(provider);
+  }
 
   if (result.addedAccountKeys.isEmpty) return;
 
