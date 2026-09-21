@@ -341,53 +341,74 @@ class _DeckColumnCandidatesState extends ConsumerState<_DeckColumnCandidates> {
   ///
   /// ⚠ **候補一覧ごと待たせない。**種別・通知・お知らせ・ハッシュタグは即座に
   /// 選べるまま、この節だけが読み込み中 / 失敗を出す。
+  ///
+  /// ⚠⚠ **前回の値があるときも状態を出す。**リスト / チャンネルは他の画面が
+  /// 保持しているので、シートを開いた時点で前回の値が残っている。`when` の
+  /// 既定（`skipLoadingOnRefresh: true`）に任せると、取り直しの間（通信断なら
+  /// 失敗が確定するまで最長 60 秒）**古い一覧を最新のように黙って出す**ことに
+  /// なり、「今取れているのか分からない」という元の問題が残っていた。
+  /// 古い一覧は消さない（通信が切れていても選べるように）が、その上に
+  /// 「更新中」「更新できませんでした」を 1 行出す。
   List<Widget> _asyncCandidateSection<T>({
     required String noun,
     required AsyncValue<List<T>> async,
     required TabType Function(T) toTab,
     required VoidCallback onRetry,
   }) {
-    return async.when(
-      data: (items) => items.isEmpty
-          ? [
-              ListTile(
-                key: ValueKey('candidates-empty-$noun'),
-                enabled: false,
-                leading: const Icon(Icons.remove),
-                title: Text('$nounがありません'),
-              ),
-            ]
-          : [for (final item in items) _candidateTile(toTab(item))],
-      // ⚠ 「読み込み中」と「0 件」を必ず書き分ける。どちらも行が無いと、
-      // 待てば出るのか無いのかが利用者に分からない。
-      loading: () => [
-        ListTile(
-          key: ValueKey('candidates-loading-$noun'),
-          enabled: false,
-          leading: const SizedBox(
-            width: 24,
-            height: 24,
-            child: Center(
-              child: SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            ),
+    Widget loadingTile(String title) => ListTile(
+      key: ValueKey('candidates-loading-$noun'),
+      enabled: false,
+      leading: const SizedBox(
+        width: 24,
+        height: 24,
+        child: Center(
+          child: SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2),
           ),
-          title: Text('$nounを読み込んでいます…'),
         ),
-      ],
-      // ⚠ 失敗したら再試行の手段を出す。無いとシートを開き直すしかない。
-      error: (_, _) => [
-        ListTile(
-          key: ValueKey('candidates-error-$noun'),
-          leading: const Icon(Icons.error_outline),
-          title: Text('$nounを取得できませんでした'),
-          trailing: TextButton(onPressed: onRetry, child: const Text('再試行')),
-        ),
-      ],
+      ),
+      title: Text(title),
     );
+    // ⚠ 失敗したら再試行の手段を出す。無いとシートを開き直すしかない。
+    Widget errorTile(String title) => ListTile(
+      key: ValueKey('candidates-error-$noun'),
+      leading: const Icon(Icons.error_outline),
+      title: Text(title),
+      trailing: TextButton(onPressed: onRetry, child: const Text('再試行')),
+    );
+
+    // 状態の行は、取り直し中 → 失敗の順に見る（再試行中は前回の失敗を出さない）。
+    final Widget? status;
+    if (async.isLoading) {
+      status = loadingTile(
+        async.hasValue ? '$nounを更新しています…' : '$nounを読み込んでいます…',
+      );
+    } else if (async.hasError) {
+      status = errorTile(
+        async.hasValue ? '$nounを更新できませんでした' : '$nounを取得できませんでした',
+      );
+    } else {
+      status = null;
+    }
+
+    final items = async.valueOrNull;
+    return [
+      ?status,
+      if (items != null)
+        if (items.isEmpty)
+          // ⚠ 「読み込み中」と「0 件」を必ず書き分ける。どちらも行が無いと、
+          // 待てば出るのか無いのかが利用者に分からない。
+          ListTile(
+            key: ValueKey('candidates-empty-$noun'),
+            enabled: false,
+            leading: const Icon(Icons.remove),
+            title: Text('$nounがありません'),
+          )
+        else
+          for (final item in items) _candidateTile(toTab(item)),
+    ];
   }
 
   Widget _candidateTile(TabType tab) => ListTile(

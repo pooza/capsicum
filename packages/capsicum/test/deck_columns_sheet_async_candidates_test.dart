@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:capsicum/src/model/account.dart';
 import 'package:capsicum/src/model/account_key.dart';
 import 'package:capsicum/src/provider/account_manager_provider.dart';
+import 'package:capsicum/src/provider/list_provider.dart';
 import 'package:capsicum/src/ui/widget/deck_columns_sheet.dart';
 import 'package:capsicum/src/util/shared_preferences_cache.dart';
 import 'package:capsicum_backends/capsicum_backends.dart';
@@ -43,6 +44,9 @@ class _Adapter extends Mock
   /// 次の `getLists` を失敗させる。
   bool failLists = false;
 
+  /// 非 null なら `getLists` がこの完了を待つ（取り直しの途中を作る）。
+  Completer<List<PostList>>? pendingLists;
+
   int listCalls = 0;
   int channelCalls = 0;
 
@@ -54,6 +58,8 @@ class _Adapter extends Mock
   @override
   Future<List<PostList>> getLists() {
     listCalls++;
+    final pending = pendingLists;
+    if (pending != null) return pending.future;
     if (failLists) return Future.error(StateError('boom'));
     final value = lists;
     return value == null ? _never.future : Future.value(value);
@@ -168,6 +174,76 @@ void main() {
         findsOneWidget,
         reason: '再試行で取り直せている（今回は 0 件）',
       );
+    });
+  });
+
+  group('#1155 前回の値があるときの取り直し', () {
+    // ⚠⚠ **実機検証で見つかった取りこぼし**（2026-09-21）。リストはホーム画面など
+    // が保持しているので、シートを開いた時点で前回の値が残っている。`when` の
+    // 既定に任せると、取り直しの間は**古い一覧を黙って出し**、通信断でも
+    // 失敗が確定するまで（最長 60 秒）「取得できませんでした」が出なかった。
+    const old = PostList(id: '1', title: '前回のリスト');
+
+    /// 前回の値を持った状態でシートを開き、取り直しを途中で止める。
+    Future<Completer<List<PostList>>> pumpWithStaleLists(
+      WidgetTester tester,
+      _Adapter adapter,
+    ) async {
+      final container = await pumpSheet(tester, adapter);
+      await tester.pumpAndSettle();
+      // ホーム画面のように保持し続ける（autoDispose で消えないように）。
+      container.listen(listsProvider, (_, _) {});
+      final pending = adapter.pendingLists = Completer<List<PostList>>();
+      container.invalidate(listsProvider);
+      // invalidate は印を付けるだけなので、読んで作り直しを起こす（getLists を
+      // 呼ばせる）。
+      container.read(listsProvider);
+      await tester.pump();
+      return pending;
+    }
+
+    testWidgets('⚠⚠ 取り直し中は「更新しています」と出し、古い一覧は残す', (tester) async {
+      final adapter = _Adapter(lists: const [old], channels: const []);
+      await pumpWithStaleLists(tester, adapter);
+
+      expect(
+        find.text('リストを更新しています…'),
+        findsOneWidget,
+        reason: '⚠⚠ 古い一覧を最新のように黙って出さない',
+      );
+      expect(find.text('前回のリスト'), findsOneWidget, reason: '通信断でも選べるように残す');
+    });
+
+    testWidgets('⚠⚠ 失敗したら「更新できませんでした」+ 再試行を出し、古い一覧は残す', (tester) async {
+      final adapter = _Adapter(lists: const [old], channels: const []);
+      final pending = await pumpWithStaleLists(tester, adapter);
+
+      pending.completeError(StateError('offline'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('リストを更新できませんでした'), findsOneWidget);
+      expect(find.text('再試行'), findsOneWidget);
+      expect(find.text('前回のリスト'), findsOneWidget);
+
+      adapter.pendingLists = null;
+      await tester.tap(find.text('再試行'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('リストを更新できませんでした'), findsNothing);
+      expect(find.text('前回のリスト'), findsOneWidget);
+    });
+
+    // ⚠ この 1 件は元の `when` の実装でも通る（歯があるのは上の 2 件）。
+    // 状態の行を出しっぱなしにしないことの回帰検査として置く。
+    testWidgets('取り直しが済めば状態の行は消える', (tester) async {
+      final adapter = _Adapter(lists: const [old], channels: const []);
+      final pending = await pumpWithStaleLists(tester, adapter);
+
+      pending.complete(const [old]);
+      await tester.pumpAndSettle();
+
+      expect(find.text('リストを更新しています…'), findsNothing);
+      expect(find.text('前回のリスト'), findsOneWidget);
     });
   });
 
