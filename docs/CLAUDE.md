@@ -245,6 +245,13 @@ probing の結果、基本的な機能が欠けているサーバーに対して
 /plugin install ginseng@ginseng-style
 ```
 
+⚠ **VS Code 拡張では `/plugin` が使えない**（「isn't available in this environment」）。そのときはターミナルで CLI を使う（中身は同じ操作）:
+
+```sh
+claude plugin marketplace add pooza/ginseng-style
+claude plugin install ginseng@ginseng-style
+```
+
 ⚠ **配る側が `plugin.json` の `version` を上げないと届かない**（ginseng-style#104）。ginseng 側を直したのに挙動が変わらないときは、まず版を見る。
 
 ⚠ **追加コミットではレビューは発火しない。**`@codex review` を PR コメントに書いた時だけ走る（初回は PR 作成 / ready 化で自動）。**rebase / force-push で SHA が変わったときも打ち直す**。
