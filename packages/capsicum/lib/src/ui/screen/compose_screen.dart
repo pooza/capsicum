@@ -44,6 +44,7 @@ import '../util/post_scope_display.dart';
 import '../util/program_schedule_display.dart';
 import '../util/redraft_carry_over.dart';
 import '../util/relative_time.dart';
+import '../util/reply_mentions.dart';
 import '../util/shortcode_warning_controller.dart';
 import '../util/text_length_counter.dart';
 import '../util/visible_timeline.dart';
@@ -424,6 +425,21 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
 
   /// 取得に失敗した / まだ返ってきていない。
   bool _redraftReplyToUnavailable = false;
+
+  /// 指名（Misskey の `specified`）で送るときの宛先 (#1161)。
+  ///
+  /// ⚠ **サーバーが自動で足すのは返信先の投稿者だけ**なので、返信先の宛先を
+  /// 引き継がないと、スレッドにいた他の人へ届かない。redraft は元の宛先も戻す。
+  /// Mastodon の adapter はこの値を読まない（宛先は本文のメンションで決まる）。
+  List<String> get _visibleUserIds {
+    if (_scope != PostScope.direct) return const [];
+    final me = ref.read(currentAccountProvider)?.user;
+    final reply = _isReply ? _replyToPost : null;
+    return {
+      ...?widget.redraft?.visibleUserIds,
+      if (reply != null) ...inheritVisibleUserIds(replyTo: reply, me: me),
+    }.where((id) => id != me?.id).toList();
+  }
 
   Future<void> _loadRedraftReplyTo(String id) async {
     final adapter = ref.read(currentAdapterProvider);
@@ -1481,15 +1497,14 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     );
   }
 
+  /// 返信先の投稿者と、返信先に含まれるメンション全員を宛先に入れる (#1161)。
   void _initReplyMentions(Post replyTo) {
-    final currentUser = ref.read(currentAccountProvider)?.user;
-    final mentions = <String>{};
-
-    // Add the author of the post being replied to.
-    final authorAcct = _buildAcct(replyTo.author);
-    if (currentUser == null || replyTo.author.id != currentUser.id) {
-      mentions.add(authorAcct);
-    }
+    final account = ref.read(currentAccountProvider);
+    final mentions = buildReplyMentions(
+      replyTo: replyTo,
+      me: account?.user,
+      localHost: account?.key.host ?? '',
+    );
 
     if (mentions.isNotEmpty) {
       final prefix = mentions.map((m) => '@$m').join(' ');
@@ -3352,6 +3367,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           sensitive: _effectiveSensitive,
           localOnly: _localOnly,
           channelId: _effectiveChannelId,
+          visibleUserIds: _visibleUserIds,
         ),
       );
 
@@ -3544,6 +3560,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           sensitive: _effectiveSensitive,
           localOnly: _localOnly,
           channelId: _effectiveChannelId,
+          visibleUserIds: _visibleUserIds,
           scheduledAt: _scheduledAt,
           language: _language,
           pollOptions: _pollEnabled

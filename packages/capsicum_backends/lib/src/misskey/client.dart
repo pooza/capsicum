@@ -516,6 +516,7 @@ class MisskeyClient {
     bool? localOnly,
     String? channelId,
     Map<String, dynamic>? poll,
+    List<String>? visibleUserIds,
     Map<String, String>? extraHeaders,
   }) async {
     final body = createBody({
@@ -528,6 +529,7 @@ class MisskeyClient {
       'localOnly': ?localOnly,
       'channelId': ?channelId,
       'poll': ?poll,
+      'visibleUserIds': ?visibleUserIds,
     });
     final response = await dio.post(
       '/api/notes/create',
@@ -554,6 +556,7 @@ class MisskeyClient {
     String? cw,
     bool? localOnly,
     String? channelId,
+    List<String>? visibleUserIds,
   }) async {
     await dio.post(
       '/api/notes/drafts/create',
@@ -569,6 +572,7 @@ class MisskeyClient {
         'cw': ?cw,
         'localOnly': ?localOnly,
         'channelId': ?channelId,
+        'visibleUserIds': ?visibleUserIds,
       }),
     );
   }
@@ -585,6 +589,7 @@ class MisskeyClient {
     String? cw,
     bool? localOnly,
     String? channelId,
+    List<String>? visibleUserIds,
   }) => createNoteDraft(
     text: text,
     visibility: visibility,
@@ -595,6 +600,7 @@ class MisskeyClient {
     cw: cw,
     localOnly: localOnly,
     channelId: channelId,
+    visibleUserIds: visibleUserIds,
   );
 
   /// POST /api/notes/drafts/list — 素の下書き（予約投稿を除く）の生データ (#174)。

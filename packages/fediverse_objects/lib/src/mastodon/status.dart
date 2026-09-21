@@ -41,6 +41,9 @@ class MastodonStatus {
   /// 編集された投稿は、自サーバーの設定に関わらず編集済みとして届く。
   final DateTime? editedAt;
 
+  /// 宛先に入っているメンション (#1161)。`id` / `username` / `acct` / `url`。
+  final List<Map<String, dynamic>>? mentions;
+
   const MastodonStatus({
     required this.id,
     required this.createdAt,
@@ -68,6 +71,7 @@ class MastodonStatus {
     this.language,
     this.url,
     this.editedAt,
+    this.mentions,
   });
 
   factory MastodonStatus.fromJson(Map<String, dynamic> json) =>

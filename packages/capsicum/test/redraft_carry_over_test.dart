@@ -248,6 +248,7 @@ void main() {
       'channelId': 'widget.redraft?.channelId',
       'content': 'redraft.content',
       'quoteApprovalPolicy': 'redraft.quoteApprovalPolicy',
+      'visibleUserIds': 'widget.redraft?.visibleUserIds',
     };
 
     test('readSites が policy の carry を網羅している', () {
@@ -423,6 +424,7 @@ void main() {
       'pollExpiresIn': 'poll',
       'pollMultiple': 'poll',
       'quoteApprovalPolicy': 'quoteApprovalPolicy',
+      'visibleUserIds': 'visibleUserIds',
     };
 
     /// 変換元のファイルと、その中の変換を見つける目印。
@@ -443,6 +445,7 @@ void main() {
       'mastodon': {
         'localOnly': '本家 Mastodon に「ローカルのみ」が無い',
         'channelId': 'Mastodon にチャンネルが無い',
+        'visibleUserIds': 'Mastodon のダイレクトは宛先を本文のメンションで決める（宛先の項目が無い）',
       },
       'misskey': {
         'language': 'Misskey の投稿に言語の項目が無い',
