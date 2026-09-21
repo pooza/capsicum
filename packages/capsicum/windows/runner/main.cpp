@@ -4,6 +4,7 @@
 
 #include "flutter_window.h"
 #include "utils.h"
+#include "wns_push.h"
 
 int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
                       _In_ wchar_t *command_line, _In_ int show_command) {
@@ -37,6 +38,11 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
     ::TranslateMessage(&msg);
     ::DispatchMessage(&msg);
   }
+
+  // 判断待ちの「本文を落とされた通知」(capsicum-relay#65) を消さずに出しきる。
+  // ⚠ トレイの「終了」(windowManager.destroy) もここを通る（WM_DESTROY →
+  // PostQuitMessage でループを抜ける）。
+  FlushPendingDegradedNotifications();
 
   ::CoUninitialize();
   return EXIT_SUCCESS;

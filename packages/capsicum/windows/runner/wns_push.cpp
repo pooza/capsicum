@@ -6,12 +6,18 @@
 #include <winrt/Windows.Networking.PushNotifications.h>
 #include <winrt/Windows.Storage.h>
 
+#include <atomic>
+#include <chrono>
 #include <condition_variable>
+#include <cstdint>
 #include <cstdio>
 #include <fstream>
 #include <functional>
+#include <map>
 #include <mutex>
 #include <string>
+#include <thread>
+#include <vector>
 
 #include "local_state_files.h"
 #include "notification_dedup.h"
@@ -254,6 +260,124 @@ bool HandleAnnouncementContent(const std::string& content) {
   return true;
 }
 
+// 起動中に受けた「本文を落とされた通知」(capsicum-relay#65) を待ってから
+// 判断する時間。WebSocket 経路 (#569) は通常 relay → WNS より先に着くが、
+// 前後どちらもありうるので、着いてから少し待ってから証拠を見る。
+constexpr int64_t kDegradedGraceMs = 8000;
+// 着く前のどこまでを「同じ通知を WebSocket が出した」証拠とみなすか。
+constexpr int64_t kDegradedLookbackMs = 30000;
+
+// 起動中に受けた本文なしの通知を、WebSocket 経路が生きていれば出さず、
+// 生きている証拠が無ければ汎用文面で出す。
+//
+// ⚠⚠ **「起動中は出さない」と決め打ちしてはいけない**（Codex P1 / PR #1169）。
+// 起動中の受信は `args.Cancel(true)` で bg task を止めているので、ここで捨てると
+// **WebSocket が切れている間（再接続を諦めた状態を含む）その通知がどこにも
+// 出ない**。一方、通知 ID を持たないのでキー単位の dedup は効かず、毎回出すと
+// WebSocket の本文付きトーストと 2 通並ぶ。
+//
+// そこで「同じアカウント宛を WebSocket が前後に出したか」を生きている証拠に
+// する（`addEmitted` で記録）。無関係の通知で抑止する取り違えはありうるが、
+// その時点で WebSocket は生きているので本来の通知も WebSocket から届く。
+//
+// 待つ間に受信スレッドを塞がないよう detached スレッドで回す。
+//
+// ⚠ **待っている間にアプリが閉じられても消さない**（Codex P2 / PR #1169）。
+// detached スレッドはプロセス終了で打ち切られ、bg task も Cancel 済みなので
+// 引き継ぎ手がいない。待機中のものは [PendingDegraded] に置き、終了時に
+// [FlushPendingDegradedNotifications] が引き取る。**先に取った側だけが処理する**
+// （[TakePendingDegraded]）ので、待機明けと終了が重なっても二重に出ない。
+struct PendingDegradedItem {
+  capsicum::PushDisplay display;
+  int64_t arrived_ms = 0;
+};
+
+std::mutex& PendingDegradedMutex() {
+  static std::mutex m;
+  return m;
+}
+
+std::map<uint64_t, PendingDegradedItem>& PendingDegraded() {
+  static std::map<uint64_t, PendingDegradedItem> pending;
+  return pending;
+}
+
+// [id] の待機分を取り出す。既に誰かが取っていれば false。
+bool TakePendingDegraded(uint64_t id, PendingDegradedItem* out) {
+  std::lock_guard<std::mutex> lock(PendingDegradedMutex());
+  auto& pending = PendingDegraded();
+  const auto it = pending.find(id);
+  if (it == pending.end()) return false;
+  *out = it->second;
+  pending.erase(it);
+  return true;
+}
+
+// 待機明け / 終了時の共通の判断と表示・観測。⚠ **呼び出し側が MTA を張った
+// まま呼ぶこと**（Codex P2 / PR #1169）。トーストの表示だけでなく、観測の記録
+// (`RecordPushDiagnostic` → `LocalStateFilePath` → `ApplicationData::Current`) も
+// WinRT を呼ぶので、apartment を畳んでから記録すると黙って落ちる。
+void ResolveDegraded(const PendingDegradedItem& item) {
+  const std::string host =
+      capsicum::PushDiagnosticHostFromAccount(item.display.account);
+  if (capsicum::NotificationDedupRegistry::Instance().StreamEmittedSince(
+          item.display.account, item.arrived_ms - kDegradedLookbackMs)) {
+    // WebSocket 経路が本文付きで出している通常運転（正常系）。
+    capsicum::RecordPushDiagnostic("wns.degraded_skipped", host);
+    return;
+  }
+  bool shown = false;
+  try {
+    // 通知 ID を持たないので Tag は付けない (#956)。
+    shown = capsicum::ShowRawToast(item.display.title, item.display.body,
+                                   /*launch_arg=*/"", /*tag=*/std::string());
+  } catch (...) {
+    shown = false;
+  }
+  capsicum::RecordPushDiagnostic(
+      shown ? "wns.degraded_shown" : "wns.degraded_show_failed", host);
+}
+
+// MTA をスレッドの寿命いっぱいに張る。flutter_window.cpp の worker と同じく、
+// 既に別の apartment が張られていて失敗したときは張らずに進む。
+class ScopedMtaApartment {
+ public:
+  ScopedMtaApartment() {
+    try {
+      winrt::init_apartment(winrt::apartment_type::multi_threaded);
+      initialized_ = true;
+    } catch (...) {
+      initialized_ = false;
+    }
+  }
+  ~ScopedMtaApartment() {
+    if (initialized_) winrt::uninit_apartment();
+  }
+  ScopedMtaApartment(const ScopedMtaApartment&) = delete;
+  ScopedMtaApartment& operator=(const ScopedMtaApartment&) = delete;
+
+ private:
+  bool initialized_ = false;
+};
+
+void HandleDegradedInProcess(const capsicum::PushDisplay& degraded) {
+  static std::atomic<uint64_t> next_id{1};
+  const uint64_t id = next_id.fetch_add(1);
+  {
+    std::lock_guard<std::mutex> lock(PendingDegradedMutex());
+    PendingDegraded()[id] =
+        PendingDegradedItem{degraded, capsicum::DedupClockNowMs()};
+  }
+  std::thread([id]() {
+    ScopedMtaApartment apartment;
+    std::this_thread::sleep_for(std::chrono::milliseconds(kDegradedGraceMs));
+    PendingDegradedItem item;
+    // 終了時の flush が先に引き取っていれば何もしない。
+    if (!TakePendingDegraded(id, &item)) return;
+    ResolveDegraded(item);
+  }).detach();
+}
+
 // raw 通知 1 通を表示する。お知らせ (#978・無暗号化) を先に見て、それ以外を
 // 暗号化通知として復号する。**判定順は bg task (push_background_task.cpp) と
 // 同じ**に保つ — 片方だけ順序を変えると、観測コードの意味が経路ごとにずれる。
@@ -268,6 +392,16 @@ bool HandleAnnouncementContent(const std::string& content) {
 void DisplayRawNotification(const std::string& content) {
   if (HandleAnnouncementContent(content)) {
     return;
+  }
+  // relay が 5000B 超過で本文を落とした通知 (capsicum-relay#65)。判断は
+  // [HandleDegradedInProcess] で少し待ってから行う。
+  {
+    capsicum::PushDisplay degraded;
+    std::string error;
+    if (capsicum::TryBuildDegradedDisplay(content, &degraded, &error)) {
+      HandleDegradedInProcess(degraded);
+      return;
+    }
   }
   capsicum::PushDisplay display;
   // アカウント別 reblog/post ラベル（リノート / リキュア！等）を LocalState の
@@ -352,6 +486,23 @@ void SyncWnsPushLabelsToLocalState(const std::string& labels_json) {
   } catch (...) {
     // 書き出し失敗は致命でない（既定ラベルで表示は続く）。
   }
+}
+
+void FlushPendingDegradedNotifications() {
+  std::vector<PendingDegradedItem> items;
+  {
+    std::lock_guard<std::mutex> lock(PendingDegradedMutex());
+    for (auto& entry : PendingDegraded()) items.push_back(entry.second);
+    PendingDegraded().clear();
+  }
+  if (items.empty()) return;
+  // 終了時は待たずに判断する（WebSocket の証拠がその時点で揃っていれば抑止、
+  // 無ければ出す）。main スレッドは STA なので、MTA を張った別スレッドで
+  // 処理して join する（待機中のスレッドと同じ条件で WinRT を呼ぶため）。
+  std::thread([items = std::move(items)]() {
+    ScopedMtaApartment apartment;
+    for (const auto& item : items) ResolveDegraded(item);
+  }).join();
 }
 
 void RunWnsChannelReceiver(

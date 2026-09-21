@@ -32,11 +32,19 @@ std::string JsonQuote(const std::string& s) {
 //
 // `wns.announcement_deduped` は「WebSocket 経路が先に出したので抑止した」＝
 // 通常運転なので正常系に含める (#997)。
+//
+// `bgtask.degraded_shown` / `wns.degraded_shown` / `wns.degraded_skipped` は
+// relay が本文を落とした通知 (capsicum-relay#65) を汎用文面で出した / 起動中で
+// WebSocket 経路が出していたので出さなかった、でいずれも想定どおりの結末。
+// 本文を落としたこと自体は relay 側が "Push oversized degraded" として warning で
+// 数えている。表示失敗（`*.degraded_show_failed`）は含めない。
 bool IsBenignCode(const std::string& code) {
   return code == "bgtask.shown" || code == "bgtask.announcement_shown" ||
          code == "bgtask.not_encrypted" || code == "bgtask.not_raw" ||
          code == "wns.announcement_shown" ||
-         code == "wns.announcement_deduped";
+         code == "wns.announcement_deduped" ||
+         code == "bgtask.degraded_shown" || code == "wns.degraded_shown" ||
+         code == "wns.degraded_skipped";
 }
 
 // 自前で生成した flat オブジェクト（値は文字列 or 数値）を解く最小パーサ。

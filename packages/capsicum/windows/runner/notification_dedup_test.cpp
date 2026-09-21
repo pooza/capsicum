@@ -279,6 +279,43 @@ int main() {
   CheckEqSize(registry.SizeForTesting(), 0, "Reset で空になる");
   CheckEqSize(registry.DroppedForTesting(), 0, "Reset で押し出し件数も戻る");
 
+  // ---- 本文を落とされた通知 (capsicum-relay#65) の判断材料 ----
+  // 起動中の WNS 受信は「同じアカウント宛を WebSocket が前後に出したか」で
+  // 汎用トーストを出すかを決める（Codex P1 / PR #1169）。
+  CheckTrue(capsicum::AccountFromDedupKey("pooza@b.test|123") == "pooza@b.test",
+            "dedup キーからアカウントを取り出す");
+  CheckTrue(capsicum::AccountFromDedupKey("pooza@b.test") == "pooza@b.test",
+            "| を含まなければ全体がアカウント");
+  CheckTrue(capsicum::AccountFromDedupKey("").empty(), "空キーは空");
+
+  registry.Reset();
+  // ⚠⚠ 本丸: WebSocket が一度も出していなければ「生きている証拠なし」＝出す側。
+  // これが true になると、WebSocket 断のときに通知が消える。
+  CheckTrue(!registry.StreamEmittedSince("pooza@b.test", 0),
+            "WebSocket が出していなければ証拠なし（汎用トーストを出す）");
+
+  registry.NoteStreamEmission("pooza@b.test", 1000);
+  CheckTrue(registry.StreamEmittedSince("pooza@b.test", 1000),
+            "同じ時刻以降なら証拠あり");
+  CheckTrue(registry.StreamEmittedSince("pooza@b.test", 500),
+            "窓の中に出していれば証拠あり");
+  CheckTrue(!registry.StreamEmittedSince("pooza@b.test", 1001),
+            "窓より前に出しただけなら証拠なし（古い接続を生きているとみなさない）");
+  CheckTrue(!registry.StreamEmittedSince("other@b.test", 0),
+            "別アカウント宛の送出は証拠にしない");
+
+  // 遅れて届いた古い時刻で巻き戻さない。
+  registry.NoteStreamEmission("pooza@b.test", 400);
+  CheckTrue(registry.StreamEmittedSince("pooza@b.test", 1000),
+            "古い時刻で上書きしない");
+
+  registry.NoteStreamEmission("", 5000);
+  CheckTrue(!registry.StreamEmittedSince("", 0), "空アカウントは記録しない");
+
+  registry.Reset();
+  CheckTrue(!registry.StreamEmittedSince("pooza@b.test", 0),
+            "Reset で送出時刻も消える");
+
   if (g_failures == 0) {
     std::printf("All NotificationDedup tests passed\n");
     return 0;
