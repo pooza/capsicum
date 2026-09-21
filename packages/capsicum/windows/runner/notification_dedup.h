@@ -1,8 +1,11 @@
 #ifndef RUNNER_NOTIFICATION_DEDUP_H_
 #define RUNNER_NOTIFICATION_DEDUP_H_
 
+#include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <deque>
+#include <map>
 #include <mutex>
 #include <set>
 #include <string>
@@ -98,6 +101,20 @@ class NotificationDedupRegistry {
   // ために順序を復元する複雑さは持ち込まない。
   void ReleaseClaim(const std::string& key);
 
+  // WebSocket 経路 (#569) がこのアカウント宛の通知を出した時刻を記録する
+  // （capsicum-relay#65）。`addEmitted`（flutter_window.cpp）から呼ぶ。[now_ms] は
+  // 単調時計のミリ秒で、比較する側 ([StreamEmittedSince]) と同じ時計を使うこと。
+  //
+  // ⚠ **何のためか。**relay が 5000B 超過で本文を落とした通知は通知 ID を持たず、
+  // キー単位の dedup が効かない。起動中の WNS 受信は bg task を Cancel して
+  // いるので、ここで出さないと **WebSocket が切れているときにその通知が消える**。
+  // 逆に毎回出すと WebSocket 経路の本文付きトーストと 2 通並ぶ。「同じアカウント
+  // 宛を WebSocket が前後に出したか」を、WebSocket が生きている証拠として使う。
+  void NoteStreamEmission(const std::string& account, int64_t now_ms);
+
+  // [since_ms] 以降に、WebSocket 経路がこのアカウント宛を出したか。
+  bool StreamEmittedSince(const std::string& account, int64_t since_ms);
+
   // テスト用。プロセス内シングルトンの状態を捨てる。
   void Reset();
 
@@ -150,7 +167,24 @@ class NotificationDedupRegistry {
 
   // LogFirstEvictionLocked を既に出したか。
   bool eviction_logged_ = false;
+
+  // アカウント → WebSocket 経路が最後にそのアカウント宛を出した時刻（単調時計の
+  // ミリ秒）。ログイン中のアカウント数しか載らないので上限は設けない。
+  std::map<std::string, int64_t> stream_emitted_at_;
 };
+
+// [NoteStreamEmission] / [StreamEmittedSince] に渡す時刻。記録する側
+// (flutter_window.cpp) と比べる側 (wns_push.cpp) で**同じ時計**を使うための 1 本。
+// 壁時計は NTP 補正で戻りうるので単調時計にする。
+inline int64_t DedupClockNowMs() {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(
+             std::chrono::steady_clock::now().time_since_epoch())
+      .count();
+}
+
+// dedup キー `username@host|notificationId` からアカウント部分を取り出す。
+// `|` を含まなければキー全体をアカウントとみなす（空キーは空を返す）。
+std::string AccountFromDedupKey(const std::string& key);
 
 }  // namespace capsicum
 

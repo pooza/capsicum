@@ -78,7 +78,13 @@ bool FlutterWindow::OnCreate() {
           // トーストを作らない。
           const auto* key = std::get_if<std::string>(call.arguments());
           if (key != nullptr) {
-            capsicum::NotificationDedupRegistry::Instance().MarkShown(*key);
+            auto& registry = capsicum::NotificationDedupRegistry::Instance();
+            registry.MarkShown(*key);
+            // 本文を落とされた WNS 通知 (capsicum-relay#65) は ID を持たず上の
+            // キーで抑止できない。「このアカウント宛を WebSocket が出した」時刻
+            // を別に残し、起動中の受信が出すかどうかの判断材料にする。
+            registry.NoteStreamEmission(capsicum::AccountFromDedupKey(*key),
+                                        capsicum::DedupClockNowMs());
           }
           result->Success();
         } else {

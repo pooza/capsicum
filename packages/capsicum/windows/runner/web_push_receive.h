@@ -103,10 +103,12 @@ bool TryBuildAnnouncementDisplay(const std::string& raw_payload,
 // degrade (#17) に揃える: title「capsicum」・本文「<account> に通知があります」。
 // 通知 ID は持たないので notification_id は空（Tag 無し・dedup 対象外 #956）。
 //
-// ⚠ **呼ぶのはバックグラウンドタスク（アプリ終了中）だけ。**起動中は WebSocket
-// 経路 (#569) が同じ通知を本文付きで出しており、ID の無い汎用トーストは dedup
-// できないので、出すと毎回 2 通並ぶ。起動中の受信 (wns_push.cpp) は判定だけに
-// 使い、表示せず観測を残す。
+// 呼ぶのはバックグラウンドタスク（アプリ終了中・そのまま出す）と、起動中の受信
+// (wns_push.cpp)。⚠ 起動中は WebSocket 経路 (#569) が同じ通知を本文付きで出して
+// いることがあり、ID の無い汎用トーストは dedup できない。起動中は
+// HandleDegradedInProcess が「同じアカウント宛を WebSocket が前後に出したか」を
+// 見てから出すかどうかを決める（決め打ちで出さないと WebSocket 断のとき消える・
+// Codex P1 / PR #1169）。
 //
 // 成功時 true。false のとき `error` は:
 //   - "not degraded"     : 目印 `degraded:"1"` が無い、または暗号化 body を

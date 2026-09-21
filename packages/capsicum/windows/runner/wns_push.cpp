@@ -6,12 +6,15 @@
 #include <winrt/Windows.Networking.PushNotifications.h>
 #include <winrt/Windows.Storage.h>
 
+#include <chrono>
 #include <condition_variable>
+#include <cstdint>
 #include <cstdio>
 #include <fstream>
 #include <functional>
 #include <mutex>
 #include <string>
+#include <thread>
 
 #include "local_state_files.h"
 #include "notification_dedup.h"
@@ -254,6 +257,55 @@ bool HandleAnnouncementContent(const std::string& content) {
   return true;
 }
 
+// 起動中に受けた「本文を落とされた通知」(capsicum-relay#65) を待ってから
+// 判断する時間。WebSocket 経路 (#569) は通常 relay → WNS より先に着くが、
+// 前後どちらもありうるので、着いてから少し待ってから証拠を見る。
+constexpr int64_t kDegradedGraceMs = 8000;
+// 着く前のどこまでを「同じ通知を WebSocket が出した」証拠とみなすか。
+constexpr int64_t kDegradedLookbackMs = 30000;
+
+// 起動中に受けた本文なしの通知を、WebSocket 経路が生きていれば出さず、
+// 生きている証拠が無ければ汎用文面で出す。
+//
+// ⚠⚠ **「起動中は出さない」と決め打ちしてはいけない**（Codex P1 / PR #1169）。
+// 起動中の受信は `args.Cancel(true)` で bg task を止めているので、ここで捨てると
+// **WebSocket が切れている間（再接続を諦めた状態を含む）その通知がどこにも
+// 出ない**。一方、通知 ID を持たないのでキー単位の dedup は効かず、毎回出すと
+// WebSocket の本文付きトーストと 2 通並ぶ。
+//
+// そこで「同じアカウント宛を WebSocket が前後に出したか」を生きている証拠に
+// する（`addEmitted` で記録）。無関係の通知で抑止する取り違えはありうるが、
+// その時点で WebSocket は生きているので本来の通知も WebSocket から届く。
+//
+// 待つ間に受信スレッドを塞がないよう detached スレッドで回す。トーストの
+// 表示は WinRT を呼ぶので MTA を張る（flutter_window.cpp の worker と同じ）。
+void HandleDegradedInProcess(const capsicum::PushDisplay& degraded) {
+  const int64_t arrived_ms = capsicum::DedupClockNowMs();
+  std::thread([degraded, arrived_ms]() {
+    std::this_thread::sleep_for(std::chrono::milliseconds(kDegradedGraceMs));
+    const std::string host =
+        capsicum::PushDiagnosticHostFromAccount(degraded.account);
+    if (capsicum::NotificationDedupRegistry::Instance().StreamEmittedSince(
+            degraded.account, arrived_ms - kDegradedLookbackMs)) {
+      // WebSocket 経路が本文付きで出している通常運転（正常系）。
+      capsicum::RecordPushDiagnostic("wns.degraded_skipped", host);
+      return;
+    }
+    bool shown = false;
+    try {
+      winrt::init_apartment(winrt::apartment_type::multi_threaded);
+      // 通知 ID を持たないので Tag は付けない (#956)。
+      shown = capsicum::ShowRawToast(degraded.title, degraded.body,
+                                     /*launch_arg=*/"", /*tag=*/std::string());
+      winrt::uninit_apartment();
+    } catch (...) {
+      shown = false;
+    }
+    capsicum::RecordPushDiagnostic(
+        shown ? "wns.degraded_shown" : "wns.degraded_show_failed", host);
+  }).detach();
+}
+
 // raw 通知 1 通を表示する。お知らせ (#978・無暗号化) を先に見て、それ以外を
 // 暗号化通知として復号する。**判定順は bg task (push_background_task.cpp) と
 // 同じ**に保つ — 片方だけ順序を変えると、観測コードの意味が経路ごとにずれる。
@@ -269,18 +321,13 @@ void DisplayRawNotification(const std::string& content) {
   if (HandleAnnouncementContent(content)) {
     return;
   }
-  // relay が 5000B 超過で本文を落とした通知 (capsicum-relay#65)。⚠ **起動中は
-  // 表示しない。**WebSocket 経路 (#569) が同じ通知を本文付きで出しており、
-  // degrade した payload は通知 ID を持たないので dedup できない —— 出すと
-  // 毎回「本文付き」と「汎用文面」が 2 通並ぶ。届いた事実だけ残す（正常系）。
-  // アプリ終了中はバックグラウンドタスク側が汎用文面で出す。
+  // relay が 5000B 超過で本文を落とした通知 (capsicum-relay#65)。判断は
+  // [HandleDegradedInProcess] で少し待ってから行う。
   {
     capsicum::PushDisplay degraded;
     std::string error;
     if (capsicum::TryBuildDegradedDisplay(content, &degraded, &error)) {
-      capsicum::RecordPushDiagnostic(
-          "wns.degraded_skipped",
-          capsicum::PushDiagnosticHostFromAccount(degraded.account));
+      HandleDegradedInProcess(degraded);
       return;
     }
   }

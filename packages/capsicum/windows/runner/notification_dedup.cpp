@@ -73,13 +73,36 @@ bool NotificationDedupRegistry::WasShown(const std::string& key) {
   return keys_.find(key) != keys_.end();
 }
 
+void NotificationDedupRegistry::NoteStreamEmission(const std::string& account,
+                                                   int64_t now_ms) {
+  if (account.empty()) return;
+  std::lock_guard<std::mutex> lock(mutex_);
+  int64_t& at = stream_emitted_at_[account];
+  // 時計が戻ることは無い前提だが、遅れて届いた古い時刻で上書きしない。
+  if (now_ms > at) at = now_ms;
+}
+
+bool NotificationDedupRegistry::StreamEmittedSince(const std::string& account,
+                                                   int64_t since_ms) {
+  if (account.empty()) return false;
+  std::lock_guard<std::mutex> lock(mutex_);
+  const auto it = stream_emitted_at_.find(account);
+  return it != stream_emitted_at_.end() && it->second >= since_ms;
+}
+
 void NotificationDedupRegistry::Reset() {
   std::lock_guard<std::mutex> lock(mutex_);
   keys_.clear();
   shown_.clear();
   order_.clear();
+  stream_emitted_at_.clear();
   dropped_ = 0;
   eviction_logged_ = false;
+}
+
+std::string AccountFromDedupKey(const std::string& key) {
+  const size_t bar = key.find('|');
+  return bar == std::string::npos ? key : key.substr(0, bar);
 }
 
 size_t NotificationDedupRegistry::SizeForTesting() {
