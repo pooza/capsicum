@@ -804,6 +804,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         // 経路 (Android / macOS) は _authenticateViaLocalhostServer 側が
         // 旧サーバ close + bind リトライ + 友好エラーで自己完結するため、ここで
         // 二重 bind して自己 TOCTOU を招かないよう precheck を掛けない (#813)。
+        // ⚠ **認可へ進む前にも「まだ最新か」を確かめる**（Codex P2 / PR #1164）。
+        // 自前サーバーを立てない OS（Linux / Windows / iOS）は
+        // [_authenticateViaLocalhostServer] を通らないので、そこの確認が効かない。
+        // 追い越された試行がここを抜けると、fwa2 が 7099 を掴んで後の試行に
+        // 「他プロセスに占有されています」を出させる。
+        _throwIfAttemptSuperseded();
         if (_useLocalhostCallback && !usesSelfHostedOAuthLoopbackServer) {
           final portError = await _checkOAuthPortAvailability();
           if (portError != null) {
