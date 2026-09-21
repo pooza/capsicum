@@ -94,6 +94,28 @@ bool TryBuildAnnouncementDisplay(const std::string& raw_payload,
                                  PushDisplay* out,
                                  std::string* error = nullptr);
 
+// capsicum-relay が WNS raw の上限 5000B を超えた通知を degrade して送る
+// エンベロープ（capsicum-relay#65）から、汎用文面の表示フィールドを作る。
+// `{server, account, degraded:"1"}` — 暗号化 body / encoding は relay が落として
+// いるので、本文は読めない。
+//
+// 文面は Android の fallback (PushMessageDispatcher.dispatch) と relay の APNs
+// degrade (#17) に揃える: title「capsicum」・本文「<account> に通知があります」。
+// 通知 ID は持たないので notification_id は空（Tag 無し・dedup 対象外 #956）。
+//
+// ⚠ **呼ぶのはバックグラウンドタスク（アプリ終了中）だけ。**起動中は WebSocket
+// 経路 (#569) が同じ通知を本文付きで出しており、ID の無い汎用トーストは dedup
+// できないので、出すと毎回 2 通並ぶ。起動中の受信 (wns_push.cpp) は判定だけに
+// 使い、表示せず観測を残す。
+//
+// 成功時 true。false のとき `error` は:
+//   - "not degraded"     : 目印 `degraded:"1"` が無い、または暗号化 body を
+//                          持っている（＝暗号化通知。呼び出し側が復号経路へ回す）
+//   - "invalid envelope" : エンベロープ JSON が不正
+//   - "missing account"  : account が無い
+bool TryBuildDegradedDisplay(const std::string& raw_payload, PushDisplay* out,
+                             std::string* error = nullptr);
+
 }  // namespace capsicum
 
 #endif  // RUNNER_WEB_PUSH_RECEIVE_H_
