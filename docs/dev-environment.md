@@ -364,6 +364,24 @@ sudo apt install -y \
 
 配布パイプライン作業時の `linuxdeploy` / `linuxdeploy-plugin-gtk.sh` / `appimagetool` は GitHub Releases から `~/.local/bin/` に直接配置（`sentry-cli` と同じ運用）。具体手順は [distribution/linux/appimage/README.md](../distribution/linux/appimage/README.md)。
 
+#### `dart analyze` が `Too many open files` で結果を返さない（inotify の上限）
+
+`dart analyze` が **`OS Error: Too many open files, errno = 24`** → `Internal error: Failed to handle request: analysis.setAnalysisRoots` で落ち、**結果を 1 行も返さない**ことがある（2026-09-08 に Debian 13 のデスクトップ機で実測）。
+
+⚠ **fd の上限ではない**（`ulimit -n` は十分ある）。**枯れているのは inotify の instance 数**（`/proc/sys/fs/inotify/max_user_instances`・既定 128）。⚠ **リークではなく、デスクトップ環境がログイン時点で上限近くまで使う**ので、再起動しても直らない。
+
+```sh
+echo 'fs.inotify.max_user_instances=512' | sudo tee /etc/sysctl.d/99-inotify.conf
+sudo sysctl --system                               # ⚠ ファイルに書くだけでは起動時まで効かない
+cat /proc/sys/fs/inotify/max_user_instances        # 実効値で確かめる
+ls -l /etc/sysctl.d/99-inotify.conf                # サイズが 0 でないこと
+```
+
+⚠ **書けたことを信用せず実効値で確かめる。**書いた直後に不正終了すると、再起動後にファイルが 0 バイトになっていることがある（ext4 の遅延確保）。`systemd-sysctl` は success を記録するので「service は成功なのに値が変わらない」形になる。
+
+- sudo が使えないときは **`flutter analyze --no-pub`** が上限に当たっても完走する（info も報告する）。ただし watcher のエラーで exit code は非 0 になるので、判定は出力（`No issues found!`）で行う
+- ⚠ `fs.inotify` は Linux 固有。macOS で打つと `sysctl: unknown oid` になる
+
 ### Windows 固有
 
 - 検証端末は 2 系統: (1) **Parallels Desktop 上の Windows 11 VM（ARM、メイン macOS に同居）** — v1.25 配布パイプライン [#423](https://github.com/pooza/capsicum/issues/423) の実装・MSIX 自己署名インストール検証はこの VM 上で行う。(2) **x64 実機 Windows 11**（2026-06-12 に ARM 環境から移行して追加）— 下記のローカルソースビルド（`flutter build windows`）が通るのはこちら
@@ -644,6 +662,18 @@ powercfg /S SCHEME_CURRENT
 
 - 実機接続時は Parallels Desktop を終了させること（Parallels が USB デバイスを横取りするため）
 - iOS アップデート後にデベロッパモードがリセットされることがある → 設定 → プライバシーとセキュリティ → デベロッパモード で再有効化
+
+### 画面をコマンドで撮る（シミュレータ / USB 実機）
+
+| 対象 | コマンド |
+| --- | --- |
+| シミュレータ | `xcrun simctl io <UDID> screenshot /tmp/x.png` |
+| USB 実機 | `xcrun devicectl device capture screenshot --device <UDID> --destination /tmp/x.png` |
+
+- ⚠ `devicectl` は **`--destination` が必須**（パス直指定だと `Missing expected argument` になる）
+- ⚠⚠ **実機はロックを解除しておく。**ロック中は**エラーにならず真っ黒な PNG が返る**（数十 KB と極端に小さい。中身があれば数百 KB）ので、「撮れていない」ことに気づきにくい
+- ⚠ **入力（タップ・スワイプ・テキスト）は送れない。**`devicectl device` に入力系のサブコマンドが無い
+- Xcode 27 で `Simulator.app` は `Xcode.app/Contents/Applications/DeviceHub.app` に替わった（GUI の入口が替わっただけで `simctl` は健在）
 
 ### iOS シミュレータで書き出したファイルを Mac から読む
 
