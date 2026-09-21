@@ -53,6 +53,7 @@ class PushKeyStore {
         groupId: _appleAccessGroup,
         accessibility: KeychainAccessibility.first_unlock,
       ),
+      aOptions: kSecureStorageAndroidOptions,
     ),
   );
 

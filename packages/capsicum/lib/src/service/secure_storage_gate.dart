@@ -48,6 +48,25 @@ import 'secure_storage_health.dart';
 /// 数秒かかる**ことがある。全 OS に掛けると、遅いだけの端末でアカウントが
 /// オフラインに落ち、「キーリング / Secret Service」を名指しする案内まで出て
 /// いた（v1.64 のリリース前レビュー）。判定は [usesSecretService]。
+/// Android の secure storage の振る舞い (#1120)。**3 つの店すべてに同じ値を渡す。**
+///
+/// ⚠⚠ **既定値のまま使わない。**`flutter_secure_storage` 10 は 9.x の暗号方式
+/// （RSA PKCS1 / AES-CBC）で保存されたデータを初回アクセスで新方式へ移すが、
+/// 既定のままだと 2 通りにトークンを失う:
+///
+/// - **`resetOnError` の既定が true に変わった**（9.x は false）。移行や復号に
+///   失敗すると**全データを消す**＝利用者は黙ってログアウトさせられる。false なら
+///   例外として返り、データは残るので次回起動で移行をやり直せる
+/// - **バックアップ無しの移行は、古い鍵を消してから書き直す。**その間にアプリが
+///   落ちると戻らない。`migrateWithBackup` は先に控えを作るので途中から再開できる
+///
+/// ⚠ **店ごとに違う値にしない。**3 つとも名前空間無しの同じ保存ファイルを共有して
+/// いる（`IOSOptions` / `MacOsOptions` と違い、Android には区画の分け方が無い）。
+const kSecureStorageAndroidOptions = AndroidOptions(
+  resetOnError: false,
+  migrateWithBackup: true,
+);
+
 class SecureStorageGate {
   /// [storage] は**この店の区画**を表す。options 込みで渡すこと。
   const SecureStorageGate(this._storage);
