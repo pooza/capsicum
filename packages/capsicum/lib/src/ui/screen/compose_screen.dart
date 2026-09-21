@@ -434,7 +434,6 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   List<String> get _visibleUserIds => composeVisibleUserIds(
     scope: _scope,
     redraft: widget.redraft,
-    replyTo: _isReply ? _replyToPost : null,
     me: ref.read(currentAccountProvider)?.user,
   );
 

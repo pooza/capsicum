@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../constants.dart';
@@ -25,6 +26,32 @@ const kSecureStorageAndroidOptions = AndroidOptions(
   resetOnError: false,
   migrateWithBackup: true,
 );
+
+/// Android の移行が失敗し続けているとき、**ログインで保存する 1 回だけ**に渡す
+/// 設定（v1.66 リリース前レビュー・2026-09-21 pooza 判断）。
+///
+/// ⚠⚠ **`deleteAll()` では抜け出せない。**プラグインは初期化（＝移行）が成功
+/// してから各操作を実行する作りなので、移行が失敗し続ける端末では `deleteAll`
+/// も同じ例外で落ちる。`resetOnError: true` を付けた呼び出しだけが、初期化での
+/// 失敗時にプラグイン自身の全消去（`deleteAllDataAndKeys`）を経て書き込みに
+/// 進める。⚠ Android の 3 店は同じ保存ファイルなので、**他の店のぶんも消える**
+/// （push 鍵は作り直され、インストール ID は新しくなる）。
+const kSecureStorageAndroidResetOptions = AndroidOptions(
+  resetOnError: true,
+  migrateWithBackup: true,
+);
+
+/// Android で `flutter_secure_storage` 10 の暗号方式の移行が失敗したときの例外か。
+///
+/// プラグインは `PlatformException(code: 'Exception encountered', message: …)` で
+/// 返し、message は `Migration failed after algorithm change (…)` か
+/// `Key mismatch after algorithm change (…)`（`FlutterSecureStorage.java`）。
+bool isAndroidSecureStorageMigrationFailure(Object error) {
+  if (error is! PlatformException) return false;
+  final message = error.message ?? '';
+  return message.contains('Migration failed after algorithm change') ||
+      message.contains('Key mismatch after algorithm change');
+}
 
 /// secure storage へ触る**唯一の入口** (#1136)。
 ///
@@ -114,11 +141,15 @@ class SecureStorageGate {
 
   /// 書き込み。⚠ **投げる側に倒す** —— 黙って落とすと「ログインできたのに
   /// トークンが無い」を作る (#1117-C)。
+  ///
+  /// [aOptions] は [kSecureStorageAndroidResetOptions] 専用（Android の移行失敗からの
+  /// 回復）。それ以外では渡さない（店の設定 [kSecureStorageAndroidOptions] を使う）。
   Future<void> write({
     required String key,
     required String? value,
     IOSOptions? iOptions,
     MacOsOptions? mOptions,
+    AndroidOptions? aOptions,
   }) => _guard(
     kSecureStorageWriteTimeout,
     'write',
@@ -127,6 +158,7 @@ class SecureStorageGate {
       value: value,
       iOptions: iOptions,
       mOptions: mOptions,
+      aOptions: aOptions,
     ),
   );
 
@@ -246,8 +278,15 @@ class ReportingSecureStorageGate extends SecureStorageGate {
     required String? value,
     IOSOptions? iOptions,
     MacOsOptions? mOptions,
+    AndroidOptions? aOptions,
   }) => _report(
-    super.write(key: key, value: value, iOptions: iOptions, mOptions: mOptions),
+    super.write(
+      key: key,
+      value: value,
+      iOptions: iOptions,
+      mOptions: mOptions,
+      aOptions: aOptions,
+    ),
   );
 
   @override

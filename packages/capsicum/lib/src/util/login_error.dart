@@ -40,6 +40,17 @@ LoginFailureInfo classifyLoginFailure(Object error) {
   // 形しか見ておらず、Linux の失敗は「ログインに失敗しました」に落ちていた。
   // 利用者はサーバーやパスワードを疑うが、原因は端末のキーリング。ホームの
   // 案内カードと同じ語（パスワード保管庫・キーリング / Secret Service）で言う。
+  // Android で保管庫の暗号方式の移行が失敗し、回復（v1.66）でも書けなかった。
+  // 以前は message に `secure` 等が無いので「ログインに失敗しました」に落ちていた。
+  if (isAndroidSecureStorageMigrationFailure(error)) {
+    return (
+      kind: LoginFailureKind.secureStorage,
+      message:
+          'この端末のパスワード保管庫を更新できず、ログイン情報を保存できません'
+          'でした。改善しない場合は、端末の設定でこのアプリのデータを消去してから'
+          'ログインし直してください。',
+    );
+  }
   if (SecureStorageGate.isGateTimeout(error)) {
     return (kind: LoginFailureKind.secureStorage, message: _keyringMessage);
   }

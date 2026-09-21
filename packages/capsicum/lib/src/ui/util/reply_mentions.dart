@@ -61,16 +61,6 @@ List<String> buildReplyMentions({
   return result;
 }
 
-/// Misskey の指名（`specified`）への返信で引き継ぐ宛先 (#1161)。
-///
-/// Web UI と同じく、返信先の宛先と返信先の投稿者から自分を除く。⚠ サーバーが
-/// 自動で足すのは返信先の投稿者だけで、**それ以外の宛先は送らないと落ちる**。
-List<String> inheritVisibleUserIds({required Post replyTo, required User? me}) {
-  final ids = <String>{...replyTo.visibleUserIds, replyTo.author.id};
-  if (me != null) ids.remove(me.id);
-  return ids.toList();
-}
-
 /// 投稿フォームが送る指名（`specified`）の宛先 (#1161)。
 ///
 /// - 指名でなければ送らない（空）
@@ -79,20 +69,20 @@ List<String> inheritVisibleUserIds({required Post replyTo, required User? me}) {
 ///   全員との和集合になり、**外した人に黙って届いていた**（v1.66 リリース前
 ///   レビューの赤）。宛先は画面に出ないので、利用者は気づけない。⚠ 返信先の
 ///   取得が送信より先に終わるかどうかで結果が変わる、という揺れも消える
-/// - 通常の返信は返信先から引き継ぐ（[inheritVisibleUserIds]）
+/// - ⚠⚠ **通常の返信では返信先の宛先を引き継がない**（2026-09-21 pooza 判断）。
+///   サーバーは返信先の投稿者だけを宛先に足す（`NoteCreateService.ts`）ので、
+///   **スレッドの他の人には届かない**（v1.65 までと同じ）。引き継ぐと、capsicum
+///   には宛先を見る手段も外す手段も無いまま、本文から消した人にも届く（v1.66
+///   リリース前レビュー）。Web UI のように宛先を見せて外せる UI と一緒に
+///   入れる（#1165）
 /// - どの場合も自分は入れない
 List<String> composeVisibleUserIds({
   required PostScope scope,
   required Post? redraft,
-  required Post? replyTo,
   required User? me,
 }) {
   if (scope != PostScope.direct) return const [];
-  final ids = redraft != null
-      ? redraft.visibleUserIds
-      : replyTo != null
-      ? inheritVisibleUserIds(replyTo: replyTo, me: me)
-      : const <String>[];
+  final ids = redraft?.visibleUserIds ?? const <String>[];
   return {...ids}.where((id) => id != me?.id).toList();
 }
 
