@@ -109,8 +109,19 @@ void main() {
 
   /// 規約違反か。⚠ **判定は 1 本にする。**合成テストと実リポジトリの走査で
   /// 別の判定を書くと、「テストは通るのに本番の走査は素通り」が起きる。
-  bool violates(String key) =>
-      !wellShaped(key) || objectLike.contains(key.split('.').last);
+  /// 「操作名」を後半に置いた形 (#1144)。一覧の取得は `<領域>.list` に揃え、
+  /// `load_more` / `fetch` のような操作名は [operation] 側へ置く。⚠ 以前は
+  /// `chat.load_more` / `notification.unified` を**規約どおりの例**として合成
+  /// テストに並べていたので、doc の「`tagKey:*.list` で全部見られる」が嘘のまま
+  /// 検出されなかった。
+  const operationLike = {'load_more', 'fetch', 'unified', 'failed'};
+
+  bool violates(String key) {
+    final tail = key.split('.').last;
+    return !wellShaped(key) ||
+        objectLike.contains(tail) ||
+        operationLike.contains(tail);
+  }
 
   test('走査が空振りしていない', () {
     final keys = tagKeys();
@@ -136,12 +147,12 @@ void main() {
     for (final ok in const [
       'chat.op',
       'drive.op',
-      'chat.load_more',
       'hashtag.op',
       'hashtag.list',
+      'chat.list',
+      'notification.list',
       'moderation.op',
       'follow_request.op',
-      'notification.unified',
     ]) {
       expect(violates(ok), isFalse, reason: ok);
     }
@@ -152,6 +163,10 @@ void main() {
       'moderation.blocks', // 対象をキーにしている（形は正しいので後半で弾く）
       'moderation.mutes',
       'hashtag.followed',
+      // ⚠ 操作名を後半に置いていた 3 つ (#1144)。
+      'chat.room.load_more',
+      'chat.load_more',
+      'notification.unified',
       'Chat.Op', // 大文字
       'chat.', // 空の後半
       '.op',

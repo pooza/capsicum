@@ -204,9 +204,9 @@ void main() {
             'テストは Linux (CI) / macOS (手元) の両方で走る。⚠ macOS で '
             'true になるのは正しいので、**この固定は Linux でしか意味を'
             '持たない** — CI が本番の検査',
-        skip: !usesSecretServiceKeyring,
+        skip: !usesSecretService,
       );
-      expect(secretStoreTag, 'libsecret', skip: !usesSecretServiceKeyring);
+      expect(secretStoreTag, 'libsecret', skip: !usesSecretService);
     });
   });
 }

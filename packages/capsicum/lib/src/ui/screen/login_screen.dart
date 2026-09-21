@@ -64,6 +64,12 @@ class _OAuthCancelledException implements Exception {
   String toString() => 'OAuth flow cancelled (CANCELED)';
 }
 
+/// この試行がより新しい試行に追い越された (#1144)。⚠ **失敗ではない** ——
+/// 最後に押したものが生きていればよいので、何も表示せず黙って降りる。
+class _AttemptSupersededException implements Exception {
+  const _AttemptSupersededException();
+}
+
 class LoginScreen extends ConsumerStatefulWidget {
   final String host;
   final BackendType backendType;
@@ -128,19 +134,25 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   ///
   /// #654 で macOS は [_authenticateViaLocalhostServer]（システムブラウザ +
   /// 自前 localhost HTTP サーバ）に切り替えたため、このゲッターは
-  /// `!Platform.isMacOS` 分岐でのみ消費される。Linux / Windows の localhost
+  /// 自前サーバを立てない（fwa2 の server impl で受ける）分岐でのみ消費される。Linux / Windows の localhost
   /// callback では flutter_web_auth_2 の server impl が完全な
   /// `http://localhost:{port}/{path}` URL を期待するため、その URL を返す。
   /// （macOS で本ゲッターが評価された場合のフォールバック値として custom
   /// scheme を残すが、現状 macOS では参照されない。）
   String get _authCallbackUrlScheme {
-    if (_useLocalhostCallback && !Platform.isMacOS) {
+    // ⚠ UI 層に `Platform.isX` を直書きしない (#650 / #1144)。自前サーバを立てる
+    // macOS / Android はこのゲッターを通らないので、機能名の合成で同じ意味になる。
+    if (_useLocalhostCallback && !usesSelfHostedOAuthLoopbackServer) {
       return AppConstants.localhostOAuthCallbackUrl;
     }
     return AppConstants.callbackUrlScheme;
   }
 
   bool _isLoggingIn = false;
+
+  /// この State が走らせている試行の番号 (#1112 / #1144)。⚠ `isRetry` の続行では
+  /// 上書きしない（同じ試行の続き）。
+  int? _attemptSequence;
   bool _loginCompleted = false;
   String? _error;
 
@@ -343,6 +355,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   void _logLoginStep(String step, {Map<String, Object?>? data}) {
+    // 重なったときに「前の試行がどこまで進んでいたか」を送るため (#1144)。
+    final sequence = _attemptSequence;
+    if (sequence != null) LoginAttempts.markStep(sequence, step);
     Sentry.addBreadcrumb(
       Breadcrumb(
         category: 'login',
@@ -422,9 +437,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     // 必要があり、Doorkeeper は port まで厳密一致するためエフェメラル化できない。
     // 直前クローズの解放遅延など一時的な EADDRINUSE はリトライで吸収し、使い切れば
     // LoopbackPortOccupiedException を投げて呼び出し側で友好エラーに昇格させる。
+    // ⚠⚠ **掴む直前に「まだ最新か」を確かめる (#1144)。**入口の takeOver が
+    // 畳めるのは、その瞬間に存在する資源だけ。ここまでに adapter の生成や
+    // `POST /api/v1/apps` を挟むので、その間に後の試行が始まっていると
+    // **両方が 7099 へ来て**「他プロセスに占有されています」になる（#1112 の窓）。
+    _throwIfAttemptSuperseded();
     final server = await bindLoopbackOAuthServer(
       AppConstants.localhostOAuthPort,
     );
+    // bind はリトライで待つことがあるので、掴んだ後にももう一度聞く。
+    if (_isAttemptSuperseded) {
+      await server.close(force: true);
+      throw const _AttemptSupersededException();
+    }
     _oauthServer = server;
     _logLoginStep('oauth_server.listening');
     // ⚠⚠ **ブラウザを開く前に上げる (#1108)。**foreground service はバック
@@ -526,6 +551,87 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
   }
 
+  /// この State の試行が、より新しい試行に追い越されているか (#1144)。
+  bool get _isAttemptSuperseded {
+    final sequence = _attemptSequence;
+    return sequence != null && !LoginAttempts.isCurrent(sequence);
+  }
+
+  void _throwIfAttemptSuperseded() {
+    if (_isAttemptSuperseded) throw const _AttemptSupersededException();
+  }
+
+  /// 試行の登録簿へ入り、前の試行が走っていれば畳む (#1112 / #1144)。
+  ///
+  /// ⚠ 追い越されたら [_AttemptSupersededException] を投げる（呼び出し側の
+  /// `catch` が黙って降りる）。
+  Future<void> _takeOverLoginAttempt(int sequence) async {
+    final result = await LoginAttempts.takeOver(
+      sequence,
+      owner: this,
+      teardown: () async {
+        // ⚠ **setState を呼ばない。**この後片づけは、次の試行から（＝別の
+        // State から）呼ばれることがある。
+        final server = _oauthServer;
+        _oauthServer = null;
+        await server?.close(force: true);
+        await OAuthKeepAlive.stop(_keepAlive);
+      },
+    );
+    final overlap = result.overlap;
+    if (overlap != null) _reportAttemptOverlap(sequence, overlap);
+    if (result.superseded) throw const _AttemptSupersededException();
+  }
+
+  /// ⚠⚠ **これが #1112 の観測点。**「1 回の操作で 2 回走った」現象は 1 度しか
+  /// 観測できておらず、logcat も残っていない。次の再発を logcat 無しで診断
+  /// できるよう、重なり自体を 1 件上げる。
+  ///
+  /// ⚠ **定数を送らない (#1144)。**以前の `login.was_logging_in` / `mounted` は
+  /// 直前に立てた値を読むので常に true だった。送るのは #1112 の問い（同じ
+  /// State か・前の試行はどこまで進んでいたか・どれだけ前に始まったか）に答える
+  /// 値。⚠ **すぐ重なったもの（本命）とブラウザから戻った押し直し（良性）を
+  /// fingerprint で分ける**（後者で母数が埋まらないように）。
+  void _reportAttemptOverlap(int sequence, LoginOverlap overlap) {
+    final kind = overlap.isRapid ? 'rapid' : 'reentry';
+    final ageMs = overlap.previousAge.inMilliseconds;
+    _logLoginStep(
+      'login.attempt_overlap',
+      data: {
+        'sequence': sequence,
+        'previous': overlap.previousSequence,
+        'sameState': overlap.sameOwner,
+        'previousAgeMs': ageMs,
+        'previousStep': overlap.previousStep,
+        'kind': kind,
+      },
+    );
+    try {
+      Sentry.captureMessage(
+        'login.attempt_overlap',
+        level: overlap.isRapid ? SentryLevel.warning : SentryLevel.info,
+        withScope: (scope) {
+          scope.setTag('service', 'login');
+          scope.setTag('login.host', widget.host);
+          scope.setTag('login.backend', widget.backendType.name);
+          scope.setTag('login.sequence', sequence.toString());
+          scope.setTag(
+            'login.previous_sequence',
+            overlap.previousSequence.toString(),
+          );
+          // 画面が作り直されたのか（＝State が別物なのか）を切り分ける。
+          scope.setTag('login.same_state', overlap.sameOwner.toString());
+          scope.setTag('login.previous_step', overlap.previousStep ?? 'none');
+          scope.setTag('login.overlap_kind', kind);
+          scope.setContexts('login_overlap', {'previous_age_ms': ageMs});
+          scope.fingerprint = ['login.attempt_overlap', kind];
+        },
+      );
+    } catch (_) {
+      // 計装の失敗でログインを止めない（#822 / #828 と同じ方針）。
+    }
+  }
+
   Future<void> _login({bool isRetry = false}) async {
     if (_loginCompleted) return;
     // 進行中の多重起動を弾く。二重タップ等で _authenticateViaLocalhostServer が
@@ -540,48 +646,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     // ⚠ **プロセス全体の試行登録簿 (#1112)。**`isRetry` は同一フローの続行なので
     // 番号を取らない（#620 silent recovery が 1 操作を 2 試行に数えないため）。
     final sequence = isRetry ? null : LoginAttempts.nextSequence();
-    if (sequence != null) {
-      final previous = await LoginAttempts.takeOver(sequence, () async {
-        // ⚠ **setState を呼ばない。**この後片づけは、次の試行から（＝別の
-        // State から）呼ばれることがある。
-        final server = _oauthServer;
-        _oauthServer = null;
-        await server?.close(force: true);
-        await OAuthKeepAlive.stop(_keepAlive);
-      });
-      if (previous != null) {
-        // ⚠⚠ **これが #1112 の観測点。**「1 回の操作で 2 回走った」現象は
-        // 1 度しか観測できておらず、logcat も残っていない。次の再発を
-        // logcat 無しで診断できるよう、重なり自体を 1 件上げる。
-        _logLoginStep(
-          'login.attempt_overlap',
-          data: {
-            'sequence': sequence,
-            'previous': previous,
-            'isLoggingIn': _isLoggingIn,
-            'mounted': mounted,
-          },
-        );
-        try {
-          Sentry.captureMessage(
-            'login.attempt_overlap',
-            level: SentryLevel.warning,
-            withScope: (scope) {
-              scope.setTag('service', 'login');
-              scope.setTag('login.host', widget.host);
-              scope.setTag('login.backend', widget.backendType.name);
-              scope.setTag('login.sequence', sequence.toString());
-              scope.setTag('login.previous_sequence', previous.toString());
-              // 画面が作り直されたのか（＝State が別物なのか）を切り分ける。
-              scope.setTag('login.was_logging_in', _isLoggingIn.toString());
-              scope.fingerprint = ['login.attempt_overlap'];
-            },
-          );
-        } catch (_) {
-          // 計装の失敗でログインを止めない（#822 / #828 と同じ方針）。
-        }
-      }
-    }
+    if (sequence != null) _attemptSequence = sequence;
 
     DecentralizedBackendAdapter? adapter;
     Map<String, String> oauthExtra = {};
@@ -599,6 +664,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     );
 
     try {
+      // ⚠ **`try` の中で呼ぶ (#1144)。**外にあると、後片づけが投げたとき
+      // `finally` を通らず `_isLoggingIn` が true のまま残り、多重起動ガードで
+      // **ボタンが二度と効かなくなる**。
+      if (sequence != null) await _takeOverLoginAttempt(sequence);
       adapter = await widget.backendType.createAdapter(widget.host);
       final loginSupport = adapter as LoginSupport;
 
@@ -887,6 +956,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         }
       }
     } catch (e, st) {
+      // 追い越された試行は黙って降りる (#1144)。⚠ cancel の経路へ流さない ——
+      // Misskey では cancel が MiAuth のフォールバック（セッションの確認）を
+      // 起こし、生きている試行と同じログインを 2 本目が完了させうる。
+      if (e is _AttemptSupersededException) {
+        _logLoginStep('login.superseded');
+        return;
+      }
       // 自前 loopback サーバの bind がリトライを使い切った (#813)。ポート占有を
       // ユーザーに伝わる文言へ昇格させ、cancel/フォールバック経路には流さない
       // （OOB 手貼り等に落ちる前に原因を提示する）。
