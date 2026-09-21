@@ -6,15 +6,18 @@
 #include <winrt/Windows.Networking.PushNotifications.h>
 #include <winrt/Windows.Storage.h>
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <cstdio>
 #include <fstream>
 #include <functional>
+#include <map>
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include "local_state_files.h"
 #include "notification_dedup.h"
@@ -277,32 +280,101 @@ constexpr int64_t kDegradedLookbackMs = 30000;
 // する（`addEmitted` で記録）。無関係の通知で抑止する取り違えはありうるが、
 // その時点で WebSocket は生きているので本来の通知も WebSocket から届く。
 //
-// 待つ間に受信スレッドを塞がないよう detached スレッドで回す。トーストの
-// 表示は WinRT を呼ぶので MTA を張る（flutter_window.cpp の worker と同じ）。
-void HandleDegradedInProcess(const capsicum::PushDisplay& degraded) {
-  const int64_t arrived_ms = capsicum::DedupClockNowMs();
-  std::thread([degraded, arrived_ms]() {
-    std::this_thread::sleep_for(std::chrono::milliseconds(kDegradedGraceMs));
-    const std::string host =
-        capsicum::PushDiagnosticHostFromAccount(degraded.account);
-    if (capsicum::NotificationDedupRegistry::Instance().StreamEmittedSince(
-            degraded.account, arrived_ms - kDegradedLookbackMs)) {
-      // WebSocket 経路が本文付きで出している通常運転（正常系）。
-      capsicum::RecordPushDiagnostic("wns.degraded_skipped", host);
-      return;
-    }
-    bool shown = false;
+// 待つ間に受信スレッドを塞がないよう detached スレッドで回す。
+//
+// ⚠ **待っている間にアプリが閉じられても消さない**（Codex P2 / PR #1169）。
+// detached スレッドはプロセス終了で打ち切られ、bg task も Cancel 済みなので
+// 引き継ぎ手がいない。待機中のものは [PendingDegraded] に置き、終了時に
+// [FlushPendingDegradedNotifications] が引き取る。**先に取った側だけが処理する**
+// （[TakePendingDegraded]）ので、待機明けと終了が重なっても二重に出ない。
+struct PendingDegradedItem {
+  capsicum::PushDisplay display;
+  int64_t arrived_ms = 0;
+};
+
+std::mutex& PendingDegradedMutex() {
+  static std::mutex m;
+  return m;
+}
+
+std::map<uint64_t, PendingDegradedItem>& PendingDegraded() {
+  static std::map<uint64_t, PendingDegradedItem> pending;
+  return pending;
+}
+
+// [id] の待機分を取り出す。既に誰かが取っていれば false。
+bool TakePendingDegraded(uint64_t id, PendingDegradedItem* out) {
+  std::lock_guard<std::mutex> lock(PendingDegradedMutex());
+  auto& pending = PendingDegraded();
+  const auto it = pending.find(id);
+  if (it == pending.end()) return false;
+  *out = it->second;
+  pending.erase(it);
+  return true;
+}
+
+// 待機明け / 終了時の共通の判断と表示・観測。⚠ **呼び出し側が MTA を張った
+// まま呼ぶこと**（Codex P2 / PR #1169）。トーストの表示だけでなく、観測の記録
+// (`RecordPushDiagnostic` → `LocalStateFilePath` → `ApplicationData::Current`) も
+// WinRT を呼ぶので、apartment を畳んでから記録すると黙って落ちる。
+void ResolveDegraded(const PendingDegradedItem& item) {
+  const std::string host =
+      capsicum::PushDiagnosticHostFromAccount(item.display.account);
+  if (capsicum::NotificationDedupRegistry::Instance().StreamEmittedSince(
+          item.display.account, item.arrived_ms - kDegradedLookbackMs)) {
+    // WebSocket 経路が本文付きで出している通常運転（正常系）。
+    capsicum::RecordPushDiagnostic("wns.degraded_skipped", host);
+    return;
+  }
+  bool shown = false;
+  try {
+    // 通知 ID を持たないので Tag は付けない (#956)。
+    shown = capsicum::ShowRawToast(item.display.title, item.display.body,
+                                   /*launch_arg=*/"", /*tag=*/std::string());
+  } catch (...) {
+    shown = false;
+  }
+  capsicum::RecordPushDiagnostic(
+      shown ? "wns.degraded_shown" : "wns.degraded_show_failed", host);
+}
+
+// MTA をスレッドの寿命いっぱいに張る。flutter_window.cpp の worker と同じく、
+// 既に別の apartment が張られていて失敗したときは張らずに進む。
+class ScopedMtaApartment {
+ public:
+  ScopedMtaApartment() {
     try {
       winrt::init_apartment(winrt::apartment_type::multi_threaded);
-      // 通知 ID を持たないので Tag は付けない (#956)。
-      shown = capsicum::ShowRawToast(degraded.title, degraded.body,
-                                     /*launch_arg=*/"", /*tag=*/std::string());
-      winrt::uninit_apartment();
+      initialized_ = true;
     } catch (...) {
-      shown = false;
+      initialized_ = false;
     }
-    capsicum::RecordPushDiagnostic(
-        shown ? "wns.degraded_shown" : "wns.degraded_show_failed", host);
+  }
+  ~ScopedMtaApartment() {
+    if (initialized_) winrt::uninit_apartment();
+  }
+  ScopedMtaApartment(const ScopedMtaApartment&) = delete;
+  ScopedMtaApartment& operator=(const ScopedMtaApartment&) = delete;
+
+ private:
+  bool initialized_ = false;
+};
+
+void HandleDegradedInProcess(const capsicum::PushDisplay& degraded) {
+  static std::atomic<uint64_t> next_id{1};
+  const uint64_t id = next_id.fetch_add(1);
+  {
+    std::lock_guard<std::mutex> lock(PendingDegradedMutex());
+    PendingDegraded()[id] =
+        PendingDegradedItem{degraded, capsicum::DedupClockNowMs()};
+  }
+  std::thread([id]() {
+    ScopedMtaApartment apartment;
+    std::this_thread::sleep_for(std::chrono::milliseconds(kDegradedGraceMs));
+    PendingDegradedItem item;
+    // 終了時の flush が先に引き取っていれば何もしない。
+    if (!TakePendingDegraded(id, &item)) return;
+    ResolveDegraded(item);
   }).detach();
 }
 
@@ -414,6 +486,23 @@ void SyncWnsPushLabelsToLocalState(const std::string& labels_json) {
   } catch (...) {
     // 書き出し失敗は致命でない（既定ラベルで表示は続く）。
   }
+}
+
+void FlushPendingDegradedNotifications() {
+  std::vector<PendingDegradedItem> items;
+  {
+    std::lock_guard<std::mutex> lock(PendingDegradedMutex());
+    for (auto& entry : PendingDegraded()) items.push_back(entry.second);
+    PendingDegraded().clear();
+  }
+  if (items.empty()) return;
+  // 終了時は待たずに判断する（WebSocket の証拠がその時点で揃っていれば抑止、
+  // 無ければ出す）。main スレッドは STA なので、MTA を張った別スレッドで
+  // 処理して join する（待機中のスレッドと同じ条件で WinRT を呼ぶため）。
+  std::thread([items = std::move(items)]() {
+    ScopedMtaApartment apartment;
+    for (const auto& item : items) ResolveDegraded(item);
+  }).join();
 }
 
 void RunWnsChannelReceiver(
