@@ -99,6 +99,7 @@ class AccountStorage {
               mOptions: MacOsOptions(
                 accessibility: KeychainAccessibility.first_unlock,
               ),
+              aOptions: kSecureStorageAndroidOptions,
             ),
       );
 

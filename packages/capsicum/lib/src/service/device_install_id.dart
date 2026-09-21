@@ -92,6 +92,7 @@ class DeviceInstallId {
       mOptions: MacOsOptions(
         accessibility: KeychainAccessibility.first_unlock_this_device,
       ),
+      aOptions: kSecureStorageAndroidOptions,
     ),
   );
 
