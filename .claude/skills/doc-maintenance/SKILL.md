@@ -1,6 +1,7 @@
 ---
 name: doc-maintenance
 description: docs / CLAUDE.md / メモリの棚卸し。「ドキュメントの陳腐化を見直して」「棚卸しして」で回す。陳腐化改善・メモリ→docs の昇格・docs→メモリの退避・インフラ記述の infra-note 移設・役目を終えた docs のアーカイブ。不定期・オンデマンド。
+disable-model-invocation: true
 ---
 
 # ドキュメント・メモリの棚卸し手順

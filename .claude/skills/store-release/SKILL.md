@@ -1,6 +1,7 @@
 ---
 name: store-release
 description: ストアリリースの毎回の手順。relay の残件ゲート → リリース前レビュー → バージョン更新 → ビルドと beta アップロード → 審査提出・製品版昇格 → GitHub Release → Linux (AppImage) / Windows (Store) → 後片づけ。工程ごとの詳細は同じフォルダの補助ファイルにある。⚠ 外向き・取り消せない操作（審査提出・ストア公開）を含む。
+disable-model-invocation: true
 ---
 
 # ストアリリース手順（毎回）
