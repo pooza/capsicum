@@ -13,7 +13,7 @@ import '../util/exception_scrub.dart';
 /// - Sentry SDK 自体の失敗で UI 更新を止めない
 ///
 /// [tagKey] は経路の系統 (`chat.op` / `drive.op` / `pages.op` /
-/// `chat.load_more` 等) を、[operation] は個別の操作名 (`send_message` /
+/// `chat.list` 等) を、[operation] は個別の操作名 (`send_message` /
 /// `load_liked` 等) を指す。fingerprint は両方 + 例外型で組む。
 ///
 /// ## [tagKey] の付け方（規約・#1083-E）

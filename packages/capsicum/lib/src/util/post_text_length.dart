@@ -39,8 +39,8 @@
 ///
 /// ⚠⚠ **entity 抽出は完全一致ではない。**Mastodon は `twitter-text` の
 /// `Extractor` を使っており、あちらの URL 正規表現は TLD 一覧まで持っている。
-/// ここは「プロトコル付きで、ドットを含むホストがあるもの」を URL とみなす
-/// 近似で、境界（末尾の句読点・IDN・括弧の釣り合い）で数文字ぶん外れうる。
+/// ここは「プロトコル付きで、ホストが twitter-text と同じ TLD 一覧で終わるもの」
+/// を URL とみなす近似で（TLD は #1144 で揃えた）、境界（末尾の句読点・IDN・括弧の釣り合い）で数文字ぶん外れうる。
 ///
 /// **近似でも現状より確実に近い**という判断 (#1034)。1 本の URL で 77 文字
 /// ずれていたものが、ずれても数文字に収まる。
@@ -53,6 +53,7 @@ library;
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:characters/characters.dart';
 
+import 'mastodon_tlds.dart';
 import 'text_length.dart';
 
 /// URL を置き換えるプレースホルダの長さ（`URL_PLACEHOLDER_CHARS`）。
@@ -72,8 +73,9 @@ final _urlPlaceholder = 'x' * kUrlPlaceholderLength;
 /// ここを欲張ると、本文中の「〜.jp です」のような普通の日本語を URL と誤認して
 /// 23 文字に膨らませてしまう。
 ///
-/// ホストにドットを要求するのは TLD 相当の代用。`http://localhost:3000/x` が
-/// 短縮されないのも `twitter-text` と同じ挙動（valid_domain を満たさない）。
+/// ホストにドットを要求したうえで、TLD は [_hasMastodonTld] が見る（#1144）。
+/// `http://localhost:3000/x` が短縮されないのも `twitter-text` と同じ挙動
+/// （valid_domain を満たさない）。
 ///
 /// ⚠ 全角スペース (U+3000) は `\s` が含む（ECMAScript の `\s` は Unicode の
 /// 空白全部）ので、除外集合に書かない —— **見えない文字をソースに置かない**。
@@ -129,6 +131,24 @@ String _withoutTrailingPunctuation(String url) {
   return url.substring(0, end);
 }
 
+/// URL のホストが Mastodon（twitter-text の `valid_domain`）の認める TLD で
+/// 終わるか (#1144)。
+///
+/// ⚠⚠ **これが本文カウンタで唯一「過小」に振れる経路だった。**以前はホストに
+/// 「ドットが 1 つ以上」しか課しておらず、**IP リテラル / `.local` / 一覧に無い
+/// TLD** の URL を capsicum は 23 文字に縮め、Mastodon は全長で数えていた。
+/// カウンタが緑のまま 422 になる。⚠ 他のずれ（`「」` の扱い等）はすべて過大＝
+/// 安全側。
+///
+/// ⚠ **一覧から外れたら全長で数える**（過大＝安全側に倒す）。一覧は Mastodon が
+/// 固定している twitter-text と同じ版から生成している（[mastodonTlds]）。
+bool _hasMastodonTld(String url) {
+  final afterScheme = url.substring(url.indexOf('://') + 3);
+  final host = afterScheme.split(RegExp('[:/?#]')).first;
+  final tld = host.split('.').last.toLowerCase();
+  return tld.startsWith('xn--') || mastodonTlds.contains(tld);
+}
+
 /// 置き換え対象の 1 件。範囲は UTF-16 の index（切り出しに使うだけなので、
 /// Ruby 側の codepoint index と混ぜない限り単位は問題にならない）。
 class _Entity {
@@ -149,6 +169,7 @@ String countableText(String text) {
   for (final match in _urlPattern.allMatches(text)) {
     final url = _withoutTrailingPunctuation(match[0]!);
     if (url.isEmpty) continue;
+    if (!_hasMastodonTld(url)) continue;
     entities.add(
       _Entity(match.start, match.start + url.length, _urlPlaceholder),
     );

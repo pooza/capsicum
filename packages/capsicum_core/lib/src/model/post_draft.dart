@@ -36,6 +36,10 @@ class PostDraft {
   /// Values: 'public', 'followers', 'nobody'.
   final String? quoteApprovalPolicy;
 
+  /// 指名（`specified`）の宛先のユーザー ID (#1161)。Misskey のみ。
+  /// 空なら送らない。
+  final List<String> visibleUserIds;
+
   const PostDraft({
     this.content,
     this.scope = PostScope.public,
@@ -54,5 +58,6 @@ class PostDraft {
     this.pollMultiple = false,
     this.pollHideTotals = false,
     this.quoteApprovalPolicy,
+    this.visibleUserIds = const [],
   });
 }

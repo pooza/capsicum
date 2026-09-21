@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
 
+import '../service/secure_storage_gate.dart';
+
 /// ログイン処理中に発生した例外の分類 (#644)。
 ///
 /// 旧実装はキャンセル以外のあらゆる例外を「通信に失敗しました」と表示して
@@ -34,6 +36,42 @@ typedef LoginFailureInfo = ({LoginFailureKind kind, String message});
 /// `login.failure_kind` タグとして [LoginFailureKind.name] を添えると
 /// 後追いが容易になる。
 LoginFailureInfo classifyLoginFailure(Object error) {
+  // ⚠⚠ **Linux のキーリング (#1141)。**#644 が入れた分類は Apple の Keychain の
+  // 形しか見ておらず、Linux の失敗は「ログインに失敗しました」に落ちていた。
+  // 利用者はサーバーやパスワードを疑うが、原因は端末のキーリング。ホームの
+  // 案内カードと同じ語（パスワード保管庫・キーリング / Secret Service）で言う。
+  // Android で保管庫の暗号方式の移行が失敗し、回復（v1.66）でも書けなかった。
+  // 以前は message に `secure` 等が無いので「ログインに失敗しました」に落ちていた。
+  if (isAndroidSecureStorageMigrationFailure(error)) {
+    return (
+      kind: LoginFailureKind.secureStorage,
+      message:
+          'この端末のパスワード保管庫を更新できず、ログイン情報を保存できません'
+          'でした。改善しない場合は、端末の設定でこのアプリのデータを消去してから'
+          'ログインし直してください。',
+    );
+  }
+  if (SecureStorageGate.isGateTimeout(error)) {
+    return (kind: LoginFailureKind.secureStorage, message: _keyringMessage);
+  }
+  if (error is PlatformException) {
+    switch (error.code) {
+      // 解錠できなかった（解錠ダイアログのキャンセル・パスワード不一致を含む）。
+      case 'KeyringLocked':
+        return (
+          kind: LoginFailureKind.secureStorage,
+          message:
+              'この端末のパスワード保管庫（キーリング / Secret Service）が'
+              'ロックされているため、ログイン情報を保存できませんでした。'
+              'キーリングを解錠してから、もう一度お試しください。',
+        );
+      // libsecret のその他の失敗 / プラグイン内部の失敗（JSON の破損等）。
+      case 'Libsecret error':
+      case 'StorageError':
+        return (kind: LoginFailureKind.secureStorage, message: _keyringMessage);
+    }
+  }
+
   // flutter_secure_storage は Apple 系で PlatformException を投げる。
   // errSecInteractionNotAllowed (-25308) 等の Keychain エラーはネットワーク
   // と無関係なので専用文言に分ける (#643)。
@@ -71,6 +109,13 @@ LoginFailureInfo classifyLoginFailure(Object error) {
 
   return (kind: LoginFailureKind.unknown, message: 'ログインに失敗しました');
 }
+
+/// Linux のキーリングに保存できなかったときの文言 (#1141)。
+const _keyringMessage =
+    'この端末のパスワード保管庫（キーリング / Secret Service）に'
+    'ログイン情報を保存できませんでした。'
+    'ほかのアプリでもパスワードの保存・読み出しに失敗している場合は、'
+    '端末を再起動すると直ることがあります。';
 
 /// セッション復元 (`restoreSessions`) の失敗を、アカウントをどう扱うかの
 /// 観点で分類する (#792)。

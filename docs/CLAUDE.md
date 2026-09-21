@@ -236,6 +236,24 @@ probing の結果、基本的な機能が欠けているサーバーに対して
 
 ### Codex レビューの回し方（open PR）
 
+⚠⚠ **採否の判断・返信と 👍 / 👎・取り残しの走査は、ginseng の共通スキル `/ginseng:codex-review` が正本**（#1138・2026-09-21 pooza 判断）。P0〜P3 の扱い、出どころによる切り分け、👎 に反証の実測を添える規律はそちらにある。**ここと同期手順に残すのは capsicum 固有の 5 つだけ** —— この節に巡回の止め方と締めの 1 回、[sync-procedure スキル](../.claude/skills/sync-procedure/SKILL.md) の Codex の節（§6）に API の分かれ方・返信の書かれ方・リリース PR の数え方。
+
+⚠ **プラグインは端末ごとに入れる**（マーケットプレイスは端末単位で、版も端末で決まる）。Mac / miki / Windows のそれぞれで:
+
+```text
+/plugin marketplace add pooza/ginseng-style
+/plugin install ginseng@ginseng-style
+```
+
+⚠ **VS Code 拡張では `/plugin` が使えない**（「isn't available in this environment」）。そのときはターミナルで CLI を使う（中身は同じ操作）:
+
+```sh
+claude plugin marketplace add pooza/ginseng-style
+claude plugin install ginseng@ginseng-style
+```
+
+⚠ **配る側が `plugin.json` の `version` を上げないと届かない**（ginseng-style#104）。ginseng 側を直したのに挙動が変わらないときは、まず版を見る。
+
 ⚠ **追加コミットではレビューは発火しない。**`@codex review` を PR コメントに書いた時だけ走る（初回は PR 作成 / ready 化で自動）。**rebase / force-push で SHA が変わったときも打ち直す**。
 
 巡回は次の形で止める（2026-08-23 決定）:
@@ -245,9 +263,11 @@ probing の結果、基本的な機能が欠けているサーバーに対して
 | 初回レビュー | PR 作成時に自動で走る |
 | **P1** | 直して `@codex review` で再依頼 |
 | **P2** | **直すだけ。再依頼しない** |
-| **マージ直前** | severity を問わず **1 回だけ**再依頼（その PR で最後） |
+| **マージ直前** | severity を問わず **1 回だけ**再依頼（その PR で最後）。⚠ **初回からの差分が本番コードに触っていなければ省く**（下記） |
 
-⚠ **締めの 1 回を省かない。**これが無いと「**自分の修正が入れた欠陥を誰も見ない**」経路が残る。#1017 では P2 の修正そのものが退行（`_cancelPendingDraftSave` の移動で自動保存が永久停止）で、次の巡回で見つかった。#1021 では 4 巡目の修正が 5 巡目の穴を作った（宣言側だけ型引数を読み飛ばし、呼び出し側を放置）。
+⚠ **本番コードに触った回は、締めの 1 回を省かない。**これが無いと「**自分の修正が入れた欠陥を誰も見ない**」経路が残る。#1017 では P2 の修正そのものが退行（`_cancelPendingDraftSave` の移動で自動保存が永久停止）で、次の巡回で見つかった。#1021 では 4 巡目の修正が 5 巡目の穴を作った（宣言側だけ型引数を読み飛ばし、呼び出し側を放置）。
+
+⚠ **省いてよいのは、初回のレビューからの差分が本番コード（`packages/*/lib/` とネイティブ — `ios/` `macos/` `android/` `windows/` `linux/`）に触っていない回だけ**（docs・テスト・CI のみ。2026-09-21 pooza・#1146）。v1.65 では締めの対象が docs 2 件 + テスト修正 1 件で、大半が同じ差分の読み直しになった（Codex も時間も課金される）。⚠ **線は「差分の行数」では引かない** —— 1 行の退行を見逃す。#1017 / #1021 はどちらも本番コードの修正が入れた欠陥だったので、この線なら締めの目的は損なわない。
 
 これで **1 PR あたり最大 2 回**に収まる。青天井にしないのは、#1021 が 6 巡かかった一方で**実コードの違反は初回で出尽くしており**、以降は検査そのものの網の細かさを上げる作業だったため（費用対効果が落ちる）。
 
@@ -560,7 +580,7 @@ v1.24 リリース直前の Linux 実機検証で判明・対応した、他プ�
 
 ⚠⚠ **手順は Claude Code のスキルにある（#1114）。**docs の側は持たない。
 
-- 会話の最初に「進捗を同期してください」等の指示があった場合 → **`/sync-procedure`**（[.claude/skills/sync-procedure/SKILL.md](../.claude/skills/sync-procedure/SKILL.md)）
+- 会話の最初に「進捗を同期してください」等の指示があった場合 → **`/sync-procedure`**（[.claude/skills/sync-procedure/SKILL.md](../.claude/skills/sync-procedure/SKILL.md)）。⚠ **自動では起動しない**（外へ書く step があるので明示のみ・#1137）。指示されたら Claude は SKILL.md を読んでそのとおり回す
 - 作業中にセッションが切れて「続きをやって」と指示された場合 → **`/resume-work`**（[.claude/skills/resume-work/SKILL.md](../.claude/skills/resume-work/SKILL.md)）。⚠ **同期手順は回さない**
 
 ⚠ **スキルは「確実に呼ぶ」ための仕組みで、「守らせる」仕組みではない。**守らせたいものは従来どおり `.claude/hooks/` でフック化する。

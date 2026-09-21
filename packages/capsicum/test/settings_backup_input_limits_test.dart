@@ -415,11 +415,11 @@ class _NoSecretsStorage extends FlutterSecureStorage {
   @override
   Future<bool> containsKey({
     required String key,
-    IOSOptions? iOptions,
+    AppleOptions? iOptions,
     AndroidOptions? aOptions,
     LinuxOptions? lOptions,
     WebOptions? webOptions,
-    MacOsOptions? mOptions,
+    AppleOptions? mOptions,
     WindowsOptions? wOptions,
   }) async => false;
 }

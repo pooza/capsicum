@@ -138,8 +138,9 @@ class UnifiedNotificationNotifier
       // 経路を書き換え済み・リリース前レビュー黄）。プリセット host 優先運用に
       // 乗せて観測する。
       reportOpFailure(
-        tagKey: 'notification.unified',
-        operation: 'fetch',
+        // ⚠ 一覧の取得は `<領域>.list` (#1117-E / #1144)。
+        tagKey: 'notification.list',
+        operation: 'unified_fetch',
         error: e,
         stackTrace: st,
         account: account,

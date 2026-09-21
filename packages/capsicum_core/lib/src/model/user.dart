@@ -70,7 +70,8 @@ class MovedTo {
   /// として扱っている）。⚠ **これを [url] に入れると生の ID が画面に出て、
   /// タップしても開けない。**
   ///
-  /// ⚠ 解決して行き先を出す改修は別途（`users/show` の往復が要る）。
+  /// 行き先はプロフィール画面が `users/show` で解決して出す（#1144・
+  /// `profile_screen.dart` の `_resolveMovedTo`）。
   final String? userId;
 
   const MovedTo({this.url, this.handle, this.userId});
@@ -153,11 +154,22 @@ class User {
   ///
   /// ⚠ **Mastodon の JSON キーは `silenced` ではなく `limited`**（serializer が
   /// 改名している）。
+  ///
+  /// ⚠⚠ **Misskey ではモデレーションのサイレンスではない (#1144)。**
+  /// `getUserPolicies(...).canPublicNote` の否定なので、新規アカウントの制限
+  /// ロール等でも true になる。逆に**リモートユーザーにはロールが付かない**ので、
+  /// インスタンス単位のサイレンス配下でも false。表示は「公開範囲が制限されて
+  /// います」に留め、「サイレンス」と言い切らない。
   final bool silenced;
 
   /// 削除済み (#1055)。Misskey の `isDeleted`。
   ///
   /// ⚠ **Mastodon では常に false** —— あちらは [suspended] に畳まれるため。
+  ///
+  /// ⚠⚠ **Misskey でも他人については常に false (#1144)。**`UserEntityService` が
+  /// `isDetailed && isMe` のブロックの中でしか返さないので、他人の `users/show`
+  /// には含まれない。削除済みのアカウントは自分のプロフィールも見られないので、
+  /// **表示には使わない**（バッジは外した）。
   final bool deleted;
 
   const User({

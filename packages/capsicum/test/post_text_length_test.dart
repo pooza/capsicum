@@ -9,7 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 書記素で数え、URL を 23 文字・メンションをドメイン部なしへ短縮し、
 /// CW (`spoiler_text`) も同じ枠に含める。
 ///
-/// ⚠ **entity 抽出は近似**（`twitter-text` の TLD 一覧までは持たない）。
+/// ⚠ **entity 抽出は近似**（TLD 一覧は twitter-text と同じもの・#1144）。
 /// このテストは「近似がどこまでを URL とみなすか」を固定するためにもある ——
 /// 境界を変えたら、ここが落ちて意図の有無を問う。
 void main() {
@@ -55,6 +55,31 @@ void main() {
     test('ドットの無いホストは短縮しない', () {
       const url = 'http://localhost:3000/x';
       expect(mastodon(url), url.length);
+    });
+
+    // ⚠⚠ #1144: **ここだけが過小（危険側）に振れていた。**twitter-text の
+    // valid_domain は TLD 一覧を要求するので、Mastodon はこれらを URL とみなさず
+    // 全長で数える。capsicum が 23 に縮めると、カウンタが緑のまま 422 になる。
+    group('TLD が一覧に無いホストは縮めない (#1144)', () {
+      for (final url in const [
+        'http://192.168.0.10/some/long/path/to/a/page',
+        'http://printer.local/status/page/that/is/long',
+        'https://example.notarealtld/a/long/path/here',
+      ]) {
+        test(url, () => expect(mastodon(url), url.length));
+      }
+
+      test('一覧にある TLD は縮める（jp / social / 大文字 / punycode / IDN）', () {
+        for (final url in const [
+          'https://mstdn.b-shock.org/@pooza/117301509655991415',
+          'https://mastodon.social/@Gargron/1234567890',
+          'https://EXAMPLE.JP/Path/To/A/Long/Page',
+          'https://example.xn--p1ai/long/long/path',
+          'https://example.みんな/long/long/path',
+        ]) {
+          expect(mastodon(url), 23, reason: url);
+        }
+      });
     });
 
     test('末尾の句読点は URL に含めない', () {

@@ -31,6 +31,23 @@ jobs:
     # PR 粒度の判定もリリース準備時 (ready 化) には走るため許容する。
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    env:
+      # ⚠⚠ **重い段（Flutter の準備・format・analyze・test）を回すか (#1146)。**
+      #
+      # develop → main の PR は、head の SHA を上の push トリガーで**既に同じ
+      # 内容で検査済み**。ready 後もここで回すと、同じ SHA に `check` が 2 本
+      # （実測 5m32s + 6m18s）走っていた。チェックは SHA で紐づくので、push 側の
+      # run は PR の画面にも並び、マージゲートは失われない。
+      #
+      # ⚠⚠ **release/x.y.z → main の PR は落とさない。**v2.0 開発中の 1.x は
+      # `origin/main` から切った release ブランチで出す（docs/CLAUDE.md）。
+      # release ブランチへの push は上の push トリガー（main / develop）に**当たら
+      # ない**ので、**ここが唯一の検査**になる。head で見分ける。
+      #
+      # ⚠ pubspec.lock の検査（PR 粒度でしか回せない）はどちらでも回す。
+      # ⚠ fork の `develop` ブランチから出た PR は push 側で検査されていないので、
+      # 同じリポジトリの develop だけを落とす（v1.66 リリース前レビュー）。
+      HEAVY: ${{ github.event_name != 'pull_request' || github.head_ref != 'develop' || github.event.pull_request.head.repo.full_name != github.repository }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -127,6 +144,7 @@ jobs:
           WF_LINES_FILE="$work/wf_lines" \
             bash .github/scripts/lock_guard.sh
       - uses: subosito/flutter-action@v2
+        if: env.HEAVY == 'true'
         with:
           channel: stable
           # linux-release.yml / windows-release.yml と同じ版に固定する。
@@ -134,18 +152,23 @@ jobs:
           # deprecation / lint で CI が落ちる。開発機もこの版に揃えること (#836)。
           flutter-version: 3.44.6
       - run: flutter pub get
+        if: env.HEAVY == 'true'
       - name: Generate code
+        if: env.HEAVY == 'true'
         run: dart run build_runner build --delete-conflicting-outputs
         working-directory: packages/fediverse_objects
       - name: Check formatting
+        if: env.HEAVY == 'true'
         run: dart format --set-exit-if-changed .
       - name: Analyze
+        if: env.HEAVY == 'true'
         run: dart analyze --fatal-infos
       # test ディレクトリを持つパッケージだけを回す。melos の test スクリプトは
       # 内部で `melos exec` を呼ぶため PATH に melos の実体が要り、`dart run
       # melos` 経由だと command not found になるので使わない（analyze が素の
       # コマンドなのと同じ方針）。
       - name: Test
+        if: env.HEAVY == 'true'
         run: |
           for pkg in packages/*/; do
             if [ -d "${pkg}test" ]; then

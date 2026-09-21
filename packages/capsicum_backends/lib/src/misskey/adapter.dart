@@ -307,6 +307,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         cw: draft.spoilerText,
         localOnly: draft.localOnly ? true : null,
         channelId: draft.channelId,
+        visibleUserIds: draft.visibleUserIds.isNotEmpty
+            ? draft.visibleUserIds.toSet().toList()
+            : null,
       );
       return null;
     }
@@ -328,6 +331,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       cw: draft.spoilerText,
       localOnly: draft.localOnly ? true : null,
       channelId: draft.channelId,
+      visibleUserIds: draft.visibleUserIds.isNotEmpty
+          ? draft.visibleUserIds.toSet().toList()
+          : null,
       poll: poll,
       extraHeaders: draft.skipMulukhiya ? {'X-Mulukhiya': 'capsicum'} : null,
     );
@@ -360,6 +366,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       cw: draft.spoilerText,
       localOnly: draft.localOnly ? true : null,
       channelId: draft.channelId,
+      visibleUserIds: draft.visibleUserIds.isNotEmpty
+          ? draft.visibleUserIds.toSet().toList()
+          : null,
     );
   }
 

@@ -86,8 +86,19 @@ class MastodonCapabilities extends AdapterCapabilities {
   set supportedTimelines(Set<TimelineType> value) =>
       _supportedTimelines = value;
 
+  /// ⚠ **500 は既定値で、サーバーの値で上書きする (#1144)。**Mastodon の上限は
+  /// `MAX_CHARS` で変えられ（pooza のフォークは 3000）、`/api/v2/instance` の
+  /// `configuration.statuses.max_characters` に出る。決め打ちのままだと、
+  /// 非プリセットの日本語 Mastodon でカウンタが `/500` になる（モロヘイヤが
+  /// 上限を返すサーバーはそちらが勝つので影響しない）。
+  int _maxPostContentLength = 500;
+
   @override
-  int? get maxPostContentLength => 500;
+  int? get maxPostContentLength => _maxPostContentLength;
+
+  set maxPostContentLength(int? value) {
+    if (value != null && value > 0) _maxPostContentLength = value;
+  }
 
   /// `StatusLengthValidator` は書記素で数え、URL を 23 文字・メンションを
   /// ドメイン部なしへ短縮し、CW も同じ枠に含める (#1034)。
@@ -172,6 +183,11 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       // Try v2 instance API (Mastodon 4.5+).
       final instance = await client.getInstanceV2();
       final config = instance['configuration'] as Map<String, dynamic>?;
+      final statuses = config?['statuses'] as Map<String, dynamic>?;
+      final maxCharacters = statuses?['max_characters'];
+      if (maxCharacters is int) {
+        capabilities.maxPostContentLength = maxCharacters;
+      }
       final translation = config?['translation'] as Map<String, dynamic>?;
       _translationAvailable = translation?['enabled'] as bool? ?? false;
       final access = config?['timelines_access'] as Map<String, dynamic>?;

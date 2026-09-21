@@ -3,6 +3,9 @@ default_platform(:ios)
 platform :ios do
   desc "Deploy to TestFlight"
   lane :beta do
+    # ⚠ TestFlight より先に上げる (#1134)。TestFlight の処理待ちは止められ
+    # やすく、後ろに置くと上がらないまま終わる。
+    upload_dsyms_to_sentry
     api_key = app_store_connect_api_key(
       key_id: 'WLS8G4W44L',
       issuer_id: '69a6de71-e621-47e3-e053-5b8c7c11a4d1',
@@ -12,6 +15,27 @@ platform :ios do
       ipa: '../build/ios/ipa/capsicum.ipa',
       api_key: api_key,
     )
+  end
+
+  # Sentry に dSYM を上げる (#1134)。上げないと、capsicum 自身のフレーム
+  # （App.framework = Dart AOT / Runner）だけがスタックで復元されない。
+  #
+  # ⚠ pubspec.yaml の `sentry: upload_debug_symbols` は sentry_dart_plugin の
+  # 設定で、Apple の dSYM は対象外。
+  # ⚠ トークンはリポジトリルートの .sentryclirc（デプロイ用）を sentry-cli が
+  # 親ディレクトリを辿って拾う。
+  # ⚠ 失敗しても TestFlight へのアップロードは止めない（Sentry 側の障害で
+  # リリースを止めない）。失敗は警告として残し、あとで同じレーンを単独で回す。
+  desc "Upload dSYMs of the last archive to Sentry"
+  lane :upload_dsyms_to_sentry do
+    dsyms = File.expand_path('../../build/ios/archive/Runner.xcarchive/dSYMs')
+    begin
+      UI.user_error!("dSYM が見つからない: #{dsyms}") unless Dir.exist?(dsyms)
+      sh('sentry-cli', 'debug-files', 'upload',
+         '--org', 'b-shock-co-ltd', '--project', 'capsicum', dsyms)
+    rescue => e
+      UI.important("Sentry への dSYM アップロードに失敗（リリースは続行）: #{e.message}")
+    end
   end
 
   desc "Submit to App Store"

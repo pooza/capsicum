@@ -158,6 +158,31 @@ List<String> extractHashtags(String content, {required bool isHtml}) {
   return result;
 }
 
+/// MFM の本文からメンションを出現順に抽出する (#1161)。重複は落とさない。
+///
+/// Misskey Web UI の `extractMentions`（mfm-js の mention ノードを集める）に
+/// 相当する。⚠ コード（インライン / ブロック）の中の `@` は mention ノードに
+/// ならないので拾わない。
+List<({String username, String? host})> extractMfmMentions(String mfm) {
+  final result = <({String username, String? host})>[];
+  void walk(List<_Node> nodes) {
+    for (final n in nodes) {
+      if (n.type == _NodeType.mention) {
+        // text は `@user` か `@user@host`。
+        final parts = n.text.substring(1).split('@');
+        result.add((
+          username: parts[0],
+          host: parts.length > 1 && parts[1].isNotEmpty ? parts[1] : null,
+        ));
+      }
+      if (n.children.isNotEmpty) walk(n.children);
+    }
+  }
+
+  walk(_parseMfm(mfm));
+  return result;
+}
+
 /// `_parseHtml`（Mastodon HTML 経路）の結果を単体テストするための helper。
 /// link / url / hashtag ノードと、未変換の生 `<a` タグがテキストとして
 /// 露出していないか（Issue #595）を検証できるようにする。

@@ -17,7 +17,7 @@ OV コード署名証明書 ([#534](https://github.com/pooza/capsicum/issues/534
 
 **A. CI artifact sideload（軽量・既定）** — ほとんどの release ビルド検証はこれで足りる。
 
-CI（`windows-release.yml`）は tag 駆動に加え `packages/capsicum/windows/**` / `pubspec.yaml` 変更の PR でも走り、署名済み `capsicum.msix` + `.cer` を `capsicum-msix` artifact として出す（保持 14 日）。これを取得して信頼ストア import + `Add-AppxPackage` するまでを [install-internal-beta.ps1](../../../distribution/windows/install-internal-beta.ps1) が 1 コマンドに畳んでいる（cert import と install に管理者権限が要るため自動昇格する）:
+CI（`windows-release.yml`）は tag 駆動に加え `packages/capsicum/windows/**` / `pubspec.yaml` 変更の **develop 向け** PR でも走り（⚠ main 向けのリリース PR では走らない・#1146。1.x の release ブランチは `gh workflow run windows-release.yml --repo pooza/capsicum --ref release/x.y.z` で回す）、署名済み `capsicum.msix` + `.cer` を `capsicum-msix` artifact として出す（保持 14 日）。これを取得して信頼ストア import + `Add-AppxPackage` するまでを [install-internal-beta.ps1](../../../distribution/windows/install-internal-beta.ps1) が 1 コマンドに畳んでいる（cert import と install に管理者権限が要るため自動昇格する）:
 
 ```powershell
 # develop の最新成功ビルドを取得してインストール（run 自動選択）

@@ -122,6 +122,11 @@ fastlane beta
 cd ..
 ```
 
+> ⚠️ **iOS / macOS の `fastlane beta` は、TestFlight へ上げる前に Sentry へ dSYM を上げる**（`upload_dsyms_to_sentry` レーン・#1134）。
+> 上げないと capsicum 自身のフレーム（`App.framework` = Dart AOT / 本体）がスタックで復元されない。
+> **失敗してもリリースは止めない作り**なので、ログに `Sentry への dSYM アップロードに失敗` が出たら、
+> アーカイブを消す前に `fastlane upload_dsyms_to_sentry` を単独で回し直す（⚠ 次のビルドでアーカイブが上書きされると取り戻せない）。
+
 > ⚠️ **`fastlane beta` は「アップロード完了」と「処理待ちの終了」を分けて扱うこと。**
 > `Successfully uploaded the new binary to App Store Connect` が出た時点でバイナリは
 > ASC に渡っており、以降の `Waiting for the build to show up in the build list` は

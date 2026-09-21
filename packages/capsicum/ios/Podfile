@@ -38,5 +38,23 @@ end
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
+
+    # ⚠⚠ **podspec が明示した deployment target は Podfile の `platform` で
+    # 上書きされない。**Xcode 27 は 15.0 未満を受け付けなくなり、
+    # `Target Integrity ... supported deployment target versions is 15.0 to 27.0.x`
+    # で **archive の手前で落ちる**（2026-09-17 に Xcode 27.0 で実際に踏んだ）。
+    #
+    # 素通りしていたもの: `Flutter` 本体と `media_kit_video` が **9.0**、
+    # `flutter_web_auth_2` が **13.0**。⚠ `flutter_additional_ios_build_settings`
+    # は 12.0 未満しか底上げしないので、13.0 は当たらない。
+    #
+    # ⚠ **Podfile の `platform :ios, '15.0'` と同じ値**にすること。片方だけ動かすと
+    # 「Podfile は 15.0 なのに Pods は別」というズレが戻る。
+    target.build_configurations.each do |config|
+      current = config.build_settings['IPHONEOS_DEPLOYMENT_TARGET']
+      if current.nil? || current.to_f < 15.0
+        config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
+      end
+    end
   end
 end

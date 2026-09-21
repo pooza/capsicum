@@ -44,6 +44,7 @@ import '../util/post_scope_display.dart';
 import '../util/program_schedule_display.dart';
 import '../util/redraft_carry_over.dart';
 import '../util/relative_time.dart';
+import '../util/reply_mentions.dart';
 import '../util/shortcode_warning_controller.dart';
 import '../util/text_length_counter.dart';
 import '../util/visible_timeline.dart';
@@ -424,6 +425,17 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
 
   /// 取得に失敗した / まだ返ってきていない。
   bool _redraftReplyToUnavailable = false;
+
+  /// 指名（Misskey の `specified`）で送るときの宛先 (#1161)。
+  ///
+  /// ⚠ **サーバーが自動で足すのは返信先の投稿者だけ**なので、返信先の宛先を
+  /// 引き継がないと、スレッドにいた他の人へ届かない。redraft は元の宛先も戻す。
+  /// Mastodon の adapter はこの値を読まない（宛先は本文のメンションで決まる）。
+  List<String> get _visibleUserIds => composeVisibleUserIds(
+    scope: _scope,
+    redraft: widget.redraft,
+    me: ref.read(currentAccountProvider)?.user,
+  );
 
   Future<void> _loadRedraftReplyTo(String id) async {
     final adapter = ref.read(currentAdapterProvider);
@@ -1481,15 +1493,14 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     );
   }
 
+  /// 返信先の投稿者と、返信先に含まれるメンション全員を宛先に入れる (#1161)。
   void _initReplyMentions(Post replyTo) {
-    final currentUser = ref.read(currentAccountProvider)?.user;
-    final mentions = <String>{};
-
-    // Add the author of the post being replied to.
-    final authorAcct = _buildAcct(replyTo.author);
-    if (currentUser == null || replyTo.author.id != currentUser.id) {
-      mentions.add(authorAcct);
-    }
+    final account = ref.read(currentAccountProvider);
+    final mentions = buildReplyMentions(
+      replyTo: replyTo,
+      me: account?.user,
+      localHost: account?.key.host ?? '',
+    );
 
     if (mentions.isNotEmpty) {
       final prefix = mentions.map((m) => '@$m').join(' ');
@@ -3316,6 +3327,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     if (adapter == null || adapter is! DraftSupport) return;
     // ⚠ await の前に確定させる（[_syncDriveDescriptions] の doc）。
     final account = ref.read(currentAccountProvider);
+    // ⚠ 宛先も await の前に確定させる（[_submitInternal] の同じ位置のコメント）。
+    final visibleUserIds = _visibleUserIds;
 
     // ⚠ **アダプタ不在で引き返す経路より後で取り消す (Codex P2 / PR #1017)。**
     // 理由は [_submitInternal] の同じ位置のコメント。
@@ -3352,6 +3365,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           sensitive: _effectiveSensitive,
           localOnly: _localOnly,
           channelId: _effectiveChannelId,
+          visibleUserIds: visibleUserIds,
         ),
       );
 
@@ -3501,6 +3515,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     if (adapter == null) return;
     // ⚠ await の前に確定させる（[_syncDriveDescriptions] の doc）。
     final account = ref.read(currentAccountProvider);
+    // ⚠ 宛先も await の前に確定させる（v1.66 リリース前レビュー）。getter は
+    // `ref.read` するので、アップロード中に画面を離れると例外で投稿が送られない。
+    final visibleUserIds = _visibleUserIds;
 
     // ⚠ **ここまで来て初めて取り消す (Codex P2 / PR #1017)。**入口で取り消すと、
     // 確認ダイアログのキャンセル・アンケートの選択肢不足・アダプタ不在で
@@ -3544,6 +3561,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           sensitive: _effectiveSensitive,
           localOnly: _localOnly,
           channelId: _effectiveChannelId,
+          visibleUserIds: visibleUserIds,
           scheduledAt: _scheduledAt,
           language: _language,
           pollOptions: _pollEnabled

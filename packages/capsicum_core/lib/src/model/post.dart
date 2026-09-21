@@ -91,6 +91,19 @@ class Post {
   /// `updatedAt` は別の意味なので流用しない。
   final DateTime? editedAt;
 
+  /// 投稿の宛先に入っているメンション (#1161)。返信の宛先を組むのに使う。
+  ///
+  /// ⚠ **Mastodon のみ非空になる**（API の `mentions`）。Misskey の API は
+  /// ユーザー ID しか返さないので、Web UI と同じく本文の MFM から読む
+  /// （capsicum 側の `buildReplyMentions`）。
+  final List<PostMention> mentions;
+
+  /// 指名（`specified`）ノートの宛先のユーザー ID (#1161)。Misskey のみ。
+  ///
+  /// ⚠ **指名への返信で引き継ぐ。**サーバーが宛先へ自動で足すのは返信先の
+  /// 作者だけで、本文中のメンションは足さない（`NoteCreateService.ts`）。
+  final List<String> visibleUserIds;
+
   const Post({
     required this.id,
     required this.postedAt,
@@ -131,6 +144,8 @@ class Post {
     this.url,
     this.reactionAcceptance,
     this.editedAt,
+    this.mentions = const [],
+    this.visibleUserIds = const [],
   });
 
   /// 派生オブジェクトを生成する。enrich パイプライン（IsCatEnricher 等）の
@@ -189,7 +204,20 @@ class Post {
     url: url,
     reactionAcceptance: reactionAcceptance,
     editedAt: editedAt,
+    mentions: mentions,
+    visibleUserIds: visibleUserIds,
   );
+}
+
+/// 投稿の宛先に入っているメンション (#1161)。
+class PostMention {
+  /// 自サーバーでのアカウント ID。自分を除く判定に使う。
+  final String id;
+
+  /// 自サーバーから見た acct（ローカルは `user`、リモートは `user@host`）。
+  final String acct;
+
+  const PostMention({required this.id, required this.acct});
 }
 
 enum FilterAction { hide, warn }

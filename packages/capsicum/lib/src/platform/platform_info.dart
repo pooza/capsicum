@@ -202,18 +202,6 @@ bool get mayDeleteSecretOnReadFailure =>
 @visibleForTesting
 bool? debugMayDeleteSecretOnReadFailureOverride;
 
-/// [usesSecretService] の旧名 (#1104)。
-///
-/// ⚠⚠ **同じ判定の旗を 2 本持っていた (#1117-E)。**どちらも
-/// `!kIsWeb && Platform.isLinux` なのに**差し替え口が別々**だったので、テストが
-/// 「触ると固まる OS なのにキーリングとは呼ばない」という**本番では作れない
-/// 組み合わせ**を作れた。旗を 1 本に統合し、こちらは呼び名として残す。
-///
-/// 呼び分けの意図（案内の文面が「キーリング / Secret Service」と OS の呼び名を
-/// 名指しするので、その文面が真になる OS でだけ立てる）は [usesSecretService] の
-/// doc に集約した。
-bool get usesSecretServiceKeyring => usesSecretService;
-
 /// secure storage の backend 名。Sentry の fingerprint 接尾辞に使う (#1104)。
 ///
 /// ⚠ **プラットフォーム名ではなく backend 名。**同じ「読めなかった」でも、
