@@ -121,23 +121,23 @@ capsicum-relay の Issue・マイルストーンは、**capsicum 本体と同じ
 
 - **mulukhiya-toot-proxy**: `git -C ~/repos/mulukhiya-toot-proxy fetch origin` + `git -C ~/repos/mulukhiya-toot-proxy log HEAD..origin/develop --oneline` でリモートとの差分を確認（`cd` しない理由は [dev-environment.md](../../../docs/dev-environment.md) の「コマンドの書き方」）。`docs/capsicum-requirements.md` や `docs/api.md` に変更があれば capsicum 側への影響を判断
 - **chubo2**: `git -C ~/repos/chubo2 fetch origin` + `git -C ~/repos/chubo2 log HEAD..origin/main --oneline` で差分を確認。`docs/infra-note.md` に変更があれば MEMORY.md のインフラセクションに反映が必要か判断
-- **capsicum-relay**: `git -C ~/repos/capsicum-relay fetch origin` + `git -C ~/repos/capsicum-relay log HEAD..origin/main --oneline` で差分を確認。Issue / PR は `gh issue list --repo pooza/capsicum-relay --state open --limit 30` / `gh pr list --repo pooza/capsicum-relay --state open` で確認（dependabot PR + security alert もここで拾う、`gh api repos/pooza/capsicum-relay/dependabot/alerts --jq '.[] | select(.state == "open") | "\(.security_advisory.severity) \(.dependency.package.name) fix=\(.security_vulnerability.first_patched_version.identifier)"'`）。リレーサーバーのデプロイ管理は Claude 担当（**接続先ホスト・SSH ユーザー・具体的な SSH コマンド列はメモリ `feedback_capsicum_relay_deploy_delegation` が正本**。ホスト構成・デプロイ手順の共有正本は chubo2 の `docs/infra-note.md`）、main 進行がありサーバー側の HEAD が遅れていたら SSH デプロイ（pull → 依存更新 → サービス再起動 → `/health` 確認）まで一連で実行。**稼働中の SHA は SSH せずに `/health` で分かる**（relay#37、v1.57 で出荷）ので、デプロイ要否の判定はこれ 1 回で済ませる:
+- **capsicum-relay**: `git -C ~/repos/capsicum-relay fetch origin` + `git -C ~/repos/capsicum-relay log HEAD..origin/main --oneline` で差分を確認。Issue / PR は `gh issue list --repo pooza/capsicum-relay --state open --limit 30` / `gh pr list --repo pooza/capsicum-relay --state open` で確認（dependabot PR + security alert もここで拾う、`gh api repos/pooza/capsicum-relay/dependabot/alerts --jq '.[] | select(.state == "open") | "\(.security_advisory.severity) \(.dependency.package.name) fix=\(.security_vulnerability.first_patched_version.identifier)"'`）。リレーサーバーのデプロイ管理は Claude 担当（**接続先ホスト・SSH ユーザー・逐語のコマンド列は chubo2 `docs/infra-servers.md` の capsicum-relay 本番 / ステージングの節が正本**・private。委任の範囲と作業上の注意はメモリ `feedback_capsicum_relay_deploy_delegation`。⚠ 公開リポジトリなのでここには書かない）、main 進行がありサーバー側の HEAD が遅れていたら SSH デプロイ（pull → 依存更新 → サービス再起動 → `/health` 確認）まで一連で実行。**稼働中の SHA は SSH せずに `/health` で分かる**（relay#37、v1.57 で出荷）ので、デプロイ要否の判定はこれ 1 回で済ませる:
 
   ```sh
-  curl -s https://st.relay.capsicum.shrieker.net/health | jq -r .revision   # ステージング (triton)
-  curl -s https://relay.capsicum.shrieker.net/health | jq -r .revision      # 本番 (flauros)
+  curl -s https://st.relay.capsicum.shrieker.net/health | jq -r .revision   # ステージング
+  curl -s https://relay.capsicum.shrieker.net/health | jq -r .revision      # 本番
   ```
 
   ⚠ 返るのは**稼働中プロセス**の revision なので、docs / テストだけの commit を main へ入れた回は**意図的に遅れる**（本番再起動は in-memory の `/metrics` counter をゼロに戻すため、サーバー挙動が変わらない commit で再起動しない）。不一致を見つけたら `git log <revision>..origin/main` で中身を見て、コードに触っていなければデプロイ不要と判断する。
 
-  ⚠⚠ **デプロイは必ずステージング (triton) を先に通し、本番 (flauros) はその後**（2026-09-13 pooza 指示）。**両方の `/health` を並べて見るのは、本番だけが先に進んでいる逆転を検出するため。**2026-09-13 の同期で、relay#54 が **本番 `a9b8e90` / ステージング `b9ce14c`** という逆転のまま出ていたのを見つけた（ステージングが一度も新コードを踏んでいない）。
+  ⚠⚠ **デプロイは必ずステージングを先に通し、本番はその後**（2026-09-13 pooza 指示）。**両方の `/health` を並べて見るのは、本番だけが先に進んでいる逆転を検出するため。**2026-09-13 の同期で、relay#54 が **本番 `a9b8e90` / ステージング `b9ce14c`** という逆転のまま出ていたのを見つけた（ステージングが一度も新コードを踏んでいない）。
 
-  | 順 | ホスト | 確認 |
+  | 順 | 環境 | 確認 |
   | --- | --- | --- |
-  | 1 | `deploy@triton.b-shock.local` | `curl -s https://st.relay.capsicum.shrieker.net/health` の revision が origin/main と一致し、`status` が ok |
-  | 2 | `deploy@flauros.b-shock.co.jp` | 同上を本番 URL で |
+  | 1 | ステージング | `curl -s https://st.relay.capsicum.shrieker.net/health` の revision が origin/main と一致し、`status` が ok |
+  | 2 | 本番 | 同上を本番 URL で |
 
-  ⚠ **ステージングで確かめてから本番へ進む。**手順（pull → `bundle install` → `sudo -n systemctl restart capsicum-relay` → `/health`）は 2 台とも同じで、アプリは両方 `~/repos/capsicum-relay`・branch は `main`・unit 名も `capsicum-relay`。⚠ **変更系と確認系を同じ ssh セッションに混ぜない**（本番を意図せず再起動した事故がある）。⚠ **ステージングは購読数が小さく `supporters` が 0** なので、`/health` の数値が本番と違っても異常ではない。
+  ⚠ **ステージングで確かめてから本番へ進む。**手順（pull → 依存更新 → サービス再起動 → `/health`）は 2 台とも同じ（逐語は chubo2 側）。⚠ **変更系と確認系を同じ ssh セッションに混ぜない**（本番を意図せず再起動した事故がある）。⚠ **ステージングは購読数が小さく `supporters` が 0** なので、`/health` の数値が本番と違っても異常ではない。
 - **Mastodon / Misskey の現行バージョン確認**: 自前サーバーのソフトウェアは pooza フォークがリリース追従しているため、ローカルの fork を pull すれば現行バージョンを正確に確認できる（推測しない）。
   - Mastodon: `git -C ~/repos/mastodon pull --ff-only` → `lib/mastodon/version.rb` の major/minor/patch（または `git -C ~/repos/mastodon tag --sort=-creatordate | head` で `vX.Y.Z-bshockdon`）
   - Misskey: `git -C ~/repos/misskey pull --ff-only` → `package.json` の `version`（`jq -r .version ~/repos/misskey/package.json`）
