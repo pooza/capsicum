@@ -7,6 +7,8 @@ description: 作業中にセッションが切れて「続きをやって」と�
 
 ⚠⚠ **正本はこのファイル (#1114)。**[docs/sync-procedure.md](../../../docs/sync-procedure.md) はここへのポインタ。
 
+⚠ **このスキルは自動起動のまま（`disable-model-invocation` を付けない・例外・#1137）。**ginseng-style#104 の線（外へ書く step が 1 つでもあれば明示のみ）に当てると、作業の再開で commit / push するので明示のみになる。**「続きをやって」で起動させたいので、2026-09-21 に pooza 判断で例外にした。**同期（sync-procedure）は線どおり明示のみに倒している。
+
 ⚠⚠ **[sync-procedure](../sync-procedure/SKILL.md) の 1〜10 は回さない。**同じセッションの続きであり、前任のセッションが開始時に同期済み。回すのは `git fetch origin` だけでよい。
 
 ## セッションそのものを戻す（`claude rc` が落ちた場合）

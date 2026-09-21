@@ -1,6 +1,7 @@
 ---
 name: milestone-transition
 description: マイルストーンが全プラットフォーム公開完了した後、次の枠に着手するまでの整備手順。完了確認・未割り当て Issue のトリアージ・次スコープ確定・relay の同名枠・ロードマップ調整・capsicum-site 更新・バージョンバンプ・リリースログのトリム。⚠ 外向きの操作（マイルストーン作成・description の PATCH・site の push）を含む。
+disable-model-invocation: true
 ---
 
 # マイルストーン移行手順
