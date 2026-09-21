@@ -201,6 +201,53 @@ void main() {
     });
   });
 
+  group('composeVisibleUserIds（送る宛先）', () {
+    Post note({
+      required String authorId,
+      List<String> ids = const [],
+      PostScope scope = PostScope.direct,
+    }) => Post(
+      id: 'n',
+      postedAt: DateTime.utc(2026, 9, 21),
+      author: User(id: authorId, username: 'x'),
+      scope: scope,
+      visibleUserIds: ids,
+    );
+
+    test('⚠⚠ redraft は元の投稿の宛先だけ（返信先の宛先を足さない）', () {
+      // 返信先は me・b・c 宛て。自分は a だけに絞って返信していた。
+      final result = composeVisibleUserIds(
+        scope: PostScope.direct,
+        redraft: note(authorId: 'me', ids: ['a']),
+        replyTo: note(authorId: 'a', ids: ['me', 'b', 'c']),
+        me: me,
+      );
+      expect(result, ['a'], reason: '外した b / c に黙って届いてはいけない');
+    });
+
+    test('通常の返信は返信先から引き継ぐ', () {
+      final result = composeVisibleUserIds(
+        scope: PostScope.direct,
+        redraft: null,
+        replyTo: note(authorId: 'a', ids: ['me', 'b']),
+        me: me,
+      );
+      expect(result, unorderedEquals(['a', 'b']));
+    });
+
+    test('指名でなければ送らない', () {
+      expect(
+        composeVisibleUserIds(
+          scope: PostScope.followersOnly,
+          redraft: null,
+          replyTo: note(authorId: 'a', ids: ['b']),
+          me: me,
+        ),
+        isEmpty,
+      );
+    });
+  });
+
   group('inheritVisibleUserIds（Misskey の指名への返信）', () {
     Post specified({required String authorId, List<String> ids = const []}) =>
         Post(

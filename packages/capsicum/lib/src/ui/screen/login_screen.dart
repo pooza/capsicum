@@ -132,13 +132,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   /// 経由のため、ここに渡すのは scheme として valid な文字列でなければ
   /// ならない。
   ///
-  /// #654 で macOS は [_authenticateViaLocalhostServer]（システムブラウザ +
-  /// 自前 localhost HTTP サーバ）に切り替えたため、このゲッターは
-  /// 自前サーバを立てない（fwa2 の server impl で受ける）分岐でのみ消費される。Linux / Windows の localhost
-  /// callback では flutter_web_auth_2 の server impl が完全な
+  /// macOS / Android は [_authenticateViaLocalhostServer]（システムブラウザ +
+  /// 自前 localhost HTTP サーバ・#654）で受けるので、このゲッターは自前サーバを
+  /// 立てない（fwa2 の server impl で受ける）分岐でのみ消費される。Linux /
+  /// Windows の localhost callback では fwa2 の server impl が完全な
   /// `http://localhost:{port}/{path}` URL を期待するため、その URL を返す。
-  /// （macOS で本ゲッターが評価された場合のフォールバック値として custom
-  /// scheme を残すが、現状 macOS では参照されない。）
+  /// （自前サーバの OS で評価された場合のフォールバック値として custom scheme を
+  /// 残すが、現状は参照されない。）
   String get _authCallbackUrlScheme {
     // ⚠ UI 層に `Platform.isX` を直書きしない (#650 / #1144)。自前サーバを立てる
     // macOS / Android はこのゲッターを通らないので、機能名の合成で同じ意味になる。
@@ -459,6 +459,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final keepAlive = await OAuthKeepAlive.start();
     _keepAlive = keepAlive;
     _logLoginStep('oauth_keepalive.start', data: {'kept': keepAlive.active});
+    // ⚠ keep-alive の起動を待つ間にも追い越されうる（v1.66 リリース前レビュー）。
+    // 後の試行の後片づけは、この起動より前の値しか止められないので、ここで自分で
+    // 畳んで降りる。進むと、閉じたサーバーのまま 2 枚目の認可タブを開き、
+    // 前景通知が 5 分残る。
+    if (_isAttemptSuperseded) {
+      await OAuthKeepAlive.stop(keepAlive);
+      await server.close(force: true);
+      if (identical(_oauthServer, server)) _oauthServer = null;
+      throw const _AttemptSupersededException();
+    }
     try {
       final launched = await launchUrlSafely(
         authorizationUrl,
@@ -959,7 +969,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       // 追い越された試行は黙って降りる (#1144)。⚠ cancel の経路へ流さない ——
       // Misskey では cancel が MiAuth のフォールバック（セッションの確認）を
       // 起こし、生きている試行と同じログインを 2 本目が完了させうる。
-      if (e is _AttemptSupersededException) {
+      // ⚠ **例外の型だけで見ない**（v1.66 リリース前レビュー）。認可を待っている
+      // 間に追い越された試行は、サーバーを閉じられて 5 分後に cancel として
+      // 戻ってくる。そこで cancel の経路へ流すと、生きている画面に手入力の
+      // ダイアログが出たり、client の資格情報を消して作り直したりする。
+      if (e is _AttemptSupersededException || _isAttemptSuperseded) {
         _logLoginStep('login.superseded');
         return;
       }

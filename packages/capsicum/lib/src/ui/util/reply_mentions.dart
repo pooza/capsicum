@@ -71,6 +71,31 @@ List<String> inheritVisibleUserIds({required Post replyTo, required User? me}) {
   return ids.toList();
 }
 
+/// 投稿フォームが送る指名（`specified`）の宛先 (#1161)。
+///
+/// - 指名でなければ送らない（空）
+/// - ⚠⚠ **redraft は元の投稿の宛先だけを使う。**返信先の宛先を足さない。
+///   自分が Web UI 等で宛先を絞った返信を再編集すると、以前は返信先の宛先
+///   全員との和集合になり、**外した人に黙って届いていた**（v1.66 リリース前
+///   レビューの赤）。宛先は画面に出ないので、利用者は気づけない。⚠ 返信先の
+///   取得が送信より先に終わるかどうかで結果が変わる、という揺れも消える
+/// - 通常の返信は返信先から引き継ぐ（[inheritVisibleUserIds]）
+/// - どの場合も自分は入れない
+List<String> composeVisibleUserIds({
+  required PostScope scope,
+  required Post? redraft,
+  required Post? replyTo,
+  required User? me,
+}) {
+  if (scope != PostScope.direct) return const [];
+  final ids = redraft != null
+      ? redraft.visibleUserIds
+      : replyTo != null
+      ? inheritVisibleUserIds(replyTo: replyTo, me: me)
+      : const <String>[];
+  return {...ids}.where((id) => id != me?.id).toList();
+}
+
 /// 自サーバーと同じ host はローカル扱い（null）に畳む。
 String? _remoteHost(String? host, String localHost) {
   if (host == null || host.isEmpty) return null;

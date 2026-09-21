@@ -134,6 +134,31 @@ void main() {
     );
   });
 
+  // ⚠⚠ 修正前の実物を食わせる（3 点セットの 3）。v1.65.0 には対応表が無く、
+  // アカウント別設定を読む provider が全部「invalidate されない」側に出るはず。
+  test('⚠⚠ v1.65.0 の preferences_provider を食わせると漏れが出る', () {
+    final shown = Process.runSync('git', [
+      '-C',
+      '../..',
+      'show',
+      'v1.65.0:packages/capsicum/lib/src/provider/preferences_provider.dart',
+    ]);
+    if (shown.exitCode != 0) {
+      markTestSkipped('git show が使えない: ${shown.stderr}');
+      return;
+    }
+    final old = maskComments(shown.stdout as String);
+    final readers = readersByPrefix(old);
+    final declared = declaredByPrefix(old);
+
+    expect(declared, isEmpty, reason: '前提: v1.65.0 には対応表が無い');
+    expect(
+      readers['tab_order_'],
+      containsAll(['tabConfigProvider', 'tabOrderProvider']),
+      reason: '修正前の形でも、読んでいる provider を拾えていること',
+    );
+  });
+
   group('走査に歯がある', () {
     const synthetic = '''
 const _fooPrefix = 'foo_';

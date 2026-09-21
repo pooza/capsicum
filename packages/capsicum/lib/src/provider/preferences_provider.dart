@@ -2083,7 +2083,7 @@ final backedUpPreferenceProviders = <ProviderOrFamily>[
 /// ⚠ **1 つの prefix を複数の provider が読む**（`tab_order_` はタブ構成と並び順の
 /// 両方）ので、件数の 1:1 ではなく「prefix → それを読む provider」で持つ。キーの
 /// 集合が `accountScopedSettings` と一致することは
-/// `test/settings_backup_providers_test.dart` が見張る。family は丸ごと invalidate
+/// `test/settings_backup_account_scoped_providers_test.dart` が見張る。family は丸ごと invalidate
 /// する（どのアカウントの値が変わったかを追わない）。
 final backedUpAccountScopedProviders = <String, List<ProviderOrFamily>>{
   _themeColorPrefix: [accountThemeColorProvider],

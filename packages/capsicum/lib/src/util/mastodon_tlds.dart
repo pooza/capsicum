@@ -5,7 +5,12 @@
 // 正規表現だけを `config/initializers/twitter_regex.rb` で上書きしており、ドメインの
 // 判定（`valid_domain` の TLD 一覧）は twitter-text のまま使っている。
 //
-// 更新: Mastodon の twitter-text の版が上がったら、同じ版の gem から作り直す。
+// 更新: Mastodon の Gemfile.lock の twitter-text が上がったら、同じ版の gem から作り直す。
+//   1. `curl -sL -o tt.gem https://rubygems.org/downloads/twitter-text-<版>.gem`
+//   2. `tar -xf tt.gem && tar -xzf data.tar.gz`（`lib/assets/tld_lib.yml` が出る）
+//   3. `- ` で始まる行（country + generic）を、出現順・完全一致で重複を落として
+//      下の集合へ並べる（⚠ ロケールの照合で重複を判定しない。正規化形の違う
+//      同じ見た目の TLD が別物として入っている）
 
 /// Mastodon（twitter-text）が URL のドメインとして認める TLD（小文字）。
 const mastodonTlds = <String>{

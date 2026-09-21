@@ -236,7 +236,7 @@ probing の結果、基本的な機能が欠けているサーバーに対して
 
 ### Codex レビューの回し方（open PR）
 
-⚠⚠ **採否の判断・返信と 👍 / 👎・取り残しの走査は、ginseng の共通スキル `/ginseng:codex-review` が正本**（#1138・2026-09-21 pooza 判断）。P0〜P3 の扱い、出どころによる切り分け、👎 に反証の実測を添える規律はそちらにある。**ここに残すのは capsicum 固有の 5 つだけ**（下の巡回の止め方・締めの 1 回・API の分かれ方・返信の書かれ方・リリース PR の数え方）。
+⚠⚠ **採否の判断・返信と 👍 / 👎・取り残しの走査は、ginseng の共通スキル `/ginseng:codex-review` が正本**（#1138・2026-09-21 pooza 判断）。P0〜P3 の扱い、出どころによる切り分け、👎 に反証の実測を添える規律はそちらにある。**ここと同期手順に残すのは capsicum 固有の 5 つだけ** —— この節に巡回の止め方と締めの 1 回、[sync-procedure スキル](../.claude/skills/sync-procedure/SKILL.md) の Codex の節（§6）に API の分かれ方・返信の書かれ方・リリース PR の数え方。
 
 ⚠ **プラグインは端末ごとに入れる**（マーケットプレイスは端末単位で、版も端末で決まる）。Mac / miki / Windows のそれぞれで:
 
@@ -580,7 +580,7 @@ v1.24 リリース直前の Linux 実機検証で判明・対応した、他プ�
 
 ⚠⚠ **手順は Claude Code のスキルにある（#1114）。**docs の側は持たない。
 
-- 会話の最初に「進捗を同期してください」等の指示があった場合 → **`/sync-procedure`**（[.claude/skills/sync-procedure/SKILL.md](../.claude/skills/sync-procedure/SKILL.md)）
+- 会話の最初に「進捗を同期してください」等の指示があった場合 → **`/sync-procedure`**（[.claude/skills/sync-procedure/SKILL.md](../.claude/skills/sync-procedure/SKILL.md)）。⚠ **自動では起動しない**（外へ書く step があるので明示のみ・#1137）。指示されたら Claude は SKILL.md を読んでそのとおり回す
 - 作業中にセッションが切れて「続きをやって」と指示された場合 → **`/resume-work`**（[.claude/skills/resume-work/SKILL.md](../.claude/skills/resume-work/SKILL.md)）。⚠ **同期手順は回さない**
 
 ⚠ **スキルは「確実に呼ぶ」ための仕組みで、「守らせる」仕組みではない。**守らせたいものは従来どおり `.claude/hooks/` でフック化する。

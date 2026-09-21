@@ -431,15 +431,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// ⚠ **サーバーが自動で足すのは返信先の投稿者だけ**なので、返信先の宛先を
   /// 引き継がないと、スレッドにいた他の人へ届かない。redraft は元の宛先も戻す。
   /// Mastodon の adapter はこの値を読まない（宛先は本文のメンションで決まる）。
-  List<String> get _visibleUserIds {
-    if (_scope != PostScope.direct) return const [];
-    final me = ref.read(currentAccountProvider)?.user;
-    final reply = _isReply ? _replyToPost : null;
-    return {
-      ...?widget.redraft?.visibleUserIds,
-      if (reply != null) ...inheritVisibleUserIds(replyTo: reply, me: me),
-    }.where((id) => id != me?.id).toList();
-  }
+  List<String> get _visibleUserIds => composeVisibleUserIds(
+    scope: _scope,
+    redraft: widget.redraft,
+    replyTo: _isReply ? _replyToPost : null,
+    me: ref.read(currentAccountProvider)?.user,
+  );
 
   Future<void> _loadRedraftReplyTo(String id) async {
     final adapter = ref.read(currentAdapterProvider);
@@ -3331,6 +3328,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     if (adapter == null || adapter is! DraftSupport) return;
     // ⚠ await の前に確定させる（[_syncDriveDescriptions] の doc）。
     final account = ref.read(currentAccountProvider);
+    // ⚠ 宛先も await の前に確定させる（[_submitInternal] の同じ位置のコメント）。
+    final visibleUserIds = _visibleUserIds;
 
     // ⚠ **アダプタ不在で引き返す経路より後で取り消す (Codex P2 / PR #1017)。**
     // 理由は [_submitInternal] の同じ位置のコメント。
@@ -3367,7 +3366,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           sensitive: _effectiveSensitive,
           localOnly: _localOnly,
           channelId: _effectiveChannelId,
-          visibleUserIds: _visibleUserIds,
+          visibleUserIds: visibleUserIds,
         ),
       );
 
@@ -3517,6 +3516,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     if (adapter == null) return;
     // ⚠ await の前に確定させる（[_syncDriveDescriptions] の doc）。
     final account = ref.read(currentAccountProvider);
+    // ⚠ 宛先も await の前に確定させる（v1.66 リリース前レビュー）。getter は
+    // `ref.read` するので、アップロード中に画面を離れると例外で投稿が送られない。
+    final visibleUserIds = _visibleUserIds;
 
     // ⚠ **ここまで来て初めて取り消す (Codex P2 / PR #1017)。**入口で取り消すと、
     // 確認ダイアログのキャンセル・アンケートの選択肢不足・アダプタ不在で
@@ -3560,7 +3562,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           sensitive: _effectiveSensitive,
           localOnly: _localOnly,
           channelId: _effectiveChannelId,
-          visibleUserIds: _visibleUserIds,
+          visibleUserIds: visibleUserIds,
           scheduledAt: _scheduledAt,
           language: _language,
           pollOptions: _pollEnabled

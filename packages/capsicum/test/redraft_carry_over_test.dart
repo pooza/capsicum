@@ -248,7 +248,7 @@ void main() {
       'channelId': 'widget.redraft?.channelId',
       'content': 'redraft.content',
       'quoteApprovalPolicy': 'redraft.quoteApprovalPolicy',
-      'visibleUserIds': 'widget.redraft?.visibleUserIds',
+      'visibleUserIds': 'composeVisibleUserIds(',
     };
 
     test('readSites が policy の carry を網羅している', () {

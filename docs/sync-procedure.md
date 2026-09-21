@@ -4,7 +4,7 @@
 
 | スキル | 呼び出し | 中身 |
 | --- | --- | --- |
-| [sync-procedure](../.claude/skills/sync-procedure/SKILL.md) | `/sync-procedure`（「進捗を同期して」でも起動する） | セッション開始時の同期 1〜10。git / Issue / PR / ユーザーフィードバック / マイルストーン / Codex / Sentry / 関連リポジトリ → MEMORY.md 更新 → 報告 |
+| [sync-procedure](../.claude/skills/sync-procedure/SKILL.md) | `/sync-procedure` のみ（⚠ 自動では起動しない・#1137。「進捗を同期して」と言われたら Claude は SKILL.md を読んでそのとおり回す） | セッション開始時の同期 1〜10。git / Issue / PR / ユーザーフィードバック / マイルストーン / Codex / Sentry / 関連リポジトリ → MEMORY.md 更新 → 報告 |
 | [resume-work](../.claude/skills/resume-work/SKILL.md) | `/resume-work`（「続きをやって」でも起動する） | 作業中にセッションが切れたときの復帰。⚠ **同期は回さない** |
 
 ⚠ **手順を直すときはスキルの側だけを直す**（二重に持たない）。このファイルは、既存の参照（docs / メモリから 20 箇所以上）を生かすために残してある。
