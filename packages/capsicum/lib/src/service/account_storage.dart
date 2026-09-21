@@ -375,7 +375,7 @@ class AccountStorage {
     } catch (e, st) {
       // JSON parse 失敗等。legacy データ自体が壊れているので削除。
       _reportOnce('index', e, st);
-      await _gate.delete(key: _legacyAccountListKey);
+      await _deleteLegacyIndexQuietly();
       return [];
     }
     try {
@@ -386,8 +386,24 @@ class AccountStorage {
       return list;
     }
     // ここまで来たら新 index への書き込みが完了している。legacy を削除。
-    await _gate.delete(key: _legacyAccountListKey);
+    await _deleteLegacyIndexQuietly();
     return list;
+  }
+
+  /// 旧索引（secure storage 側）を消す。⚠ **投げない (#1144)。**
+  ///
+  /// 以前は `try` の外で直に消しており、関所が `TimeoutException` を投げるように
+  /// なって（#1117-C）から `getAccountKeys()` ごと投げうる状態だった。そうなると
+  /// `restoreSessions` が落ちて**アカウント 0 件のままホームに着き**、Sentry には
+  /// 何も上がらない（`splash_screen` の catch は `debugLogException` だけ）。
+  /// 消せなくても実害は無い —— 新しい索引は prefs に書けており、次の起動は
+  /// そちらを読むので旧索引は参照されない。
+  Future<void> _deleteLegacyIndexQuietly() async {
+    try {
+      await _gate.delete(key: _legacyAccountListKey);
+    } catch (e, st) {
+      _reportOnce('legacy_index_delete', e, st);
+    }
   }
 
   /// v1.30 以前に書き込んだアカウント secret / client credentials は旧 Keychain
