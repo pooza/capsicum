@@ -236,6 +236,17 @@ probing の結果、基本的な機能が欠けているサーバーに対して
 
 ### Codex レビューの回し方（open PR）
 
+⚠⚠ **採否の判断・返信と 👍 / 👎・取り残しの走査は、ginseng の共通スキル `/ginseng:codex-review` が正本**（#1138・2026-09-21 pooza 判断）。P0〜P3 の扱い、出どころによる切り分け、👎 に反証の実測を添える規律はそちらにある。**ここに残すのは capsicum 固有の 5 つだけ**（下の巡回の止め方・締めの 1 回・API の分かれ方・返信の書かれ方・リリース PR の数え方）。
+
+⚠ **プラグインは端末ごとに入れる**（マーケットプレイスは端末単位で、版も端末で決まる）。Mac / miki / Windows のそれぞれで:
+
+```text
+/plugin marketplace add pooza/ginseng-style
+/plugin install ginseng@ginseng-style
+```
+
+⚠ **配る側が `plugin.json` の `version` を上げないと届かない**（ginseng-style#104）。ginseng 側を直したのに挙動が変わらないときは、まず版を見る。
+
 ⚠ **追加コミットではレビューは発火しない。**`@codex review` を PR コメントに書いた時だけ走る（初回は PR 作成 / ready 化で自動）。**rebase / force-push で SHA が変わったときも打ち直す**。
 
 巡回は次の形で止める（2026-08-23 決定）:
