@@ -45,7 +45,9 @@ jobs:
       # ない**ので、**ここが唯一の検査**になる。head で見分ける。
       #
       # ⚠ pubspec.lock の検査（PR 粒度でしか回せない）はどちらでも回す。
-      HEAVY: ${{ github.event_name != 'pull_request' || github.head_ref != 'develop' }}
+      # ⚠ fork の `develop` ブランチから出た PR は push 側で検査されていないので、
+      # 同じリポジトリの develop だけを落とす（v1.66 リリース前レビュー）。
+      HEAVY: ${{ github.event_name != 'pull_request' || github.head_ref != 'develop' || github.event.pull_request.head.repo.full_name != github.repository }}
     steps:
       - uses: actions/checkout@v4
         with:
