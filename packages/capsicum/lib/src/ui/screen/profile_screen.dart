@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:capsicum_core/capsicum_core.dart' as cc;
 import 'package:capsicum_core/capsicum_core.dart' hide Page;
 import 'package:flutter/material.dart';
@@ -450,6 +452,30 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     }
   }
 
+  /// 引っ越し先のアカウント (#1144)。Misskey のときだけ解決して入れる。
+  User? _movedDestination;
+
+  /// Misskey の引っ越し先を解決する (#1144)。
+  ///
+  /// ⚠ Misskey の `movedTo` はローカル DB のユーザー ID しか来ない
+  /// （[MovedTo.userId]）ので、行き先を示すには `users/show` の往復が要る。
+  /// Mastodon は入れ子の Account で handle / url が分かるので引かない。
+  /// ⚠ **失敗しても何もしない** —— バッジは「引っ越しました」のまま出ており、
+  /// 行き先は補足。
+  Future<void> _resolveMovedTo(User user) async {
+    final moved = user.movedTo;
+    final id = moved?.userId;
+    if (moved == null || id == null || moved.handle != null) return;
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter == null) return;
+    try {
+      final destination = await adapter.getUserById(id);
+      if (mounted) setState(() => _movedDestination = destination);
+    } catch (e) {
+      debugLogException('capsicum: profile: resolve movedTo failed', e);
+    }
+  }
+
   Future<void> _fetchFullUser() async {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter == null) return;
@@ -460,6 +486,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       if (mounted) {
         final excludeRepliesBefore = _excludeMediaReplies;
         setState(() => _user = fullUser);
+        unawaited(_resolveMovedTo(fullUser));
         // 完全な user 取得で show_media が判明しタブ集合が変わることがある（#732）。
         _syncTabController();
         // メディアタブを先に開いた後で Mastodon 4.6 の show_media_replies=false が
@@ -892,6 +919,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           // ⚠⚠ **開けないものをタップ可能に見せない。**以前は ID を `url` に
           // 入れていたため、Misskey では生の ID がラベルに出たうえ、タップしても
           // 「リンクを開けませんでした」になっていた。
+          //
+          // ⚠ Misskey は `users/show` で解決できたら、その `@user@host` を出して
+          // プロフィールへ飛べるようにする (#1144・[_resolveMovedTo])。
+          final resolved = _movedDestination;
+          if (resolved != null && moved.userId == resolved.id) {
+            return _stateBadge(
+              theme,
+              icon: Icons.move_down,
+              label: 'このアカウントは引っ越しました → @${userAcct(resolved)}',
+              onTap: () => context.push('/profile', extra: resolved),
+            );
+          }
           final destination = moved.handle ?? moved.url;
           return _stateBadge(
             theme,

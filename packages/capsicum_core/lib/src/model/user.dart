@@ -70,7 +70,8 @@ class MovedTo {
   /// として扱っている）。⚠ **これを [url] に入れると生の ID が画面に出て、
   /// タップしても開けない。**
   ///
-  /// ⚠ 解決して行き先を出す改修は別途（`users/show` の往復が要る）。
+  /// 行き先はプロフィール画面が `users/show` で解決して出す（#1144・
+  /// `profile_screen.dart` の `_resolveMovedTo`）。
   final String? userId;
 
   const MovedTo({this.url, this.handle, this.userId});
