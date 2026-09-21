@@ -272,4 +272,39 @@ bool TryBuildAnnouncementDisplay(const std::string& raw_payload,
   return true;
 }
 
+bool TryBuildDegradedDisplay(const std::string& raw_payload, PushDisplay* out,
+                             std::string* error) {
+  auto fail = [&](const char* message) {
+    if (error != nullptr) *error = message;
+    return false;
+  };
+
+  std::map<std::string, std::string> envelope;
+  if (!ParseFlatObject(raw_payload, &envelope)) {
+    return fail("invalid envelope");
+  }
+  // 目印より先に account を見ない（TryBuildAnnouncementDisplay と同じ理由）。
+  // 暗号化 body を持つなら、目印があっても復号できる方を優先する。
+  if (MapGet(envelope, "degraded") != "1" || !MapGet(envelope, "body").empty()) {
+    return fail("not degraded");
+  }
+  const std::string account = MapGet(envelope, "account");
+  if (account.empty()) {
+    return fail("missing account");
+  }
+  if (out != nullptr) {
+    out->account = account;
+    out->title = "capsicum";
+    // "<account> に通知があります"。/utf-8 無しでもコンパイルできるよう
+    // バイト列で書く（notification_type_label.cpp と同じ流儀）。
+    out->body = account +
+                " \xe3\x81\xab\xe9\x80\x9a\xe7\x9f\xa5\xe3\x81\x8c\xe3\x81\x82"
+                "\xe3\x82\x8a\xe3\x81\xbe\xe3\x81\x99";
+    out->type.clear();
+    out->notification_id.clear();
+    out->user_id.clear();
+  }
+  return true;
+}
+
 }  // namespace capsicum

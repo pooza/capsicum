@@ -29,4 +29,8 @@ const wnsBenignDiagnosticCodes = <String>{
   'wns.announcement_shown',
   // WebSocket 経路 (#569) が先に出したので抑止した = 通常運転 (#997)。
   'wns.announcement_deduped',
+  // relay が 5000B 超過で本文を落とした通知 (capsicum-relay#65)。終了中は汎用
+  // 文面で出し、起動中は WebSocket 経路に任せて出さない。どちらも想定どおり。
+  'bgtask.degraded_shown',
+  'wns.degraded_skipped',
 };

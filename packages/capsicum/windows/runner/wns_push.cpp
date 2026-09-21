@@ -269,6 +269,21 @@ void DisplayRawNotification(const std::string& content) {
   if (HandleAnnouncementContent(content)) {
     return;
   }
+  // relay が 5000B 超過で本文を落とした通知 (capsicum-relay#65)。⚠ **起動中は
+  // 表示しない。**WebSocket 経路 (#569) が同じ通知を本文付きで出しており、
+  // degrade した payload は通知 ID を持たないので dedup できない —— 出すと
+  // 毎回「本文付き」と「汎用文面」が 2 通並ぶ。届いた事実だけ残す（正常系）。
+  // アプリ終了中はバックグラウンドタスク側が汎用文面で出す。
+  {
+    capsicum::PushDisplay degraded;
+    std::string error;
+    if (capsicum::TryBuildDegradedDisplay(content, &degraded, &error)) {
+      capsicum::RecordPushDiagnostic(
+          "wns.degraded_skipped",
+          capsicum::PushDiagnosticHostFromAccount(degraded.account));
+      return;
+    }
+  }
   capsicum::PushDisplay display;
   // アカウント別 reblog/post ラベル（リノート / リキュア！等）を LocalState の
   // push_labels.json から引く (#770)。無ければ既定（ブースト / 投稿）に倒れる。
