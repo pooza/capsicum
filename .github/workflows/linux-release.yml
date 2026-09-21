@@ -8,7 +8,12 @@ on:
     # 含まれない。draft ガード (#987) を入れた以上、明示しないと
     # **draft を ready にした瞬間に run が 1 本も生成されない**。
     types: [opened, synchronize, reopened, ready_for_review]
-    branches: [develop, main]
+    # ⚠ **main 向けの PR では走らせない (#1146)。**リリース PR のビルドは、
+    # マージ直後のタグビルドと**ツリーが 1 バイトも違わない**（main が分岐後に
+    # 進んでいないため）うえ、成果物は workflow artifact 止まりで Release には
+    # 載らない（添付はタグ限定）。内部ベータの成果物は develop の PR か
+    # `workflow_dispatch` で作る（1.x の release ブランチは `--ref release/x.y.z`）。
+    branches: [develop]
     paths:
       - 'distribution/linux/**'
       - 'packages/capsicum/linux/**'
