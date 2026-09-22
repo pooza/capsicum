@@ -13,6 +13,7 @@ import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/supporter_purchase_provider.dart';
 import '../../provider/timeline_provider.dart';
+import '../../service/resident_mode_service.dart';
 import '../../url_helper.dart';
 import '../util/about_dialog.dart';
 import '../util/deck_navigation.dart';
@@ -424,7 +425,16 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
           macType: PlatformProvidedMenuItemType.showAllApplications,
         ),
         const MenuGroupSeparator(),
-        const MenuProvidedEntry(macType: PlatformProvidedMenuItemType.quit),
+        // 常駐ごと終了する。⚠ 以前は macOS の OS 提供項目だけで、Windows / Linux
+        // では黙って省かれていた（in-window は代わりの文言と動作が要る）。常駐中は
+        // ウィンドウを閉じてもトレイに残るので、メニューから終われないとトレイの
+        // 「終了」しか手段が無かった。処理はトレイと同じ [ResidentModeService.quit]。
+        MenuProvidedEntry(
+          macType: PlatformProvidedMenuItemType.quit,
+          inWindowLabel: '終了',
+          inWindowIcon: Icons.power_settings_new,
+          inWindowAction: ResidentModeService.instance.quit,
+        ),
       ],
     ),
     // ファイル (#857)。今は設定のバックアップだけだが、macOS / Windows の

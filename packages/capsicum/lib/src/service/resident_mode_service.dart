@@ -308,16 +308,25 @@ class ResidentModeService with WindowListener, TrayListener {
       case _kShow:
         _showWindow();
       case _kExit:
-        // 明示終了。preventClose を解いてから destroy し、onWindowClose の
-        // hide 分岐に吸われず確実にプロセスを終わらせる。setPreventClose は
-        // プラットフォームチャネル越しの非同期呼び出しのため、await せずに
-        // destroy すると解除が反映される前にウィンドウが閉じ、onWindowClose の
-        // hide 分岐に吸われうる。_enabled=false ガードで救済されるが綱渡りなので
-        // 解除完了を待ってから終了する (#763)。
-        _enabled = false;
-        await windowManager.setPreventClose(false);
-        await windowManager.destroy();
+        await quit();
     }
+  }
+
+  /// アプリを常駐ごと終了する。トレイの「終了」と、Windows / Linux のメニュー
+  /// バーの「終了」（capsicum メニュー）が呼ぶ。macOS のメニューバーは OS 提供の
+  /// 「終了」を使う。
+  ///
+  /// preventClose を解いてから destroy し、onWindowClose の hide 分岐に吸われず
+  /// 確実にプロセスを終わらせる。setPreventClose はプラットフォームチャネル越しの
+  /// 非同期呼び出しのため、await せずに destroy すると解除が反映される前に
+  /// ウィンドウが閉じ、onWindowClose の hide 分岐に吸われうる。_enabled=false
+  /// ガードで救済されるが綱渡りなので解除完了を待ってから終了する (#763)。
+  ///
+  /// 常駐モードがオフでも使ってよい（解除済みの preventClose をもう一度解くだけ）。
+  Future<void> quit() async {
+    _enabled = false;
+    await windowManager.setPreventClose(false);
+    await windowManager.destroy();
   }
 
   static const _kShow = 'show';
