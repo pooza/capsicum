@@ -27,6 +27,7 @@ import '../util/visible_timeline.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/content_parser.dart';
 import '../widget/emoji_text.dart';
+import '../widget/featured_tags_section.dart';
 import '../widget/page_card.dart';
 import '../widget/post_tile.dart';
 import '../widget/report_comment_dialog.dart';
@@ -57,6 +58,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   late TabController _tabController;
   late User _user = widget.user;
   List<Post> _pinnedPosts = [];
+
+  /// プロフィールで紹介しているハッシュタグ (#1075)。Mastodon のみ。
+  List<FeaturedTag> _featuredTags = const [];
   List<Post> _posts = [];
   bool _loadingPosts = true;
   bool _loadingMore = false;
@@ -136,6 +140,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     _scrollController.addListener(_onScroll);
     _fetchFullUser();
     _loadPinnedPosts();
+    _loadFeaturedTags();
     _loadPosts();
     _loadRelationship();
     _resolveTcoUrls();
@@ -213,6 +218,23 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       if (mounted) setState(() => _pinnedPosts = posts);
     } catch (_) {
       // ピン留め投稿非対応の場合は無視して続行。
+    }
+  }
+
+  /// プロフィールで紹介しているハッシュタグを取る (#1075)。
+  ///
+  /// 補助的な表示なので、取れなくても黙って出さない（プロフィール本体の表示を
+  /// 妨げない・固定投稿と同じ扱い）。
+  Future<void> _loadFeaturedTags() async {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! FeaturedTagSupport) return;
+    try {
+      final tags = await (adapter as FeaturedTagSupport).getFeaturedTags(
+        widget.user.id,
+      );
+      if (mounted) setState(() => _featuredTags = tags);
+    } catch (_) {
+      // 取れなければ出さないだけ（_loadPinnedPosts と同じ）。
     }
   }
 
@@ -655,6 +677,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
 
   List<Widget> _buildPostsTab(ColorScheme colorScheme) {
     return [
+      // プロフィールで紹介しているハッシュタグ (#1075)。⚠ WebUI では固定投稿と
+      // 同じ「注目」タブに並ぶので、show_featured == false（#732）なら一緒に
+      // 隠す。本人が非表示にしたものを出さない（#1076 と同じ型）。
+      if (_featuredTags.isNotEmpty && _user.showFeatured != false)
+        SliverToBoxAdapter(
+          child: FeaturedTagsSection(
+            tags: _featuredTags,
+            onTap: (tag) => showHashtagActionMenu(context, tag.name),
+          ),
+        ),
       // show_featured == false のとき固定投稿（フィーチャー）を隠す（#732）。
       if (_pinnedPosts.isNotEmpty && _user.showFeatured != false) ...[
         SliverToBoxAdapter(

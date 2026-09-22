@@ -133,6 +133,8 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         PushSubscriptionSupport,
         ScheduleSupport,
         CollectionsSupport,
+        // プロフィールの掲載タグ (#1075)。Misskey には無い。
+        FeaturedTagSupport,
         TimelineCacheSupport,
         MulukhiyaRepostSupport,
         TranslationSupport,
@@ -291,6 +293,12 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       (s) => s.toCapsicum(host, adminRoleIds: _adminRoleIds),
       (s) => s.id,
     ).results;
+  }
+
+  @override
+  Future<List<FeaturedTag>> getFeaturedTags(String accountId) async {
+    final tags = await client.getFeaturedTags(accountId);
+    return tags.map((t) => t.toCapsicum()).toList();
   }
 
   Future<List<Post>> getPinnedPosts(String id) async {

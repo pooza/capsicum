@@ -15,6 +15,7 @@ export 'src/mastodon/account_warning.dart';
 export 'src/mastodon/announcement.dart';
 export 'src/mastodon/application.dart';
 export 'src/mastodon/collection.dart';
+export 'src/mastodon/featured_tag.dart';
 export 'src/mastodon/list.dart';
 export 'src/mastodon/media_attachment.dart';
 export 'src/mastodon/notification.dart';

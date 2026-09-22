@@ -117,6 +117,14 @@ class MastodonClient {
     }
   }
 
+  /// GET /api/v1/accounts/:id/featured_tags（プロフィールの掲載タグ・#1075）
+  Future<List<MastodonFeaturedTag>> getFeaturedTags(String id) async {
+    final response = await dio.get('/api/v1/accounts/$id/featured_tags');
+    return (response.data as List)
+        .map((e) => MastodonFeaturedTag.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   /// GET /api/v1/accounts/:id/statuses
   Future<List<MastodonStatus>> getAccountStatuses(
     String id, {
