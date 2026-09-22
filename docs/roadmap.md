@@ -114,6 +114,17 @@
 
 ⚠ **空いた容量はデッキ（#720）の完成度に充てる。**⚠⚠ **デッキの実装中に出た Issue は v2.0 へ入れる**（[#1152](https://github.com/pooza/capsicum/issues/1152) / [#1153](https://github.com/pooza/capsicum/issues/1153) が実例）。**2.0 の主題はデッキ**という判断がここで明示された。
 
+#### 2026-09-22: 順序 2 の決着型から 2 件を、決着を付けずに外した
+
+**pooza 判断。**「決着だけ 2.0 で付ける」半分の逃がし方ではなく、**丸ごと外した**。
+
+| Issue | 行き先 | 理由（pooza） |
+| --- | --- | --- |
+| [#1074](https://github.com/pooza/capsicum/issues/1074) Misskey の Play を作成・編集 | **[v2.1](https://github.com/pooza/capsicum/milestone/86)** | Play を作成する機会は多くない |
+| [#1049](https://github.com/pooza/capsicum/issues/1049) トレンド | **マイルストーンなし・`on-hold`** | プリセットサーバーではあまり使われていない機能 |
+
+⚠ **[#1079](https://github.com/pooza/capsicum/issues/1079)（preferences）は v2.0 に残る。**上の基準で言えば、端末側設定との優先関係＝**基本設計に関わる**側。v2.0 は **35 件**。
+
 ### 4. 棚卸しの成果は 2.x で少しずつ消化する（急ぎのものだけ 1.x）
 
 ⚠⚠ **分類 B は棚卸しの時点で「2.0 以降」と確定済み。**[api-gap-inventory.md](api-gap-inventory.md) §4 が「**2.0 以降のマイルストーンに載せるもの。新しい画面 / 新しい概念を持ち込むもの。1.x の集約枠には粒度が合わない**」と定義し、**2026-08-31 に全件 v2.0 で起票済み**（pooza の判断）。**この判定を再判定しない。**
