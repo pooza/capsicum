@@ -454,6 +454,7 @@ extension CapsicumMastodonFeaturedTagExtension on MastodonFeaturedTag {
   /// ⚠ 件数は文字列で来る・日付は日付だけ（#1075）。読めなければ 0 / null に倒し、
   /// 掲載タグそのものは落とさない（表示の主役はタグ名）。
   FeaturedTag toCapsicum() => FeaturedTag(
+    id: id,
     name: name,
     statusesCount: int.tryParse(statusesCount ?? '') ?? 0,
     lastStatusAt: lastStatusAt == null

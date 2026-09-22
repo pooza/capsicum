@@ -12,6 +12,7 @@ void main() {
       'statuses_count': '42',
       'last_status_at': '2026-09-04',
     }).toCapsicum();
+    expect(tag.id, '1', reason: '外すときに使う');
     expect(tag.name, 'PreCure', reason: '表示用の大文字小文字を保つ');
     expect(tag.statusesCount, 42);
     expect(tag.lastStatusAt, DateTime(2026, 9, 4));

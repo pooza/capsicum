@@ -11,10 +11,14 @@ class FeaturedTagsSection extends StatelessWidget {
     super.key,
     required this.tags,
     required this.onTap,
+    this.onEdit,
   });
 
   final List<FeaturedTag> tags;
   final void Function(FeaturedTag tag) onTap;
+
+  /// 自分のプロフィールのときだけ渡す。見出しの右に編集ボタンを出す。
+  final VoidCallback? onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -35,6 +39,15 @@ class FeaturedTagsSection extends StatelessWidget {
                   color: colorScheme.onSurfaceVariant,
                 ),
               ),
+              if (onEdit != null) ...[
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.edit, size: 16),
+                  tooltip: '紹介するハッシュタグを編集',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: onEdit,
+                ),
+              ],
             ],
           ),
         ),

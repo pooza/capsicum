@@ -27,6 +27,7 @@ import '../util/visible_timeline.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/content_parser.dart';
 import '../widget/emoji_text.dart';
+import '../widget/featured_tags_editor_sheet.dart';
 import '../widget/featured_tags_section.dart';
 import '../widget/page_card.dart';
 import '../widget/post_tile.dart';
@@ -236,6 +237,21 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     } catch (_) {
       // 取れなければ出さないだけ（_loadPinnedPosts と同じ）。
     }
+  }
+
+  /// 自分の掲載タグを編集するシートを開く (#1075)。変更はその場で表示へ返す。
+  void _editFeaturedTags() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => FeaturedTagsEditorSheet(
+        initial: _featuredTags,
+        onChanged: (tags) {
+          if (mounted) setState(() => _featuredTags = tags);
+        },
+      ),
+    );
   }
 
   void _onPostUpdated(Post updated) {
@@ -685,6 +701,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           child: FeaturedTagsSection(
             tags: _featuredTags,
             onTap: (tag) => showHashtagActionMenu(context, tag.name),
+            onEdit: _isOwnProfile ? _editFeaturedTags : null,
           ),
         ),
       // show_featured == false のとき固定投稿（フィーチャー）を隠す（#732）。
@@ -1537,12 +1554,21 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             _openCollections(CollectionsMode.own);
           case 'in_collections':
             _openCollections(CollectionsMode.included);
+          case 'featured_tags':
+            _editFeaturedTags();
         }
       },
       itemBuilder: (_) => [
         const PopupMenuItem(value: 'copy_acct', child: Text('ユーザー名をコピー')),
         if (widget.user.url != null)
           const PopupMenuItem(value: 'copy_url', child: Text('URL をコピー')),
+        // ⚠ 掲載タグが 0 件だと見出しの編集ボタンも出ないので、最初の 1 件を
+        // 足す入口はここになる (#1075)。
+        if (ref.read(currentAdapterProvider) is FeaturedTagSupport)
+          const PopupMenuItem(
+            value: 'featured_tags',
+            child: Text('紹介するハッシュタグを編集'),
+          ),
         if (_supportsCollections) ...[
           const PopupMenuItem(
             value: 'my_collections',

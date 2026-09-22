@@ -23,11 +23,12 @@ void main() {
   testWidgets('本人が選んだ順にチップを並べ、件数を添える', (tester) async {
     await pump(tester, [
       FeaturedTag(
+        id: '1',
         name: 'PreCure',
         statusesCount: 42,
         lastStatusAt: DateTime(2026, 9, 4),
       ),
-      const FeaturedTag(name: 'delmulin'),
+      const FeaturedTag(id: '2', name: 'delmulin'),
     ]);
     expect(find.text('紹介しているハッシュタグ'), findsOneWidget);
     expect(find.text('#PreCure  42'), findsOneWidget);
@@ -40,8 +41,8 @@ void main() {
 
   testWidgets('タップしたタグを呼び出し側へ渡す', (tester) async {
     final tapped = await pump(tester, [
-      const FeaturedTag(name: 'PreCure'),
-      const FeaturedTag(name: 'delmulin'),
+      const FeaturedTag(id: '1', name: 'PreCure'),
+      const FeaturedTag(id: '2', name: 'delmulin'),
     ]);
     await tester.tap(find.text('#delmulin'));
     expect(tapped.map((t) => t.name), ['delmulin']);

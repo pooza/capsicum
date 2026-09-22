@@ -301,6 +301,22 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     return tags.map((t) => t.toCapsicum()).toList();
   }
 
+  @override
+  Future<FeaturedTag> featureTag(String name) async =>
+      (await client.createFeaturedTag(name)).toCapsicum();
+
+  @override
+  Future<void> unfeatureTag(String id) => client.deleteFeaturedTag(id);
+
+  @override
+  Future<List<String>> getFeaturedTagSuggestions() async {
+    final tags = await client.getFeaturedTagSuggestions();
+    return [
+      for (final t in tags)
+        if (!t.featuring) t.name,
+    ];
+  }
+
   Future<List<Post>> getPinnedPosts(String id) async {
     final statuses = await client.getAccountStatuses(id, pinned: true);
     return _safeConvert(
