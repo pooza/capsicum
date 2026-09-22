@@ -79,6 +79,113 @@ void main() {
       expect(n.collection?.itemCount, 5);
     });
 
+    group('関係の切断・モデレーション警告 (#1084)', () {
+      Notification parse(Map<String, dynamic> payload) =>
+          MastodonNotificationStreaming.parseMessage(
+            jsonEncode({'event': 'notification', 'payload': payload}),
+            'example.test',
+          )!;
+
+      test('severed_relationships は event の中身を持ち、本人を user に入れない', () {
+        final n = parse({
+          'id': '100',
+          'type': 'severed_relationships',
+          'created_at': '2026-09-04T00:00:00.000Z',
+          // ⚠ サーバーは受信者本人を account に入れて返す。
+          'account': _account(),
+          'event': {
+            'id': 'e1',
+            'type': 'domain_block',
+            'purged': false,
+            'target_name': 'opentoot.org',
+            'followers_count': 1,
+            'following_count': 0,
+            'created_at': '2026-09-04T00:00:00.000Z',
+          },
+        });
+        expect(n.type, NotificationType.severedRelationships);
+        expect(n.user, isNull, reason: '見出しに自分のアイコンを出さない');
+        expect(n.severance?.kind, RelationshipSeveranceKind.domainBlock);
+        expect(n.severance?.targetName, 'opentoot.org');
+        expect(n.severance?.followersCount, 1);
+        expect(n.severance?.followingCount, 0);
+      });
+
+      test('事由の 3 種と未知の値を読み分ける', () {
+        RelationshipSeveranceKind kindOf(String type) => parse({
+          'id': '101',
+          'type': 'severed_relationships',
+          'created_at': '2026-09-04T00:00:00.000Z',
+          'account': _account(),
+          'event': {'id': 'e', 'type': type, 'target_name': 't'},
+        }).severance!.kind;
+        expect(kindOf('domain_block'), RelationshipSeveranceKind.domainBlock);
+        expect(
+          kindOf('user_domain_block'),
+          RelationshipSeveranceKind.userDomainBlock,
+        );
+        expect(
+          kindOf('account_suspension'),
+          RelationshipSeveranceKind.accountSuspension,
+        );
+        expect(kindOf('something_new'), RelationshipSeveranceKind.unknown);
+      });
+
+      test('moderation_warning は措置と説明文を持ち、本人を user に入れない', () {
+        final n = parse({
+          'id': '102',
+          'type': 'moderation_warning',
+          'created_at': '2026-09-04T00:00:00.000Z',
+          'account': _account(),
+          'moderation_warning': {
+            'id': 'w1',
+            'action': 'mark_statuses_as_sensitive',
+            'text': ' 画像に注意書きを付けてください ',
+            'status_ids': ['1'],
+            'created_at': '2026-09-04T00:00:00.000Z',
+            'target_account': _account(),
+            'appeal': null,
+          },
+        });
+        expect(n.type, NotificationType.moderationWarning);
+        expect(n.user, isNull);
+        expect(n.moderationWarning?.id, 'w1');
+        expect(
+          n.moderationWarning?.action,
+          ModerationWarningAction.markStatusesAsSensitive,
+        );
+        expect(n.moderationWarning?.text, '画像に注意書きを付けてください');
+      });
+
+      test('説明文が空なら null・未知の措置は unknown', () {
+        final n = parse({
+          'id': '103',
+          'type': 'moderation_warning',
+          'created_at': '2026-09-04T00:00:00.000Z',
+          'account': _account(),
+          'moderation_warning': {
+            'id': 'w2',
+            'action': 'something_new',
+            'text': '',
+          },
+        });
+        expect(n.moderationWarning?.action, ModerationWarningAction.unknown);
+        expect(n.moderationWarning?.text, isNull);
+      });
+
+      test('他の種別は従来どおり account を user に入れる', () {
+        final n = parse({
+          'id': '104',
+          'type': 'follow',
+          'created_at': '2026-09-04T00:00:00.000Z',
+          'account': _account(),
+        });
+        expect(n.user?.username, 'alice');
+        expect(n.severance, isNull);
+        expect(n.moderationWarning, isNull);
+      });
+    });
+
     test('update event is ignored (out of scope, null)', () {
       final msg = jsonEncode({'event': 'update', 'payload': '{}'});
       expect(

@@ -11,9 +11,11 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../service/tco_resolver.dart';
+import '../../url_helper.dart';
 import '../util/deck_navigation.dart';
 import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
+import '../util/moderation_notification_text.dart';
 import '../util/notification_type_display.dart';
 import '../util/post_actions.dart';
 import '../util/post_scope_display.dart';
@@ -131,6 +133,19 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
     final theme = Theme.of(context);
     final (icon, label) = _iconAndLabel;
     final content = notification.post?.content;
+    // 関係の切断・モデレーション警告 (#1084)。post も user も持たないので、
+    // 何が起きたかを本文として組み立てて出す。
+    final localHost = ref.watch(currentAccountProvider)?.key.host;
+    final moderationText = localHost == null
+        ? null
+        : moderationNotificationText(
+            notification,
+            localHost: localHost,
+            postLabel: widget.postLabel,
+          );
+    final moderationUri = localHost == null
+        ? null
+        : moderationNotificationWebUri(notification, localHost: localHost);
 
     return InkWell(
       onTap: notification.post != null
@@ -145,6 +160,10 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
           // その場で例外になる（プロフィール画面の導線と同じ形で渡す）。
           : notification.type == NotificationType.achievementEarned
           ? () => _openAchievements(context)
+          // 関係の切断・モデレーション警告 (#1084): 対応する画面が capsicum に
+          // 無いので、WebUI の「詳細を確認」と同じページをブラウザで開く。
+          : moderationUri != null
+          ? () => launchUrlSafely(moderationUri)
           : null,
       onLongPress: notification.post != null
           ? () => _showActionMenu(context)
@@ -204,6 +223,32 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
+                  ],
+                  if (moderationText != null) ...[
+                    const SizedBox(height: 4),
+                    Text(moderationText, style: theme.textTheme.bodyMedium),
+                    // 管理者が添えた説明文（警告のみ・任意）。
+                    if (notification.moderationWarning?.text
+                        case final note?) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        note,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                    if (moderationUri != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        '詳細を確認（ブラウザで開きます）',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
+                    ],
                   ],
                   if (notification.post != null)
                     PostTouchActionRow(

@@ -382,6 +382,19 @@ const mastodonNotificationTypeMap = <String, NotificationType>{
   // Mastodon 4.6 Collections (FEP-7aa9) の被フィーチャー通知 (#741)。
   'added_to_collection': NotificationType.addedToCollection,
   'collection_update': NotificationType.collectionUpdate,
+  // 関係の切断・モデレーション警告 (#1084)。
+  'severed_relationships': NotificationType.severedRelationships,
+  'moderation_warning': NotificationType.moderationWarning,
+};
+
+/// 起点となる相手がいない通知 (#1084)。
+///
+/// ⚠ **サーバーは `account` に受信者本人を入れて返す**（`Notification#set_from_account`
+/// のコメント「originating account が無いが data model 上必須なので受信者を入れる」）。
+/// そのまま渡すと見出しに自分のアイコンと名前が出て、自分が何かしたように読める。
+const _mastodonNotificationTypesWithoutActor = {
+  'severed_relationships',
+  'moderation_warning',
 };
 
 extension CapsicumMastodonNotificationExtension on MastodonNotification {
@@ -393,11 +406,48 @@ extension CapsicumMastodonNotificationExtension on MastodonNotification {
       id: id,
       type: mastodonNotificationTypeMap[type] ?? NotificationType.other,
       createdAt: createdAt,
-      user: account.toCapsicum(localHost, adminRoleIds: adminRoleIds),
+      user: _mastodonNotificationTypesWithoutActor.contains(type)
+          ? null
+          : account.toCapsicum(localHost, adminRoleIds: adminRoleIds),
       post: status?.toCapsicum(localHost, adminRoleIds: adminRoleIds),
       collection: collection?.toCapsicum(),
+      severance: event?.toCapsicum(),
+      moderationWarning: moderationWarning?.toCapsicum(),
     );
   }
+}
+
+extension CapsicumMastodonRelationshipSeveranceExtension
+    on MastodonRelationshipSeveranceEvent {
+  RelationshipSeverance toCapsicum() => RelationshipSeverance(
+    kind: switch (type) {
+      'domain_block' => RelationshipSeveranceKind.domainBlock,
+      'user_domain_block' => RelationshipSeveranceKind.userDomainBlock,
+      'account_suspension' => RelationshipSeveranceKind.accountSuspension,
+      _ => RelationshipSeveranceKind.unknown,
+    },
+    targetName: targetName,
+    followersCount: followersCount ?? 0,
+    followingCount: followingCount ?? 0,
+  );
+}
+
+extension CapsicumMastodonAccountWarningExtension on MastodonAccountWarning {
+  ModerationWarning toCapsicum() => ModerationWarning(
+    id: id,
+    action: switch (action) {
+      'none' => ModerationWarningAction.none,
+      'disable' => ModerationWarningAction.disable,
+      'mark_statuses_as_sensitive' =>
+        ModerationWarningAction.markStatusesAsSensitive,
+      'delete_statuses' => ModerationWarningAction.deleteStatuses,
+      'sensitive' => ModerationWarningAction.sensitive,
+      'silence' => ModerationWarningAction.silence,
+      'suspend' => ModerationWarningAction.suspend,
+      _ => ModerationWarningAction.unknown,
+    },
+    text: (text?.trim().isEmpty ?? true) ? null : text!.trim(),
+  );
 }
 
 extension CapsicumMastodonCollectionExtension on MastodonCollection {
