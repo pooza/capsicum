@@ -313,6 +313,16 @@ class DecodedPng {
     return Color.fromARGB(a, r, g, b);
   }
 
+  /// 全ピクセルの指紋（FNV-1a 32bit）。**書き出し結果が 1px も変わっていない**
+  /// ことを、リファクタの前後で比べるのに使う (#1125)。
+  int get fingerprint {
+    var h = 0x811c9dc5;
+    for (final p in _pixels) {
+      h = ((h ^ p) * 0x01000193) & 0xFFFFFFFF;
+    }
+    return h;
+  }
+
   /// [color] に十分近いピクセルの数。アンチエイリアスの縁を拾わないよう、
   /// 各チャンネル [tolerance] 以内を同色とみなす。
   int countNear(Color color, {int tolerance = 24}) {

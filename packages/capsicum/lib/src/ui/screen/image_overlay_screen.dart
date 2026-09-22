@@ -15,7 +15,13 @@ import '../util/image_overlay_geometry.dart';
 /// する。こうすることで編集画面 (画像を画面に fit 表示) と書き出し (原寸
 /// Canvas) で同じ見た目を再現できる (WYSIWYG)。
 sealed class _OverlayItem {
-  _OverlayItem({required this.sizeFrac});
+  _OverlayItem({required this.id, required this.sizeFrac});
+
+  /// レイヤの同一性 (#1125)。画面の中で一意・不変。
+  ///
+  /// ⚠⚠ **選択は添字ではなくこれで持つ。**並べ替え・非表示・ロック（#884-B〜D）を
+  /// 入れると添字は動くので、添字で持つと並べ替えた瞬間に選択が別のレイヤを指す。
+  final int id;
 
   double nx = 0.5;
   double ny = 0.5;
@@ -34,7 +40,7 @@ sealed class _OverlayItem {
 
 /// 文字 / Unicode 絵文字のレイヤ (#576)。
 class _TextOverlayItem extends _OverlayItem {
-  _TextOverlayItem({required this.text})
+  _TextOverlayItem({required super.id, required this.text})
     : super(sizeFrac: kOverlayDefaultTextSizeFrac);
 
   String text;
@@ -46,8 +52,11 @@ class _TextOverlayItem extends _OverlayItem {
 /// [image] は表示と書き出しで**同じ実体を共有する**。別々にデコードすると
 /// アニメーション絵文字でフレームがずれうるうえ、二重に取得することになる。
 class _StickerOverlayItem extends _OverlayItem {
-  _StickerOverlayItem({required this.image, required this.shortcode})
-    : super(sizeFrac: kOverlayDefaultStickerSizeFrac);
+  _StickerOverlayItem({
+    required super.id,
+    required this.image,
+    required this.shortcode,
+  }) : super(sizeFrac: kOverlayDefaultStickerSizeFrac);
 
   final ui.Image image;
 
@@ -62,8 +71,11 @@ class _StickerOverlayItem extends _OverlayItem {
 /// 添付画像に文字 / Unicode 絵文字 (#576) とカスタム絵文字スタンプ (#883) を
 /// 重ねて PNG に書き出すエディタ。
 ///
-/// mixi2 風のメモ書き・ミーム的キャプション用途。フィルタ / 落書き / レイヤ履歴 /
-/// ベクター編集は対象外 (#568 の方針を継承)。入力バイト列をメモリ上で合成し、
+/// mixi2 風のメモ書き・ミーム的キャプション用途。フィルタ / 落書き / 操作履歴
+/// （元に戻す）/ ベクター編集は対象外 (#568 の方針を継承)。⚠ **レイヤの管理
+/// （重ね順・表示/非表示・ロック・不透明度・再編集）は #884 で対象に入れた**
+/// ——以前はここに「レイヤ履歴は対象外」と書いていたが、#884 はその一文の
+/// 再交渉にあたる。入力バイト列をメモリ上で合成し、
 /// 結果の PNG バイト列を [Navigator.pop] で返す（キャンセル時は null）。
 /// トリミング ([ImageCropScreen]) と同じく純 Flutter 実装で全プラットフォーム
 /// 動作する。
@@ -87,8 +99,21 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
   /// 原寸の画像サイズ（書き出し座標計算に使う）。
   Size? _imageSize;
 
+  /// 重ね順（先頭が最背面）。
   final List<_OverlayItem> _items = [];
-  int? _selected;
+
+  /// 選択中のレイヤの ID (#1125)。⚠ 添字で持たない（[_OverlayItem.id]）。
+  int? _selectedId;
+
+  /// 次に足すレイヤの ID。画面の中で使い回さない。
+  int _nextId = 0;
+
+  _OverlayItem? get _selectedItem {
+    for (final item in _items) {
+      if (item.id == _selectedId) return item;
+    }
+    return null;
+  }
 
   /// 書き出し中は再押下・離脱を防ぐ。
   bool _rendering = false;
@@ -167,8 +192,9 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
     if (!mounted) return;
     if (text == null || text.trim().isEmpty) return;
     setState(() {
-      _items.add(_TextOverlayItem(text: text));
-      _selected = _items.length - 1;
+      final item = _TextOverlayItem(id: _nextId++, text: text);
+      _items.add(item);
+      _selectedId = item.id;
     });
   }
 
@@ -187,10 +213,13 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
         return;
       }
       setState(() {
-        _items.add(
-          _StickerOverlayItem(image: image, shortcode: emoji.shortcode),
+        final item = _StickerOverlayItem(
+          id: _nextId++,
+          image: image,
+          shortcode: emoji.shortcode,
         );
-        _selected = _items.length - 1;
+        _items.add(item);
+        _selectedId = item.id;
         _loadingSticker = false;
       });
     } catch (e, st) {
@@ -206,9 +235,7 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
   }
 
   Future<void> _editSelected() async {
-    final index = _selected;
-    if (index == null) return;
-    final item = _items[index];
+    final item = _selectedItem;
     // 編集できるのは文字レイヤだけ。スタンプは貼り直しで差し替える。
     if (item is! _TextOverlayItem) return;
     final text = await _promptText(initial: item.text);
@@ -222,12 +249,11 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
   }
 
   void _deleteSelected() {
-    final index = _selected;
-    if (index == null) return;
-    final removed = _items[index];
+    final removed = _selectedItem;
+    if (removed == null) return;
     setState(() {
-      _items.removeAt(index);
-      _selected = null;
+      _items.remove(removed);
+      _selectedId = null;
     });
     if (removed is _StickerOverlayItem) {
       // ツリーから外れるのは次フレーム。同フレーム内で dispose すると、まだ
@@ -446,7 +472,7 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
           // 画像の余白タップで選択解除。
-          onTap: () => setState(() => _selected = null),
+          onTap: () => setState(() => _selectedId = null),
           child: Stack(
             children: [
               // レイヤは画像と同じ矩形の中に置き、はみ出しは ClipRect で切る。
@@ -464,8 +490,8 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
                       Positioned.fill(
                         child: Image.memory(image, fit: BoxFit.fill),
                       ),
-                      for (var i = 0; i < _items.length; i++)
-                        _buildItemWidget(i, dispW, dispH),
+                      for (final item in _items)
+                        _buildItemWidget(item, dispW, dispH),
                     ],
                   ),
                 ),
@@ -477,10 +503,11 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
     );
   }
 
-  Widget _buildItemWidget(int index, double dispW, double dispH) {
-    final item = _items[index];
-    final selected = _selected == index;
+  Widget _buildItemWidget(_OverlayItem item, double dispW, double dispH) {
+    final selected = _selectedId == item.id;
     return Positioned(
+      // 並べ替えても同じレイヤの要素を使い回す (#1125)。
+      key: ValueKey(item.id),
       left: item.nx * dispW,
       top: item.ny * dispH,
       child: FractionalTranslation(
@@ -496,12 +523,12 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
           angle: item.angle,
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: () => setState(() => _selected = index),
+            onTap: () => setState(() => _selectedId = item.id),
             onPanUpdate: (details) {
               setState(() {
                 item.nx = (item.nx + details.delta.dx / dispW).clamp(0.0, 1.0);
                 item.ny = (item.ny + details.delta.dy / dispH).clamp(0.0, 1.0);
-                _selected = index;
+                _selectedId = item.id;
               });
             },
             child: Container(
@@ -556,8 +583,7 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
   }
 
   Widget _buildToolbar() {
-    final index = _selected;
-    final item = index != null ? _items[index] : null;
+    final item = _selectedItem;
     return SafeArea(
       top: false,
       child: Padding(

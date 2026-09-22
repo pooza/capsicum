@@ -81,3 +81,18 @@ Rect stickerOverlayRect({
     height: height,
   );
 }
+
+/// レイヤの並べ替え (#1125 / #884-B)。**元の一覧は書き換えず**、新しい一覧を返す。
+///
+/// [newIndex] は `ReorderableListView.onReorder` の流儀（**取り除く前**の位置で
+/// 数える）。後ろへ動かすときは取り除いた分だけ 1 つ詰める。
+///
+/// ⚠ 選択は添字ではなくレイヤの ID で持っているので、並べ替えても選択は同じ
+/// レイヤについていく（添字で持つと、並べ替えた瞬間に別のレイヤを指す）。
+List<T> reorderOverlayLayers<T>(List<T> items, int oldIndex, int newIndex) {
+  final result = List.of(items);
+  final item = result.removeAt(oldIndex);
+  final target = newIndex > oldIndex ? newIndex - 1 : newIndex;
+  result.insert(target, item);
+  return result;
+}
