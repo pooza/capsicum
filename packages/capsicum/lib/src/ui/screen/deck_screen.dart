@@ -254,6 +254,10 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
     final mouseDragEnabled = ref.watch(mouseDragScrollProvider);
     final scaffold = Scaffold(
       appBar: AppBar(
+        // ⚠ 戻る（←）は出さない (#1153・2026-09-22 pooza)。タブ UI へ戻るのは
+        // 右端の「タブ表示に切り替え」に一本化した（AppBar の切り替えと役割が
+        // 重なるため）。
+        automaticallyImplyLeading: false,
         title: const Text('デッキ'),
         actions: [
           IconButton(

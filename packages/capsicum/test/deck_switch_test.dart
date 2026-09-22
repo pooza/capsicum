@@ -104,6 +104,8 @@ void main() {
     await tester.tap(find.text('ホーム'));
     await tester.pumpAndSettle();
     expect(find.text('デッキ'), findsOneWidget);
+    // 戻る（←）は出さない。戻るのは右端の切り替えに一本化した。
+    expect(find.byType(BackButton), findsNothing);
 
     await tester.tap(find.byTooltip('タブ表示に切り替え'));
     await tester.pumpAndSettle();
