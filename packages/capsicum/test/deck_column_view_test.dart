@@ -2,6 +2,7 @@ import 'package:capsicum/src/model/account.dart';
 import 'package:capsicum/src/model/account_key.dart';
 import 'package:capsicum/src/model/deck_column.dart';
 import 'package:capsicum/src/provider/account_manager_provider.dart';
+import 'package:capsicum/src/provider/server_config_provider.dart';
 import 'package:capsicum/src/ui/widget/deck_column_view.dart';
 import 'package:capsicum/src/ui/widget/user_avatar.dart';
 import 'package:capsicum/src/util/shared_preferences_cache.dart';
@@ -140,6 +141,20 @@ void main() {
       );
       // ⚠ 2 行目としては出さない（行を足して本文の面積を削らない）。
       expect(find.text('@me@misskey.example'), findsNothing);
+    });
+
+    testWidgets('背景はカラムのアカウントのサーバーの色で、文字は白', (tester) async {
+      await pump(tester, const UserListTab(UserListKind.followers, 'u1'));
+      await tester.pumpAndSettle();
+
+      final expected = resolveHostColor(const {}, 'misskey.example');
+      expect(
+        find.byWidgetPredicate((w) => w is ColoredBox && w.color == expected),
+        findsOneWidget,
+        reason: 'サーバーバッジと同じ色（テーマの面の色ではない）',
+      );
+      final title = tester.widget<Text>(find.text('フォロワー'));
+      expect(title.style?.color, Colors.white);
     });
 
     testWidgets('⚠ カラムのアカウントと割り当てが食い違うときは、他人のアイコンを出さない', (tester) async {

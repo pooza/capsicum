@@ -8,6 +8,7 @@ import '../../provider/channel_provider.dart';
 import '../../provider/hashtag_provider.dart';
 import '../../provider/list_provider.dart';
 import '../../provider/preferences_provider.dart';
+import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../screen/achievement_screen.dart';
 import '../screen/announcement_screen.dart';
@@ -253,18 +254,28 @@ class _DeckColumnHeader extends ConsumerWidget {
     // アイコンを出さず、アカウント名だけにする。
     final current = ref.watch(currentAccountProvider);
     final user = current?.key == account ? current!.user : null;
+    // ⚠ 背景はカラムのアカウントのサーバーの色 (#1152・2026-09-22 pooza)。
+    // サーバーバッジと同じ [resolveHostColor] を使う。あれは「白い文字が読める
+    // 暗さ」に調整済みの色を返す（モロヘイヤの色はそのまま・それ以外は明度を
+    // 落とす）ので、見出しの文字とアイコンは白で揃える。
+    final background = resolveHostColor(
+      ref.watch(hostThemeColorProvider),
+      account.host,
+    );
+    const foreground = Colors.white;
+    final titleStyle = theme.textTheme.titleSmall?.copyWith(color: foreground);
     final subStyle = theme.textTheme.bodySmall?.copyWith(
-      color: theme.colorScheme.onSurfaceVariant,
+      color: foreground.withValues(alpha: 0.8),
     );
 
     // ⚠ **1 行に畳む (#1152)。**デッキはアカウントをまたいでカラムが並ぶので、
     // 誰のカラムかをアイコンと表示名で見せる。一方で狭幅（375px のカラムを
     // 2〜3 本）が前提なので、行を足して本文の面積を削らない。`@user@host` は
     // 行から外し、ツールチップで見られるようにした。
-    // ⚠ 背景色で本文と見出しを分ける（色だけに意味を持たせない・アカウントの
-    // 区別はアイコンと表示名が担う）。
+    // ⚠ 色だけに意味を持たせない（同じサーバーの別アカウントは同じ色になる）。
+    // アカウントの区別はアイコンと表示名が担う。
     return ColoredBox(
-      color: theme.colorScheme.surfaceContainerHighest,
+      color: background,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(8, 4, 4, 4),
         child: Row(
@@ -281,7 +292,7 @@ class _DeckColumnHeader extends ConsumerWidget {
                     Flexible(
                       child: Text(
                         label,
-                        style: theme.textTheme.titleSmall,
+                        style: titleStyle,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -319,7 +330,7 @@ class _DeckColumnHeader extends ConsumerWidget {
             // カラムから開いたカラムは使い捨てなので、ヘッダーで閉じられるようにする
             // (#1148)。⚠ 列から外すだけで購読は止めない（autoDispose に任せる・#1093）。
             IconButton(
-              icon: const Icon(Icons.close),
+              icon: const Icon(Icons.close, color: foreground),
               tooltip: 'カラムを閉じる',
               visualDensity: VisualDensity.compact,
               onPressed: () =>
