@@ -734,6 +734,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 _NotificationBellButton(
                   hasMultipleAccounts: accountState.accounts.length > 1,
                 ),
+                // デッキ表示への切り替え (#1153)。デッキ側の AppBar に同じ位置で
+                // 「タブ表示に切り替え」を置いて対称にしてある。⚠ **実体は push**
+                // （HomeScreen を下に残す・`docs/deck-ui-plan.md` 決定済み事項 8）。
+                // モードとして持つ形にすると、現在のアカウントのカラムが
+                // HomeScreen と同じ購読を共有する前提が崩れる。
+                IconButton(
+                  icon: const Icon(Icons.view_week_outlined),
+                  tooltip: 'デッキ表示に切り替え',
+                  onPressed: () => context.push('/deck'),
+                ),
                 const SizedBox(width: 4),
               ],
             ),

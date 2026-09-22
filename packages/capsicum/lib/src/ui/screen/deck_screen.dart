@@ -1,6 +1,7 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../model/account.dart';
 import '../../model/account_key.dart';
@@ -19,7 +20,9 @@ import '../widget/deck_columns_sheet.dart';
 /// デッキ画面 (#1092)。カラムを横に並べる。
 ///
 /// ⚠ **別画面として足し、タブ UI（HomeScreen）には手を入れない**
-/// （`docs/deck-ui-plan.md` 決定済み事項 8・2026-09-17 pooza 決定）。
+/// （`docs/deck-ui-plan.md` 決定済み事項 8・2026-09-17 pooza 決定）。⚠ 例外は
+/// **切り替えのアイコン 1 点だけ**（#1153・2026-09-22）。タブ UI とデッキの AppBar に
+/// 対で置き、見た目は切り替えスイッチ・実体は画面遷移のまま。
 ///
 /// ⚠ **常駐ドロワーを持たない。**900px 以上で 304px を常駐させると、窓を 1px
 /// 広げただけでカラムが 2 本から 1 本に落ちる（未決事項 8）。
@@ -258,6 +261,17 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
             tooltip: 'カラム編集',
             onPressed: () => showDeckColumnsSheet(context),
           ),
+          // タブ表示への切り替え (#1153)。タブ UI の AppBar の「デッキ表示に
+          // 切り替え」と対になる。⚠ **`go('/home')` は下に残っている HomeScreen を
+          // 作り直さない**（go_router が同じページを使い回す・`deck_switch_test`
+          // で固定）。HomeScreen が同じ TL を watch し続ける前提（決定済み事項 8）
+          // はこれで崩れない。⚠ `push('/home')` にすると 2 枚目が積まれて壊れる。
+          IconButton(
+            icon: const Icon(Icons.tab_outlined),
+            tooltip: 'タブ表示に切り替え',
+            onPressed: () => context.go('/home'),
+          ),
+          const SizedBox(width: 4),
         ],
       ),
       // 各カラムの最後の投稿がナビゲーションバーに潜らないよう、下端の inset を
