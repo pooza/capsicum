@@ -3,6 +3,7 @@ import 'package:capsicum/src/model/account_key.dart';
 import 'package:capsicum/src/model/deck_column.dart';
 import 'package:capsicum/src/provider/account_manager_provider.dart';
 import 'package:capsicum/src/ui/widget/deck_column_view.dart';
+import 'package:capsicum/src/ui/widget/user_avatar.dart';
 import 'package:capsicum/src/util/shared_preferences_cache.dart';
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
@@ -116,5 +117,56 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('このアカウントでは表示できません'), findsOneWidget);
     expect(find.text('フォロワー'), findsOneWidget, reason: 'ヘッダーの見出し');
+  });
+
+  group('見出し (#1152)', () {
+    testWidgets('アカウントのアイコンと表示名を 1 行に出し、@user@host はツールチップで見せる', (
+      tester,
+    ) async {
+      account = account.copyWithUser(
+        const User(id: 'me', username: 'me', displayName: 'わたし'),
+      );
+      await pump(tester, const UserListTab(UserListKind.followers, 'u1'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('フォロワー'), findsOneWidget);
+      expect(find.text('わたし'), findsOneWidget);
+      expect(find.byType(UserAvatar), findsOneWidget);
+      expect(
+        find.byWidgetPredicate(
+          (w) => w is Tooltip && w.message == '@me@misskey.example',
+        ),
+        findsOneWidget,
+      );
+      // ⚠ 2 行目としては出さない（行を足して本文の面積を削らない）。
+      expect(find.text('@me@misskey.example'), findsNothing);
+    });
+
+    testWidgets('⚠ カラムのアカウントと割り当てが食い違うときは、他人のアイコンを出さない', (tester) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [currentAccountProvider.overrideWithValue(account)],
+          child: const MaterialApp(
+            home: Scaffold(
+              body: DeckColumnView(
+                column: DeckColumn(
+                  id: 'y',
+                  account: AccountKey(
+                    type: BackendType.misskey,
+                    host: 'other.example',
+                    username: 'someone',
+                  ),
+                  tab: UserListTab(UserListKind.followers, 'u1'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(UserAvatar), findsNothing);
+      expect(find.text('@someone@other.example'), findsOneWidget);
+    });
   });
 }

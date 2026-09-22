@@ -22,9 +22,11 @@ import '../screen/post_list_screen.dart';
 import '../screen/profile_screen.dart';
 import '../screen/user_list_screen.dart';
 import '../util/deck_tabs.dart';
+import 'emoji_text.dart';
 import 'home_menu.dart' show tabLabel;
 import 'post_tile.dart';
 import 'retry_error_view.dart';
+import 'user_avatar.dart';
 
 /// デッキのカラム 1 本 (#1092)。ヘッダーと中身。
 ///
@@ -245,50 +247,86 @@ class _DeckColumnHeader extends ConsumerWidget {
         : const <PostList>[];
     final label = tabLabel(ref, column.tab, isMastodon, adapter, lists);
     final account = column.account;
+    final acct = '@${account.username}@${account.host}';
+    // カラムのスコープの中なので、別アカウントのカラムでもここはそのカラムの
+    // アカウントになる。⚠ 割り当てが壊れているとき（本体と同じ判定）は他人の
+    // アイコンを出さず、アカウント名だけにする。
+    final current = ref.watch(currentAccountProvider);
+    final user = current?.key == account ? current!.user : null;
+    final subStyle = theme.textTheme.bodySmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: theme.textTheme.titleSmall,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+    // ⚠ **1 行に畳む (#1152)。**デッキはアカウントをまたいでカラムが並ぶので、
+    // 誰のカラムかをアイコンと表示名で見せる。一方で狭幅（375px のカラムを
+    // 2〜3 本）が前提なので、行を足して本文の面積を削らない。`@user@host` は
+    // 行から外し、ツールチップで見られるようにした。
+    // ⚠ 背景色で本文と見出しを分ける（色だけに意味を持たせない・アカウントの
+    // 区別はアイコンと表示名が担う）。
+    return ColoredBox(
+      color: theme.colorScheme.surfaceContainerHighest,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 4, 4, 4),
+        child: Row(
+          children: [
+            Expanded(
+              child: Tooltip(
+                message: acct,
+                child: Row(
+                  children: [
+                    if (user != null) ...[
+                      UserAvatar(user: user, size: 24, compact: true),
+                      const SizedBox(width: 8),
+                    ],
+                    Flexible(
+                      child: Text(
+                        label,
+                        style: theme.textTheme.titleSmall,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    Text(' · ', style: subStyle),
+                    Flexible(
+                      child: user != null
+                          ? EmojiText(
+                              user.displayName ?? user.username,
+                              emojis: user.emojis,
+                              fallbackHost: user.host,
+                              style: subStyle,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            )
+                          : Text(
+                              acct,
+                              style: subStyle,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                    ),
+                  ],
                 ),
-                Text(
-                  '@${account.username}@${account.host}',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
+              ),
             ),
-          ),
-          if (column.tab case TimelineTab(
-            :final type,
-          ) when account == ref.watch(currentAccountKeyProvider))
-            // カラムのスコープの中なので、別アカウントのカラムでもここは一致する。
-            _DeckStreamDot(
-              key: ValueKey(type),
-              timelineKey: (account: account, type: type),
+            if (column.tab case TimelineTab(
+              :final type,
+            ) when account == ref.watch(currentAccountKeyProvider))
+              // カラムのスコープの中なので、別アカウントのカラムでもここは一致する。
+              _DeckStreamDot(
+                key: ValueKey(type),
+                timelineKey: (account: account, type: type),
+              ),
+            // カラムから開いたカラムは使い捨てなので、ヘッダーで閉じられるようにする
+            // (#1148)。⚠ 列から外すだけで購読は止めない（autoDispose に任せる・#1093）。
+            IconButton(
+              icon: const Icon(Icons.close),
+              tooltip: 'カラムを閉じる',
+              visualDensity: VisualDensity.compact,
+              onPressed: () =>
+                  ref.read(deckColumnsProvider.notifier).remove(column.id),
             ),
-          // カラムから開いたカラムは使い捨てなので、ヘッダーで閉じられるようにする
-          // (#1148)。⚠ 列から外すだけで購読は止めない（autoDispose に任せる・#1093）。
-          IconButton(
-            icon: const Icon(Icons.close),
-            tooltip: 'カラムを閉じる',
-            visualDensity: VisualDensity.compact,
-            onPressed: () =>
-                ref.read(deckColumnsProvider.notifier).remove(column.id),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
