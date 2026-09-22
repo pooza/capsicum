@@ -265,7 +265,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/media',
         builder: (context, state) {
-          final extra = state.extra! as Map<String, dynamic>;
+          final extra = state.extra;
+          if (extra is! Map<String, dynamic>) {
+            return _goHomeAfterBuild(context);
+          }
           // 開いた側（デッキのカラム）のアカウントで動かす (#1149)。
           return withExtraProviderScope(
             extra,
@@ -353,7 +356,8 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/lists/members',
             builder: (context, state) {
-              final postList = state.extra! as PostList;
+              final postList = state.extra;
+              if (postList is! PostList) return _goHomeAfterBuild(context);
               return ListMembersScreen(postList: postList);
             },
           ),
@@ -439,7 +443,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/achievements',
             builder: (context, state) {
-              final extra = state.extra! as Map<String, dynamic>;
+              final extra = state.extra;
+              if (extra is! Map<String, dynamic>) {
+                return _goHomeAfterBuild(context);
+              }
               return AchievementScreen(
                 userId: extra['userId'] as String,
                 displayName: extra['displayName'] as String?,
@@ -453,14 +460,16 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/post',
             builder: (context, state) {
-              final post = state.extra! as Post;
+              final post = state.extra;
+              if (post is! Post) return _goHomeAfterBuild(context);
               return PostDetailScreen(post: post);
             },
           ),
           GoRoute(
             path: '/profile',
             builder: (context, state) {
-              final user = state.extra! as User;
+              final user = state.extra;
+              if (user is! User) return _goHomeAfterBuild(context);
               return ProfileScreen(user: user);
             },
           ),
@@ -507,7 +516,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/collections',
             builder: (context, state) {
-              final extra = state.extra! as Map<String, dynamic>;
+              final extra = state.extra;
+              if (extra is! Map<String, dynamic>) {
+                return _goHomeAfterBuild(context);
+              }
               return CollectionsListScreen(
                 accountId: extra['accountId'] as String,
                 inCollections: extra['inCollections'] as bool? ?? false,
@@ -518,8 +530,11 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: '/collection',
-            builder: (context, state) =>
-                CollectionDetailScreen(collectionId: state.extra! as String),
+            builder: (context, state) {
+              final collectionId = state.extra;
+              if (collectionId is! String) return _goHomeAfterBuild(context);
+              return CollectionDetailScreen(collectionId: collectionId);
+            },
           ),
           GoRoute(
             path: '/hashtag/:tag',
@@ -661,7 +676,8 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/gallery/:id',
             builder: (context, state) {
-              final post = state.extra as GalleryPost;
+              final post = state.extra;
+              if (post is! GalleryPost) return _goHomeAfterBuild(context);
               return GalleryDetailScreen(post: post);
             },
           ),
@@ -704,14 +720,20 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/annict/record',
             builder: (context, state) {
-              final args = state.extra! as AnnictRecordScreenArgs;
+              final args = state.extra;
+              if (args is! AnnictRecordScreenArgs) {
+                return _goHomeAfterBuild(context);
+              }
               return AnnictRecordScreen(args: args);
             },
           ),
           GoRoute(
             path: '/annict/review',
             builder: (context, state) {
-              final args = state.extra! as AnnictReviewScreenArgs;
+              final args = state.extra;
+              if (args is! AnnictReviewScreenArgs) {
+                return _goHomeAfterBuild(context);
+              }
               return AnnictReviewScreen(args: args);
             },
           ),
@@ -751,6 +773,12 @@ final routerProvider = Provider<GoRouter>((ref) {
 });
 
 /// `state.extra` を失った状態で復帰したときの受け皿 (#1083-F)。
+///
+/// ⚠⚠ **`extra` を必須で読むルートは全部これを通す (#1107)。**`state.extra!` や
+/// `state.extra as T`（`?` なし）は、refresh で extra が null に落ちた瞬間
+/// （JSON にできない値を積んでいた場合）や Android のプロセス復帰で投げ、
+/// **その画面を開いたままアプリが落ちる**。`is!` で弾いてここへ落とすこと。
+/// `router_extra_guard_test` が書き方を固定している。
 ///
 /// build 中に遷移はできないので、次のフレームでホームへ送る。⚠ **`context` の
 /// 生死を確かめてから遷移する**（`/login` の CAPSICUM-16 対応と同じ形）。
