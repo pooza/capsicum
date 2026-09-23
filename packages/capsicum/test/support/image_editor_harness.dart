@@ -233,6 +233,44 @@ class ImageEditorHarness {
     await tester.pump();
   }
 
+  /// レイヤ一覧を開く (#1126)。**既定は閉じている**ので、一覧を触るテストは必ず先に呼ぶ。
+  Future<void> openLayers() async {
+    await tester.tap(find.byKey(overlayLayerToggleKey));
+    await tester.pumpAndSettle();
+  }
+
+  /// レイヤ一覧の行（上が最前面）。
+  Finder get layerTiles => find.descendant(
+    of: find.byKey(overlayLayerListKey),
+    matching: find.byType(ListTile),
+  );
+
+  /// 編集キャンバスに載っている [image] のスタンプ。
+  ///
+  /// ⚠ **キャンバス配下に絞る。**一覧のサムネにも同じ [RawImage] が出るので、
+  /// 型だけで拾うと寸法や位置を測るときに取り違える。
+  Finder canvasSticker(ui.Image image) => find.descendant(
+    of: find.byKey(overlayCanvasKey),
+    matching: find.byWidgetPredicate(
+      (w) => w is RawImage && identical(w.image, image),
+    ),
+  );
+
+  /// 編集キャンバスに載っているスタンプを**背面から順に**返す。
+  ///
+  /// ⚠ 元画像も `Image.memory` 経由で [RawImage] として出てくるので、
+  /// **配った素材 [issued] に含まれるものだけ**に絞る。
+  List<ui.Image?> canvasStickers(List<ui.Image> issued) => tester
+      .widgetList<RawImage>(
+        find.descendant(
+          of: find.byKey(overlayCanvasKey),
+          matching: find.byType(RawImage),
+        ),
+      )
+      .map((w) => w.image)
+      .where((image) => issued.any((i) => identical(i, image)))
+      .toList();
+
   /// 「完了」を押して書き出す。戻り値は合成された PNG。
   ///
   /// 書き出しは「実 I/O（合成 → PNG 化）→ pop → 遷移アニメーション → 呼び出し元の

@@ -91,10 +91,10 @@ void main() {
 
     testWidgets('一覧で入れ替えると、書き出しの前後が入れ替わる', (tester) async {
       final harness = await twoStickers(tester);
-      await _openLayers(tester);
+      await harness.openLayers();
 
       // 一覧は**最前面が先頭**。先頭（赤）を 1 つ後ろへ送る。
-      expect(_layerTiles, findsNWidgets(2));
+      expect(harness.layerTiles, findsNWidgets(2));
       await _reorder(tester, 0, 1);
 
       final png = await harness.exportDecoded();
@@ -102,27 +102,27 @@ void main() {
     });
 
     testWidgets('入れ替えはプレビューにも同じ順で効く', (tester) async {
-      await twoStickers(tester);
-      await _openLayers(tester);
+      final harness = await twoStickers(tester);
+      await harness.openLayers();
 
       // プレビューは Stack の子の順＝背面から前面。
-      expect(_canvasStickers(tester, issued), [issued[0], issued[1]]);
+      expect(harness.canvasStickers(issued), [issued[0], issued[1]]);
 
       await _reorder(tester, 0, 1);
-      expect(_canvasStickers(tester, issued), [
+      expect(harness.canvasStickers(issued), [
         issued[1],
         issued[0],
       ], reason: '書き出しだけでなく編集画面の重なりも入れ替わる');
     });
 
     testWidgets('入れ替えても選択は同じレイヤについていく (#1125)', (tester) async {
-      await twoStickers(tester); // 2 枚目（赤・一覧の先頭）が選択されている
-      await _openLayers(tester);
-      expect(_selectedTileIndex(tester), 0);
+      final harness = await twoStickers(tester); // 2 枚目（赤・一覧の先頭）が選択されている
+      await harness.openLayers();
+      expect(_selectedTileIndex(harness), 0);
 
       await _reorder(tester, 0, 1);
       expect(
-        _selectedTileIndex(tester),
+        _selectedTileIndex(harness),
         1,
         reason: '選択は添字ではなく ID で持っているので、動かした行が選ばれたまま',
       );
@@ -131,18 +131,18 @@ void main() {
 
   group('削除の取り消し (#1126 / #1131)', () {
     testWidgets('「元に戻す」で、消したレイヤが元の重ね順の位置へ戻る', (tester) async {
-      await twoStickers(tester);
-      await _openLayers(tester);
+      final harness = await twoStickers(tester);
+      await harness.openLayers();
 
       // 一覧の 2 行目＝背面＝1 枚目（緑）を消す。
       await tester.tap(find.byTooltip('このレイヤーを削除').at(1));
       await _snackBarShown(tester);
-      expect(_canvasStickers(tester, issued), [issued[1]], reason: '緑が消えた');
+      expect(harness.canvasStickers(issued), [issued[1]], reason: '緑が消えた');
 
       await tester.tap(find.text('元に戻す'));
       await tester.pumpAndSettle();
 
-      expect(_canvasStickers(tester, issued), [
+      expect(harness.canvasStickers(issued), [
         issued[0],
         issued[1],
       ], reason: '末尾へ積み直すのではなく、元の位置（背面）へ戻る');
@@ -154,8 +154,8 @@ void main() {
     });
 
     testWidgets('取り消さなければ ui.Image は必ず解放される（リークしない）', (tester) async {
-      await twoStickers(tester);
-      await _openLayers(tester);
+      final harness = await twoStickers(tester);
+      await harness.openLayers();
 
       await tester.tap(find.byTooltip('このレイヤーを削除').at(1));
       await _snackBarShown(tester);
@@ -178,8 +178,8 @@ void main() {
     });
 
     testWidgets('取り消す前に画面を閉じても解放される', (tester) async {
-      await twoStickers(tester);
-      await _openLayers(tester);
+      final harness = await twoStickers(tester);
+      await harness.openLayers();
 
       await tester.tap(find.byTooltip('このレイヤーを削除').at(1));
       await tester.pump();
@@ -193,8 +193,8 @@ void main() {
     });
 
     testWidgets('連続して消すと、取り消し先は直前の 1 枚に絞られる', (tester) async {
-      await twoStickers(tester);
-      await _openLayers(tester);
+      final harness = await twoStickers(tester);
+      await harness.openLayers();
 
       await tester.tap(find.byTooltip('このレイヤーを削除').at(1)); // 緑
       await tester.pump();
@@ -210,7 +210,7 @@ void main() {
 
       await tester.tap(find.text('元に戻す'));
       await tester.pumpAndSettle();
-      expect(_canvasStickers(tester, issued), [
+      expect(harness.canvasStickers(issued), [
         issued[1],
       ], reason: '戻るのは直前の 1 枚だけ');
     });
@@ -218,15 +218,19 @@ void main() {
 
   group('置き場所は画面幅で決める (#1126)', () {
     testWidgets('320px 幅で一覧を開いても overflow しない', (tester) async {
-      await twoStickers(tester, surfaceSize: const Size(320, 800));
-      await _openLayers(tester);
-      expect(_layerTiles, findsNWidgets(2));
+      final harness = await twoStickers(
+        tester,
+        surfaceSize: const Size(320, 800),
+      );
+      await harness.openLayers();
+      expect(harness.layerTiles, findsNWidgets(2));
       expect(tester.takeException(), isNull);
     });
 
     testWidgets('320px 幅 + テキストスケール 1.3 でも overflow しない', (tester) async {
       await _pumpScaled(tester, basePng, width: 320, textScale: 1.3);
-      await _openLayers(tester);
+      await tester.tap(find.byKey(overlayLayerToggleKey));
+      await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
     });
 
@@ -237,8 +241,11 @@ void main() {
     });
 
     testWidgets('広い幅ではキャンバスの横、狭い幅では下に出る', (tester) async {
-      await twoStickers(tester, surfaceSize: const Size(900, 1000));
-      await _openLayers(tester);
+      final wide = await twoStickers(
+        tester,
+        surfaceSize: const Size(900, 1000),
+      );
+      await wide.openLayers();
       final wideList = tester.getRect(find.byKey(overlayLayerListKey));
       final wideCanvas = tester.getRect(find.byKey(overlayCanvasKey));
       expect(
@@ -248,8 +255,11 @@ void main() {
       );
       expect(wideList.width, kOverlayLayerPanelWidth);
 
-      await twoStickers(tester, surfaceSize: const Size(400, 1000));
-      await _openLayers(tester);
+      final narrow = await twoStickers(
+        tester,
+        surfaceSize: const Size(400, 1000),
+      );
+      await narrow.openLayers();
       final narrowList = tester.getRect(find.byKey(overlayLayerListKey));
       final narrowCanvas = tester.getRect(find.byKey(overlayCanvasKey));
       expect(
@@ -303,18 +313,6 @@ Future<void> _snackBarExpired(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
-/// レイヤ一覧を開く。
-Future<void> _openLayers(WidgetTester tester) async {
-  await tester.tap(find.byKey(overlayLayerToggleKey));
-  await tester.pumpAndSettle();
-}
-
-/// 一覧の行。
-final _layerTiles = find.descendant(
-  of: find.byKey(overlayLayerListKey),
-  matching: find.byType(ListTile),
-);
-
 /// ドラッグの代わりに `onReorderItem` を直接呼ぶ。
 ///
 /// ⚠ **添字の流儀ごと検査したいのでこの形にする。**`tester.drag` で動かすと
@@ -328,26 +326,9 @@ Future<void> _reorder(WidgetTester tester, int oldIndex, int newIndex) async {
   await tester.pumpAndSettle();
 }
 
-/// 編集キャンバスに載っているスタンプを**背面から順に**返す。
-///
-/// ⚠ キャンバス配下に絞る（一覧のサムネにも同じ [RawImage] が出る）だけでなく、
-/// **配った素材だけに絞る**。元画像も `Image.memory` 経由で [RawImage] として
-/// 出てくるので、型で拾うと必ず先頭に混ざる。
-List<ui.Image?> _canvasStickers(WidgetTester tester, List<ui.Image> issued) =>
-    tester
-        .widgetList<RawImage>(
-          find.descendant(
-            of: find.byKey(overlayCanvasKey),
-            matching: find.byType(RawImage),
-          ),
-        )
-        .map((w) => w.image)
-        .where((image) => issued.any((i) => identical(i, image)))
-        .toList();
-
 /// 一覧の中で選択されている行の位置。
-int _selectedTileIndex(WidgetTester tester) => tester
-    .widgetList<ListTile>(_layerTiles)
+int _selectedTileIndex(ImageEditorHarness harness) => harness.tester
+    .widgetList<ListTile>(harness.layerTiles)
     .toList()
     .indexWhere((t) => t.selected);
 

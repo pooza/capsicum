@@ -37,6 +37,21 @@ sealed class _OverlayItem {
   /// 書き出しは `translate(中心) → rotate → 中心原点で描画` で揃えている。
   double angle = 0;
 
+  /// 画に出すか (#1127)。
+  ///
+  /// ⚠⚠ **見る側は 3 箇所ある** —— プレビューの構築・当たり判定・**書き出しループ**。
+  /// 書き出しを忘れると**プレビューでは消えているのに出力画像には出る**ので、
+  /// 気づくのが「投稿した後」になる。
+  bool visible = true;
+
+  /// 誤操作から守るか (#1127)。
+  ///
+  /// ロック中は**キャンバス上でつかめず・タップでも選べず**、大きさ / 角度 / 色 /
+  /// テキスト編集 / 削除がすべて効かない。⚠ **一覧での並べ替えだけは通す** ——
+  /// 重ね順はレイヤ自身の属性ではなく列の並びで、ロックの対象にすると
+  /// 「1 枚ロックすると他のレイヤの順序も動かせない」ことになる。
+  bool locked = false;
+
   /// レイヤ一覧に出す見出し (#1126)。サムネだけでは小さすぎて見分けられない。
   String get label;
 
@@ -285,10 +300,18 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
     }
   }
 
+  /// そのレイヤを変えてよいか (#1127)。
+  ///
+  /// ⚠⚠ **ボタンの活殺と実処理の両方がこれを見る。**判定をボタン側だけに置くと
+  /// **実処理のガードが一度も呼ばれない**ので、壊しても誰も気づかない（逆に実処理
+  /// 側だけだと、押せる見た目のまま無反応になって「壊れている」と読まれる）。
+  /// 変更系の導線が増えたときは、その入口からもこれを呼ぶ。
+  bool _canModify(_OverlayItem item) => !item.locked;
+
   Future<void> _editSelected() async {
     final item = _selectedItem;
     // 編集できるのは文字レイヤだけ。スタンプは貼り直しで差し替える。
-    if (item is! _TextOverlayItem) return;
+    if (item is! _TextOverlayItem || !_canModify(item)) return;
     final text = await _promptText(initial: item.text);
     if (!mounted) return;
     if (text == null) return;
@@ -310,6 +333,9 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
   /// で、並べ替え・表示/非表示・不透明度はいずれも同じ操作で元へ戻せる。一覧が
   /// できてまとめて消しやすくなったぶんだけ、削除にだけ取り消しを付ける。
   void _deleteLayer(_OverlayItem removed) {
+    // ⚠ ロック中は消せない (#1127)。導線が 2 つある（ツールバーと一覧）ので、
+    // 入口の活殺と同じ判定をここでも通す。
+    if (!_canModify(removed)) return;
     final index = _items.indexOf(removed);
     if (index < 0) return;
     setState(() {
@@ -445,6 +471,11 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
       canvas.drawImage(src, Offset.zero, Paint());
 
       for (final item in _items) {
+        // ⚠⚠ **ここを忘れると「隠したはずのレイヤが出力に出る」** (#1127)。
+        // プレビューでは消えているので、**書き出すまで気づかない**。
+        // 非表示の判定はプレビュー（`_buildCanvas`）・当たり判定・ここの 3 箇所に
+        // 要る。1 つでも抜けると層が割れる（#1113 と同型）。
+        if (!item.visible) continue;
         switch (item) {
           case _TextOverlayItem():
             _paintText(canvas, item, w, h);
@@ -678,8 +709,10 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
                       Positioned.fill(
                         child: Image.memory(image, fit: BoxFit.fill),
                       ),
+                      // 非表示のレイヤはツリーごと出さない (#1127)。widget を
+                      // 置かないので、当たり判定も自動的に消える。
                       for (final item in _items)
-                        _buildItemWidget(item, dispW, dispH),
+                        if (item.visible) _buildItemWidget(item, dispW, dispH),
                     ],
                   ),
                 ),
@@ -709,17 +742,29 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
         // 受けず、下の pan 処理（画面座標で nx / ny を動かす）はそのままでよい。
         child: Transform.rotate(
           angle: item.angle,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => setState(() => _selectedId = item.id),
-            onPanUpdate: (details) {
-              setState(() {
-                item.nx = (item.nx + details.delta.dx / dispW).clamp(0.0, 1.0);
-                item.ny = (item.ny + details.delta.dy / dispH).clamp(0.0, 1.0);
-                _selectedId = item.id;
-              });
-            },
-            child: _buildItemContent(item, dispW, dispH, selected: selected),
+          // ⚠ **ロック中はポインタを通さない** (#1127)。`onTap` / `onPanUpdate` を
+          // 個別に null にするより確実で、`behavior: opaque` のまま後ろのレイヤへ
+          // タップを渡せる（ロックしたレイヤが上にあっても下が掴める）。
+          child: IgnorePointer(
+            ignoring: item.locked,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => setState(() => _selectedId = item.id),
+              onPanUpdate: (details) {
+                setState(() {
+                  item.nx = (item.nx + details.delta.dx / dispW).clamp(
+                    0.0,
+                    1.0,
+                  );
+                  item.ny = (item.ny + details.delta.dy / dispH).clamp(
+                    0.0,
+                    1.0,
+                  );
+                  _selectedId = item.id;
+                });
+              },
+              child: _buildItemContent(item, dispW, dispH, selected: selected),
+            ),
           ),
         ),
       ),
@@ -856,20 +901,76 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
                             item.label,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 13),
+                            style: TextStyle(
+                              fontSize: 13,
+                              // 非表示のレイヤは薄く、取り消し線で示す (#1127)。
+                              // 行ごと消すと「どこへ行ったか分からない」になる。
+                              color: item.visible ? null : Colors.white38,
+                              decoration: item.visible
+                                  ? null
+                                  : TextDecoration.lineThrough,
+                            ),
                           ),
                         ),
                       ],
                     ),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete_outline, size: 20),
-                      tooltip: 'このレイヤーを削除',
-                      onPressed: () => _deleteLayer(item),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _layerToggle(
+                          icon: item.visible
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
+                          tooltip: item.visible ? 'このレイヤーを隠す' : 'このレイヤーを表示する',
+                          active: !item.visible,
+                          onPressed: () =>
+                              setState(() => item.visible = !item.visible),
+                        ),
+                        _layerToggle(
+                          icon: item.locked
+                              ? Icons.lock_outline
+                              : Icons.lock_open_outlined,
+                          tooltip: item.locked ? 'ロックを解除する' : 'このレイヤーをロックする',
+                          active: item.locked,
+                          onPressed: () =>
+                              setState(() => item.locked = !item.locked),
+                        ),
+                        _layerToggle(
+                          icon: Icons.delete_outline,
+                          tooltip: 'このレイヤーを削除',
+                          // ⚠ ロック中は消せない (#1127)。押せる見た目のまま
+                          // 無反応にすると「壊れている」と読まれる。
+                          onPressed: _canModify(item)
+                              ? () => _deleteLayer(item)
+                              : null,
+                        ),
+                      ],
                     ),
                   );
                 },
               ),
             ),
+    );
+  }
+
+  /// 一覧の行に並べる小さなトグル (#1127)。
+  ///
+  /// ⚠ **`IconButton` の既定の当たり判定は 48px 四方**で、3 つ並べると狭幅の行から
+  /// はみ出す。詰めたぶん [tooltip] で意味を補う。
+  Widget _layerToggle({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback? onPressed,
+    bool active = false,
+  }) {
+    return IconButton(
+      icon: Icon(icon, size: 18),
+      tooltip: tooltip,
+      color: active ? Colors.lightBlueAccent : null,
+      visualDensity: VisualDensity.compact,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+      onPressed: onPressed,
     );
   }
 
@@ -892,23 +993,26 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
                 child: Image.memory(image, fit: BoxFit.fill),
               ),
             ),
-            Positioned(
-              left: item.nx * thumb.width,
-              top: item.ny * thumb.height,
-              child: FractionalTranslation(
-                translation: const Offset(-0.5, -0.5),
-                child: Transform.rotate(
-                  angle: item.angle,
-                  child: _buildItemContent(
-                    item,
-                    thumb.width,
-                    thumb.height,
-                    selected: false,
-                    tooltip: false,
+            // 非表示のレイヤはサムネでも消す (#1127)。⚠ **行ごと消さない** ——
+            // 一覧から居なくなると戻し方が分からなくなる。枠と見出しは残す。
+            if (item.visible)
+              Positioned(
+                left: item.nx * thumb.width,
+                top: item.ny * thumb.height,
+                child: FractionalTranslation(
+                  translation: const Offset(-0.5, -0.5),
+                  child: Transform.rotate(
+                    angle: item.angle,
+                    child: _buildItemContent(
+                      item,
+                      thumb.width,
+                      thumb.height,
+                      selected: false,
+                      tooltip: false,
+                    ),
                   ),
                 ),
               ),
-            ),
           ],
         ),
       ),
@@ -946,7 +1050,9 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
           Padding(
             padding: const EdgeInsets.only(right: 8),
             child: GestureDetector(
-              onTap: () => setState(() => item.color = c),
+              onTap: _canModify(item)
+                  ? () => setState(() => item.color = c)
+                  : null,
               child: Container(
                 width: 28,
                 height: 28,
@@ -987,7 +1093,10 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
             min: kOverlayMinAngle,
             max: kOverlayMaxAngle,
             label: overlayAngleLabel(item.angle),
-            onChanged: (v) => setState(() => item.angle = v),
+            // ロック中は無効表示になる (#1127)。
+            onChanged: _canModify(item)
+                ? (v) => setState(() => item.angle = v)
+                : null,
           ),
         ),
         // 現在角度を数値でも出す。スライダの位置だけだと「ほぼ真っ直ぐ」なのか
@@ -1003,7 +1112,7 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
         IconButton(
           icon: const Icon(Icons.restart_alt, color: Colors.white),
           tooltip: '角度をリセット',
-          onPressed: item.angle == 0
+          onPressed: item.angle == 0 || !_canModify(item)
               ? null
               : () => setState(() => item.angle = 0),
         ),
@@ -1027,19 +1136,21 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
             // スタンプは絵として見せるので、文字より大きく引き伸ばせる。
             min: kOverlayMinSizeFrac,
             max: isText ? kOverlayMaxTextSizeFrac : kOverlayMaxStickerSizeFrac,
-            onChanged: (v) => setState(() => item.sizeFrac = v),
+            onChanged: _canModify(item)
+                ? (v) => setState(() => item.sizeFrac = v)
+                : null,
           ),
         ),
         if (isText)
           IconButton(
             icon: const Icon(Icons.edit, color: Colors.white),
             tooltip: 'テキストを編集',
-            onPressed: _editSelected,
+            onPressed: _canModify(item) ? _editSelected : null,
           ),
         IconButton(
           icon: const Icon(Icons.delete_outline, color: Colors.white),
           tooltip: '削除',
-          onPressed: _deleteSelected,
+          onPressed: _canModify(item) ? _deleteSelected : null,
         ),
       ],
     );
