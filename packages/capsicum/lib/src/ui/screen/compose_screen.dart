@@ -15,6 +15,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../constants.dart';
 import '../../model/account.dart';
+import '../../model/image_overlay_layer.dart';
 import '../../platform/now_playing/now_playing_provider.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/channel_provider.dart';
@@ -101,10 +102,22 @@ Post? resolveComposeQuote(Post? quoteTo, Post? redraft) =>
 
 class _MediaEntry {
   // トリミング (#577) で差し替えるため可変。drive ファイルは差し替えない。
+  // ⚠ **直に代入しない。**差し替えは [replaceFile] / [applyOverlay] を通す
+  // （レイヤの控えと辻褄を合わせるため・#1129）。
   XFile? file;
   final Attachment? driveFile;
   String description = '';
   bool sensitive = false;
+
+  /// レイヤを焼き込む**前**の画像 (#1129)。レイヤを重ねていなければ null。
+  ///
+  /// ⚠ **[file] は焼き込み済み**（表示・投稿に使う）。再編集するときは必ず
+  /// こちらを元画像として渡す。焼き込み済みの画像に [overlayLayers] を重ねると
+  /// 同じレイヤが二重に乗る。
+  XFile? overlaySource;
+
+  /// [overlaySource] に重ねたレイヤ列（先頭が最背面）(#1129)。
+  List<OverlayLayerSpec> overlayLayers = const [];
 
   _MediaEntry.local(XFile this.file) : driveFile = null;
 
@@ -114,6 +127,34 @@ class _MediaEntry {
       sensitive = false;
 
   bool get isDrive => driveFile != null;
+
+  /// 中身を別の画像へ差し替える（トリミング等）。
+  ///
+  /// ⚠⚠ **レイヤの控えを必ず捨てる。**差し替え後の画像に前のレイヤを重ねると
+  /// **同じ文字やスタンプが二重に乗る**。トリミングは焼き込み済みの画像に掛かる
+  /// ので、レイヤを保ったまま切る経路は今のところ無い（#884-G で決着させる）。
+  void replaceFile(XFile next) {
+    file = next;
+    overlaySource = null;
+    overlayLayers = const [];
+  }
+
+  /// レイヤの編集結果を反映する (#1129)。
+  ///
+  /// [source] は**焼き込み前**の画像。2 回目以降の編集では最初の元画像のままで、
+  /// 焼き込み結果に置き換わらない。
+  void applyOverlay({
+    required XFile source,
+    required XFile baked,
+    required List<OverlayLayerSpec> layers,
+  }) {
+    file = baked;
+    overlaySource = source;
+    overlayLayers = layers;
+  }
+
+  /// 次に編集画面へ渡す元画像。まだレイヤを重ねていなければ現在のファイル。
+  XFile? get overlayBase => overlaySource ?? file;
 }
 
 /// 添付サイズ超過で reject したファイルの集約用 (#375)。
@@ -1886,17 +1927,22 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     if (!mounted) return;
     setState(() {
       // 差し替え後も同じ添付スロットを保つため index を再取得せず置換する。
-      entry.file = croppedFile;
+      // ⚠ レイヤの控えはここで捨てる（`replaceFile` の doc を参照・#1129）。
+      entry.replaceFile(croppedFile);
     });
   }
 
   /// 添付済みのローカル画像に文字 / Unicode 絵文字 (#576) とカスタム絵文字の
   /// スタンプ (#883) を重ねて書き出し、結果で元の添付を差し替える。説明 (ALT)
   /// と閲覧注意フラグは引き継ぐ。
+  ///
+  /// ⚠⚠ **2 回目以降は「焼き込み前の画像 + 前回のレイヤ」で開く** (#1129)。
+  /// 焼き込み済みの `entry.file` を渡すと、前のレイヤが画に残ったうえへ同じレイヤが
+  /// もう一度乗る。
   Future<void> _addOverlay(int index) async {
     final entry = _attachmentAt(index);
     if (entry == null) return;
-    final original = entry.file;
+    final original = entry.overlayBase;
     if (original == null) return;
 
     final Uint8List bytes;
@@ -1913,15 +1959,22 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     }
     if (!mounted) return;
 
-    final composited = await Navigator.of(context).push<Uint8List>(
+    final composited = await Navigator.of(context).push<ImageOverlayResult>(
       MaterialPageRoute(
-        builder: (_) => ImageOverlayScreen(imageData: bytes),
+        builder: (_) => ImageOverlayScreen(
+          imageData: bytes,
+          initialLayers: entry.overlayLayers,
+        ),
         fullscreenDialog: true,
       ),
     );
     if (composited == null || !mounted) return;
 
-    final overlaidFile = await _writeTempPng(original, composited, 'overlay');
+    final overlaidFile = await _writeTempPng(
+      original,
+      composited.png,
+      'overlay',
+    );
     if (overlaidFile == null) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -1932,7 +1985,13 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     }
 
     if (!mounted) return;
-    setState(() => entry.file = overlaidFile);
+    setState(
+      () => entry.applyOverlay(
+        source: original,
+        baked: overlaidFile,
+        layers: composited.layers,
+      ),
+    );
   }
 
   /// PNG バイト列を一時ファイルに書き出し [XFile] を返す。元ファイル名の stem を

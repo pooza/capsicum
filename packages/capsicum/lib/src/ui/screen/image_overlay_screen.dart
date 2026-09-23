@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
+import '../../model/image_overlay_layer.dart';
 import '../../service/sticker_source.dart';
 import '../../util/exception_scrub.dart';
 import '../util/image_overlay_geometry.dart';
@@ -92,12 +93,17 @@ class _StickerOverlayItem extends _OverlayItem {
     required super.id,
     required this.image,
     required this.shortcode,
+    required this.url,
   }) : super(sizeFrac: kOverlayDefaultStickerSizeFrac);
 
   final ui.Image image;
 
   /// 素材にしたカスタム絵文字のショートコード。選択枠の tooltip に使う。
   final String shortcode;
+
+  /// 素材の取得元 (#1129)。⚠ **画面を閉じた後に取り直すための控え。**
+  /// [image] は画面と一緒に解放されるので、再入時はここから読み直す。
+  final String url;
 
   /// 元画像の縦横比。カスタム絵文字は横長のものが珍しくないので、高さ基準の
   /// [sizeFrac] から幅を復元するのに要る。
@@ -136,11 +142,30 @@ class _PendingDeletion {
 /// 結果の PNG バイト列を [Navigator.pop] で返す（キャンセル時は null）。
 /// トリミング ([ImageCropScreen]) と同じく純 Flutter 実装で全プラットフォーム
 /// 動作する。
+///
+/// ⚠⚠ **戻り値は [ImageOverlayResult]**（焼き込み済みの PNG + レイヤ列）で、
+/// キャンセル時は null (#1129)。**PNG だけを返していた頃は、閉じた瞬間にレイヤが
+/// 消えて再編集できなかった。**呼び出し側は結果のレイヤ列を添付に紐づけて持ち、
+/// 次に開くときに [initialLayers] へ渡す。
 class ImageOverlayScreen extends ConsumerStatefulWidget {
-  const ImageOverlayScreen({super.key, required this.imageData, this.title});
+  const ImageOverlayScreen({
+    super.key,
+    required this.imageData,
+    this.initialLayers = const [],
+    this.title,
+  });
 
   /// 対象の元画像バイト列。
+  ///
+  /// ⚠ **焼き込み前の画像を渡すこと** (#1129)。焼き込み済みの PNG を渡したうえで
+  /// [initialLayers] も渡すと、同じレイヤが二重に乗る。
   final Uint8List imageData;
+
+  /// 前回の編集で残したレイヤ列（先頭が最背面）。
+  ///
+  /// スタンプは URL から取り直す。⚠ **取り直せなかったぶんは落として利用者に
+  /// 伝える**（黙って落とすと、完了した瞬間にスタンプが消えた画像になる）。
+  final List<OverlayLayerSpec> initialLayers;
 
   /// AppBar に表示するタイトル。未指定時は既定文言。
   final String? title;
@@ -241,6 +266,7 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
         _image = data.buffer.asUint8List();
         _imageSize = size;
       });
+      await _restoreLayers();
     } catch (e, st) {
       await Sentry.captureException(scrubException(e), stackTrace: st);
       if (!mounted) return;
@@ -253,6 +279,105 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
       codec?.dispose();
     }
   }
+
+  /// 前回の編集で残したレイヤを戻す (#1129)。
+  ///
+  /// ⚠ **スタンプは URL から取り直す。**記述は `ui.Image` を持たないので、ここで
+  /// 初めてネイティブ側の画像が載る。**取り直せなかったぶんは落として数を伝える**
+  /// —— 黙って落とすと、開いて完了しただけでスタンプが消えた画像になる。
+  ///
+  /// ⚠ 素材の取得は 1 枚ずつ直列に回す。連打ガード ([_loadingSticker]) と同じ
+  /// 理由で、同じソースへ同時に投げても速くならないうえ失敗の扱いが増える。
+  Future<void> _restoreLayers() async {
+    if (widget.initialLayers.isEmpty) return;
+    final source = ref.read(stickerSourceProvider);
+    final restored = <_OverlayItem>[];
+    var failed = 0;
+
+    for (final spec in widget.initialLayers) {
+      switch (spec) {
+        case TextOverlayLayerSpec():
+          restored.add(
+            _TextOverlayItem(id: _nextId++, text: spec.text)
+              ..color = spec.color,
+          );
+        case StickerOverlayLayerSpec():
+          try {
+            final image = await source.load(spec.url);
+            if (!mounted) {
+              image.dispose();
+              return;
+            }
+            restored.add(
+              _StickerOverlayItem(
+                id: _nextId++,
+                image: image,
+                shortcode: spec.shortcode,
+                url: spec.url,
+              ),
+            );
+          } catch (e, st) {
+            // ⚠ リモート URL 由来の例外が来るので必ず scrub を通す (#953-4)。
+            await Sentry.captureException(scrubException(e), stackTrace: st);
+            failed++;
+            continue;
+          }
+      }
+      _applySpec(restored.last, spec);
+    }
+
+    if (!mounted) {
+      for (final item in restored) {
+        if (item is _StickerOverlayItem) item.image.dispose();
+      }
+      return;
+    }
+    setState(() => _items.addAll(restored));
+    if (failed > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('スタンプを $failed 個復元できませんでした（このまま完了すると画像から外れます）')),
+      );
+    }
+  }
+
+  /// 記述からレイヤの状態を写す。⚠ **項目を足したらここと [_specOf] の両方を直す**
+  /// —— 片方だけだと「保存はされるが戻らない」（またはその逆）になる (#1129)。
+  void _applySpec(_OverlayItem item, OverlayLayerSpec spec) {
+    item
+      ..nx = spec.nx
+      ..ny = spec.ny
+      ..sizeFrac = spec.sizeFrac
+      ..angle = spec.angle
+      ..opacity = spec.opacity
+      ..visible = spec.visible
+      ..locked = spec.locked;
+  }
+
+  /// レイヤを記述へ写す。⚠ [_applySpec] と対。
+  OverlayLayerSpec _specOf(_OverlayItem item) => switch (item) {
+    _TextOverlayItem() => TextOverlayLayerSpec(
+      text: item.text,
+      color: item.color,
+      nx: item.nx,
+      ny: item.ny,
+      sizeFrac: item.sizeFrac,
+      angle: item.angle,
+      opacity: item.opacity,
+      visible: item.visible,
+      locked: item.locked,
+    ),
+    _StickerOverlayItem() => StickerOverlayLayerSpec(
+      shortcode: item.shortcode,
+      url: item.url,
+      nx: item.nx,
+      ny: item.ny,
+      sizeFrac: item.sizeFrac,
+      angle: item.angle,
+      opacity: item.opacity,
+      visible: item.visible,
+      locked: item.locked,
+    ),
+  };
 
   /// テキスト入力ダイアログ。[initial] を渡すと既存レイヤの編集。
   Future<String?> _promptText({String initial = ''}) {
@@ -292,6 +417,7 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
           id: _nextId++,
           image: image,
           shortcode: emoji.shortcode,
+          url: emoji.url,
         );
         _items.add(item);
         _selectedId = item.id;
@@ -524,7 +650,14 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
         throw StateError('Failed to encode composited PNG');
       }
       if (!mounted) return;
-      Navigator.of(context).pop(data.buffer.asUint8List());
+      // ⚠⚠ **焼き込み済みの PNG とレイヤ列を両方返す** (#1129)。PNG だけだと
+      // 閉じた瞬間にレイヤが消え、次に開いたときは「平らな画像」が元画像になる。
+      Navigator.of(context).pop(
+        ImageOverlayResult(
+          png: data.buffer.asUint8List(),
+          layers: _items.map(_specOf).toList(growable: false),
+        ),
+      );
     } catch (e, st) {
       await Sentry.captureException(scrubException(e), stackTrace: st);
       if (!mounted) return;

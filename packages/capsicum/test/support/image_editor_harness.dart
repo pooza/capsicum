@@ -21,6 +21,7 @@ library;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:capsicum/src/model/image_overlay_layer.dart';
 import 'package:capsicum/src/service/sticker_source.dart';
 import 'package:capsicum/src/ui/screen/image_overlay_screen.dart';
 import 'package:capsicum/src/ui/util/image_overlay_geometry.dart';
@@ -109,6 +110,9 @@ class ImageEditorHarness {
   /// 「完了」で返ってきた PNG バイト列。キャンセルなら null のまま。
   Uint8List? exported;
 
+  /// 「完了」で返ってきたレイヤ列 (#1129)。キャンセルなら null のまま。
+  List<OverlayLayerSpec>? exportedLayers;
+
   /// 画面を閉じたか（完了・キャンセルを問わず）。
   bool closed = false;
 
@@ -117,6 +121,7 @@ class ImageEditorHarness {
     WidgetTester tester, {
     required Uint8List imageData,
     StickerSource? stickerSource,
+    List<OverlayLayerSpec> initialLayers = const [],
     Size surfaceSize = const Size(800, 1000),
   }) async {
     final harness = ImageEditorHarness._(tester);
@@ -141,14 +146,18 @@ class ImageEditorHarness {
               body: Center(
                 child: ElevatedButton(
                   onPressed: () async {
-                    final result = await Navigator.of(context).push<Uint8List>(
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            ImageOverlayScreen(imageData: imageData),
-                      ),
-                    );
+                    final result = await Navigator.of(context)
+                        .push<ImageOverlayResult>(
+                          MaterialPageRoute(
+                            builder: (_) => ImageOverlayScreen(
+                              imageData: imageData,
+                              initialLayers: initialLayers,
+                            ),
+                          ),
+                        );
                     harness
-                      ..exported = result
+                      ..exported = result?.png
+                      ..exportedLayers = result?.layers
                       ..closed = true;
                   },
                   child: const Text('開く'),
