@@ -1,4 +1,3 @@
-import 'dart:io' show Platform;
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -15,9 +14,14 @@ import 'support/image_editor_harness.dart';
 /// ⚠ **書き出し結果を 1px も変えない**ことが完了条件だった。選択の持ち方を添字から
 /// ID へ変えるだけのリファクタなので、画に出るものは何も変わってはいけない。
 ///
-/// 検査は 2 本に分かれている。**歯になるのは 1 本目**（どのプラットフォームでも
-/// 走る構造検査）で、2 本目の全画素ハッシュは Linux でしか比べられない（理由は
-/// [_fingerprintSkipReason]）。
+/// ⚠⚠ **ここで見るのは「どのレイヤに操作が当たったか」だけ。**画素で確かめたく
+/// なるが、このシナリオは**ドラッグで端まで寄せる**手順を含むので、編集画面の
+/// レイアウト（ツールバーの行数）が変わるとキャンバスの大きさが変わり、**着地
+/// 位置ごと変わる**。実際 #1128 で不透明度の行を 1 本足したときに、描画は何も
+/// 変えていないのに全画素ハッシュが動いて CI が落ちた。
+///
+/// **画素の固定は [image_overlay_export_golden_test] が受け持つ** —— あちらは
+/// `initialLayers` で座標を直接与えるので、レイアウトにも入力手順にも依存しない。
 void main() {
   const base = Color(0xFF0000FF);
   const sticker = Color(0xFF00FF00);
@@ -100,16 +104,6 @@ void main() {
     expect(png.countNear(sticker), greaterThan(0), reason: 'スタンプが載っている');
   });
 
-  // ⚠ `testWidgets` の `skip` は `bool?` で理由を書けない。理由つきで飛ばすには
-  // `group` の `skip`（`dynamic`）に載せる——「なぜ走っていないか」が実行結果に
-  // 出ることが、この形の肝。
-  group('書き出しの全画素ハッシュ', () {
-    testWidgets('#1125 の変更前と 1px も変わらない', (tester) async {
-      final png = await runScenario(tester);
-      expect(png.fingerprint, _expectedFingerprint);
-    });
-  }, skip: Platform.isLinux ? null : _fingerprintSkipReason);
-
   group('reorderOverlayLayers（#884-B で使う）', () {
     test('onReorderItem の newIndex（取り除いた後の挿入位置）で並べ替える', () {
       expect(reorderOverlayLayers(['a', 'b', 'c'], 0, 2), ['b', 'c', 'a']);
@@ -139,23 +133,6 @@ void main() {
     });
   });
 }
-
-/// 変更前（`bb16dde7` 時点の `image_overlay_screen.dart`）で書き出した指紋。
-const _expectedFingerprint = 2223183324;
-
-/// ⚠⚠ **全画素ハッシュはラスタライザ依存で、プラットフォームを跨げない。**
-///
-/// このシナリオはレイヤを 30° / -20° 回して書き出す。実測すると、**回転が無い
-/// 書き出しは中間色が 0 画素**（完全に決定的）なのに対し、**30° 回すと 239 画素が
-/// アンチエイリアスの中間色**になる。その被覆率は macOS と Linux で一致しないので、
-/// 同じコード・同じ Flutter 3.44.6 でも指紋が変わる（2026-09-23 実測: Linux の CI が
-/// 2223183324、macOS が 3139789047）。
-///
-/// ⚠ **skip にして「走っていないこと」を見えるようにしてある。**黙って緩めると
-/// 「検査が動いていないのに緑」（docs/CLAUDE.md「ソース検査ガードの書き方」）に
-/// なる。移植可能な歯は上の角度検査が持っている。
-const _fingerprintSkipReason =
-    '全画素ハッシュは回転レイヤのアンチエイリアス被覆率に依存し、指紋を取った Linux (CI) でしか一致しない';
 
 /// キャンバス（画像と同じ矩形）配下に絞り込む (#1126)。
 Finder _inCanvas(Finder matching) =>
