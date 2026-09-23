@@ -19,6 +19,7 @@ import 'package:flutter/widgets.dart';
 /// 取り決めと同じくテストから import させるため。
 const overlaySizeSliderKey = Key('overlay_size_slider');
 const overlayAngleSliderKey = Key('overlay_angle_slider');
+const overlayOpacitySliderKey = Key('overlay_opacity_slider');
 
 /// 編集キャンバス（画像と同じ矩形）の識別キー (#1126)。
 ///
@@ -87,6 +88,16 @@ const double kOverlayOutlineWidthDivisor = 22;
 /// （スライダだけだと 0 へ戻すのが難しいため）。
 const double kOverlayMaxAngle = math.pi;
 const double kOverlayMinAngle = -math.pi;
+
+/// レイヤの不透明度の既定値と下限 (#1128)。上限は 1.0。
+///
+/// ⚠ **下限は 0** —— 完全に透明にできる。結果は #1127 の「非表示」と一致するが、
+/// **別の概念**として両方残す（非表示は「一時的に外す」、不透明度 0 は「薄さの端」）。
+const double kOverlayDefaultOpacity = 1;
+const double kOverlayMinOpacity = 0;
+
+/// 不透明度をユーザーに見せる百分率表記（例 `60%`）。
+String overlayOpacityLabel(double opacity) => '${(opacity * 100).round()}%';
 
 /// 回転角をユーザーに見せる度数表記（例 `-12°`）。編集画面のラベル用。
 String overlayAngleLabel(double radians) {

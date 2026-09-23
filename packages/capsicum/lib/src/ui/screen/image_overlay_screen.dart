@@ -37,6 +37,15 @@ sealed class _OverlayItem {
   /// 書き出しは `translate(中心) → rotate → 中心原点で描画` で揃えている。
   double angle = 0;
 
+  /// レイヤ全体の不透明度 (#1128)。0..1。
+  ///
+  /// ⚠⚠ **色の alpha ではなく「グループ不透明度」で掛ける。**文字レイヤは本体と
+  /// 4 方向の擬似アウトラインが重なっているので、色ごとに alpha を掛けると
+  /// **重なった部分だけ濃くなる**（重ね合わせが 2 回起きる）。プレビューの
+  /// [Opacity] は 1 枚に描いてから alpha を掛けるので、書き出しも
+  /// `saveLayer` で同じ意味にしないと WYSIWYG が割れる。
+  double opacity = kOverlayDefaultOpacity;
+
   /// 画に出すか (#1127)。
   ///
   /// ⚠⚠ **見る側は 3 箇所ある** —— プレビューの構築・当たり判定・**書き出しループ**。
@@ -476,12 +485,35 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
         // 非表示の判定はプレビュー（`_buildCanvas`）・当たり判定・ここの 3 箇所に
         // 要る。1 つでも抜けると層が割れる（#1113 と同型）。
         if (!item.visible) continue;
+        // ⚠⚠ **プレビューの `Opacity` と同じ意味にする** (#1128)。`Opacity` は
+        // 子を 1 枚のレイヤに描いてから alpha を掛けるので、書き出しも
+        // `saveLayer` で囲う。色ごとに alpha を掛けると、文字の本体とアウトラインの
+        // 重なりが二重に合成されて**プレビューより濃く出る**。
+        // 換算は `ui.Color.getAlphaFromOpacity`（`Opacity` が内部で使うのと同じ式）。
+        final alpha = ui.Color.getAlphaFromOpacity(item.opacity);
+        // ⚠ 不透明なレイヤはレイヤを挟まない。既存の書き出しと 1px も変えないため
+        // （#1125 の指紋がそのまま保てる）。
+        final grouped = alpha != 255;
+        if (grouped) {
+          // ⚠⚠ **bounds を渡さない。**`Rect.fromLTWH(0, 0, w, h)`（画像全体）を
+          // 渡すと、レイヤの外周で描画が削られ、**文字の擬似アウトラインの外側
+          // 1 列 / 1 行が丸ごと落ちる**（`Shadow` は blurRadius 0 でも sigma 0.5 の
+          // ぼかしが掛かる。2026-09-23 実測で、被覆 42% の行まで消えた）。文字は
+          // 画像の中央にあり bounds に十分収まっているので、**「はみ出したから
+          // 切れた」ではない** —— 渡した矩形がそのままレイヤの寸法として使われる
+          // ことによる縁の欠けで、`null` を渡してエンジンに決めさせると起きない。
+          canvas.saveLayer(
+            null,
+            Paint()..color = Color.fromARGB(alpha, 0, 0, 0),
+          );
+        }
         switch (item) {
           case _TextOverlayItem():
             _paintText(canvas, item, w, h);
           case _StickerOverlayItem():
             _paintSticker(canvas, item, w, h);
         }
+        if (grouped) canvas.restore();
       }
 
       picture = recorder.endRecording();
@@ -801,18 +833,24 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
             )
           : null,
       padding: const EdgeInsets.all(2),
-      child: switch (item) {
-        _TextOverlayItem() => Text(
-          item.text,
-          textAlign: TextAlign.center,
-          style: _textStyle(item.color, item.sizeFrac * dispH),
-        ),
-        _StickerOverlayItem() => _buildStickerPreview(
-          item,
-          dispH,
-          tooltip: tooltip,
-        ),
-      },
+      // ⚠ **不透明度は選択枠の内側に掛ける** (#1128)。枠まで薄くすると、
+      // 透明に近いレイヤを選んだときに「どこを選んでいるのか」が見えなくなる。
+      // 書き出し側の `saveLayer` が囲うのもこの中身だけなので、意味も揃う。
+      child: Opacity(
+        opacity: item.opacity,
+        child: switch (item) {
+          _TextOverlayItem() => Text(
+            item.text,
+            textAlign: TextAlign.center,
+            style: _textStyle(item.color, item.sizeFrac * dispH),
+          ),
+          _StickerOverlayItem() => _buildStickerPreview(
+            item,
+            dispH,
+            tooltip: tooltip,
+          ),
+        },
+      ),
     );
   }
 
@@ -1035,6 +1073,9 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
               // 回転は文字とスタンプの両方に効く (#946)。片方だけに付けると、
               // 同じキャンバス上の 2 種類のレイヤで操作体系が食い違う。
               _buildAngleRow(item),
+              // ⚠ **行を足す**（サイズ・角度と同じ行に混ぜない）。あの行は 320px で
+              // 既にぎりぎりで、項目を足すと横に破綻する (#953-3 / #1128)。
+              _buildOpacityRow(item),
             ],
             _buildAddRow(),
           ],
@@ -1115,6 +1156,42 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
           onPressed: item.angle == 0 || !_canModify(item)
               ? null
               : () => setState(() => item.angle = 0),
+        ),
+      ],
+    );
+  }
+
+  /// 不透明度の操作行 (#1128)。角度の行と同じ作り（アイコン + スライダ + 値 +
+  /// リセット）に揃える。⚠ **スライダだけだと 100% へ正確に戻せない**のは角度と同じ。
+  Widget _buildOpacityRow(_OverlayItem item) {
+    return Row(
+      children: [
+        const Icon(Icons.opacity, color: Colors.white, size: 20),
+        Expanded(
+          child: Slider(
+            key: overlayOpacitySliderKey,
+            value: item.opacity.clamp(kOverlayMinOpacity, 1),
+            min: kOverlayMinOpacity,
+            label: overlayOpacityLabel(item.opacity),
+            onChanged: _canModify(item)
+                ? (v) => setState(() => item.opacity = v)
+                : null,
+          ),
+        ),
+        SizedBox(
+          width: 48,
+          child: Text(
+            overlayOpacityLabel(item.opacity),
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.white, fontSize: 12),
+          ),
+        ),
+        IconButton(
+          icon: const Icon(Icons.restart_alt, color: Colors.white),
+          tooltip: '不透明度をリセット',
+          onPressed: item.opacity == kOverlayDefaultOpacity || !_canModify(item)
+              ? null
+              : () => setState(() => item.opacity = kOverlayDefaultOpacity),
         ),
       ],
     );

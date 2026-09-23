@@ -217,6 +217,10 @@ class ImageEditorHarness {
   Future<void> setAngleDegrees(double degrees) =>
       setAngle((degrees + 180) / 360);
 
+  /// 選択中レイヤの不透明度スライダーを動かす (#1128)。0..1。
+  Future<void> setOpacity(double value) =>
+      _dragSlider(overlayOpacitySliderKey, value);
+
   /// 「角度をリセット」を押す (#946)。
   Future<void> resetAngle() async {
     await tester.tap(find.byTooltip('角度をリセット'));
