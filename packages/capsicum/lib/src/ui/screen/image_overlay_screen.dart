@@ -36,6 +36,12 @@ sealed class _OverlayItem {
   /// なければならない。プレビューは [Transform.rotate]（既定で中心まわり）、
   /// 書き出しは `translate(中心) → rotate → 中心原点で描画` で揃えている。
   double angle = 0;
+
+  /// レイヤ一覧に出す見出し (#1126)。サムネだけでは小さすぎて見分けられない。
+  String get label;
+
+  /// レイヤ一覧に出す種別アイコン (#1126)。
+  IconData get icon;
 }
 
 /// 文字 / Unicode 絵文字のレイヤ (#576)。
@@ -45,6 +51,12 @@ class _TextOverlayItem extends _OverlayItem {
 
   String text;
   Color color = Colors.white;
+
+  @override
+  String get label => text;
+
+  @override
+  IconData get icon => Icons.text_fields;
 }
 
 /// カスタム絵文字を素材にした画像スタンプのレイヤ (#883)。
@@ -66,6 +78,27 @@ class _StickerOverlayItem extends _OverlayItem {
   /// 元画像の縦横比。カスタム絵文字は横長のものが珍しくないので、高さ基準の
   /// [sizeFrac] から幅を復元するのに要る。
   double get aspect => image.width / image.height;
+
+  @override
+  String get label => ':$shortcode:';
+
+  @override
+  IconData get icon => Icons.emoji_emotions_outlined;
+}
+
+/// 削除したが、まだ取り消せるレイヤ (#1126 / #1131)。
+///
+/// ⚠⚠ **スタンプの `ui.Image` はここに掴まれている間は解放しない。**「元に戻す」で
+/// 戻したレイヤが描けないと取り消しの意味が無いため。代わりに解放の期限を
+/// [kOverlayUndoWindow]（SnackBar が閉じるまで）で切り、閉じたら必ず解放する。
+class _PendingDeletion {
+  _PendingDeletion({required this.item, required this.index});
+
+  final _OverlayItem item;
+
+  /// 消す前の重ね順の位置。取り消しは**同じ高さへ戻す**（末尾へ積み直すと、
+  /// 背面にあったレイヤが最前面になって画が変わる）。
+  final int index;
 }
 
 /// 添付画像に文字 / Unicode 絵文字 (#576) とカスタム絵文字スタンプ (#883) を
@@ -108,6 +141,17 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
   /// 次に足すレイヤの ID。画面の中で使い回さない。
   int _nextId = 0;
 
+  /// 削除したが取り消せる状態のレイヤ (#1126)。⚠ **ここに残っている間は
+  /// `ui.Image` を解放しない。**解放は [_finalizeDeletion] だけが行う。
+  final List<_PendingDeletion> _pendingDeletions = [];
+
+  /// レイヤ一覧を開いているか (#1126)。
+  ///
+  /// ⚠ **既定は閉じた状態にする。**一覧は広い幅ならキャンバスの横を 280px、
+  /// 狭い幅なら下を 176px 取る。既定で開くと**何もしていないのに編集面が狭くなる**
+  /// ので、開くかどうかは常に利用者に決めさせる。幅が決めるのは**置き場所だけ**。
+  bool _layersOpen = false;
+
   _OverlayItem? get _selectedItem {
     for (final item in _items) {
       if (item.id == _selectedId) return item;
@@ -140,6 +184,13 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
   void dispose() {
     for (final item in _items) {
       if (item is _StickerOverlayItem) item.image.dispose();
+    }
+    // ⚠⚠ **取り消し待ちも必ず畳む。**`_items` から外れているので上のループには
+    // 掛からず、SnackBar の `closed` は画面が消えた後に解決するとは限らない
+    // （ScaffoldMessenger ごと外れると来ない）。ここで畳まないと、削除して
+    // すぐ閉じたぶんだけスタンプの原寸画像が漏れる (#1126)。
+    for (final pending in _pendingDeletions.toList()) {
+      _finalizeDeletion(pending);
     }
     super.dispose();
   }
@@ -250,18 +301,99 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
 
   void _deleteSelected() {
     final removed = _selectedItem;
-    if (removed == null) return;
+    if (removed != null) _deleteLayer(removed);
+  }
+
+  /// レイヤを 1 枚消し、取り消しの導線を出す (#1126 / #1131)。
+  ///
+  /// ⚠⚠ **汎用の Undo / Redo は作らない。**#884 で入る操作のうち**不可逆なのは削除だけ**
+  /// で、並べ替え・表示/非表示・不透明度はいずれも同じ操作で元へ戻せる。一覧が
+  /// できてまとめて消しやすくなったぶんだけ、削除にだけ取り消しを付ける。
+  void _deleteLayer(_OverlayItem removed) {
+    final index = _items.indexOf(removed);
+    if (index < 0) return;
     setState(() {
-      _items.remove(removed);
-      _selectedId = null;
+      _items.removeAt(index);
+      if (_selectedId == removed.id) _selectedId = null;
     });
-    if (removed is _StickerOverlayItem) {
-      // ツリーから外れるのは次フレーム。同フレーム内で dispose すると、まだ
-      // 描画中の RawImage が破棄済み画像を掴んで落ちる。
-      WidgetsBinding.instance.addPostFrameCallback(
-        (_) => removed.image.dispose(),
+
+    final pending = _PendingDeletion(item: removed, index: index);
+    _pendingDeletions.add(pending);
+
+    // 連続して消したときは、前の SnackBar を先に閉じて取り消し先を 1 つに保つ。
+    // 閉じた側は `closed` が解決して確定（＝解放）へ進む。
+    final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
+    messenger
+        .showSnackBar(
+          SnackBar(
+            duration: kOverlayUndoWindow,
+            // ⚠⚠ **`persist: false` を明示する。**Flutter の既定は
+            // `persist = persist ?? action != null` で、**アクション付きの
+            // SnackBar は時間で閉じない**。既定のままだと `duration` が効かず、
+            // 取り消し待ちのスタンプの原寸画像が**上限なしで**ネイティブ側に
+            // 残り続ける（画面を閉じるまで解放されない）。
+            persist: false,
+            content: Text('「${_shortLabel(removed)}」を削除しました'),
+            action: SnackBarAction(
+              label: '元に戻す',
+              onPressed: () => _restoreDeletion(pending),
+            ),
+          ),
+        )
+        .closed
+        .then((_) => _finalizeDeletion(pending));
+  }
+
+  /// 取り消しの期限切れ（または画面の終了）。⚠ **解放はここだけが行う。**
+  ///
+  /// 復帰済み・確定済みのものを二度解放しないよう、**一覧から取り除けたときだけ**
+  /// 進む（`closed` の解決と「元に戻す」の押下は順序が保証されない）。
+  void _finalizeDeletion(_PendingDeletion pending) {
+    if (!_pendingDeletions.remove(pending)) return;
+    final item = pending.item;
+    // 削除からここまでに最低でも SnackBar 1 本ぶんのフレームが流れているので、
+    // #953-4 のように次フレームまで待つ必要はない（まだ描いている RawImage は
+    // もう無い）。画面終了時はツリーごと外れた後なので同じ。
+    if (item is _StickerOverlayItem) item.image.dispose();
+  }
+
+  void _restoreDeletion(_PendingDeletion pending) {
+    if (!mounted) return;
+    if (!_pendingDeletions.remove(pending)) return;
+    setState(() {
+      _items.insert(pending.index.clamp(0, _items.length), pending.item);
+      _selectedId = pending.item.id;
+    });
+  }
+
+  /// SnackBar に出す短い見出し。長い本文をそのまま出すと行が溢れる。
+  String _shortLabel(_OverlayItem item) {
+    final label = item.label.replaceAll('\n', ' ').trim();
+    if (label.isEmpty) return 'レイヤー';
+    return label.characters.length <= 12
+        ? label
+        : '${label.characters.take(12).toString()}…';
+  }
+
+  /// レイヤ一覧に並べる順。**最前面が先頭**（画像編集の慣習）。
+  ///
+  /// ⚠ [_items] は**末尾が最前面**（プレビューも書き出しも先頭から順に重ねて
+  /// いく）。一覧だけ逆順で見せるので、並べ替えは一覧の順で済ませてから
+  /// 逆にして戻す。添字の対応を手で書くより間違えにくい。
+  List<_OverlayItem> get _layersFrontFirst => _items.reversed.toList();
+
+  /// レイヤ一覧（最前面が先頭）の中での並べ替え (#1126)。
+  void _reorderLayers(int oldIndex, int newIndex) {
+    setState(() {
+      final reordered = reorderOverlayLayers(
+        _layersFrontFirst,
+        oldIndex,
+        newIndex,
       );
-    }
+      _items
+        ..clear()
+        ..addAll(reordered.reversed);
+    });
   }
 
   /// テキストの可読性のため、明度に応じて反対色の擬似アウトライン (4 方向の
@@ -425,11 +557,33 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
   }
 
   Widget _buildScaffold(Uint8List? image, Size? size) {
+    // 一覧をキャンバスの横に置ける幅か。⚠ 分岐軸はプラットフォームではなく画面幅
+    // (docs/CLAUDE.md)。デスクトップでもウィンドウを狭めれば下置きになる。
+    final wide =
+        MediaQuery.of(context).size.width >= kOverlayLayerPanelMinWidth;
+    final layersOpen = _layersOpen;
+
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
-        title: Text(widget.title ?? '文字・スタンプを入れる'),
+        // ⚠ 1 行に固定する。狭幅では「戻る + タイトル + レイヤー + 完了」で
+        // AppBar の幅を使い切り、折り返すと固定高の中で overflow する (#1126)。
+        title: Text(
+          widget.title ?? '文字・スタンプを入れる',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
         actions: [
+          if (image != null)
+            IconButton(
+              key: overlayLayerToggleKey,
+              icon: Icon(
+                layersOpen ? Icons.layers : Icons.layers_outlined,
+                color: Colors.white,
+              ),
+              tooltip: layersOpen ? 'レイヤー一覧を閉じる' : 'レイヤー一覧',
+              onPressed: () => setState(() => _layersOpen = !layersOpen),
+            ),
           if (_rendering)
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 20),
@@ -447,12 +601,43 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
       ),
       body: image == null || size == null
           ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
-                Expanded(child: _buildCanvas(image, size)),
-                _buildToolbar(),
-              ],
-            ),
+          : _buildBody(image, size, wide: wide, layersOpen: layersOpen),
+    );
+  }
+
+  /// 本文の組み立て (#1126)。
+  ///
+  /// 広い幅では一覧をキャンバスの**横**に常設し、狭い幅ではキャンバスの**下**へ
+  /// 畳んで開閉する。⚠ **どちらも同じ [_buildLayerList] を置くだけ**にしてある。
+  /// 狭幅側をモーダルシートにしないのは、削除の取り消し（SnackBar）が
+  /// モーダルルートの**下**に出て押せなくなるため。同じ Scaffold の中に置けば
+  /// 一覧を開いたまま取り消せる。
+  Widget _buildBody(
+    Uint8List image,
+    Size size, {
+    required bool wide,
+    required bool layersOpen,
+  }) {
+    final editor = Column(
+      children: [
+        Expanded(child: _buildCanvas(image, size)),
+        if (!wide && layersOpen)
+          SizedBox(
+            height: kOverlayLayerListCollapsedHeight,
+            child: _buildLayerList(image, size),
+          ),
+        _buildToolbar(),
+      ],
+    );
+    if (!wide || !layersOpen) return editor;
+    return Row(
+      children: [
+        Expanded(child: editor),
+        SizedBox(
+          width: kOverlayLayerPanelWidth,
+          child: _buildLayerList(image, size),
+        ),
+      ],
     );
   }
 
@@ -486,6 +671,9 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
                 height: dispH,
                 child: ClipRect(
                   child: Stack(
+                    // ⚠ レイヤ一覧のサムネにも同じウィジェットが出る。「プレビューに
+                    // 何がどの順で載っているか」を見るときの絞り込み先 (#1126)。
+                    key: overlayCanvasKey,
                     children: [
                       Positioned.fill(
                         child: Image.memory(image, fit: BoxFit.fill),
@@ -531,38 +719,63 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
                 _selectedId = item.id;
               });
             },
-            child: Container(
-              // 折り返し幅の上限は**文字レイヤ専用**。書き出し側の
-              // `painter.layout(maxWidth: w * kOverlayTextWrapFraction)` と
-              // 対になっている（同じ定数を使うのが対であることの担保）。スタンプに
-              // 掛けると RawImage が縮んでプレビューだけ小さくなり、書き出し
-              // (drawImageRect は制約を受けない) と食い違う。
-              constraints: item is _TextOverlayItem
-                  ? BoxConstraints(maxWidth: dispW * kOverlayTextWrapFraction)
-                  : null,
-              decoration: selected
-                  ? BoxDecoration(
-                      border: Border.all(color: Colors.white70),
-                      borderRadius: BorderRadius.circular(4),
-                    )
-                  : null,
-              padding: const EdgeInsets.all(2),
-              child: switch (item) {
-                _TextOverlayItem() => Text(
-                  item.text,
-                  textAlign: TextAlign.center,
-                  style: _textStyle(item.color, item.sizeFrac * dispH),
-                ),
-                _StickerOverlayItem() => _buildStickerPreview(item, dispH),
-              },
-            ),
+            child: _buildItemContent(item, dispW, dispH, selected: selected),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildStickerPreview(_StickerOverlayItem item, double dispH) {
+  /// レイヤ 1 枚の見た目。**編集キャンバスとレイヤ一覧のサムネが共有する** (#1126)。
+  ///
+  /// ⚠ [dispH] を基準高さとして受け取るのが肝。キャンバスなら画像の表示高さ、
+  /// サムネなら縮図の高さを渡せば、同じ式のまま縮尺だけ変わる。**サムネ用に
+  /// 別の描き方を足さない**——足した瞬間に「一覧で見た向き / 比率」と本番が割れる。
+  Widget _buildItemContent(
+    _OverlayItem item,
+    double dispW,
+    double dispH, {
+    required bool selected,
+    // ⚠ サムネでは切る。40px の縮図に tooltip は邪魔だし、**同じ文言の
+    // tooltip が 2 つ出ると `find.byTooltip` が一意に当たらなくなる** (#1126)。
+    bool tooltip = true,
+  }) {
+    return Container(
+      // 折り返し幅の上限は**文字レイヤ専用**。書き出し側の
+      // `painter.layout(maxWidth: w * kOverlayTextWrapFraction)` と
+      // 対になっている（同じ定数を使うのが対であることの担保）。スタンプに
+      // 掛けると RawImage が縮んでプレビューだけ小さくなり、書き出し
+      // (drawImageRect は制約を受けない) と食い違う。
+      constraints: item is _TextOverlayItem
+          ? BoxConstraints(maxWidth: dispW * kOverlayTextWrapFraction)
+          : null,
+      decoration: selected
+          ? BoxDecoration(
+              border: Border.all(color: Colors.white70),
+              borderRadius: BorderRadius.circular(4),
+            )
+          : null,
+      padding: const EdgeInsets.all(2),
+      child: switch (item) {
+        _TextOverlayItem() => Text(
+          item.text,
+          textAlign: TextAlign.center,
+          style: _textStyle(item.color, item.sizeFrac * dispH),
+        ),
+        _StickerOverlayItem() => _buildStickerPreview(
+          item,
+          dispH,
+          tooltip: tooltip,
+        ),
+      },
+    );
+  }
+
+  Widget _buildStickerPreview(
+    _StickerOverlayItem item,
+    double dispH, {
+    bool tooltip = true,
+  }) {
     // 書き出しとまったく同じ式で寸法を出す。ここが割れると WYSIWYG が崩れる。
     final rect = stickerOverlayRect(
       center: Offset.zero,
@@ -570,14 +783,134 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
       aspect: item.aspect,
       referenceHeight: dispH,
     );
-    return Tooltip(
-      message: ':${item.shortcode}:',
-      child: RawImage(
-        image: item.image,
-        width: rect.width,
-        height: rect.height,
-        fit: BoxFit.fill,
-        filterQuality: FilterQuality.high,
+    final image = RawImage(
+      image: item.image,
+      width: rect.width,
+      height: rect.height,
+      fit: BoxFit.fill,
+      filterQuality: FilterQuality.high,
+    );
+    if (!tooltip) return image;
+    return Tooltip(message: ':${item.shortcode}:', child: image);
+  }
+
+  /// レイヤ一覧 (#1126)。**最前面が先頭**で、ドラッグで重ね順を変えられる。
+  ///
+  /// ⚠ **ポインタ 1 本で完結する形にする。**2 本指の回転ジェスチャを採らなかったのと
+  /// 同じ理由で（デスクトップ 3 OS に入力手段が無い）、掴み手は
+  /// [ReorderableDragStartListener] を明示的に置く。
+  Widget _buildLayerList(Uint8List image, Size size) {
+    final layers = _layersFrontFirst;
+    // ⚠ `Material` で敷く。`Container(color:)` だと `ListTile` の ink が塗れず、
+    // 「不透明な ColoredBox の上に ListTile を置くな」と落ちる (#1126)。
+    return Material(
+      color: const Color(0xFF1A1A1A),
+      child: layers.isEmpty
+          ? const Center(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Text(
+                  'テキストやスタンプを追加すると、ここに重ね順が出ます',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white54, fontSize: 12),
+                ),
+              ),
+            )
+          : ListTileTheme(
+              textColor: Colors.white,
+              iconColor: Colors.white70,
+              selectedColor: Colors.lightBlueAccent,
+              selectedTileColor: Colors.white10,
+              child: ReorderableListView.builder(
+                key: overlayLayerListKey,
+                buildDefaultDragHandles: false,
+                padding: EdgeInsets.zero,
+                itemCount: layers.length,
+                onReorderItem: _reorderLayers,
+                itemBuilder: (context, index) {
+                  final item = layers[index];
+                  return ListTile(
+                    // 並べ替えても同じレイヤの行を使い回す (#1125)。
+                    key: ValueKey(item.id),
+                    dense: true,
+                    selected: _selectedId == item.id,
+                    contentPadding: const EdgeInsets.only(left: 4, right: 4),
+                    onTap: () => setState(() => _selectedId = item.id),
+                    leading: ReorderableDragStartListener(
+                      index: index,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.drag_handle, size: 18),
+                          const SizedBox(width: 4),
+                          _buildLayerThumb(item, image, size),
+                        ],
+                      ),
+                    ),
+                    title: Row(
+                      children: [
+                        Icon(item.icon, size: 14, color: Colors.white54),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            item.label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                        ),
+                      ],
+                    ),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.delete_outline, size: 20),
+                      tooltip: 'このレイヤーを削除',
+                      onPressed: () => _deleteLayer(item),
+                    ),
+                  );
+                },
+              ),
+            ),
+    );
+  }
+
+  /// レイヤ一覧のサムネ。**画像ごと縮めた縮図**として描く (#1126)。
+  ///
+  /// 元画像を薄く敷いたうえに当該レイヤだけを載せるので、「どのレイヤが画像の
+  /// どこにいるか」が一覧で分かる。⚠ **寸法は [overlayThumbSize] →
+  /// [_buildItemContent] と、キャンバス / 書き出しと同じ経路を通す**（3 回目の描画）。
+  Widget _buildLayerThumb(_OverlayItem item, Uint8List image, Size size) {
+    final thumb = overlayThumbSize(size);
+    return SizedBox(
+      width: thumb.width,
+      height: thumb.height,
+      child: ClipRect(
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: Opacity(
+                opacity: 0.35,
+                child: Image.memory(image, fit: BoxFit.fill),
+              ),
+            ),
+            Positioned(
+              left: item.nx * thumb.width,
+              top: item.ny * thumb.height,
+              child: FractionalTranslation(
+                translation: const Offset(-0.5, -0.5),
+                child: Transform.rotate(
+                  angle: item.angle,
+                  child: _buildItemContent(
+                    item,
+                    thumb.width,
+                    thumb.height,
+                    selected: false,
+                    tooltip: false,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

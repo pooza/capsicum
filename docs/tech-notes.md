@@ -131,6 +131,28 @@ SharedPreferences は **Android / iOS とも OS のバックアップ対象**で
 
 **ダイアログの `TextEditingController` は呼び出し側で dispose しない。** `showDialog` の future は `Navigator.pop` の時点で解決するが、そこはまだ**退場アニメーションの最中**で、`TextField` は再構築される。解決直後に dispose すると use-after-dispose の assertion になる（debug で落ち、release では黙って通る）。controller はダイアログ本体を `StatefulWidget` にして**そちらに所有させる**（State の dispose はルートが実際に外れてから呼ばれるので、リークもせず早すぎもしない）。
 
+### アクション付きの `SnackBar` は既定で**閉じない** — `duration` が効かない（#1126）
+
+`SnackBar` の `persist` は `persist ?? action != null` で解決される。つまり **`SnackBarAction` を付けた瞬間に「時間で消えない」が既定**になり、`duration` に何を書いても無視される（`ScaffoldMessenger` のタイマーは `snackBar.persist` なら何もせず戻る）。
+
+- **「元に戻す」系は `persist: false` を明示する。** さもないと利用者が触るまで画面の下に居座り、**その SnackBar が閉じるのを待って解放する資源があると、上限が消える**。#1126 の削除の取り消しは、取り消し待ちのスタンプの `ui.Image`（原寸・ネイティブ側）を SnackBar が閉じるまで掴む設計なので、ここを外すと画面を閉じるまで解放されない。
+- **ウィジェットテストでは「SnackBar が自分で閉じること」まで見る。** 閉じないと `ScaffoldFeatureController.closed` が解決せず、解放も走らない。`expect(find.text('元に戻す'), findsNothing)` を期限経過後に置くのが歯になる。
+- ⚠ **期限切れを待つには `pump` を 2 段に分ける。** 表示時間のタイマーは**登場アニメーションが完了した後の build** で仕掛けられるので、`pump(duration)` を 1 回打っても閉じない。`pump()` → `pumpAndSettle()`（登場を終わらせる）→ `pump(duration + α)`（タイマーを発火）→ `pumpAndSettle()`（退場）の順で進める。タイマーが走っている間はフレームが積まれないため、`pumpAndSettle` だけでは**待ったつもりで待てていない**。
+
+### `ReorderableListView` は `onReorderItem` を使う — 旧 `onReorder` と `newIndex` の流儀が違う
+
+`onReorder` は非推奨で、`newIndex` を**取り除く前**の位置で渡す（後ろへ動かすとき `-1` の補正が要る）。後継の `onReorderItem` は Flutter 側が `if (newIndex > oldIndex) newIndex -= 1;` を済ませてから呼ぶので、**受け取った値をそのまま `insert` する**。
+
+補正を二重に掛けると「後ろへドラッグしても動かない / 1 つ手前に落ちる」になり、**前へ動かす操作では正しく動く**ぶん見つけにくい。実装は `tab_management_sheet.dart` の `_reorderEntries`（#836）と `reorderOverlayLayers`（#1126）が正本。
+
+### 書き出し画像の**全画素ハッシュはプラットフォームを跨げない**（#1125 / #1126）
+
+`Canvas` 合成の結果を FNV ハッシュで固定する検査は、**軸に平行な描画なら完全に決定的**（実測: 回転なしの書き出しは中間色 0 画素）だが、**レイヤを回した瞬間に縁へアンチエイリアスが乗り**（30° で 239 画素）、その被覆率が macOS と Linux で一致しない。同じコード・同じ Flutter でも指紋が変わる。
+
+- **回転・拡大縮小が絡む検査に指紋を使わない。** 使うなら**指紋を取った OS でだけ**比べ、`skip` に理由を書いて「走っていないこと」を見えるようにする（黙って緩めると「検査が動いていないのに緑」になる）。
+- **移植可能な歯は構造で取る。** 「どのレイヤに操作が当たったか」はウィジェットツリー（`Transform` の回転行列など）から直接読める。ラスタライザに依存しないので全 OS で走る。
+- 画素で見たいときは**軸に平行なまま**にして、「同じ座標に 2 枚重ねて出てきた色」のような 1 画素の判定に落とす。
+
 ## 体感速度の改善（先出し・キャッシュ）
 
 ### 先出しキャッシュは「同じ状態への経路」を 2 本にする — 欠陥はほぼ全部その分岐から出る
