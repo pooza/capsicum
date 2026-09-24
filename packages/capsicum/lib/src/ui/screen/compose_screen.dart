@@ -24,6 +24,7 @@ import '../../provider/platform_providers.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
+import '../../service/compose_draft_attachment.dart';
 import '../../service/compose_draft_store.dart';
 import '../../service/sentry_op_failure.dart';
 import '../../url_helper.dart';
@@ -37,6 +38,7 @@ import '../../util/text_length.dart';
 import '../../util/upstream_error_message.dart';
 import '../../util/user_acct.dart';
 import '../util/annict_link.dart';
+import '../util/compose_draft_notice.dart';
 import '../util/compose_template_display.dart';
 import '../util/draft_display.dart';
 import '../util/drive_description_sync.dart';
@@ -126,7 +128,42 @@ class _MediaEntry {
       description = driveFile.description ?? '',
       sensitive = false;
 
+  /// 下書きから戻す (#1130)。
+  ///
+  /// ⚠ **実在の確認は済んでいる前提**（[resolveComposeDraftAttachments]）。
+  /// ⚠⚠ **焼き込み前の画像が消えていた記述はレイヤを落として渡ってくる**ので、
+  /// ここでは受け取ったものをそのまま持つ（`overlaySource` が null なら
+  /// `overlayBase` は焼き込み済みの `file` に落ちる＝レイヤ無しの新規編集）。
+  _MediaEntry.restored(ComposeDraftAttachment saved)
+    : file = XFile(saved.path, name: saved.name, mimeType: saved.mimeType),
+      driveFile = null,
+      description = saved.description,
+      sensitive = saved.sensitive,
+      overlaySource = saved.overlaySourcePath == null
+          ? null
+          : XFile(saved.overlaySourcePath!),
+      overlayLayers = saved.layers;
+
   bool get isDrive => driveFile != null;
+
+  /// 下書きへ書き出す形 (#1130)。ドライブ添付は対象外なので null。
+  ///
+  /// ⚠ **焼き込み済みの [file] と控えの [overlaySource] を対で渡す。**片方だけ
+  /// 残すと、次に開いたときに同じレイヤが二重に乗る（[replaceFile] の doc と
+  /// 同じ理由）。
+  ComposeDraftAttachment? toDraftAttachment() {
+    final current = file;
+    if (isDrive || current == null) return null;
+    return ComposeDraftAttachment(
+      path: current.path,
+      name: current.name,
+      mimeType: current.mimeType,
+      overlaySourcePath: overlaySource?.path,
+      layers: overlayLayers,
+      description: description,
+      sensitive: sensitive,
+    );
+  }
 
   /// 中身を別の画像へ差し替える（トリミング等）。
   ///
@@ -1367,6 +1404,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       cwText: _cwController.text,
       cwEnabled: _cwEnabled,
       attachmentCount: _attachments.length,
+      // ローカル添付はパスとレイヤ列も保存する (#1130)。⚠ **ドライブ添付は
+      // null が返るので落ちる**（件数には残る）。
+      attachments: [
+        for (final entry in _attachments) ?entry.toDraftAttachment(),
+      ],
       // 設定値も保存する (#964)。本文だけ戻して公開範囲が既定に戻ると、
       // 気づかず広い範囲へ投げる事故になる。
       scope: _scope,
@@ -1498,18 +1540,34 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       // 「わかりづらい」のもう半分の原因だった。
       _draftRestoredNotice = true;
     });
-    // 添付を持ったまま離れた場合、本文だけが戻ってくる (#966)。黙って戻すと
-    // 「保存された」と思って添付を失うので、復元したときだけ明示する。本文が
-    // 空で何も復元していないなら、伝えることがないので出さない。
-    final attachmentCount = saved.attachmentCount;
-    if (saved.hasText && attachmentCount > 0) {
+    // ローカル添付を戻す (#1130)。⚠ **実在を確かめてから**（一時領域が消えて
+    // いれば落とす）。ドライブ添付はそもそも保存対象外なので、ここには来ない。
+    final resolved = await resolveComposeDraftAttachments(saved.attachments);
+    if (!mounted) return;
+    if (resolved.restorable.isNotEmpty) {
+      setState(
+        () =>
+            _attachments.addAll(resolved.restorable.map(_MediaEntry.restored)),
+      );
+    }
+
+    // 添付の行方を明示する (#966 → #1130)。黙って戻すと下書きと無関係の添付に
+    // 見え、黙って落とすと「保存された」と思って失う。文面の分岐は
+    // [composeDraftAttachmentNotice] で固定してある。
+    final notice = composeDraftAttachmentNotice(
+      savedCount: saved.attachmentCount,
+      restoredCount: resolved.restorable.length,
+      overlaysDroppedCount: resolved.overlaysDropped,
+      hasText: saved.hasText,
+    );
+    if (notice != null) {
       // initState の post-frame は _restoreDraft の await より先に走りうるので、
       // ここで改めて次フレームに載せる。
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('前回の入力を復元しました（添付 $attachmentCount 件は含まれません）')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(notice)));
       });
     }
   }
@@ -1775,6 +1833,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       setState(() {
         _attachments.addAll(accepted.map((f) => _MediaEntry.local(f)));
       });
+      _scheduleDraftSave();
     }
     if (rejected.isNotEmpty && mounted) {
       await _showOversizeDialog(rejected);
@@ -1863,11 +1922,14 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       setState(() {
         _attachments.addAll(selected.map((f) => _MediaEntry.drive(f)));
       });
+      // ⚠ ドライブ添付は下書きに実体を持たないが、**件数は変わる** (#1130)。
+      _scheduleDraftSave();
     }
   }
 
   void _removeAttachment(int index) {
     setState(() => _attachments.removeAt(index));
+    _scheduleDraftSave();
   }
 
   /// トリミング対象にできるのはローカルの静止画のみ。動画 / 音声 / ドライブ
@@ -1930,6 +1992,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       // ⚠ レイヤの控えはここで捨てる（`replaceFile` の doc を参照・#1129）。
       entry.replaceFile(croppedFile);
     });
+    // 差し替えた実体を下書きへ反映する (#1130)。
+    _scheduleDraftSave();
   }
 
   /// 添付済みのローカル画像に文字 / Unicode 絵文字 (#576) とカスタム絵文字の
@@ -1992,6 +2056,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         layers: composited.layers,
       ),
     );
+    // ⚠⚠ **レイヤ列を下書きへ落とすのはここ (#1130)。**打鍵を待つと、編集直後に
+    // アプリが落ちたぶんのレイヤが丸ごと消える。
+    _scheduleDraftSave();
   }
 
   /// PNG バイト列を一時ファイルに書き出し [XFile] を返す。元ファイル名の stem を
@@ -2303,6 +2370,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     );
     if (result != null) {
       setState(() => entry.description = result);
+      _scheduleDraftSave();
     }
   }
 

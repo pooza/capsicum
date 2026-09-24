@@ -75,6 +75,53 @@ void main() {
     });
   });
 
+  group('レイヤ列は下書きへ載せて戻す (#1130)', () {
+    test('_saveDraft は添付の記述を渡している', () {
+      final body = _declBody(masked, '_saveDraft');
+      expect(body, isNotNull, reason: '_saveDraft の本体を切り出せていない');
+      expect(
+        body,
+        contains('toDraftAttachment()'),
+        reason:
+            '⚠⚠ 件数だけ渡すと、レイヤも焼き込み前の画像も下書きに残らない。'
+            '⚠ ドライブ添付を落とす判断は窓口 (`toDraftAttachment`) の中',
+      );
+      expect(
+        body,
+        contains('attachments:'),
+        reason: '⚠ ComposeDraft へ渡していないと、保存側が何も書かない',
+      );
+    });
+
+    test('_restoreDraft は実在を確かめてから窓口で戻す', () {
+      final body = _declBody(masked, '_restoreDraft');
+      expect(body, isNotNull, reason: '_restoreDraft の本体を切り出せていない');
+      expect(
+        body,
+        contains('resolveComposeDraftAttachments('),
+        reason:
+            '⚠⚠ 実在を確かめずに戻すと、一時領域が消えた後に'
+            '**読めないファイルを指す添付**が並ぶ',
+      );
+      expect(
+        body,
+        contains('_MediaEntry.restored'),
+        reason:
+            '⚠ 自前で `_MediaEntry.local` を組むと overlaySource / overlayLayers が'
+            '落ちて、レイヤが戻らない（戻っても二重に乗る）',
+      );
+    });
+
+    test('⚠ 編集直後に下書きへ落としている', () {
+      final body = _methodBody(masked, '_addOverlay')!;
+      expect(
+        body,
+        contains('_scheduleDraftSave()'),
+        reason: '⚠⚠ 打鍵を待つと、編集直後に落ちたぶんのレイヤが丸ごと消える',
+      );
+    });
+  });
+
   // ⚠ ここから下は「検査が動いていること」そのものの検査。
   group('⚠ 走査が空振りしていない', () {
     test('_MediaEntry の本体は切り出せていて、中身が在る', () {
@@ -129,6 +176,31 @@ void main() {
       expect(body, isNotNull);
       expect(body!.length, lessThan(masked.length ~/ 4));
       expect(body, contains('ImageOverlayScreen('), reason: '編集画面を開く本体を掴んでいる');
+    });
+
+    test('#1130: 下書きの 2 つの本体も切り出せていて、ファイル全体ではない', () {
+      for (final name in ['_saveDraft', '_restoreDraft']) {
+        final body = _declBody(masked, name);
+        expect(body, isNotNull, reason: '$name の本体を切り出せていない');
+        expect(body!.length, lessThan(masked.length ~/ 4), reason: name);
+        // ⚠ 目印は**片方にしか無いもの**にする（両方に在ると入れ違いに気づけない）。
+        expect(
+          body,
+          contains(
+            name == '_saveDraft' ? 'ComposeDraft(' : 'saved.attachments',
+          ),
+          reason: '$name の本体を掴んでいる',
+        );
+      }
+    });
+
+    test('#1130: 窓口が実在し、_MediaEntry の中に閉じている', () {
+      final body = _classBody(masked, '_MediaEntry')!;
+      expect(body, contains('_MediaEntry.restored('));
+      expect(body, contains('ComposeDraftAttachment? toDraftAttachment()'));
+      // ⚠⚠ **ドライブ添付を落とす判断は窓口の中。**外に散ると、次に添付を
+      // 保存する経路が増えたときに取りこぼす。
+      expect(body, contains('if (isDrive || current == null) return null;'));
     });
   });
 
@@ -189,6 +261,13 @@ String? _classBody(String masked, String name) =>
 /// メソッド `<name>(` の本体。見つからなければ null。
 String? _methodBody(String masked, String name) =>
     _bodyAfter(masked, RegExp('$name\\s*\\('));
+
+/// **宣言**の本体。⚠ [_methodBody] は最初の出現を取るので、**呼び出しのほうが
+/// 先に来るメソッドでは呼び出し元の本体を掴む**（`_saveDraft` は
+/// `didChangeAppLifecycleState` から呼ばれるほうが先）。戻り値の型が前に付いて
+/// いることを求めて宣言だけに当てる。
+String? _declBody(String masked, String name) =>
+    _bodyAfter(masked, RegExp('\\w[\\w<>?, ]*\\s+$name\\s*\\('));
 
 /// [pattern] の直後にある最初の `{` から、対応する `}` までを返す。
 ///
