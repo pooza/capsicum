@@ -1,6 +1,8 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
 
+import '../../util/mulukhiya_conflict.dart';
+
 /// 投稿テンプレート (#767) の表示・失敗文面を中央集約するヘルパ (#867)。
 ///
 /// compose 画面のクイックチューザ（`_TemplateSheet`）と管理画面
@@ -23,8 +25,18 @@ String composeTemplateBodyPreview(ComposeTemplate template) {
 /// 想定内のクライアントエラー（409 上限 / 422 検証 / 404 競合削除）は理由の当たりを
 /// 付け、それ以外（5xx・ネットワーク・非 Dio 例外）は [fallback] を返す。生の例外
 /// 文字列は UI へ出さない。
+///
+/// ⚠⚠ **409 は「上限」だけではない** (#1176)。**ロックの競合**（`locked`・モロヘイヤ
+/// 5.33.0〜 既に起こりうる）でも 409 が返るのに、無条件で「上限（50 件）に達して
+/// います」と出していた —— **消しても直らない案内**になる。`code` で分ける
+/// （mulukhiya#4579・5.38.0〜）。⚠ **`code` の無い 409 は従来の文面のまま**
+/// （5.37.x 以前のサーバーでは上限がほぼ唯一の 409 だった）。
 String composeTemplateErrorMessage(Object error, {required String fallback}) {
   final status = error is DioException ? error.response?.statusCode : null;
+  if (status == 409 &&
+      mulukhiyaConflictCode(error) == MulukhiyaConflict.locked) {
+    return '別の更新と重なりました。少し待ってからもう一度お試しください';
+  }
   return switch (status) {
     409 => 'テンプレートの上限（$composeTemplateMaxCount 件）に達しています',
     422 => '入力内容が不正です（名前・本文の長さを確認してください）',
