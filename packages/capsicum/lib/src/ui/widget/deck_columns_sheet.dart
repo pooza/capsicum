@@ -374,6 +374,10 @@ class _DeckColumnCandidatesState extends ConsumerState<_DeckColumnCandidates> {
       for (final type in TimelineType.values)
         if (supported.contains(type)) TimelineTab(type),
       const NotificationsTab(),
+      // すべてのアカウントの通知 (#1173・決定済み事項 7-3)。⚠ アカウントが 1 つ
+      // なら上の「通知」と中身が同じになるので出さない。
+      if (ref.watch(accountManagerProvider).accounts.length > 1)
+        const AllNotificationsTab(),
       const AnnouncementsTab(),
       ...pinnedHashtags,
     ];

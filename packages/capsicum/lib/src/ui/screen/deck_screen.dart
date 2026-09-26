@@ -152,10 +152,17 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
 
   /// カラムから開いた投稿・プロフィール等を、元のカラムの右隣に足す (#1148・
   /// 決定済み事項 9)。アカウントは元のカラムのものを引き継ぐ。
-  Future<void> _openColumn(DeckColumn from, TabType tab, Object? seed) async {
+  /// [account] を渡すとそのアカウントのカラムになる (#1173)。⚠ 明示するのは
+  /// 「すべての通知」のように**アカウントをまたぐカラム**から開くときだけ。
+  Future<void> _openColumn(
+    DeckColumn from,
+    TabType tab,
+    Object? seed, {
+    AccountKey? account,
+  }) async {
     final added = await ref
         .read(deckColumnsProvider.notifier)
-        .insertAfter(from.id, from.account, tab, seed: seed);
+        .insertAfter(from.id, account ?? from.account, tab, seed: seed);
     if (!mounted) return;
     // ⚠ 開いた時点でフォーカスになり、枠を 1 回点滅させる (#1172・決定済み事項 10)。
     // 横送りで列がずれても、どこに出たかを見失わないため。アカウントは元のカラムを
@@ -163,6 +170,35 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
     ref.read(deckFocusProvider.notifier).focusAndBlink(added.id);
     // ⚠ 足した直後のフレームではまだ Row に居ない。組み上がってから送る。
     WidgetsBinding.instance.addPostFrameCallback((_) => _reveal(added.id));
+  }
+
+  /// 通知をカラムで開く (#1173・決定済み事項 7-3)。
+  ///
+  /// アカウントが 1 つなら**そのアカウントの通知**、複数なら**すべての通知**
+  /// （タブ UI のベルと同じ切り分け・#345）。
+  ///
+  /// ⚠ **既に同じカラムが列にあれば足さず、そこへ送ってフォーカスを移す。**
+  /// 「すべての通知」は 1 本あれば足りるうえ、押すたびに増えると列が汚れる。
+  /// ⚠ 押した合図として点滅させる（足したときと同じ・決定済み事項 10）。
+  Future<void> _openNotifications(
+    DeckColumn from, {
+    required bool multipleAccounts,
+  }) async {
+    final tab = multipleAccounts
+        ? const AllNotificationsTab()
+        : const NotificationsTab();
+    // ⚠ 単一アカウントの通知はアカウントごとに別物なので、**同じアカウントの**
+    // カラムだけを既存とみなす。
+    final existing = ref
+        .read(deckColumnsProvider)
+        .where((c) => c.tab == tab && c.account == from.account)
+        .firstOrNull;
+    if (existing != null) {
+      ref.read(deckFocusProvider.notifier).focusAndBlink(existing.id);
+      _reveal(existing.id);
+      return;
+    }
+    await _openColumn(from, tab, null);
   }
 
   /// 中身の画面が「閉じる」とき（コレクションを削除した等）にカラムを外す (#1150)。
@@ -372,13 +408,25 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
                 // 全画面だと結果から開いた先がデッキの外になり、そこから先は
                 // タブ UI のスタックに積まれていく。⚠ アカウントは**フォーカス中の
                 // カラム**のもの（#1172 と同じ論点）。
-                if (focusedColumn != null)
+                if (focusedColumn != null) ...[
                   IconButton(
                     icon: const Icon(Icons.search),
                     tooltip: '検索（カラムで開く）',
                     onPressed: () =>
                         _openColumn(focusedColumn, const SearchTab(), null),
                   ),
+                  // 通知 (#1173・決定済み事項 7-3)。アカウントが 1 つなら**その
+                  // アカウントの通知**カラム、複数なら**すべての通知**カラム
+                  // （タブ UI のベルと同じ切り分け・#345）。
+                  IconButton(
+                    icon: const Icon(Icons.notifications_outlined),
+                    tooltip: '通知（カラムで開く）',
+                    onPressed: () => _openNotifications(
+                      focusedColumn,
+                      multipleAccounts: accounts.length > 1,
+                    ),
+                  ),
+                ],
                 IconButton(
                   icon: const Icon(Icons.view_column_outlined),
                   tooltip: 'カラム編集',

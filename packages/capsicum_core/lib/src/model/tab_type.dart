@@ -42,6 +42,7 @@ sealed class TabType {
     // ⚠ 荷物を持たないデッキ専用のカラム (#1173)。`:` を要求する下の分岐には
     // 載せられないので、ここで先に返す。
     if (key == 'search') return const SearchTab();
+    if (key == 'all_notifications') return const AllNotificationsTab();
 
     final colon = key.indexOf(':');
     if (colon < 0) return null;
@@ -243,6 +244,27 @@ class SearchTab extends DeckOnlyTab {
 
   @override
   int get hashCode => 'search'.hashCode;
+}
+
+/// すべてのアカウントの通知 (#1173・`docs/deck-ui-plan.md` 決定済み事項 7-3)。
+///
+/// ⚠⚠ **中身はアカウントをまたぐ**（`unifiedNotificationProvider` が
+/// `accountManagerProvider` の全アカウントへ fan-out する）ので、[DeckColumn] の
+/// アカウントは**中身に影響しない**。それでも 1 つ持つのは、カラムのスコープ
+/// （`currentAccountProvider` の上書き）と簡易投稿バーの宛先を決めるため。
+///
+/// ⚠ 列に 1 本だけあれば足りるので、ベルは**既にあればそこへ送る**。
+class AllNotificationsTab extends DeckOnlyTab {
+  const AllNotificationsTab();
+
+  @override
+  String toKey() => 'all_notifications';
+
+  @override
+  bool operator ==(Object other) => other is AllNotificationsTab;
+
+  @override
+  int get hashCode => 'all_notifications'.hashCode;
 }
 
 /// 投稿のスレッド (#1148)。

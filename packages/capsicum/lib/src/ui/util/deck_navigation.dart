@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../model/account_key.dart';
 import '../../model/deck_column.dart';
 import '../../provider/account_manager_provider.dart';
 import 'deck_tabs.dart';
@@ -30,7 +31,18 @@ class DeckColumnScope extends InheritedTheme {
 
   /// カラムを足す（デッキ画面が渡す。列への挿入と、足したカラムを見える位置まで
   /// 送るのを受け持つ）。
-  final void Function(DeckColumn from, TabType tab, Object? seed) onOpen;
+  ///
+  /// [account] を渡すとそのアカウントのカラムになる。**省略時は [column] の
+  /// アカウント**（ふつうはこちら。カラムの中から開くものは、そのカラムのアカウント
+  /// で引くしかない）。⚠ 明示するのは「すべての通知」のように**アカウントを
+  /// またぐカラム**から開くときだけ (#1173)。
+  final void Function(
+    DeckColumn from,
+    TabType tab,
+    Object? seed, {
+    AccountKey? account,
+  })
+  onOpen;
 
   /// カラムを列から外す（中身の画面が「閉じる」とき・#1150）。
   final void Function(DeckColumn column) onClose;
@@ -67,11 +79,12 @@ Future<T?> openColumnOrPush<T>(
   BuildContext context,
   TabType tab, {
   Object? seed,
+  AccountKey? account,
   required Future<T?> Function() push,
 }) {
   final deck = DeckColumnScope.maybeOf(context);
   if (deck != null) {
-    deck.onOpen(deck.column, tab, seed);
+    deck.onOpen(deck.column, tab, seed, account: account);
     return Future.value();
   }
   return push();
@@ -90,20 +103,27 @@ VoidCallback screenCloser(BuildContext context) {
 }
 
 /// 投稿（スレッド）を開く (#1148)。
-void openPost(BuildContext context, Post post) => openColumnOrPush(
-  context,
-  PostThreadTab(post.id),
-  seed: post,
-  push: () => context.push('/post', extra: post),
-);
+///
+/// [account] は「すべての通知」のように**アカウントをまたぐカラム**から開くときだけ
+/// 渡す (#1173)。省略すると元のカラムのアカウントになる。
+void openPost(BuildContext context, Post post, {AccountKey? account}) =>
+    openColumnOrPush(
+      context,
+      PostThreadTab(post.id),
+      seed: post,
+      account: account,
+      push: () => context.push('/post', extra: post),
+    );
 
-/// プロフィールを開く (#1148)。
-void openProfile(BuildContext context, User user) => openColumnOrPush(
-  context,
-  ProfileTab(user.id),
-  seed: user,
-  push: () => context.push('/profile', extra: user),
-);
+/// プロフィールを開く (#1148)。[account] は [openPost] と同じ扱い。
+void openProfile(BuildContext context, User user, {AccountKey? account}) =>
+    openColumnOrPush(
+      context,
+      ProfileTab(user.id),
+      seed: user,
+      account: account,
+      push: () => context.push('/profile', extra: user),
+    );
 
 /// ハッシュタグのタイムラインを開く (#1148)。
 ///

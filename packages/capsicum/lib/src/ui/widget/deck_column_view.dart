@@ -22,6 +22,7 @@ import '../screen/post_detail_screen.dart';
 import '../screen/post_list_screen.dart';
 import '../screen/profile_screen.dart';
 import '../screen/search_screen.dart';
+import '../screen/unified_notification_screen.dart';
 import '../screen/user_list_screen.dart';
 import '../util/deck_compose.dart';
 import '../util/deck_tabs.dart';
@@ -122,6 +123,11 @@ class DeckColumnView extends ConsumerWidget {
       // `currentAdapterProvider` を差し替えている）。結果から開いた先も、
       // `DeckColumnScope` を通って右隣のカラムになる。
       SearchTab() => const SearchScreen(embedded: true),
+      // すべてのアカウントの通知 (#1173・決定済み事項 7-3)。⚠⚠ **中身はカラムの
+      // アカウントに依らない**（`unifiedNotificationProvider` が全アカウントへ
+      // fan-out する）。カラムがアカウントを 1 つ持つのはスコープと簡易投稿バーの
+      // 宛先のためだけ。
+      AllNotificationsTab() => const UnifiedNotificationScreen(embedded: true),
       NotificationsTab() => const NotificationView(),
       AnnouncementsTab() => const AnnouncementView(),
       // メッセージはフィードを持たない遷移トリガー (#439) なので、カラムにならない。

@@ -21,7 +21,16 @@ import '../widget/server_badge.dart';
 import '../widget/user_avatar.dart';
 
 class UnifiedNotificationScreen extends ConsumerWidget {
-  const UnifiedNotificationScreen({super.key});
+  const UnifiedNotificationScreen({super.key, this.embedded = false});
+
+  /// デッキのカラムとして出すか (#1173・`docs/deck-ui-plan.md` 決定済み事項 7-3)。
+  ///
+  /// 見出しは [DeckColumnView] が出すので `Scaffold` / `AppBar` を持たない。下端の
+  /// inset もデッキ画面がまとめて吸うので [BottomSafeArea] で包まない。
+  ///
+  /// ⚠⚠ **中身は変わらない**（`unifiedNotificationProvider` は全アカウントへ
+  /// fan-out するので、カラムのスコープに置いても「すべての通知」のまま）。
+  final bool embedded;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -29,53 +38,64 @@ class UnifiedNotificationScreen extends ConsumerWidget {
     final reblogLabel = ref.watch(reblogLabelProvider);
     final postLabel = ref.watch(postLabelProvider);
 
+    final body = _body(context, ref, state, reblogLabel, postLabel);
+    if (embedded) return body;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('すべての通知'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
-      body: BottomSafeArea(
-        child: state.when(
-          data: (data) {
-            // 取得状況バナー（#862 B）を常に最上部に置き、逐次描画（#862 A）で
-            // 差し込まれる通知リストをその下に並べる。バナーは pending / failed が
-            // 無くなれば自動的に畳まれる。
-            final banner = _UnifiedStatusBanner(state: data);
-            final Widget listArea;
-            if (data.isComplete &&
-                data.items.isEmpty &&
-                data.failedAccounts.isEmpty) {
-              listArea = const Center(child: Text('通知はありません'));
-            } else {
-              listArea = ListView.separated(
-                // 件数が少ない / 空でも pull-to-refresh できるようにする。
-                physics: const AlwaysScrollableScrollPhysics(),
-                itemCount: data.items.length,
-                separatorBuilder: (_, _) => const Divider(height: 1),
-                itemBuilder: (context, index) => _UnifiedNotificationTile(
-                  item: data.items[index],
-                  reblogLabel: reblogLabel,
-                  postLabel: postLabel,
-                ),
-              );
-            }
-            return RefreshIndicator(
-              onRefresh: () => ref.refresh(unifiedNotificationProvider.future),
-              child: Column(
-                children: [
-                  banner,
-                  Expanded(child: listArea),
-                ],
-              ),
-            );
-          },
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (error, stack) => RetryErrorView(
-            message: '通知の読み込みに失敗しました\n$error',
-            isRetrying: state.isLoading,
-            onRetry: () => ref.invalidate(unifiedNotificationProvider),
+      body: BottomSafeArea(child: body),
+    );
+  }
+
+  Widget _body(
+    BuildContext context,
+    WidgetRef ref,
+    AsyncValue<UnifiedNotificationState> state,
+    String reblogLabel,
+    String postLabel,
+  ) {
+    return state.when(
+      data: (data) {
+        // 取得状況バナー（#862 B）を常に最上部に置き、逐次描画（#862 A）で
+        // 差し込まれる通知リストをその下に並べる。バナーは pending / failed が
+        // 無くなれば自動的に畳まれる。
+        final banner = _UnifiedStatusBanner(state: data);
+        final Widget listArea;
+        if (data.isComplete &&
+            data.items.isEmpty &&
+            data.failedAccounts.isEmpty) {
+          listArea = const Center(child: Text('通知はありません'));
+        } else {
+          listArea = ListView.separated(
+            // 件数が少ない / 空でも pull-to-refresh できるようにする。
+            physics: const AlwaysScrollableScrollPhysics(),
+            itemCount: data.items.length,
+            separatorBuilder: (_, _) => const Divider(height: 1),
+            itemBuilder: (context, index) => _UnifiedNotificationTile(
+              item: data.items[index],
+              reblogLabel: reblogLabel,
+              postLabel: postLabel,
+            ),
+          );
+        }
+        return RefreshIndicator(
+          onRefresh: () => ref.refresh(unifiedNotificationProvider.future),
+          child: Column(
+            children: [
+              banner,
+              Expanded(child: listArea),
+            ],
           ),
-        ),
+        );
+      },
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (error, stack) => RetryErrorView(
+        message: '通知の読み込みに失敗しました\n$error',
+        isRetrying: state.isLoading,
+        onRetry: () => ref.invalidate(unifiedNotificationProvider),
       ),
     );
   }
@@ -335,15 +355,26 @@ class _UnifiedNotificationTileState
   void _openInOwningAccount(BuildContext context, WidgetRef ref) {
     final post = item.notification.post;
     final user = item.notification.user;
-    final manager = ref.read(accountManagerProvider.notifier);
-    final current = ref.read(currentAccountProvider);
-    if (current?.key != item.account.key) {
-      manager.switchAccount(item.account);
+    // ⚠⚠ **デッキの中では現在のアカウントを切り替えない** (#1173・決定済み事項
+    // 7-3)。デッキは現在のアカウントが変わるとカラムのコンテナの割り当てが組み
+    // 替わる（決定済み事項 8）ので、**通知 1 つで裏側が全部組み変わる。**
+    // 代わりに、その通知のアカウントのカラムとして右隣に開く。
+    final inDeck = DeckColumnScope.maybeOf(context) != null;
+    if (!inDeck) {
+      final manager = ref.read(accountManagerProvider.notifier);
+      final current = ref.read(currentAccountProvider);
+      if (current?.key != item.account.key) {
+        manager.switchAccount(item.account);
+      }
     }
+    // ⚠ アカウントを明示する。「すべての通知」カラムは**アカウントをまたぐ**ので、
+    // 元のカラムのアカウントを引き継ぐと別のサーバーの id を引いて別人・別投稿を
+    // 指す（id はサーバーローカル）。
+    final account = inDeck ? item.account.key : null;
     if (post != null) {
-      openPost(context, post);
+      openPost(context, post, account: account);
     } else if (user != null) {
-      openProfile(context, user);
+      openProfile(context, user, account: account);
     }
   }
 

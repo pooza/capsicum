@@ -45,6 +45,7 @@ String deckOnlyTabLabel(
   FlashTab() => 'Play',
   ChatUserTab() => 'メッセージ',
   SearchTab() => '検索',
+  AllNotificationsTab() => 'すべての通知',
 };
 
 IconData deckOnlyTabIcon(DeckOnlyTab tab) => switch (tab) {
@@ -58,6 +59,7 @@ IconData deckOnlyTabIcon(DeckOnlyTab tab) => switch (tab) {
   FlashTab() => Icons.play_circle_outline,
   ChatUserTab() => Icons.chat_bubble_outline,
   SearchTab() => Icons.search,
+  AllNotificationsTab() => Icons.notifications_active_outlined,
 };
 
 /// ユーザー一覧の取得。アダプタが対応していなければ null。
