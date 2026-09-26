@@ -171,21 +171,67 @@ const misskeyNotificationTypeMap = <String, NotificationType>{
   'achievementEarned': NotificationType.achievementEarned,
 };
 
+/// [type] に対応するサーバー側の通知種別名 (#1042)。
+///
+/// ⚠⚠ **[misskeyNotificationTypeMap] から導出する**（Mastodon 側と同じ方針・
+/// [mastodonNotificationWireNames] の doc が正本）。⚠ **`mention` を外すと
+/// `reply` も外れる** — 表が両方を [NotificationType.mention] に寄せているため。
+/// これは意図通り（capsicum は 1 種別として見せている）。
+Set<String> misskeyNotificationWireNames(NotificationType type) => {
+  for (final entry in misskeyNotificationTypeMap.entries)
+    if (entry.value == type) entry.key,
+};
+
+/// 絞り込みの候補に出せる種別 (#1042)。
+Set<NotificationType> get misskeyFilterableNotificationTypes =>
+    misskeyNotificationTypeMap.values.toSet();
+
 extension CapsicumMisskeyNotificationExtension on MisskeyNotification {
   Notification toCapsicum(
     String localHost, {
     Set<String> adminRoleIds = const {},
   }) {
+    // 束ねられた通知 (#1048)。⚠⚠ **この 2 つの type では `user` が来ない**
+    // （`reactions[].user` / `users[]` に移る）。素通しすると見出しが
+    // 「アイコンも名前も無い 1 行」になる。
+    final samples = <MisskeyUser>[...?reactions?.map((r) => r.user), ...?users];
+    final sampleUsers = samples
+        .map((u) => u.toCapsicum(localHost, adminRoleIds: adminRoleIds))
+        .toList();
     return Notification(
       id: id,
-      type: misskeyNotificationTypeMap[type] ?? NotificationType.other,
+      type:
+          misskeyNotificationTypeMap[_ungroupedType] ?? NotificationType.other,
       createdAt: createdAt,
-      user: user?.toCapsicum(localHost, adminRoleIds: adminRoleIds),
+      user:
+          user?.toCapsicum(localHost, adminRoleIds: adminRoleIds) ??
+          sampleUsers.firstOrNull,
       post: note?.toCapsicum(localHost, adminRoleIds: adminRoleIds),
-      reaction: reaction,
+      // ⚠ 束ねた側の代表リアクションは**最も新しい 1 件**。グループ内に複数の
+      // 絵文字が混ざるので、行頭に出すのは 1 つだけになる。
+      reaction: reaction ?? reactions?.firstOrNull?.reaction,
       achievement: achievement,
+      // ⚠ **`reaction:grouped` / `renote:grouped` に group_key は無い。**
+      // 束ねたことを示すために通知 ID を借りる（サーバーを跨いだ突き合わせには
+      // 使えないが、capsicum も再取得の突き合わせには使っていない）。
+      groupKey: samples.isEmpty ? null : id,
+      // ⚠⚠ **1 ページで見えたぶんの件数**にすぎない（Mastodon は履歴全体）。
+      groupCount: samples.isEmpty ? 1 : samples.length,
+      sampleUsers: sampleUsers,
     );
   }
+
+  /// `reaction:grouped` / `renote:grouped` を元の種別名へ戻す (#1048)。
+  ///
+  /// ⚠ **[misskeyNotificationTypeMap] に `:grouped` を足さない。**あの表は
+  /// `excludeTypes` に送る名前の正本でもあり（[misskeyNotificationWireNames]）、
+  /// `reaction:grouped` を送ると `notificationTypes` の enum に無いので 400 で
+  /// 一覧ごと落ちる。
+  String get _ungroupedType => switch (type) {
+    'reaction:grouped' => 'reaction',
+    'renote:grouped' => 'renote',
+    _ => type,
+  };
 }
 
 extension CapsicumMisskeyAnnouncementExtension on MisskeyAnnouncement {

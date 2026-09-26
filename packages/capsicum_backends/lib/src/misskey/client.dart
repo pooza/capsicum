@@ -858,18 +858,33 @@ class MisskeyClient {
   /// クライアント側で持つ運用（2026-09-04 pooza 判断・クライアント側が正本）
   /// なので、サーバーの既読状態には触らない。WebUI や他クライアントを併用して
   /// いるユーザーの未読バッジが、capsicum の取得だけで消えるのを防ぐ。
+  /// [grouped] が true なら `POST /api/i/notifications-grouped` を叩く (#1048)。
+  ///
+  /// ⚠ **束ねられるのは `reaction` と `renote` だけ、しかも連続したものだけ**
+  /// （`notifications-grouped.ts` のループは直前の通知と同じ種別・同じノートか
+  /// しか見ない）。Mastodon が `group_key` で履歴全体を束ねるのとは粒度が違う。
+  ///
+  /// ⚠ **`markAsRead` は grouped 側も既定 `true`。**同じ理由で false を明示する。
+  ///
+  /// [excludeTypes] は出さない種別 (#1042)。⚠ **サーバーは enum で検証する**ので、
+  /// `notificationTypes` に無い名前を混ぜると 400 で一覧ごと落ちる。値の出所は
+  /// [misskeyNotificationWireNames]（`misskeyNotificationTypeMap` から導出）に
+  /// 限ること。
   Future<List<MisskeyNotification>> getNotifications({
     String? sinceId,
     String? untilId,
     int? limit,
+    List<String> excludeTypes = const [],
+    bool grouped = false,
   }) async {
     final response = await dio.post(
-      '/api/i/notifications',
+      grouped ? '/api/i/notifications-grouped' : '/api/i/notifications',
       data: createBody({
         'sinceId': ?sinceId,
         'untilId': ?untilId,
         'limit': ?limit,
         'markAsRead': false,
+        if (excludeTypes.isNotEmpty) 'excludeTypes': excludeTypes,
       }),
     );
     return (response.data as List)

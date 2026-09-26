@@ -120,6 +120,44 @@ class Notification {
   /// `type == moderationWarning` のときの中身 (#1084)。それ以外は null。
   final ModerationWarning? moderationWarning;
 
+  /// 束ねられた通知の同一グループを指す鍵 (#1048)。グループ化して取得していない
+  /// ときは null。
+  ///
+  /// ⚠ **表示には使わない。**`id` と同じくサーバーの文字列で、同じグループを
+  /// 再取得したときに突き合わせるためだけに持つ。
+  final String? groupKey;
+
+  /// このグループに含まれる通知の件数 (#1048)。束ねていないときは 1。
+  ///
+  /// ⚠⚠ **[sampleUsers] の長さと一致しない。**サーバーが返す代表アカウントは
+  /// 上限つき（Mastodon は 8 人）なので、「20 人がお気に入りしました」を出すには
+  /// こちらを読む。**`sampleUsers.length` で件数を出すと 8 で止まる。**
+  ///
+  /// ⚠ Misskey は 1 ページ内の連続した通知しか束ねないので、この件数も
+  /// 「そのページで見えたぶん」に留まる（Mastodon は履歴全体を数える）。
+  final int groupCount;
+
+  /// グループの代表アカウント（新しい順・#1048）。束ねていないときは空。
+  ///
+  /// ⚠ **[user] は先頭と同じ**（最も新しい 1 人）。既存の表示を壊さないために
+  /// [user] は常に埋める。
+  final List<User> sampleUsers;
+
+  /// サーバーが用意した代替の見出し (#1042)。capsicum が名前を知らない種別の
+  /// ときだけ載る。
+  ///
+  /// ⚠⚠ **HTML。**Mastodon の `fallback.title` は `link_to_mention` 等を通るので
+  /// `<a>` を含む。素の [Text] に入れるとタグが見えるので、HTML として描く。
+  ///
+  /// ⚠ **Mastodon が文言を用意しているのは非 baseline の種別だけ。**本当に
+  /// 新しい種別では `title` も `summary` も null で来る（`fallback` キー自体は
+  /// 来る）。**「supported_types を送れば未知の型が必ず読めるようになる」わけでは
+  /// ない**ので、[NotificationType.other] の既定表示は残すこと。
+  final String? fallbackTitle;
+
+  /// [fallbackTitle] に続く説明 (#1042)。こちらも HTML。
+  final String? fallbackBody;
+
   const Notification({
     required this.id,
     required this.type,
@@ -133,5 +171,10 @@ class Notification {
     this.achievement,
     this.severance,
     this.moderationWarning,
+    this.groupKey,
+    this.groupCount = 1,
+    this.sampleUsers = const [],
+    this.fallbackTitle,
+    this.fallbackBody,
   });
 }

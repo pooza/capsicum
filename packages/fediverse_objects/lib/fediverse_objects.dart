@@ -19,6 +19,7 @@ export 'src/mastodon/featured_tag.dart';
 export 'src/mastodon/list.dart';
 export 'src/mastodon/media_attachment.dart';
 export 'src/mastodon/notification.dart';
+export 'src/mastodon/notification_group.dart';
 export 'src/mastodon/relationship_severance_event.dart';
 export 'src/mastodon/status.dart';
 export 'src/mastodon/token.dart';

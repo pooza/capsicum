@@ -1119,12 +1119,48 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   // NotificationSupport
 
   @override
-  Future<NotificationResponse> getNotifications({TimelineQuery? query}) async {
-    final notifications = await client.getNotifications(
-      sinceId: query?.sinceId,
-      untilId: query?.maxId,
-      limit: query?.limit,
-    );
+  Set<NotificationType> get filterableNotificationTypes =>
+      misskeyFilterableNotificationTypes;
+
+  /// このサーバーに `i/notifications-grouped` が無いと分かったか (#1048)。
+  /// 理由は Mastodon 側の同名フィールドの doc が正本。
+  bool _groupingUnsupported = false;
+
+  @override
+  Future<NotificationResponse> getNotifications({
+    TimelineQuery? query,
+    NotificationQuery? filter,
+  }) async {
+    final excludeTypes = <String>[
+      for (final type in filter?.excludeTypes ?? const <NotificationType>{})
+        ...misskeyNotificationWireNames(type),
+    ];
+    final grouped = (filter?.grouped ?? false) && !_groupingUnsupported;
+    List<MisskeyNotification> notifications;
+    try {
+      notifications = await client.getNotifications(
+        sinceId: query?.sinceId,
+        untilId: query?.maxId,
+        limit: query?.limit,
+        excludeTypes: excludeTypes,
+        grouped: grouped,
+      );
+    } on DioException catch (e) {
+      // ⚠ エンドポイントが無いサーバーでは通知が丸ごと出なくなるので、必ず
+      // 非グループへ落とす。⚠ Misskey は未知のエンドポイントに 404 を返す。
+      // 401 / 429 等は落とさない（Mastodon 側と同じ理由）。
+      final status = e.response?.statusCode;
+      if (!grouped || (status != 404 && status != 400 && status != 501)) {
+        rethrow;
+      }
+      _groupingUnsupported = true;
+      notifications = await client.getNotifications(
+        sinceId: query?.sinceId,
+        untilId: query?.maxId,
+        limit: query?.limit,
+        excludeTypes: excludeTypes,
+      );
+    }
     final converted = _safeConvert(
       notifications,
       (n) => n.toCapsicum(host, adminRoleIds: _adminRoleIds),
@@ -1135,6 +1171,11 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       rawCount: converted.rawCount,
       rawLastId: converted.rawLastId,
       skippedPosts: converted.skipped,
+      // ⚠⚠ **グループ化したページでは件数で最終ページを判定できない。**
+      // `i/notifications-grouped` は `limit` 件の通知を取ってから束ねるので、
+      // 「同じノートへの 20 件のリアクション」は limit 20 に対して 1 件で返る。
+      // `rawCount >= limit` で切ると**そこで読み止まる**。
+      hasMore: grouped ? notifications.isNotEmpty : null,
     );
   }
 

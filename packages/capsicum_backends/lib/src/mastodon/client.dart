@@ -602,10 +602,24 @@ class MastodonClient {
   }
 
   /// GET /api/v1/notifications
+  ///
+  /// [excludeTypes] は出さない種別のサーバー側名 (#1042)。⚠ **許可リスト
+  /// (`types[]`) ではなく拒否リストを使う**理由は [NotificationQuery.excludeTypes]
+  /// の doc が正本。
+  ///
+  /// [supportedTypes] は capsicum が名前を知っている種別 (#1042)。⚠⚠ **送らないと
+  /// `fallback` は永久に来ない**（`NotificationFallbackConcern#needs_fallback?` が
+  /// `supported_notification_types.nil?` で即 false を返す）。
+  ///
+  /// ⚠ **配列のキーには自分で `[]` を付ける。**dio の既定 `ListFormat.multi` は
+  /// キーを加工しないので、`'exclude_types': [...]` と書くと
+  /// `exclude_types=favourite` になって Rails が配列として読まない。
   Future<List<MastodonNotification>> getNotifications({
     String? maxId,
     String? sinceId,
     int? limit,
+    List<String> excludeTypes = const [],
+    List<String> supportedTypes = const [],
   }) async {
     final response = await dio.get(
       '/api/v1/notifications',
@@ -613,6 +627,8 @@ class MastodonClient {
         'max_id': ?maxId,
         'since_id': ?sinceId,
         'limit': ?limit,
+        if (excludeTypes.isNotEmpty) 'exclude_types[]': excludeTypes,
+        if (supportedTypes.isNotEmpty) 'supported_types[]': supportedTypes,
       },
     );
     // 1 件でも fromJson が throw するとページ全体が読めなくなるため、
@@ -638,6 +654,41 @@ class MastodonClient {
       }
     }
     return notifications;
+  }
+
+  /// GET /api/v2/notifications — 束ねられた通知 (#1048)。
+  ///
+  /// ⚠⚠ **v1 と違い 1 個の Map が返る。**アカウントと投稿は重複排除されて
+  /// トップレベルの配列に載り、グループは ID で参照する
+  /// （[MastodonGroupedNotifications] の doc が正本）。
+  ///
+  /// ⚠ **`expand_accounts` は送らない。**既定の `full` のままにする。
+  /// `partial_avatars` にすると代表アカウントの 2 人目以降が
+  /// `partial_accounts`（アバターだけ）へ移り、表示名も絵文字も引けなくなる。
+  ///
+  /// ⚠ **v2 を持たないサーバーがある。**Mastodon 4.3 未満と、v1 だけ実装した
+  /// 互換サーバー。ここでは判定せず [DioException] をそのまま投げるので、
+  /// 呼び出し側が v1 へ落とすこと。
+  Future<MastodonGroupedNotifications> getGroupedNotifications({
+    String? maxId,
+    String? sinceId,
+    int? limit,
+    List<String> excludeTypes = const [],
+    List<String> supportedTypes = const [],
+  }) async {
+    final response = await dio.get(
+      '/api/v2/notifications',
+      queryParameters: {
+        'max_id': ?maxId,
+        'since_id': ?sinceId,
+        'limit': ?limit,
+        if (excludeTypes.isNotEmpty) 'exclude_types[]': excludeTypes,
+        if (supportedTypes.isNotEmpty) 'supported_types[]': supportedTypes,
+      },
+    );
+    return MastodonGroupedNotifications.fromJson(
+      response.data as Map<String, dynamic>,
+    );
   }
 
   /// GET /api/v1/conversations

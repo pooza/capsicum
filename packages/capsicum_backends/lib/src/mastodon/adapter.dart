@@ -1054,11 +1054,48 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   // NotificationSupport
 
   @override
-  Future<NotificationResponse> getNotifications({TimelineQuery? query}) async {
+  Set<NotificationType> get filterableNotificationTypes =>
+      mastodonFilterableNotificationTypes;
+
+  /// このサーバーに `GET /api/v2/notifications` が無いと分かったか (#1048)。
+  ///
+  /// ⚠ **ページごとに v2 を叩き直さない。**1 ページ目で 404 を踏んだら、以降は
+  /// 最初から v1 で取る。立てっぱなしにしてよいのは、アダプタがアカウント
+  /// 1 つ・サーバー 1 台に対応しているため（サーバーが更新されたら再ログイン
+  /// までは v1 のまま、という保守側に倒れる）。
+  bool _groupingUnsupported = false;
+
+  @override
+  Future<NotificationResponse> getNotifications({
+    TimelineQuery? query,
+    NotificationQuery? filter,
+  }) async {
+    final excludeTypes = <String>[
+      for (final type in filter?.excludeTypes ?? const <NotificationType>{})
+        ...mastodonNotificationWireNames(type),
+    ];
+    if ((filter?.grouped ?? false) && !_groupingUnsupported) {
+      try {
+        return await _getGroupedNotifications(
+          query: query,
+          excludeTypes: excludeTypes,
+        );
+      } on DioException catch (e) {
+        // ⚠ **v2 が無いサーバーでは通知が丸ごと出なくなる**ので、必ず v1 へ
+        // 落とす。Mastodon 4.3 未満と、v1 だけ実装した互換サーバーが該当する。
+        // ⚠ 401 / 429 等は落とさない（認証切れやレート制限を「v2 が無い」と
+        // 読むと、グループ表示が一度の失敗で永久に無効化される）。
+        final status = e.response?.statusCode;
+        if (status != 404 && status != 400 && status != 501) rethrow;
+        _groupingUnsupported = true;
+      }
+    }
     final notifications = await client.getNotifications(
       maxId: query?.maxId,
       sinceId: query?.sinceId,
       limit: query?.limit,
+      excludeTypes: excludeTypes,
+      supportedTypes: mastodonSupportedNotificationTypes,
     );
     final converted = _safeConvert(
       notifications,
@@ -1070,6 +1107,43 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       rawCount: converted.rawCount,
       rawLastId: converted.rawLastId,
       skippedPosts: converted.skipped,
+    );
+  }
+
+  Future<NotificationResponse> _getGroupedNotifications({
+    TimelineQuery? query,
+    required List<String> excludeTypes,
+  }) async {
+    final grouped = await client.getGroupedNotifications(
+      maxId: query?.maxId,
+      sinceId: query?.sinceId,
+      limit: query?.limit,
+      excludeTypes: excludeTypes,
+      supportedTypes: mastodonSupportedNotificationTypes,
+    );
+    final accounts = {for (final a in grouped.accounts) a.id: a};
+    final statuses = {for (final st in grouped.statuses) st.id: st};
+    final converted = _safeConvert(
+      grouped.notificationGroups,
+      (g) => g.toCapsicum(
+        host,
+        accounts: accounts,
+        statuses: statuses,
+        adminRoleIds: _adminRoleIds,
+      ),
+      // ⚠⚠ **次ページのカーソルはグループ内の最も古い通知 ID。**
+      // `most_recent_notification_id` を渡すと、末尾のグループの古いぶんを
+      // 読み飛ばす。`group_key` では辿れない（`max_id` は通知 ID を取る）。
+      (g) => g.pageMinId ?? g.mostRecentNotificationId,
+    );
+    return NotificationResponse(
+      notifications: converted.results,
+      rawCount: converted.rawCount,
+      rawLastId: converted.rawLastId,
+      skippedPosts: converted.skipped,
+      // ⚠⚠ **グループ数と limit を比べてはいけない**理由は
+      // [NotificationResponse.hasMore] の doc が正本。
+      hasMore: grouped.notificationGroups.isNotEmpty,
     );
   }
 

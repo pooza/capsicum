@@ -398,6 +398,27 @@ const _mastodonNotificationTypesWithoutActor = {
   'moderation_warning',
 };
 
+/// [type] に対応するサーバー側の通知種別名 (#1042)。
+///
+/// ⚠⚠ **[mastodonNotificationTypeMap] から導出する。**送信用の表を別に書くと、
+/// 片方だけ増えたときに「チェックしても効かない絞り込み」や「絞り込んだ覚えの
+/// ない種別が消える」が出る。**1 つの capsicum 種別に複数の送信名が対応しうる**
+/// （将来 `quote` を [NotificationType.mention] へ寄せた場合など）ので Set。
+Set<String> mastodonNotificationWireNames(NotificationType type) => {
+  for (final entry in mastodonNotificationTypeMap.entries)
+    if (entry.value == type) entry.key,
+};
+
+/// capsicum が名前を知っている種別（`supported_types[]` に送る値・#1042）。
+List<String> get mastodonSupportedNotificationTypes =>
+    mastodonNotificationTypeMap.keys.toList();
+
+/// 絞り込みの候補に出せる種別 (#1042)。
+///
+/// ⚠ [NotificationType.other] は表の値に現れないので自動的に外れる。
+Set<NotificationType> get mastodonFilterableNotificationTypes =>
+    mastodonNotificationTypeMap.values.toSet();
+
 extension CapsicumMastodonNotificationExtension on MastodonNotification {
   Notification toCapsicum(
     String localHost, {
@@ -414,6 +435,61 @@ extension CapsicumMastodonNotificationExtension on MastodonNotification {
       collection: collection?.toCapsicum(),
       severance: event?.toCapsicum(),
       moderationWarning: moderationWarning?.toCapsicum(),
+      fallbackTitle: fallback?.title,
+      fallbackBody: fallback?.summary,
+    );
+  }
+}
+
+extension CapsicumMastodonNotificationGroupExtension
+    on MastodonNotificationGroup {
+  /// 束ねられた通知 1 グループを capsicum の 1 件へ畳む (#1048)。
+  ///
+  /// [accounts] / [statuses] は [MastodonGroupedNotifications] のトップレベル
+  /// 配列を ID で引ける形にしたもの。⚠ **引けなかった参照は落とす**（サーバーが
+  /// 一貫していない場合に 1 グループで一覧全体を落とさない）。
+  Notification toCapsicum(
+    String localHost, {
+    required Map<String, MastodonAccount> accounts,
+    required Map<String, MastodonStatus> statuses,
+    Set<String> adminRoleIds = const {},
+  }) {
+    // ⚠⚠ **v2 のグループに `created_at` は無い。**時刻はこれだけなので、
+    // 無ければこのグループは並べ替えも相対時刻も出せない。`_safeConvert` に
+    // 拾わせて 1 グループだけ落とす（⚠ 例外に生の JSON を載せない・#1027-A5）。
+    final createdAt = latestPageNotificationAt;
+    if (createdAt == null) {
+      throw const FormatException(
+        'notification group without latest_page_notification_at',
+      );
+    }
+    final samples = [
+      for (final id in sampleAccountIds)
+        if (accounts[id] case final account?)
+          account.toCapsicum(localHost, adminRoleIds: adminRoleIds),
+    ];
+    // ⚠ 起点となる相手がいない種別は v1 と同じ扱い（受信者本人が代表として
+    // 入ってくるので、そのまま出すと自分が何かしたように読める・#1084）。
+    final withoutActor = _mastodonNotificationTypesWithoutActor.contains(type);
+    return Notification(
+      // ⚠ **`group_key` ではなく通知 ID を `id` に置く。**既読マーカーと
+      // バックグラウンド取得の last-seen が通知 ID を前提にしている。
+      id: mostRecentNotificationId,
+      type: mastodonNotificationTypeMap[type] ?? NotificationType.other,
+      createdAt: createdAt,
+      user: withoutActor ? null : samples.firstOrNull,
+      post: statuses[statusId]?.toCapsicum(
+        localHost,
+        adminRoleIds: adminRoleIds,
+      ),
+      collection: collection?.toCapsicum(),
+      severance: event?.toCapsicum(),
+      moderationWarning: moderationWarning?.toCapsicum(),
+      groupKey: groupKey,
+      groupCount: notificationsCount,
+      sampleUsers: withoutActor ? const [] : samples,
+      fallbackTitle: fallback?.title,
+      fallbackBody: fallback?.summary,
     );
   }
 }

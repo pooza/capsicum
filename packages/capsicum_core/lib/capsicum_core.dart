@@ -23,6 +23,7 @@ export 'src/model/gallery_post.dart';
 export 'src/model/hashtag_spec.dart';
 export 'src/model/instance.dart';
 export 'src/model/notification.dart';
+export 'src/model/notification_query.dart';
 export 'src/model/notification_response.dart';
 export 'src/model/now_playing.dart';
 export 'src/model/page.dart';

@@ -22,10 +22,21 @@ class NotificationResponse {
   /// Notifications that failed conversion from the server's raw format.
   final List<SkippedPost> skippedPosts;
 
+  /// さらに古いページがありうるか。アダプタが判断できるときだけ非 null (#1048)。
+  ///
+  /// ⚠⚠ **グループ化した取得では [rawCount] から判断できない。**サーバーの
+  /// `limit` は**通知の件数**に掛かるのに、返ってくるのは**グループの件数**なので、
+  /// 「同じ投稿への 20 件のリアクション」は `limit: 20` に対して 1 グループで
+  /// 返る。`rawCount >= limit` で判定すると**そこで打ち切って以降が読めなくなる**。
+  /// グループ化する経路はここへ「ページが空でなければ続きがありうる」を入れる
+  /// （最終ページの次に空の 1 回が走るのは許容する）。
+  final bool? hasMore;
+
   const NotificationResponse({
     required this.notifications,
     required this.rawCount,
     this.rawLastId,
     this.skippedPosts = const [],
+    this.hasMore,
   });
 }
