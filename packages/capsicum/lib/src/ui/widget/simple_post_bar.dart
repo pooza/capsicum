@@ -9,6 +9,7 @@ import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../../util/reentrancy_guard.dart';
+import '../util/hashtag_body.dart';
 import '../util/livecure_snackbar.dart';
 import '../util/provider_scope_carrier.dart';
 import '../util/shortcode_warning_controller.dart';
@@ -34,12 +35,20 @@ class SimplePostBar extends ConsumerStatefulWidget {
   /// Called after a successful post (for refreshing the caller's timeline).
   final VoidCallback? onPosted;
 
+  /// 入力欄の左に置く小さな部品 (#1172)。デッキでは**フォーカス中のカラムの
+  /// アカウントのアイコン**を出す（バーは画面に 1 本しか無く、どのアカウントで
+  /// 投稿するかがバー自身からは分からないため）。
+  ///
+  /// ⚠ タブ UI では渡さない。常に現在のアカウントなので、狭い横幅を食うだけになる。
+  final Widget? leading;
+
   const SimplePostBar({
     super.key,
     this.channelId,
     this.channelName,
     this.hashtags = const [],
     this.onPosted,
+    this.leading,
   });
 
   @override
@@ -134,9 +143,8 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar>
     final adapter = ref.read(currentAdapterProvider);
     if (adapter == null) return;
 
-    final content = widget.hashtags.isEmpty
-        ? text
-        : '$text\n\n${widget.hashtags.map((t) => '#$t').join(' ')}';
+    // ⚠ 組み立ては投稿フォームの初期本文と同じ関数を通す (#1172)。
+    final content = appendHashtags(text, widget.hashtags);
 
     setState(() => _sending = true);
     try {
@@ -178,6 +186,11 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar>
     if (widget.channelId != null) {
       extra['channelId'] = widget.channelId;
       extra['channelName'] = widget.channelName;
+    }
+    // ⚠⚠ **タグを引き継ぐ** (#1172)。バーから送るとタグが付くのに、**バーを開いて
+    // フォームにするとタグが消えていた**（チャンネルだけ渡していた）。
+    if (widget.hashtags.isNotEmpty) {
+      extra['hashtags'] = widget.hashtags;
     }
     final posted = await context.push<bool>(
       '/compose',
@@ -351,6 +364,14 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar>
             ),
             child: Row(
               children: [
+                // ⚠ デッキではここに**フォーカス中のカラムのアカウント**のアイコンを
+                // 出す (#1172)。バーは画面に 1 本しか無いので、誰として投稿するかが
+                // 見えていないと誤投稿になる。タブ UI では常に現在のアカウントなので
+                // 渡さない（横幅を食わせない）。
+                if (widget.leading case final leading?) ...[
+                  leading,
+                  const SizedBox(width: 8),
+                ],
                 Expanded(
                   child: TextField(
                     controller: _controller,

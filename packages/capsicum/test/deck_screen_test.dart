@@ -4,6 +4,7 @@ import 'package:capsicum/src/model/deck_column.dart';
 import 'package:capsicum/src/provider/account_manager_provider.dart';
 import 'package:capsicum/src/provider/preferences_provider.dart';
 import 'package:capsicum/src/ui/screen/deck_screen.dart';
+import 'package:capsicum/src/ui/util/deck_layout.dart';
 import 'package:capsicum/src/ui/util/deck_navigation.dart';
 import 'package:capsicum/src/util/shared_preferences_cache.dart';
 import 'package:capsicum_backends/capsicum_backends.dart';
@@ -118,8 +119,17 @@ void main() {
   /// カラムを横に並べるスクロール。⚠ ウィジェットの型（`SingleChildScrollView`
   /// 等）では探さない。コンテナの作りを変えたとき、**検査が型の探索で落ちて、
   /// 見たいこと（カラムが生きているか）を見ないまま赤になる**のを避ける。
+  ///
+  /// ⚠⚠ **「横に動くもの」だけでは絞り切れない (#1172)。**画面下端に簡易投稿バーが
+  /// 付いた結果、その `TextField` の内部スクロール（1 行なので横向き・
+  /// `restorationId: "editable"`）も一致して **`drag()` が「2 件見つかった」で
+  /// 落ちた**。カラムのページャは**スナップの physics を持つ側**なので、そこで
+  /// 見分ける（型ではなく、この検査が見たい振る舞いそのもの）。
   final horizontalScroller = find.byWidgetPredicate(
-    (w) => w is Scrollable && w.axisDirection == AxisDirection.right,
+    (w) =>
+        w is Scrollable &&
+        w.axisDirection == AxisDirection.right &&
+        w.physics is DeckSnapScrollPhysics,
   );
 
   double horizontalOffset(WidgetTester tester) =>

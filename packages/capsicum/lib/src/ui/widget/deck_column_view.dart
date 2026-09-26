@@ -22,6 +22,7 @@ import '../screen/post_detail_screen.dart';
 import '../screen/post_list_screen.dart';
 import '../screen/profile_screen.dart';
 import '../screen/user_list_screen.dart';
+import '../util/deck_compose.dart';
 import '../util/deck_tabs.dart';
 import 'emoji_text.dart';
 import 'home_menu.dart' show tabLabel;
@@ -326,6 +327,21 @@ class _DeckColumnHeader extends ConsumerWidget {
               _DeckStreamDot(
                 key: ValueKey(type),
                 timelineKey: (account: account, type: type),
+              ),
+            // 新規投稿の入口（案 A・#1172・決定済み事項 10）。⚠ **このカラムの
+            // アカウント**で開く。誰として投稿するかは、すぐ左の見出し（アイコン・
+            // 表示名・サーバーの色・#1152）が見せている。
+            // ⚠ カラムの種類ごとの初期状態（タグ・チャンネル）は
+            // [deckComposeExtra] が持つ。
+            // ⚠ `user != null` ＝ カラムのスコープの割り当てが生きている（本体の
+            // `_body` と同じ判定）。誰のアカウントか出せない状態で投稿の入口を
+            // 出すと、別のアカウントとして操作が外に出る。
+            if (user != null && canComposeFromColumn(column.tab, adapter))
+              IconButton(
+                icon: const Icon(Icons.edit_outlined, color: foreground),
+                tooltip: 'このアカウントで投稿',
+                visualDensity: VisualDensity.compact,
+                onPressed: () => openDeckCompose(context, ref, column),
               ),
             // カラムから開いたカラムは使い捨てなので、ヘッダーで閉じられるようにする
             // (#1148)。⚠ 列から外すだけで購読は止めない（autoDispose に任せる・#1093）。

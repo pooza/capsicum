@@ -387,6 +387,9 @@ final routerProvider = Provider<GoRouter>((ref) {
                   initialText: extra?['initialText'] as String?,
                   restoreDraft: restoreDraft,
                   template: extra?['template'] as ComposeTemplate?,
+                  // ハッシュタグの TL / カラムから開いた新規投稿 (#1172)。
+                  hashtags:
+                      (extra?['hashtags'] as List?)?.cast<String>() ?? const [],
                 ),
               );
             },

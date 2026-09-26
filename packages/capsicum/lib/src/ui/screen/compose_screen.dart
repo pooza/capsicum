@@ -42,6 +42,7 @@ import '../util/compose_draft_notice.dart';
 import '../util/compose_template_display.dart';
 import '../util/draft_display.dart';
 import '../util/drive_description_sync.dart';
+import '../util/hashtag_body.dart';
 import '../util/livecure_snackbar.dart';
 import '../util/post_scope_display.dart';
 import '../util/program_schedule_display.dart';
@@ -423,6 +424,16 @@ class ComposeScreen extends ConsumerStatefulWidget {
   /// 「このテンプレで投稿」する導線で使う。
   final ComposeTemplate? template;
 
+  /// 本文の末尾に置くハッシュタグ（`#` を除いたタグ名の列）(#1172)。
+  ///
+  /// ハッシュタグの TL（タブ UI の画面・デッキのカラム）から新規投稿を開いたときに、
+  /// そのタグを引き継ぐためのもの。⚠ **カーソルは本文の先頭に置く**（タグを消さずに
+  /// 書き始められるように・`docs/deck-ui-plan.md` 決定済み事項 10）。
+  ///
+  /// ⚠ **spec（`c%2B%2B` / `a+b`）を渡さない** (#1159)。`hashtagSpecTags` で分解
+  /// してから渡す。タグの区切り・`#` の付け方は [SimplePostBar] の送信と揃える。
+  final List<String> hashtags;
+
   const ComposeScreen({
     super.key,
     this.redraft,
@@ -434,6 +445,7 @@ class ComposeScreen extends ConsumerStatefulWidget {
     this.initialText,
     this.restoreDraft,
     this.template,
+    this.hashtags = const [],
   });
 
   @override
@@ -889,10 +901,13 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       if (account != null && account.user.defaultScope != null) {
         _scope = account.user.defaultScope!;
       }
-    } else if (widget.initialText != null) {
-      _controller.text = widget.initialText!;
-      _controller.selection = TextSelection.collapsed(
-        offset: _controller.text.length,
+    } else if (widget.initialText != null || widget.hashtags.isNotEmpty) {
+      // ⚠⚠ **ハッシュタグもこの枝で処理する** (#1172)。下の「まっさらな新規投稿」の
+      // 枝は保存済みの下書きを復元するので、タグを置いた上に下書きが載ると
+      // どちらが本文か決まらなくなる。本文を種から作る枝はここに揃える。
+      _controller.value = initialComposeBody(
+        widget.initialText,
+        widget.hashtags,
       );
       final account = ref.read(currentAccountProvider);
       if (account != null && account.user.defaultScope != null) {

@@ -9,13 +9,17 @@ import '../../model/deck_column.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/deck_provider.dart';
 import '../../provider/preferences_provider.dart';
+import '../util/deck_compose.dart';
 import '../util/deck_layout.dart';
 import '../util/deck_navigation.dart';
 import '../util/mouse_drag_scroll_behavior.dart';
 import '../util/provider_scope_carrier.dart';
 import '../widget/bottom_safe_area.dart';
+import '../widget/deck_column_focus.dart';
 import '../widget/deck_column_view.dart';
 import '../widget/deck_columns_sheet.dart';
+import '../widget/simple_post_bar.dart';
+import '../widget/user_avatar.dart';
 
 /// デッキ画面 (#1092)。カラムを横に並べる。
 ///
@@ -94,6 +98,9 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
     });
   }
 
+  /// 狭幅でのフォーカス追従を、フレームに 1 回へ間引くための予約済みフラグ。
+  bool _focusSyncScheduled = false;
+
   @override
   void initState() {
     super.initState();
@@ -101,16 +108,45 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
     // ⚠ 投稿・ブロックの反映先がカラム列から解決されるようになる (#1099)。
     // 閉じている間に列を読むと、片づいたはずの TL provider を起こしてしまう。
     _shiftMountedDecks(1);
+    _scrollController.addListener(_syncFocusToVisibleColumn);
   }
 
   @override
   void dispose() {
     _shiftMountedDecks(-1);
+    _scrollController.removeListener(_syncFocusToVisibleColumn);
     _scrollController.dispose();
     for (final container in _containers.values) {
       container.dispose();
     }
     super.dispose();
+  }
+
+  /// 狭幅（1 本ずつしか見えない幅）では、**見えているカラムがフォーカス** (#1172・
+  /// 決定済み事項 10)。横に送ると移る。
+  ///
+  /// ⚠⚠ **フレームの後で書く。**スクロールの通知はレイアウトの途中でも飛ぶので、
+  /// その場で provider を書くと依存するウィジェットの再構築をレイアウト中に
+  /// 要求してしまう。⚠ フレームに 1 回へ間引くのも同じ理由（1 回のフリックで
+  /// 数十回通知が来る）。
+  ///
+  /// ⚠ **2 本以上見えているときは何もしない。**そこでは「どれを読んでいるか」を
+  /// スクロール位置から決められないので、押された場所（[DeckColumnFocusRing]）だけを
+  /// 契機にする。
+  void _syncFocusToVisibleColumn() {
+    if (_focusSyncScheduled) return;
+    _focusSyncScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _focusSyncScheduled = false;
+      final layout = _layout;
+      if (!mounted || layout == null || layout.visibleColumns != 1) return;
+      if (!_scrollController.hasClients) return;
+      final columns = ref.read(deckColumnsProvider);
+      final index = (_scrollController.position.pixels / layout.columnWidth)
+          .round();
+      if (index < 0 || index >= columns.length) return;
+      ref.read(deckFocusProvider.notifier).focus(columns[index].id);
+    });
   }
 
   /// カラムから開いた投稿・プロフィール等を、元のカラムの右隣に足す (#1148・
@@ -120,6 +156,10 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
         .read(deckColumnsProvider.notifier)
         .insertAfter(from.id, from.account, tab, seed: seed);
     if (!mounted) return;
+    // ⚠ 開いた時点でフォーカスになり、枠を 1 回点滅させる (#1172・決定済み事項 10)。
+    // 横送りで列がずれても、どこに出たかを見失わないため。アカウントは元のカラムを
+    // 引き継ぐので、⌘N の宛先のアカウントは変わらない。
+    ref.read(deckFocusProvider.notifier).focusAndBlink(added.id);
     // ⚠ 足した直後のフレームではまだ Row に居ない。組み上がってから送る。
     WidgetsBinding.instance.addPostFrameCallback((_) => _reveal(added.id));
   }
@@ -230,6 +270,45 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
     return carryProviderScope(_containerFor(account), child);
   }
 
+  /// 画面下端の簡易投稿バー（デッキ全体で 1 本・#1172・決定済み事項 10）。
+  ///
+  /// 宛先は**フォーカス中のカラムのアカウント**で、バーの左端にそのアカウントの
+  /// アイコンを出す。⚠ **カラムごとに置く案は採らない**（カラム数ぶん縦を食う・
+  /// 375px では入力欄が短すぎる）。
+  ///
+  /// ⚠⚠ **バーはフォーカス中のカラムのスコープの中で組む。**ルートで組むと
+  /// `currentAdapterProvider` が現在のアカウントを指し、**別アカウントのカラムを
+  /// 見ながら打った投稿が現在のアカウントから出る**（#1149 と同じ穴）。
+  ///
+  /// フォーカスが無い / アカウントが未接続なら null（バーを出さない）。
+  Widget? _postBar(
+    List<DeckColumn> columns,
+    AccountKey? currentKey,
+    List<Account> accounts,
+    Set<AccountKey> used,
+  ) {
+    final focusedId = ref.watch(deckFocusProvider).columnId;
+    final column = columns.where((c) => c.id == focusedId).firstOrNull;
+    if (column == null) return null;
+    final bar = _DeckPostBar(column: column);
+    if (column.account == currentKey) return bar;
+    final account = accounts.where((a) => a.key == column.account).firstOrNull;
+    if (account == null) return null;
+    used.add(account.key);
+    return carryProviderScope(_containerFor(account), bar);
+  }
+
+  /// [content] の下に [postBar] を置く。バーが無いときは下端の inset を
+  /// [BottomSafeArea] で吸う（#1037 / #1062・上の `body` の注記）。
+  Widget _withPostBar(Widget? postBar, Widget content) => postBar == null
+      ? BottomSafeArea(child: content)
+      : Column(
+          children: [
+            Expanded(child: content),
+            postBar,
+          ],
+        );
+
   @override
   Widget build(BuildContext context) {
     final columns = ref.watch(deckColumnsProvider);
@@ -242,6 +321,10 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
       for (final column in columns)
         (column, _column(column, currentKey, accounts, used)),
     ];
+    // ⚠ バーもフォーカス中のカラムのコンテナを使うので、`_disposeUnused` より先に
+    // 組んで `used` に入れる（そうしないと、そのアカウントのカラムが 1 本も
+    // 見えていない状況でコンテナを畳んでしまう）。
+    final postBar = _postBar(columns, currentKey, accounts, used);
     _disposeUnused(used);
 
     // ⚠⚠ デスクトップでは引っ張って更新ができなかった (#1157)。マウスと
@@ -279,9 +362,13 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
         ],
       ),
       // 各カラムの最後の投稿がナビゲーションバーに潜らないよう、下端の inset を
-      // 画面でまとめて吸う (#1037 / #1062)。
-      body: BottomSafeArea(
-        child: columns.isEmpty
+      // 画面でまとめて吸う (#1037 / #1062)。⚠ 簡易投稿バーを出しているときは
+      // **バーが inset を吸う**（`SimplePostBar` が `padding.bottom` を自分で
+      // 足す設計・`bottom_safe_area.dart`）ので、ここでは包まない。包むと
+      // バーの上に無駄な余白が入る。
+      body: _withPostBar(
+        postBar,
+        columns.isEmpty
             ? Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -320,7 +407,14 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
                             key: ValueKey(column.id),
                             width: layout.columnWidth,
                             height: constraints.maxHeight,
-                            child: child,
+                            // フォーカス中の枠と、押されたときのフォーカス移動
+                            // (#1172)。⚠ **枠は 1 本のときは出さない**
+                            // （決定済み事項 10）。
+                            child: DeckColumnFocusRing(
+                              columnId: column.id,
+                              showRing: columns.length > 1,
+                              child: child,
+                            ),
                           ),
                       ],
                     ),
@@ -335,5 +429,45 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
             child: scaffold,
           )
         : scaffold;
+  }
+}
+
+/// デッキの簡易投稿バー (#1172)。**フォーカス中のカラムのスコープの中で組む**
+/// （`_DeckScreenState._postBar` が包む）ので、ここの `ref` はそのカラムの
+/// アカウントを指している。
+class _DeckPostBar extends ConsumerWidget {
+  const _DeckPostBar({required this.column});
+
+  final DeckColumn column;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final adapter = ref.watch(currentAdapterProvider);
+    if (!canComposeFromColumn(column.tab, adapter)) {
+      // ⚠ 投稿できないカラム（メッセージ・チャンネル非対応）でもバーの代わりに
+      // 下端の inset は吸う。誰も吸わないと最後の投稿がナビゲーションバーの
+      // ボタンに潜り込む (#1037)。
+      return const BottomSafeArea(child: SizedBox.shrink());
+    }
+    // ⚠ 初期状態は見出しの投稿ボタンと同じ関数から取る (#1172)。別々に書くと、
+    // 「バーから送るとタグが付くのにボタンから開くと付かない」の再発になる。
+    final extra = deckComposeExtra(ref, column);
+    final current = ref.watch(currentAccountProvider);
+    final user = current?.key == column.account ? current!.user : null;
+    return SimplePostBar(
+      // ⚠ フォーカスが移ったら別のバーとして作り直す。同じ State を使い回すと
+      // 打ちかけの本文が別のアカウント宛に持ち越される。
+      key: ValueKey(column.id),
+      channelId: extra['channelId'] as String?,
+      channelName: extra['channelName'] as String?,
+      hashtags: (extra['hashtags'] as List<String>?) ?? const [],
+      // 誰として投稿するかをバー自身に出す（決定済み事項 10）。
+      leading: user == null
+          ? null
+          : UserAvatar(user: user, size: 24, compact: true),
+      // ⚠ `onPosted` は渡さない。デッキのカラムへの反映は楽観挿入が担う
+      // （`readVisibleTimelines` が列のカラムを宛先に含める・#1099）。ここで
+      // `invalidate` すると、そのカラムだけ REST で丸ごと取り直しになる。
+    );
   }
 }
