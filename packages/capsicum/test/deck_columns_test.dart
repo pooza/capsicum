@@ -65,6 +65,8 @@ void main() {
         GalleryPostTab('g1'),
         FlashTab('f1'),
         ChatUserTab('u1'),
+        // #1173: 検索（荷物を持たない・`:` の無いキー）
+        SearchTab(),
       ]) {
         expect(TabType.fromKey(tab.toIdentityKey()), tab);
       }
@@ -120,6 +122,7 @@ void main() {
         GalleryPostTab('g'),
         FlashTab('f'),
         ChatUserTab('u'),
+        SearchTab(),
       ]) {
         expect(tab, isA<DeckOnlyTab>(), reason: tab.toKey());
       }

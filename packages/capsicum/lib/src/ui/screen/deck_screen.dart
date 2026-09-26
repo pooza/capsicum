@@ -283,13 +283,11 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
   ///
   /// フォーカスが無い / アカウントが未接続なら null（バーを出さない）。
   Widget? _postBar(
-    List<DeckColumn> columns,
+    DeckColumn? column,
     AccountKey? currentKey,
     List<Account> accounts,
     Set<AccountKey> used,
   ) {
-    final focusedId = ref.watch(deckFocusProvider).columnId;
-    final column = columns.where((c) => c.id == focusedId).firstOrNull;
     if (column == null) return null;
     final bar = _DeckPostBar(column: column);
     if (column.account == currentKey) return bar;
@@ -322,10 +320,14 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
       for (final column in columns)
         (column, _column(column, currentKey, accounts, used)),
     ];
+    // フォーカス中のカラム (#1172)。⌘N（#1170）・簡易投稿バー・検索（#1173）の
+    // 宛先。⚠ 列に居なくなった直後の 1 フレームでは null になりうる。
+    final focusedId = ref.watch(deckFocusProvider).columnId;
+    final focusedColumn = columns.where((c) => c.id == focusedId).firstOrNull;
     // ⚠ バーもフォーカス中のカラムのコンテナを使うので、`_disposeUnused` より先に
     // 組んで `used` に入れる（そうしないと、そのアカウントのカラムが 1 本も
     // 見えていない状況でコンテナを畳んでしまう）。
-    final postBar = _postBar(columns, currentKey, accounts, used);
+    final postBar = _postBar(focusedColumn, currentKey, accounts, used);
     _disposeUnused(used);
 
     // ⚠⚠ デスクトップでは引っ張って更新ができなかった (#1157)。マウスと
@@ -366,6 +368,17 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
                 // いるので入口だけ。**モバイルのデッキには入口が無かった**
                 // （デスクトップはメニューバーから切り替えられる）。
                 const LivecureFilterButton(),
+                // 検索 (#1173・決定済み事項 7-3)。⚠⚠ **全画面では開かない。**
+                // 全画面だと結果から開いた先がデッキの外になり、そこから先は
+                // タブ UI のスタックに積まれていく。⚠ アカウントは**フォーカス中の
+                // カラム**のもの（#1172 と同じ論点）。
+                if (focusedColumn != null)
+                  IconButton(
+                    icon: const Icon(Icons.search),
+                    tooltip: '検索（カラムで開く）',
+                    onPressed: () =>
+                        _openColumn(focusedColumn, const SearchTab(), null),
+                  ),
                 IconButton(
                   icon: const Icon(Icons.view_column_outlined),
                   tooltip: 'カラム編集',

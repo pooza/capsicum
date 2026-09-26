@@ -21,6 +21,7 @@ import '../screen/notification_screen.dart';
 import '../screen/post_detail_screen.dart';
 import '../screen/post_list_screen.dart';
 import '../screen/profile_screen.dart';
+import '../screen/search_screen.dart';
 import '../screen/user_list_screen.dart';
 import '../util/deck_compose.dart';
 import '../util/deck_tabs.dart';
@@ -117,6 +118,10 @@ class DeckColumnView extends ConsumerWidget {
           flushPending: (ref) => ref.read(p.notifier).flushPending(),
         );
       }(),
+      // 検索 (#1173・決定済み事項 7-3)。⚠ カラムのアカウントで検索する（スコープが
+      // `currentAdapterProvider` を差し替えている）。結果から開いた先も、
+      // `DeckColumnScope` を通って右隣のカラムになる。
+      SearchTab() => const SearchScreen(embedded: true),
       NotificationsTab() => const NotificationView(),
       AnnouncementsTab() => const AnnouncementView(),
       // メッセージはフィードを持たない遷移トリガー (#439) なので、カラムにならない。

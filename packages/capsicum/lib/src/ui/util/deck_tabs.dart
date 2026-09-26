@@ -44,6 +44,7 @@ String deckOnlyTabLabel(
   GalleryPostTab() => 'ギャラリー',
   FlashTab() => 'Play',
   ChatUserTab() => 'メッセージ',
+  SearchTab() => '検索',
 };
 
 IconData deckOnlyTabIcon(DeckOnlyTab tab) => switch (tab) {
@@ -56,6 +57,7 @@ IconData deckOnlyTabIcon(DeckOnlyTab tab) => switch (tab) {
   GalleryPostTab() => Icons.photo_library_outlined,
   FlashTab() => Icons.play_circle_outline,
   ChatUserTab() => Icons.chat_bubble_outline,
+  SearchTab() => Icons.search,
 };
 
 /// ユーザー一覧の取得。アダプタが対応していなければ null。

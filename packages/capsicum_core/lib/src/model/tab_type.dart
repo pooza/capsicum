@@ -39,6 +39,9 @@ sealed class TabType {
     if (key == 'notifications') return const NotificationsTab();
     if (key == 'announcements') return const AnnouncementsTab();
     if (key == 'messages') return const MessagesTab();
+    // ⚠ 荷物を持たないデッキ専用のカラム (#1173)。`:` を要求する下の分岐には
+    // 載せられないので、ここで先に返す。
+    if (key == 'search') return const SearchTab();
 
     final colon = key.indexOf(':');
     if (colon < 0) return null;
@@ -220,6 +223,26 @@ class MessagesTab extends TabType {
 /// 取り直す。
 sealed class DeckOnlyTab extends TabType {
   const DeckOnlyTab();
+}
+
+/// 検索 (#1173・`docs/deck-ui-plan.md` 決定済み事項 7-3)。
+///
+/// ⚠ **全画面ではなくカラムとして開く。**全画面で開くと、結果から開いた先が
+/// デッキの外になる（そこから先はタブ UI のスタックに積まれていく）。
+///
+/// ⚠ 荷物を持たないので [toKey] は `search` の 1 語。**列に 2 本置いてよい**
+/// （別のアカウントで別のことを探せる・決定済み事項 6-2）。
+class SearchTab extends DeckOnlyTab {
+  const SearchTab();
+
+  @override
+  String toKey() => 'search';
+
+  @override
+  bool operator ==(Object other) => other is SearchTab;
+
+  @override
+  int get hashCode => 'search'.hashCode;
 }
 
 /// 投稿のスレッド (#1148)。

@@ -19,7 +19,13 @@ import '../widget/user_avatar.dart';
 enum _QueryType { account, hashtag, url, fulltext }
 
 class SearchScreen extends ConsumerStatefulWidget {
-  const SearchScreen({super.key});
+  const SearchScreen({super.key, this.embedded = false});
+
+  /// デッキのカラムとして出すか (#1173・`docs/deck-ui-plan.md` 決定済み事項 7-3)。
+  ///
+  /// カラムの見出しは [DeckColumnView] が出すので `Scaffold` / `AppBar` を持たない。
+  /// ⚠ **入力欄は chrome ではなく検索の本体**なので、カラムでも残す。
+  final bool embedded;
 
   @override
   ConsumerState<SearchScreen> createState() => _SearchScreenState();
@@ -161,25 +167,49 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
 
   @override
   Widget build(BuildContext context) {
+    final field = TextField(
+      controller: _controller,
+      // ⚠⚠ **カラムでは autofocus しない** (#1173)。検索カラムは列に永続化される
+      // ので、アプリを起こし直すたびにソフトキーボードが立ち上がってしまう。
+      // 全画面の検索は開いた瞬間に打ち始めるものなので従来どおり。
+      autofocus: !widget.embedded,
+      textInputAction: TextInputAction.search,
+      decoration: const InputDecoration(
+        hintText: '検索...',
+        border: InputBorder.none,
+      ),
+      onSubmitted: (_) => _search(),
+    );
+    final submit = IconButton(
+      onPressed: _serverLoading ? null : _search,
+      icon: const Icon(Icons.search),
+    );
+
+    if (widget.embedded) {
+      return Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 12, right: 4),
+            child: Row(
+              children: [
+                Expanded(child: field),
+                submit,
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          // ⚠ 下端の inset はデッキ画面がまとめて吸う（`BottomSafeArea` を
+          // ここで重ねると簡易投稿バーの上に余白が入る）。
+          Expanded(child: _buildBody()),
+        ],
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: TextField(
-          controller: _controller,
-          autofocus: true,
-          textInputAction: TextInputAction.search,
-          decoration: const InputDecoration(
-            hintText: '検索...',
-            border: InputBorder.none,
-          ),
-          onSubmitted: (_) => _search(),
-        ),
-        actions: [
-          IconButton(
-            onPressed: _serverLoading ? null : _search,
-            icon: const Icon(Icons.search),
-          ),
-        ],
+        title: field,
+        actions: [submit],
       ),
       body: BottomSafeArea(child: _buildBody()),
     );

@@ -1,6 +1,7 @@
 import 'package:capsicum/src/model/account.dart';
 import 'package:capsicum/src/model/account_key.dart';
 import 'package:capsicum/src/provider/account_manager_provider.dart';
+import 'package:capsicum/src/provider/deck_provider.dart';
 import 'package:capsicum/src/provider/preferences_provider.dart';
 import 'package:capsicum/src/ui/screen/deck_screen.dart';
 import 'package:capsicum/src/ui/widget/livecure_filter_button.dart';
@@ -113,5 +114,63 @@ void main() {
     await pumpDeck(tester, size: const Size(375, 700));
 
     expect(tester.takeException(), isNull);
+  });
+
+  group('検索 (#1173・決定済み事項 7-3)', () {
+    testWidgets('⚠⚠ 全画面ではなく、フォーカス中のカラムの右隣にカラムとして開く', (tester) async {
+      final container = await pumpDeck(tester, columnIds: const ['a', 'b']);
+      // フォーカスを 2 本目へ移してから押す。
+      await tester.tap(find.byKey(const ValueKey('stub-b')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byIcon(Icons.search));
+      await tester.pumpAndSettle();
+
+      final columns = container.read(deckColumnsProvider);
+      expect(columns.map((c) => c.id), ['a', 'b', columns.last.id]);
+      expect(
+        columns.last.tab,
+        const SearchTab(),
+        reason: '⚠ 全画面だと結果から開いた先がデッキの外になる',
+      );
+      expect(
+        columns.last.account.username,
+        'me',
+        reason: 'アカウントはフォーカス中のカラムから引き継ぐ',
+      );
+    });
+
+    testWidgets('開いた検索カラムがフォーカスになる', (tester) async {
+      final container = await pumpDeck(tester, columnIds: const ['a']);
+
+      await tester.tap(find.byIcon(Icons.search));
+      await tester.pumpAndSettle();
+
+      final opened = container.read(deckColumnsProvider).last;
+      expect(container.read(deckFocusProvider).columnId, opened.id);
+    });
+
+    testWidgets('⚠ 列が空のときは検索を出さない（宛先のアカウントが決まらない）', (tester) async {
+      await pumpDeck(tester, columnIds: const []);
+
+      expect(find.byIcon(Icons.search), findsNothing);
+      expect(find.text('カラムがありません'), findsOneWidget);
+    });
+
+    testWidgets('検索カラムは列に 2 本置ける（別のことを探せる）', (tester) async {
+      final container = await pumpDeck(tester, columnIds: const ['a']);
+
+      await tester.tap(find.byIcon(Icons.search));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(Icons.search));
+      await tester.pumpAndSettle();
+
+      final searches = container
+          .read(deckColumnsProvider)
+          .where((c) => c.tab == const SearchTab())
+          .toList();
+      expect(searches, hasLength(2));
+      expect(searches.first.id, isNot(searches.last.id));
+    });
   });
 }
