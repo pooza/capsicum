@@ -46,6 +46,12 @@ const _composeTemplateHistoryKey = 'compose_template_history';
 const _emojiZeroWidthSpaceKey = 'emoji_zero_width_space';
 const _darkSurfaceVariantKey = 'dark_surface_variant';
 
+/// 通知を束ねて出すか (#1048)。
+const _notificationGroupingKey = 'notification_grouping';
+
+/// 通知一覧に出さない種別 (#1042)。`NotificationType` の `name` を並べる。
+const _notificationExcludedTypesKey = 'notification_excluded_types';
+
 /// デッキのカラム列 (#1091)。⚠ バックアップに含めるかは #1101 で決める
 /// （`settings_backup.dart` の `pendingBackupDecisionKeys`）。
 const _deckColumnsKey = 'deck_columns';
@@ -1126,6 +1132,86 @@ class ThemeModeNotifier extends PersistedNotifier<ThemeMode> {
       prefs.setString(_themeModeKey, value.name);
 
   Future<void> setMode(ThemeMode mode) => persist(mode);
+}
+
+/// 通知を束ねて出すか (#1048)。既定は ON。
+///
+/// ⚠ **OFF にする意味がある。**実況中は「誰が反応したか」を 1 人ずつ見たい
+/// 場面があり（#1048 の「先に決めること」1）、束ねるとその情報が「N 人」に
+/// 潰れる。⚠ **OFF はグループ化していない API へ切り替える**（クライアント側で
+/// 展開し直すのではない）。同じ経路が「サーバーに v2 が無い」ときの受け皿にも
+/// なっているので、実質的な追加コストはほぼ無い。
+final notificationGroupingProvider =
+    NotifierProvider<NotificationGroupingNotifier, bool>(
+      NotificationGroupingNotifier.new,
+    );
+
+class NotificationGroupingNotifier extends PersistedNotifier<bool> {
+  @override
+  bool get defaultValue => true;
+  @override
+  bool? readSaved(SharedPreferences prefs) =>
+      prefs.getBool(_notificationGroupingKey);
+  @override
+  Future<void> writeSaved(SharedPreferences prefs, bool value) =>
+      prefs.setBool(_notificationGroupingKey, value);
+
+  Future<void> toggle() => persist(!state);
+
+  Future<void> setGrouping(bool value) => persist(value);
+}
+
+/// 通知一覧に出さない種別 (#1042)。
+///
+/// ⚠⚠ **「出す種別」ではなく「出さない種別」を持つ。**理由は
+/// [NotificationQuery.excludeTypes] の doc が正本（許可リストにすると capsicum が
+/// 名前を知らない種別が黙って消える）。空なら全種別。
+///
+/// ⚠ **アカウントごとではなくアプリ全体の設定。**デッキのカラムごとに別の
+/// 絞り込みを持たせるのは #1042 の要求に無い（カラムごとの状態は保存形式から
+/// 作り直しになる）。全アカウント・全カラムに同じ絞り込みが効く。
+final notificationExcludedTypesProvider =
+    NotifierProvider<NotificationExcludedTypesNotifier, Set<NotificationType>>(
+      NotificationExcludedTypesNotifier.new,
+    );
+
+class NotificationExcludedTypesNotifier
+    extends PersistedNotifier<Set<NotificationType>> {
+  @override
+  Set<NotificationType> get defaultValue => const {};
+
+  @override
+  Set<NotificationType>? readSaved(SharedPreferences prefs) {
+    final saved = prefs.getStringList(_notificationExcludedTypesKey);
+    if (saved == null) return null;
+    // ⚠ **読めない名前は落とす。**enum 名を保存しているので、種別を rename /
+    // 削除したときに残骸が来る。落とすと「絞り込みが 1 つ消える」で済むが、
+    // 例外にすると設定が丸ごと既定へ戻る。
+    return {
+      for (final name in saved) ?_enumByName(NotificationType.values, name),
+    };
+  }
+
+  @override
+  Future<void> writeSaved(
+    SharedPreferences prefs,
+    Set<NotificationType> value,
+  ) => prefs.setStringList(
+    _notificationExcludedTypesKey,
+    value.map((t) => t.name).toList(),
+  );
+
+  Future<void> setExcluded(NotificationType type, bool excluded) {
+    final next = {...state};
+    if (excluded) {
+      next.add(type);
+    } else {
+      next.remove(type);
+    }
+    return persist(next);
+  }
+
+  Future<void> clear() => persist(const {});
 }
 
 /// Whether to hide posts with #実況 hashtag.

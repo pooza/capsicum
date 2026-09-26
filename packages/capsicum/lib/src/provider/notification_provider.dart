@@ -6,6 +6,7 @@ import '../service/background_notification_service.dart';
 import '../util/conversion_skip_report.dart';
 import 'account_manager_provider.dart';
 import 'is_cat_provider.dart';
+import 'preferences_provider.dart';
 import 'timeline_provider.dart';
 
 /// Paginated notification state.
@@ -43,6 +44,20 @@ class NotificationState {
 class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
   static const _pageSize = 20;
 
+  /// 絞り込みとグループ化 (#1042 / #1048)。
+  ///
+  /// ⚠ **build() では `watch`、loadMore() では `read`。**build で watch して
+  /// いるので、設定が変わると一覧は先頭から取り直しになる（絞り込みを変えた
+  /// のに古いページが混ざったままにしない）。
+  NotificationQuery _filter({required bool watch}) => NotificationQuery(
+    excludeTypes: watch
+        ? ref.watch(notificationExcludedTypesProvider)
+        : ref.read(notificationExcludedTypesProvider),
+    grouped: watch
+        ? ref.watch(notificationGroupingProvider)
+        : ref.read(notificationGroupingProvider),
+  );
+
   @override
   Future<NotificationState> build() async {
     final adapter = ref.watch(currentAdapterProvider);
@@ -52,6 +67,7 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
 
     final response = await (adapter as NotificationSupport).getNotifications(
       query: const TimelineQuery(limit: _pageSize),
+      filter: _filter(watch: true),
     );
     reportSkippedNotifications(response.skippedPosts, source: 'notification');
     // ⚠ **猫耳のために通知一覧の表示を止めない (#1080)。**理由と仕組みは
@@ -72,7 +88,10 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
       // Judge "more pages" on the raw server count, not the post-skip list
       // length: skipping a malformed notification must not drop a full page
       // (19 < 20) and stall pagination (#777).
-      hasMore: response.rawCount >= _pageSize,
+      //
+      // ⚠⚠ **グループ化した取得では件数で判定できない** (#1048)。アダプタが
+      // 判断できるときはそちらに従う（理由は [NotificationResponse.hasMore]）。
+      hasMore: response.hasMore ?? response.rawCount >= _pageSize,
     );
   }
 
@@ -119,6 +138,7 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
         final response = await (adapter as NotificationSupport)
             .getNotifications(
               query: TimelineQuery(maxId: lastId, limit: _pageSize),
+              filter: _filter(watch: false),
             );
         reportSkippedNotifications(
           response.skippedPosts,
@@ -130,12 +150,22 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
             .read(isCatEnricherProvider)
             .enrichNotifications(response.notifications);
 
+        // ⚠⚠ **カーソルが進まなかったら打ち切る** (#1048)。グループ化した経路の
+        // `hasMore` は「ページが空でなければ続きがありうる」なので、サーバーが
+        // 同じページを返し続けると**スクロールのたびに同じ通知を足し続ける**。
+        // 件数での判定と違い、ここが最後の歯止めになる。
+        final nextRawId = response.rawLastId ?? base.lastRawId;
+        final stalled = nextRawId == lastId;
         state = AsyncData(
           base.copyWith(
-            notifications: [...base.notifications, ...older],
+            notifications: stalled
+                ? base.notifications
+                : [...base.notifications, ...older],
             isLoadingMore: false,
-            lastRawId: response.rawLastId ?? base.lastRawId,
-            hasMore: response.rawCount >= _pageSize,
+            lastRawId: nextRawId,
+            hasMore:
+                !stalled &&
+                (response.hasMore ?? response.rawCount >= _pageSize),
           ),
         );
         return;

@@ -463,10 +463,17 @@ extension CapsicumMastodonNotificationGroupExtension
         'notification group without latest_page_notification_at',
       );
     }
+    // ⚠ **同じ相手が複数回並ぶことがある。**`sample_account_ids` は通知の
+    // `from_account_id` を新しい順に 8 件取ったもので、フォロー → 解除 →
+    // 再フォローのように同じ相手が複数の通知を作る種別では重複する。重ねて
+    // 並べると同じアイコンが 3 つ出るので、ここで畳む。
+    // ⚠ **`notificationsCount` は畳まない**（サーバーが数えた通知の件数で、
+    // 本家 WebUI の「X and N others」も同じ数え方）。
+    final seen = <String>{};
     final samples = [
       for (final id in sampleAccountIds)
-        if (accounts[id] case final account?)
-          account.toCapsicum(localHost, adminRoleIds: adminRoleIds),
+        if (seen.add(id) && accounts[id] != null)
+          accounts[id]!.toCapsicum(localHost, adminRoleIds: adminRoleIds),
     ];
     // ⚠ 起点となる相手がいない種別は v1 と同じ扱い（受信者本人が代表として
     // 入ってくるので、そのまま出すと自分が何かしたように読める・#1084）。

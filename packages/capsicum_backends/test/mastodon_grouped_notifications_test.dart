@@ -265,4 +265,26 @@ void main() {
     expect(n.type, NotificationType.other);
     expect(n.fallbackTitle, isNull, reason: 'supported_types を送れば必ず文言が来る、ではない');
   });
+
+  test('⚠ 同じ相手が複数回載っていたら畳む（同じアイコンが並ぶ）', () {
+    final n = convert(
+      parse({
+        'accounts': [account('1', name: 'あかね')],
+        'notification_groups': [
+          {
+            'group_key': 'follow-1',
+            'notifications_count': 3,
+            'type': 'follow',
+            'most_recent_notification_id': '9002',
+            'page_min_id': '9000',
+            'latest_page_notification_at': '2026-09-27T01:02:03.000Z',
+            // フォロー → 解除 → 再フォローで同じ相手が 3 回。
+            'sample_account_ids': ['1', '1', '1'],
+          },
+        ],
+      }),
+    ).single;
+    expect(n.sampleUsers, hasLength(1));
+    expect(n.groupCount, 3, reason: '件数はサーバーの数え方（通知の件数）に従う');
+  });
 }

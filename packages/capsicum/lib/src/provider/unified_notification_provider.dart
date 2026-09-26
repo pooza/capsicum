@@ -6,6 +6,7 @@ import '../service/sentry_op_failure.dart';
 import '../util/conversion_skip_report.dart';
 import 'account_manager_provider.dart';
 import 'is_cat_provider.dart';
+import 'preferences_provider.dart';
 
 /// A notification paired with the account it belongs to.
 class UnifiedNotification {
@@ -53,6 +54,14 @@ class UnifiedNotificationNotifier
 
   @override
   Future<UnifiedNotificationState> build() async {
+    // 絞り込みとグループ化 (#1042 / #1048)。⚠ **watch する** — 設定を変えたら
+    // 全アカウントぶん取り直す。`_fetchFor` は fire-and-forget で走るので、
+    // build 内で値を確定させてから渡す（`ref.read` を fetch 側に置くと、
+    // dispose 済みの ref を読む経路ができる）。
+    final filter = NotificationQuery(
+      excludeTypes: ref.watch(notificationExcludedTypesProvider),
+      grouped: ref.watch(notificationGroupingProvider),
+    );
     final accounts = ref.watch(accountManagerProvider).accounts;
     final supported = accounts
         .where((a) => a.adapter is NotificationSupport)
@@ -75,7 +84,7 @@ class UnifiedNotificationNotifier
     for (final account in supported) {
       // fire-and-forget: 各 fetch の完了ごとに state を更新する。build() の
       // 戻り値（初期 state）が確定した後の tick で走るため、順次差し込まれる。
-      _fetchFor(account).then((result) {
+      _fetchFor(account, filter).then((result) {
         if (disposed) return;
         pending.remove(result.account);
         if (result.error != null) {
@@ -110,10 +119,16 @@ class UnifiedNotificationNotifier
     );
   }
 
-  Future<_FetchResult> _fetchFor(Account account) async {
+  Future<_FetchResult> _fetchFor(
+    Account account,
+    NotificationQuery filter,
+  ) async {
     try {
       final response = await (account.adapter as NotificationSupport)
-          .getNotifications(query: const TimelineQuery(limit: _pageSize));
+          .getNotifications(
+            query: const TimelineQuery(limit: _pageSize),
+            filter: filter,
+          );
       reportSkippedNotifications(
         response.skippedPosts,
         source: 'unified_notification',

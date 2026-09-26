@@ -16,6 +16,7 @@ import '../util/deck_navigation.dart';
 import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
 import '../util/moderation_notification_text.dart';
+import '../util/notification_group_text.dart';
 import '../util/notification_type_display.dart';
 import '../util/post_actions.dart';
 import '../util/post_scope_display.dart';
@@ -29,6 +30,7 @@ import 'emoji_action_sheet.dart';
 import 'emoji_text.dart';
 import 'post_touch_action_row.dart';
 import 'reaction_picker_sheet.dart';
+import 'stacked_avatars.dart';
 import 'user_avatar.dart';
 
 class NotificationTile extends ConsumerStatefulWidget {
@@ -221,6 +223,24 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
                       _achievementLabel(notification.achievement),
                       style: theme.textTheme.bodyMedium,
                       maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                  // capsicum が名前を知らない種別に、サーバーが用意した文言を
+                  // 出す (#1042)。⚠ **HTML なのでタグを落として出す。**リンクは
+                  // 捨てる（本文より上に「詳細を確認」の導線を作るほどの頻度で
+                  // はなく、`ContentRenderer` は 1 タイルに 1 つしか持てない）。
+                  //
+                  // ⚠ **これが出るのは非 baseline の未知種別だけ**（実質は
+                  // `admin.report` / `admin.sign_up`）。本当に新しい種別では
+                  // サーバー側も文言を持っておらず null で来るので、
+                  // 「通知」の既定表示が引き続き受け皿になる。
+                  if (_fallbackText case final fallback?) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      fallback,
+                      style: theme.textTheme.bodyMedium,
+                      maxLines: 3,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ],
@@ -569,11 +589,19 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
   Widget _buildHeader(BuildContext context, String label) {
     final theme = Theme.of(context);
     final user = notification.user;
+    final groupCount = notification.groupCount;
 
     if (user == null) {
       return Row(
         children: [
-          Expanded(child: Text(label, style: theme.textTheme.bodySmall)),
+          Expanded(
+            child: Text(
+              // 代表を引き当てられなかった束ね（#1048）。ここで
+              // `notificationActorSuffix` を使うと「 ほか…」で始まってしまう。
+              notificationActorlessLabel(groupCount: groupCount, label: label),
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
           TimestampText(
             notification.createdAt,
             absolute: ref.watch(absoluteTimeProvider),
@@ -584,13 +612,25 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
     }
 
     final displayName = user.displayName ?? user.username;
+    // 束ねた通知は代表アカウントを重ねて出す (#1048)。⚠ 1 件のときは従来と
+    // 同じ 1 枚（`sampleUsers` は非グループ取得では空なので、ここは `user` から
+    // 組む）。
+    final samples = notification.sampleUsers.isEmpty
+        ? [user]
+        : notification.sampleUsers;
 
     return Row(
       children: [
-        GestureDetector(
-          onTap: () => openProfile(context, user),
-          child: UserAvatar(user: user, size: 24, borderRadius: 4),
-        ),
+        if (samples.length > 1)
+          StackedAvatars(
+            users: samples,
+            onTapFirst: () => openProfile(context, samples.first),
+          )
+        else
+          GestureDetector(
+            onTap: () => openProfile(context, user),
+            child: UserAvatar(user: user, size: 24, borderRadius: 4),
+          ),
         const SizedBox(width: 8),
         Expanded(
           child: Row(
@@ -605,7 +645,10 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              Text(' が$label', style: theme.textTheme.bodySmall),
+              Text(
+                notificationActorSuffix(groupCount: groupCount, label: label),
+                style: theme.textTheme.bodySmall,
+              ),
             ],
           ),
         ),
@@ -617,6 +660,22 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
         ),
       ],
     );
+  }
+
+  /// サーバーが用意した代替文言を 1 つの文字列に畳む (#1042)。
+  ///
+  /// ⚠ 見出し（`title`）と説明（`summary`）は別フィールドだが、通知行に 2 段
+  /// 積むと 1 件で画面を占める。改行 1 つで繋いで 3 行で打ち切る。
+  String? get _fallbackText {
+    final title = notification.fallbackTitle;
+    final body = notification.fallbackBody;
+    if (title == null && body == null) return null;
+    final parts = [
+      for (final raw in [title, body])
+        if (raw != null && stripHtml(raw).trim().isNotEmpty)
+          stripHtml(raw).trim(),
+    ];
+    return parts.isEmpty ? null : parts.join('\n');
   }
 
   (IconData, String) get _iconAndLabel {

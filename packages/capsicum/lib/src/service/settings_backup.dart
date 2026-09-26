@@ -131,6 +131,11 @@ const exportableSettings = <BackupSetting>[
   BackupSetting('update_check_enabled', BackupValueType.boolean),
   BackupSetting('nowplaying_url_provider', BackupValueType.text),
   BackupSetting('post_touch_actions', BackupValueType.textList),
+  // 通知 (#1042 / #1048)。⚠ 種別名は `NotificationType` の `name`。読み込み側で
+  // 未知の名前は落ちる（`NotificationExcludedTypesNotifier.readSaved`）ので、
+  // 版が違う端末へ持っていっても設定が丸ごと既定へ戻ることはない。
+  BackupSetting('notification_grouping', BackupValueType.boolean),
+  BackupSetting('notification_excluded_types', BackupValueType.textList),
   // 履歴
   BackupSetting('recent_emojis', BackupValueType.textList),
   BackupSetting('compose_template_history', BackupValueType.textList),

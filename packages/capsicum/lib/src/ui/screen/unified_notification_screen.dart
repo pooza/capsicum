@@ -11,6 +11,7 @@ import '../../service/tco_resolver.dart';
 import '../util/deck_navigation.dart';
 import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
+import '../util/notification_group_text.dart';
 import '../util/notification_type_display.dart';
 import '../util/relative_time.dart';
 import '../widget/bottom_safe_area.dart';
@@ -270,10 +271,19 @@ class _UnifiedNotificationTileState
     bool useAbsoluteTime,
   ) {
     final theme = Theme.of(context);
+    // 束ねた通知の人数 (#1048)。⚠ **代表アイコンは出さない** — この行には
+    // すでに宛先アカウントのバッジ（[_accountBadge]）があり、そこへ代表を
+    // 重ねると「どちらが自分か」が読めなくなる。人数は文字列で出す。
+    final groupCount = widget.item.notification.groupCount;
     if (user == null) {
       return Row(
         children: [
-          Expanded(child: Text(label, style: theme.textTheme.bodySmall)),
+          Expanded(
+            child: Text(
+              notificationActorlessLabel(groupCount: groupCount, label: label),
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
           TimestampText(
             createdAt,
             absolute: useAbsoluteTime,
@@ -298,7 +308,10 @@ class _UnifiedNotificationTileState
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              Text(' が$label', style: theme.textTheme.bodySmall),
+              Text(
+                notificationActorSuffix(groupCount: groupCount, label: label),
+                style: theme.textTheme.bodySmall,
+              ),
             ],
           ),
         ),
