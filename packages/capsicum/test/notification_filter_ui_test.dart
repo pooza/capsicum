@@ -227,4 +227,47 @@ void main() {
       expect(button.onPressed, isNull);
     });
   });
+
+  group('⚠ 色は引数で渡す（デッキのカラム見出し）', () {
+    testWidgets('color を渡すとアイコンに乗る', (tester) async {
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: containerFor([
+            _account('x', _FilterableAdapter({NotificationType.mention})),
+          ]),
+          child: const MaterialApp(
+            home: Scaffold(body: NotificationFilterButton(color: Colors.white)),
+          ),
+        ),
+      );
+      expect(
+        tester.widget<Icon>(find.byIcon(Icons.filter_list)).color,
+        Colors.white,
+      );
+    });
+
+    testWidgets('⚠ 絞り込み中はエラー色が優先（効いていることを見せるのが先）', (tester) async {
+      final container = containerFor([
+        _account('x', _FilterableAdapter({NotificationType.mention})),
+      ]);
+      await container
+          .read(notificationExcludedTypesProvider.notifier)
+          .setExcluded(NotificationType.mention, true);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(
+            home: Scaffold(body: NotificationFilterButton(color: Colors.white)),
+          ),
+        ),
+      );
+      final icon = tester.widget<Icon>(find.byIcon(Icons.filter_list_off));
+      expect(icon.color, isNot(Colors.white));
+      expect(
+        icon.color,
+        ThemeData().colorScheme.error,
+        reason: '白いままだと「絞り込み中」が見出しの中で見分けられない',
+      );
+    });
+  });
 }

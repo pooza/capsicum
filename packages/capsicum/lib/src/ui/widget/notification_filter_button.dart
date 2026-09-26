@@ -42,7 +42,19 @@ final notificationFilterableTypesProvider = Provider<List<NotificationType>>((
 /// でもあればアイコンの形と色を変える。見えないまま効いている設定は
 /// `localOnly` / #1167 で繰り返し踏んでいる失敗。
 class NotificationFilterButton extends ConsumerWidget {
-  const NotificationFilterButton({super.key});
+  const NotificationFilterButton({super.key, this.color});
+
+  /// 絞り込んでいないときのアイコンの色。
+  ///
+  /// ⚠⚠ **`IconTheme` で囲んでも効かない。**Material 3 の [IconButton] は
+  /// `ButtonStyle.iconColor`（既定 `onSurfaceVariant`）を自分で `IconTheme.merge`
+  /// するので、**外側の `IconTheme` は上書きされる**。[Icon] へ直接渡した色だけが
+  /// 勝つ。デッキのカラム見出しは色つきの背景に白い文字を置いているので、
+  /// ここを渡さないと見出しの中でこのボタンだけ色が浮く。
+  ///
+  /// ⚠ 絞り込み中は**この色よりエラー色が優先**される（効いていることを見せるのが
+  /// 先）。
+  final Color? color;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -51,7 +63,7 @@ class NotificationFilterButton extends ConsumerWidget {
     return IconButton(
       icon: Icon(
         excluded.isEmpty ? Icons.filter_list : Icons.filter_list_off,
-        color: excluded.isEmpty ? null : theme.colorScheme.error,
+        color: excluded.isEmpty ? color : theme.colorScheme.error,
       ),
       tooltip: excluded.isEmpty ? '通知の絞り込み' : '${excluded.length} 種類を非表示中',
       onPressed: () => showNotificationFilterDialog(context),

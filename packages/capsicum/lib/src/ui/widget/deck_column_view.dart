@@ -364,12 +364,11 @@ class _DeckColumnHeader extends ConsumerWidget {
             // ⚠⚠ **設定はアプリ全体で 1 つ**なので、カラムごとに別の絞り込みには
             // ならない（カラムごとに持たせるのは #1042 の要求に無く、カラムの
             // 保存形式から作り直しになる）。同じ絞り込みが全カラムに効く。
+            // ⚠ 色は引数で渡す。`IconTheme` で囲んでも M3 の IconButton には
+            // 効かない（`NotificationFilterButton.color` の doc が正本）。
             if (column.tab is NotificationsTab ||
                 column.tab is AllNotificationsTab)
-              const IconTheme(
-                data: IconThemeData(color: foreground),
-                child: NotificationFilterButton(),
-              ),
+              const NotificationFilterButton(color: foreground),
             // カラムから開いたカラムは使い捨てなので、ヘッダーで閉じられるようにする
             // (#1148)。⚠ 列から外すだけで購読は止めない（autoDispose に任せる・#1093）。
             IconButton(
