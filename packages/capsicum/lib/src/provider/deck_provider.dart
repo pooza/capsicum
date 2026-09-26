@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../model/deck_column.dart';
@@ -114,3 +115,73 @@ class DeckFocusNotifier extends Notifier<DeckFocus> {
   void focusAndBlink(String id) =>
       state = DeckFocus(columnId: id, blinkToken: state.blinkToken + 1);
 }
+
+/// カラムの再読み込みの登録口（カラム id → 再読み込み）(#1157 / #1170)。
+///
+/// ⚠⚠ **デスクトップにはカラムを取り直す手段が無かった。**トラックパッドの 2 本指
+/// スクロールは `RefreshIndicator` を起動せず、見出しにも入口が無いので、
+/// **カラムを閉じて足し直すしか方法が無かった**（#1098 の実機検証 B10）。
+///
+/// 中身（`_DeckTimelineBody` 等）が自分の再読み込みを登録し、メニューの
+/// 「タイムラインを更新」/ `Ctrl+R` が**フォーカス中のカラム**のぶんを呼ぶ。
+///
+/// ⚠ 登録するのは**引っ張って更新と同じ経路**（`RefreshIndicator.show()`）。
+/// provider を直接 refresh すると、スピナーの弧が出ず「効いていない」ように見える。
+///
+/// ⚠ 登録していないカラム（通知・検索など自前の取り直しを持つもの）では
+/// null になる。メニュー側はそのとき項目を無効にする。
+final deckColumnRefreshProvider =
+    NotifierProvider<
+      DeckColumnRefreshNotifier,
+      Map<String, Future<void> Function()>
+    >(DeckColumnRefreshNotifier.new);
+
+class DeckColumnRefreshNotifier
+    extends Notifier<Map<String, Future<void> Function()>> {
+  @override
+  Map<String, Future<void> Function()> build() => const {};
+
+  /// [id] のカラムの再読み込みを登録する。
+  ///
+  /// ⚠⚠ **ウィジェットのライフサイクルの最中に呼ばない。**Riverpod は
+  /// `initState` / `dispose` 中の書き換えを禁じている（`desktopTimelineRefreshProvider`
+  /// の登録が post-frame になっているのと同じ理由）。呼ぶ側がフレームの外へ出す。
+  void register(String id, Future<void> Function() refresh) =>
+      state = {...state, id: refresh};
+
+  /// [id] の登録を外す。⚠ **自分が登録したものだけを外す**（別のカラムが同じ id で
+  /// 上書きしていたら触らない。列の入れ替えで作り直された直後がこれ）。
+  void unregister(String id, Future<void> Function() refresh) {
+    if (state[id] != refresh) return;
+    state = {
+      for (final e in state.entries)
+        if (e.key != id) e.key: e.value,
+    };
+  }
+}
+
+/// デッキ画面だけが持っている操作を、デスクトップメニューへ渡す口 (#1170)。
+///
+/// ⚠⚠ **メニューはカラムのコンテナに手が届かない。**メニューバーは ShellRoute に
+/// 常駐していてルートのスコープで動くので、そこから `/compose` を開くと
+/// **現在のアカウント**として投稿される（#1149 と同じ穴）。デッキ画面が自分の
+/// コンテナを使う閉じたものを登録し、メニューはそれを呼ぶだけにする。
+class DeckMenuActions {
+  const DeckMenuActions({
+    required this.revealAndFocus,
+    required this.openCompose,
+    required this.openColumnsSheet,
+  });
+
+  /// そのカラムまで横に送り、フォーカスを移す（表示 > カラム）。
+  final void Function(String columnId) revealAndFocus;
+
+  /// フォーカス中のカラムのアカウントで新規投稿を開く（⌘N / Ctrl+N）。
+  final VoidCallback openCompose;
+
+  /// カラム編集のシートを開く（表示 > カラム > カラムを編集…）。
+  final VoidCallback openColumnsSheet;
+}
+
+/// [DeckMenuActions] の登録口。**デッキ画面がマウント中だけ非 null**。
+final deckMenuActionsProvider = StateProvider<DeckMenuActions?>((ref) => null);

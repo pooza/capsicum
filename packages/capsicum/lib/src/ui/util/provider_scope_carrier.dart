@@ -71,6 +71,21 @@ Map<String, dynamic> extraWithProviderScope(
   providerScopeExtraKey: ProviderScope.containerOf(context, listen: false),
 };
 
+/// [container] を載せた `extra` を作る (#1170)。
+///
+/// ⚠⚠ **`context` からスコープを取れないときだけ使う。**ふつうは
+/// [extraWithProviderScope] —— そちらは「開いた場所のスコープ」を自動で拾うので、
+/// 取り違えようがない。
+///
+/// 要るのは**デスクトップメニューからの ⌘N** だけ。メニューバーは ShellRoute に
+/// 常駐していて**ルートのスコープで動く**ので、そこの `context` から取ると
+/// 「現在のアカウント」になってしまう。デッキ画面が自分の持っているカラムの
+/// コンテナを渡す。
+Map<String, dynamic> extraWithProviderContainer(
+  ProviderContainer container, [
+  Map<String, dynamic>? extra,
+]) => {...?extra, providerScopeExtraKey: container};
+
 /// `extra` に載っていたスコープで [child] を包む（ルーターの builder 用）。
 /// 載っていなければそのまま（アプリ起動時の共有インテント等・ルートのスコープ）。
 Widget withExtraProviderScope(Object? extra, Widget child) {

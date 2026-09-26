@@ -7,6 +7,7 @@ import '../../model/account.dart';
 import '../../model/account_key.dart';
 import '../../model/deck_column.dart';
 import '../../provider/account_manager_provider.dart';
+import '../../provider/channel_provider.dart';
 import '../../provider/deck_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../util/deck_compose.dart';
@@ -102,6 +103,11 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
   /// 狭幅でのフォーカス追従を、フレームに 1 回へ間引くための予約済みフラグ。
   bool _focusSyncScheduled = false;
 
+  /// メニューへの登録口 (#1170)。⚠ `dispose` では `ref` が使えないので掴んでおく。
+  late final StateController<DeckMenuActions?> _menuActions = _root.read(
+    deckMenuActionsProvider.notifier,
+  );
+
   @override
   void initState() {
     super.initState();
@@ -110,11 +116,28 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
     // 閉じている間に列を読むと、片づいたはずの TL provider を起こしてしまう。
     _shiftMountedDecks(1);
     _scrollController.addListener(_syncFocusToVisibleColumn);
+    // デスクトップメニューへ、デッキだけが持っている操作を渡す (#1170)。
+    // ⚠ フレームの後（provider の書き換えなので `_shiftMountedDecks` と同じ理由）。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _menuActions.state = DeckMenuActions(
+        revealAndFocus: _revealAndFocus,
+        openCompose: _openComposeForFocused,
+        openColumnsSheet: () => showDeckColumnsSheet(context),
+      );
+    });
   }
 
   @override
   void dispose() {
     _shiftMountedDecks(-1);
+    // ⚠ 解除もフレームの後。⚠ **自分が入れたぶんだけ外す**（デッキを開き直した
+    // 直後は新しい画面の登録が先に走っている）。
+    final ownActions = _menuActions.state;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_menuActions.mounted) return;
+      if (_menuActions.state == ownActions) _menuActions.state = null;
+    });
     _scrollController.removeListener(_syncFocusToVisibleColumn);
     _scrollController.dispose();
     for (final container in _containers.values) {
@@ -170,6 +193,48 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
     ref.read(deckFocusProvider.notifier).focusAndBlink(added.id);
     // ⚠ 足した直後のフレームではまだ Row に居ない。組み上がってから送る。
     WidgetsBinding.instance.addPostFrameCallback((_) => _reveal(added.id));
+  }
+
+  /// [columnId] まで横に送り、フォーカスを移す（表示 > カラム・#1170）。
+  ///
+  /// ⚠ 点滅させるのは、選んだのに画面がほとんど動かない（既に見えている）場合に
+  /// 「どれを選んだか」が分からなくなるため。
+  void _revealAndFocus(String columnId) {
+    ref.read(deckFocusProvider.notifier).focusAndBlink(columnId);
+    _reveal(columnId);
+  }
+
+  /// フォーカス中のカラムのアカウントで新規投稿を開く（⌘N / Ctrl+N・#1170）。
+  ///
+  /// ⚠⚠ **メニューから直接 `/compose` を push してはいけない。**メニューバーは
+  /// ShellRoute に常駐していてルートのスコープで動くので、**別アカウントのカラムを
+  /// 見ながら ⌘N を打つと現在のアカウントから投稿される**（#1149 と同じ穴）。
+  /// ここでカラムのコンテナを載せてから開く。
+  void _openComposeForFocused() {
+    final id = ref.read(deckFocusProvider).columnId;
+    final column = ref
+        .read(deckColumnsProvider)
+        .where((c) => c.id == id)
+        .firstOrNull;
+    if (column == null) return;
+    // 現在のアカウントのカラムはルートのコンテナのまま（未決事項 10）。
+    final container = column.account == ref.read(currentAccountKeyProvider)
+        ? _root
+        : _containers[column.account];
+    if (container == null) return;
+    context.push<bool>(
+      '/compose',
+      // ⚠ `extraWithProviderScope(context)` ではない。ここの `context` は
+      // デッキ画面（ルートのスコープ）なので、それだと現在のアカウントになる。
+      extra: extraWithProviderContainer(
+        container,
+        deckComposeExtra(
+          column,
+          channels:
+              container.read(followedChannelsProvider).valueOrNull ?? const [],
+        ),
+      ),
+    );
   }
 
   /// 通知をカラムで開く (#1173・決定済み事項 7-3)。
@@ -539,7 +604,7 @@ class _DeckPostBar extends ConsumerWidget {
     }
     // ⚠ 初期状態は見出しの投稿ボタンと同じ関数から取る (#1172)。別々に書くと、
     // 「バーから送るとタグが付くのにボタンから開くと付かない」の再発になる。
-    final extra = deckComposeExtra(ref, column);
+    final extra = deckComposeExtra(column, channels: deckChannelsInScope(ref));
     final current = ref.watch(currentAccountProvider);
     final user = current?.key == column.account ? current!.user : null;
     return SimplePostBar(

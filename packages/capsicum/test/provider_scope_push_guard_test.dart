@@ -53,21 +53,31 @@ void main() {
     return calls;
   }
 
+  /// スコープを載せる関数。
+  ///
+  /// ⚠ [extraWithProviderContainer] は **`context` からスコープを取れないときだけ**
+  /// 使う逃げ道 (#1170)。デスクトップメニューは ShellRoute に常駐していてルートの
+  /// スコープで動くので、そこの `context` から取ると「現在のアカウント」になる。
+  /// ⚠⚠ **素の `{providerScopeExtraKey: …}` を手で書く形は通さない** —— キーだけ
+  /// 合っていれば何を載せても通ってしまい、この検査の意味が消える。
+  const carriers = ['extraWithProviderScope(', 'extraWithProviderContainer('];
+
   /// スコープを載せていない呼び出しを返す。
   ///
-  /// `extra:` が変数なら、同じファイルでその変数を `extraWithProviderScope` で
-  /// 作っていれば通す（`await` を挟む前に作っておく書き方・post_tile の削除して
-  /// 再編集）。
+  /// `extra:` が変数なら、同じファイルでその変数を [carriers] のどれかで作って
+  /// いれば通す（`await` を挟む前に作っておく書き方・post_tile の削除して再編集）。
   List<String> offendersIn(String source) {
     final masked = maskComments(source);
     final offenders = <String>[];
     for (final call in callsIn(source)) {
-      if (call.contains('extraWithProviderScope(')) continue;
+      if (carriers.any(call.contains)) continue;
       final variable = RegExp(r'extra:\s*(\w+)\s*[,)]').firstMatch(call);
       if (variable != null &&
-          RegExp(
-            '\\b${variable.group(1)}\\s*=\\s*extraWithProviderScope\\(',
-          ).hasMatch(masked)) {
+          carriers.any(
+            (carrier) => RegExp(
+              '\\b${variable.group(1)}\\s*=\\s*${RegExp.escape(carrier)}',
+            ).hasMatch(masked),
+          )) {
         continue;
       }
       offenders.add(call.replaceAll(RegExp(r'\s+'), ' '));
@@ -103,6 +113,9 @@ void main() {
         "await context.push<List<Attachment>>(\n  '/media',\n  extra: {'attachments': a},\n);",
         // 別の呼び出しの中で使っていても、この呼び出しに載っていなければ当たる
         "context.push('/media', extra: {'label': f(extraWithProviderScope)});",
+        // ⚠⚠ キーを手で書く形は通さない (#1170)。キーだけ合っていれば何を載せても
+        // 通ってしまい、この検査の意味が消える。
+        "context.push('/compose', extra: {providerScopeExtraKey: container});",
       ];
       for (final sample in samples) {
         expect(offendersIn(sample), isNotEmpty, reason: sample);
@@ -123,6 +136,11 @@ void main() {
         "context.push('/post', extra: post);",
         // コメントでの言及
         "// context.push('/compose') はしない",
+        // #1170: メニューからの ⌘N。`context` からスコープを取れないので
+        // コンテナを直に載せる逃げ道を通る。
+        "context.push<bool>(\n  '/compose',\n  extra: extraWithProviderContainer(container, e),\n);",
+        "final e = extraWithProviderContainer(c, {'hashtags': t});\n"
+            "router.push('/compose', extra: e);",
       ];
       for (final sample in samples) {
         expect(offendersIn(sample), isEmpty, reason: sample);

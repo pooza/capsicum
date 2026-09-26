@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../model/deck_column.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/channel_provider.dart';
+import '../../provider/deck_provider.dart';
 import '../../provider/hashtag_provider.dart';
 import '../../provider/list_provider.dart';
 import '../../provider/preferences_provider.dart';
@@ -72,6 +73,7 @@ class DeckColumnView extends ConsumerWidget {
       TimelineTab(:final type) => () {
         final p = timelineProvider((account: account, type: type));
         return _DeckTimelineBody(
+          columnId: column.id,
           timeline: p,
           loadMore: (ref) => ref.read(p.notifier).loadMore(),
           refresh: (ref) => ref.refresh(p.future),
@@ -83,6 +85,7 @@ class DeckColumnView extends ConsumerWidget {
       HashtagTab(:final tag) => () {
         final p = hashtagTimelineProvider((account: account, spec: tag));
         return _DeckTimelineBody(
+          columnId: column.id,
           timeline: p,
           loadMore: (ref) => ref.read(p.notifier).loadMore(),
           refresh: (ref) => ref.refresh(p.future),
@@ -96,6 +99,7 @@ class DeckColumnView extends ConsumerWidget {
       ListTab(:final id) => () {
         final p = listTimelineProvider((account: account, id: id));
         return _DeckTimelineBody(
+          columnId: column.id,
           timeline: p,
           loadMore: (ref) => ref.read(p.notifier).loadMore(),
           refresh: (ref) => ref.refresh(p.future),
@@ -109,6 +113,7 @@ class DeckColumnView extends ConsumerWidget {
       ChannelTab(:final id) => () {
         final p = channelTimelineProvider((account: account, id: id));
         return _DeckTimelineBody(
+          columnId: column.id,
           timeline: p,
           loadMore: (ref) => ref.read(p.notifier).loadMore(),
           refresh: (ref) => ref.refresh(p.future),
@@ -485,12 +490,17 @@ class _DeckColumnMessage extends StatelessWidget {
 /// ⚠ 操作を関数で受け取るのは、4 系統の Notifier の型がそれぞれ違うため。
 class _DeckTimelineBody extends ConsumerStatefulWidget {
   const _DeckTimelineBody({
+    required this.columnId,
     required this.timeline,
     required this.loadMore,
     required this.refresh,
     this.setNearTop,
     this.flushPending,
   });
+
+  /// このカラムの [DeckColumn.id]。メニューの「タイムラインを更新」/ `Ctrl+R` が
+  /// フォーカス中のカラムを引くための鍵 (#1157 / #1170)。
+  final String columnId;
 
   final ProviderListenable<AsyncValue<TimelineState>> timeline;
   final Future<void> Function(WidgetRef ref) loadMore;
@@ -509,16 +519,50 @@ class _DeckTimelineBodyState extends ConsumerState<_DeckTimelineBody> {
   final _scrollController = ScrollController();
   bool? _nearTop;
 
+  /// 引っ張って更新の弧。メニュー / `Ctrl+R` からもここを起こす (#1157)。
+  final _refreshKey = GlobalKey<RefreshIndicatorState>();
+
+  /// 登録する再読み込み。
+  ///
+  /// ⚠⚠ **`RefreshIndicator.show()` を通す。**provider を直接 refresh すると弧が
+  /// 出ないので「メニューが効いていない」ように見える（タブ UI は
+  /// `_refreshIndicatorKey` で同じことをしている・#841）。
+  Future<void> _showRefresh() async => _refreshKey.currentState?.show();
+
+  /// 再読み込みの登録口。⚠ `dispose` では `ref` が使えないので initState で掴む。
+  DeckColumnRefreshNotifier? _refreshRegistry;
+
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    _refreshRegistry = ref.read(deckColumnRefreshProvider.notifier);
+    // ⚠⚠ **フレームの後で登録する。**initState 中に provider を書き換えると
+    // Riverpod の assert に当たる（`desktopTimelineRefreshProvider` の登録も
+    // 同じ理由で post-frame にしてある）。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _refreshRegistry?.register(widget.columnId, _showRefresh);
+    });
   }
 
   @override
   void dispose() {
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
+    // ⚠ 解除もフレームの後。⚠ **自分が登録したぶんだけ外す**（列の入れ替えで
+    // 同じ id のカラムが先に登録し直していたら触らない）。
+    final registry = _refreshRegistry;
+    final id = widget.columnId;
+    if (registry != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        try {
+          registry.unregister(id, _showRefresh);
+        } on StateError {
+          // ⚠ ルートのコンテナごと畳まれた後のフレームで走ることがある
+          // （アプリの終了・テストのツリー差し替え）。外す先が無いので握る。
+        }
+      });
+    }
     super.dispose();
   }
 
@@ -576,6 +620,8 @@ class _DeckTimelineBodyState extends ConsumerState<_DeckTimelineBody> {
               ),
             Expanded(
               child: RefreshIndicator(
+                // メニュー / `Ctrl+R` からも同じ弧を起こす (#1157 / #1170)。
+                key: _refreshKey,
                 onRefresh: () => widget.refresh(ref),
                 child: list,
               ),

@@ -6,7 +6,9 @@ import 'package:go_router/go_router.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../../model/account.dart';
+import '../../model/deck_column.dart';
 import '../../provider/account_manager_provider.dart';
+import '../../provider/deck_provider.dart';
 import '../../provider/hashtag_provider.dart';
 import '../../provider/list_provider.dart';
 import '../../provider/preferences_provider.dart';
@@ -96,6 +98,38 @@ String tabLabel(
     MessagesTab() => 'メッセージ',
     final DeckOnlyTab t => deckOnlyTabLabel(ref, t, adapter),
   };
+}
+
+/// 「表示 > カラム」に出す 1 行 (#1170・`docs/deck-ui-plan.md` 決定済み事項 11)。
+///
+/// **カラムの見出しと同じ「タブ名 · 表示名」**にする（#1152）。デッキはアカウントを
+/// またいでカラムが並ぶので、種別だけでは同じ行が何本も並ぶ。
+///
+/// ⚠ **ここはルートのスコープ**（メニューバーは ShellRoute に常駐している）。
+/// 種別のラベルはそのカラムのアカウントのアダプタで決めるが、[allLists] と
+/// `tabLabel` が読む設定系 provider は**現在のアカウントのもの**になる。
+/// 別アカウントのリストのカラムは名前が引けず id になる —— 見出し（カラムの中は
+/// 正しいスコープ）とは食い違うが、**メニューの 1 行のために全アカウントのリストを
+/// 取りに行くほうが高い**ので、ここは割り切る。
+String deckColumnMenuLabel(
+  WidgetRef ref,
+  DeckColumn column,
+  AccountManagerState accountState,
+  List<PostList> allLists,
+) {
+  final account = accountState.accounts
+      .where((a) => a.key == column.account)
+      .firstOrNull;
+  final adapter = account?.adapter;
+  final isMastodon =
+      adapter != null &&
+      !adapter.capabilities.supportedTimelines.contains(TimelineType.social);
+  final label = tabLabel(ref, column.tab, isMastodon, adapter, allLists);
+  final who =
+      account?.user.displayName ??
+      account?.user.username ??
+      '@${column.account.username}@${column.account.host}';
+  return '$label · $who';
 }
 
 /// Persist the currently selected tab to SharedPreferences.
@@ -374,6 +408,24 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
   final currentTab = ref.watch(selectedTabProvider);
   final hideLivecure = ref.watch(hideLivecureProvider);
 
+  // ⚠⚠ **デッキ中はタブ UI 前提の 3 か所を差し替える** (#1170・`docs/deck-ui-plan.md`
+  // 決定済み事項 11)。メニューバーは ShellRoute に常駐していて**デッキでも同じものが
+  // 出る**ので、そのままだと「表示 > タブ」や「他アカウントへ切り替え」が
+  // **選んだ瞬間にデッキを抜ける**。
+  //
+  // ⚠ **丸ごと隠す案は採らない**（macOS の「終了」や編集メニューまで消える）。
+  final inDeck = ref.watch(mountedDeckCountProvider) > 0;
+  final deckActions = ref.watch(deckMenuActionsProvider);
+  final deckColumns = inDeck
+      ? ref.watch(deckColumnsProvider)
+      : const <DeckColumn>[];
+  final focusedColumnId = ref.watch(deckFocusProvider).columnId;
+  // フォーカス中のカラムの再読み込み。⚠ 登録していないカラム（通知・検索など自前の
+  // 取り直しを持つもの）では null → 項目を無効にする (#1157)。
+  final focusedRefresh = focusedColumnId == null
+      ? null
+      : ref.watch(deckColumnRefreshProvider)[focusedColumnId];
+
   // 編集アクションは現在フォーカス中のフィールドへ intent を送る。フォーカスが
   // テキスト以外なら no-op（intent を処理する Action が無い）。
   void editAction(Intent intent) {
@@ -501,13 +553,23 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
       label: '移動',
       children: [
         // 新規投稿は頻用アクションなので先頭に置き、⌘N/Ctrl+N を割り当てる。
+        // ⚠⚠ **デッキ中はフォーカス中のカラムのアカウントで開く** (#1170・
+        // 決定済み事項 10 / 11)。ここは ShellRoute の**ルートのスコープ**なので、
+        // 素の `extraWithProviderScope(context)` だと**別アカウントのカラムを見ながら
+        // ⌘N を打つと現在のアカウントから投稿される**（#1149 と同じ穴）。
+        // カラムのコンテナに手が届くのはデッキ画面だけなので、そちらが登録した
+        // ものを呼ぶ。
         MenuActionEntry(
           label: '新規投稿',
           icon: Icons.edit_outlined,
           shortcut: const MenuShortcut(LogicalKeyboardKey.keyN),
           globalShortcut: true,
-          onSelected: () =>
-              context.push('/compose', extra: extraWithProviderScope(context)),
+          onSelected: inDeck && deckActions != null
+              ? deckActions.openCompose
+              : () => context.push(
+                  '/compose',
+                  extra: extraWithProviderScope(context),
+                ),
         ),
         const MenuGroupSeparator(),
         for (final item in navItems.where((i) => i.title != '設定'))
@@ -532,21 +594,27 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
               icon: Icons.person_outline,
               onSelected: () => openProfile(context, current.user),
             ),
-          if (current != null && otherAccounts.isNotEmpty)
+          // ⚠⚠ **デッキ中はアカウントの切り替えを隠す** (#1170・決定済み事項 11)。
+          // 切り替えると `go('/home')` で**デッキを抜ける**うえ、デッキは各カラムが
+          // それぞれのアカウントで動くので「現在のアカウント」を替える意味も薄い
+          // （替えるとコンテナの割り当てが組み替わる・決定済み事項 8）。
+          // ⚠ プロフィール・追加・ログアウトは残す。
+          if (!inDeck && current != null && otherAccounts.isNotEmpty)
             const MenuGroupSeparator(),
-          for (final a in otherAccounts)
-            MenuActionEntry(
-              label: '@${a.user.username}@${a.key.host}',
-              icon: Icons.switch_account,
-              onSelected: () {
-                ref.read(accountManagerProvider.notifier).switchAccount(a);
-                // 常駐メニュー (#834) は /compose 等の状態を持つ画面上でも切替
-                // できる。旧アカウントの本文・reply/renote/draft ID が残ったまま
-                // 新アカウントの adapter で投稿/下書き削除される事故を防ぐため、
-                // 切替時はアカウントスコープの clean な /home へ戻す（#880 Codex P1）。
-                context.go('/home');
-              },
-            ),
+          if (!inDeck)
+            for (final a in otherAccounts)
+              MenuActionEntry(
+                label: '@${a.user.username}@${a.key.host}',
+                icon: Icons.switch_account,
+                onSelected: () {
+                  ref.read(accountManagerProvider.notifier).switchAccount(a);
+                  // 常駐メニュー (#834) は /compose 等の状態を持つ画面上でも切替
+                  // できる。旧アカウントの本文・reply/renote/draft ID が残ったまま
+                  // 新アカウントの adapter で投稿/下書き削除される事故を防ぐため、
+                  // 切替時はアカウントスコープの clean な /home へ戻す（#880 Codex P1）。
+                  context.go('/home');
+                },
+              ),
           const MenuGroupSeparator(),
           MenuActionEntry(
             label: 'アカウントを追加',
@@ -569,15 +637,26 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
           icon: Icons.refresh,
           shortcut: const MenuShortcut(LogicalKeyboardKey.keyR),
           globalShortcut: true,
-          onSelected: () async {
-            final cb = ref.read(desktopTimelineRefreshProvider);
-            if (cb != null) await cb();
-          },
+          // ⚠ デッキ中は**フォーカス中のカラム**を更新する (#1157 / #1170・
+          // 決定済み事項 11)。⚠⚠ **「すべてのカラムを更新」は置かない** —
+          // ストリーミングで流れてくるので全部を取り直す状況が無く、カラム数ぶん
+          // REST が一斉に走るのも避けたい（2026-09-26 pooza）。
+          // ⚠ 更新の口を持たないカラム（通知・検索）では null → 項目が無効になる。
+          onSelected: inDeck && focusedRefresh == null
+              ? null
+              : () async {
+                  final cb =
+                      focusedRefresh ??
+                      (inDeck
+                          ? null
+                          : ref.read(desktopTimelineRefreshProvider));
+                  if (cb != null) await cb();
+                },
         ),
         const MenuGroupSeparator(),
-        // 表示中のタブへ切り替える。現在タブに ✓（mac はラベル末尾・in-window は
-        // 先頭アイコン）。ラベルはタブバーと同じ [tabLabel] を単一ソースに使う。
-        if (visibleTabs.isNotEmpty)
+        // ⚠ デッキ中は「タブ」を出さない (#1170)。選ぶと `go('/home')` で
+        // **デッキを抜けてしまう**。代わりに下の「カラム」を出す。
+        if (!inDeck && visibleTabs.isNotEmpty)
           MenuSubmenuEntry(
             label: 'タブ',
             children: [
@@ -602,6 +681,41 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
                 ),
             ],
           ),
+        // 表示 > カラム (#1170・決定済み事項 11)。列のカラムを見出しと同じ
+        // 「タブ名 · 表示名」で並べ、選ぶとそこまで送ってフォーカスを移す。
+        // ⚠ フォーカス中のカラムに ✓ を付ける（選択中タブの ✓ と同じ役回り）。
+        if (inDeck && deckActions != null)
+          MenuSubmenuEntry(
+            label: 'カラム',
+            children: [
+              for (final column in deckColumns)
+                MenuActionEntry(
+                  label: deckColumnMenuLabel(
+                    ref,
+                    column,
+                    accountState,
+                    allLists,
+                  ),
+                  checked: column.id == focusedColumnId,
+                  onSelected: () => deckActions.revealAndFocus(column.id),
+                ),
+              if (deckColumns.isNotEmpty) const MenuGroupSeparator(),
+              MenuActionEntry(
+                label: 'カラムを編集…',
+                icon: Icons.view_column_outlined,
+                onSelected: deckActions.openColumnsSheet,
+              ),
+            ],
+          ),
+        // タブ UI ↔ デッキの切り替え (#1170・AppBar のアイコン #1153 と対)。
+        // ⚠ デッキへは push・タブ UI へは go（決定済み事項 8。`push('/home')` に
+        // すると HomeScreen が 2 枚積まれて壊れる）。
+        MenuActionEntry(
+          label: inDeck ? 'タブ表示に切り替え' : 'デッキ表示に切り替え',
+          icon: inDeck ? Icons.tab_outlined : Icons.view_week_outlined,
+          onSelected: () =>
+              inDeck ? context.go('/home') : context.push('/deck'),
+        ),
         // 実況（#実況 タグ投稿）の表示トグル。表示中に ✓。
         MenuActionEntry(
           label: '実況を表示',

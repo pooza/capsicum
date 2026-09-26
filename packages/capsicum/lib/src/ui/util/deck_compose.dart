@@ -39,29 +39,34 @@ bool canComposeFromColumn(TabType tab, DecentralizedBackendAdapter? adapter) {
 /// エスケープを含む内部表現なので、[hashtagSpecTags] で分解してから渡す。
 /// そのまま渡すと `#c%2B%2B` のような実在しないタグで投稿してしまう。
 ///
-/// ⚠ [ref] は**そのカラムのスコープ**であることを前提にしている（チャンネル名を
-/// `followedChannelsProvider` から引くため）。デッキ画面では
-/// [carryProviderScope] がそれを保証する。
-Map<String, dynamic> deckComposeExtra(WidgetRef ref, DeckColumn column) {
+/// ⚠ [channels] は**そのカラムのアカウント**のフォロー中チャンネル。読み戻した
+/// カラムの `ChannelTab.name` が null なのでここから引く。引く側を呼び出し元に
+/// 任せているのは、**メニューバーからも呼ぶ**ため —— メニューは ShellRoute に
+/// 常駐していてルートのスコープで動くので、`WidgetRef` を渡す形だと別アカウントの
+/// 一覧を引いてしまう (#1170)。
+Map<String, dynamic> deckComposeExtra(
+  DeckColumn column, {
+  List<Channel> channels = const [],
+}) {
   return switch (column.tab) {
     HashtagTab(:final tag) => {'hashtags': hashtagSpecTags(tag)},
     ChannelTab(:final id, :final name) => {
       'channelId': id,
       // ⚠ 読み戻したカラムの `name` は null（保存キーが [TabType.toIdentityKey]
-      // なので表示名を含まない・決定済み事項 4-1）。フォロー中チャンネルの一覧は
-      // `visibleTabsProvider` が常時 watch しているので、引くのは安い。
+      // なので表示名を含まない・決定済み事項 4-1）。
       'channelName':
-          name ??
-          ref
-              .read(followedChannelsProvider)
-              .valueOrNull
-              ?.where((c) => c.id == id)
-              .firstOrNull
-              ?.name,
+          name ?? channels.where((c) => c.id == id).firstOrNull?.name,
     },
     _ => const <String, dynamic>{},
   };
 }
+
+/// [deckComposeExtra] に渡すチャンネルの一覧を、周りのスコープから読む。
+///
+/// ⚠ フォロー中チャンネルの一覧は `visibleTabsProvider` が常時 watch しているので、
+/// 引くのは安い（新しく取得は起こらない）。
+List<Channel> deckChannelsInScope(WidgetRef ref) =>
+    ref.read(followedChannelsProvider).valueOrNull ?? const [];
 
 /// [column] のアカウントで新規投稿を開く (#1172)。
 ///
@@ -73,6 +78,9 @@ Future<void> openDeckCompose(
   WidgetRef ref,
   DeckColumn column,
 ) async {
-  final extra = extraWithProviderScope(context, deckComposeExtra(ref, column));
+  final extra = extraWithProviderScope(
+    context,
+    deckComposeExtra(column, channels: deckChannelsInScope(ref)),
+  );
   await context.push<bool>('/compose', extra: extra);
 }
