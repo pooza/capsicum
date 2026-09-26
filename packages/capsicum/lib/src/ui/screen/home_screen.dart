@@ -37,6 +37,7 @@ import '../util/offline_account_display.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/emoji_text.dart';
 import '../widget/home_menu.dart';
+import '../widget/livecure_filter_button.dart';
 import '../widget/post_tile.dart';
 import '../widget/server_badge.dart';
 import '../widget/simple_post_bar.dart';
@@ -725,7 +726,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     ) !=
                     null)
                   const _StreamStatusIndicator(),
-                _LivecureFilterButton(ref: ref),
+                // ⚠ デッキの AppBar と共有する部品 (#1173)。
+                const LivecureFilterButton(),
                 IconButton(
                   icon: const Icon(Icons.search),
                   onPressed: () => context.push('/search'),
@@ -1900,25 +1902,6 @@ class _StreamStatusIndicatorState
           ],
         ),
       ),
-    );
-  }
-}
-
-class _LivecureFilterButton extends StatelessWidget {
-  final WidgetRef ref;
-
-  const _LivecureFilterButton({required this.ref});
-
-  @override
-  Widget build(BuildContext context) {
-    final hide = ref.watch(hideLivecureProvider);
-    return IconButton(
-      icon: Icon(
-        hide ? Icons.mic_off : Icons.mic,
-        color: hide ? Theme.of(context).colorScheme.error : null,
-      ),
-      tooltip: hide ? '#実況 非表示中' : '#実況 表示中',
-      onPressed: () => ref.read(hideLivecureProvider.notifier).toggle(),
     );
   }
 }

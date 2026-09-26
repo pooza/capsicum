@@ -18,6 +18,7 @@ import '../widget/bottom_safe_area.dart';
 import '../widget/deck_column_focus.dart';
 import '../widget/deck_column_view.dart';
 import '../widget/deck_columns_sheet.dart';
+import '../widget/livecure_filter_button.dart';
 import '../widget/simple_post_bar.dart';
 import '../widget/user_avatar.dart';
 
@@ -343,22 +344,48 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
         automaticallyImplyLeading: false,
         title: const Text('デッキ'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.view_column_outlined),
-            tooltip: 'カラム編集',
-            onPressed: () => showDeckColumnsSheet(context),
+          // ⚠ アイコンが増えたので、タブ UI と同じコンパクト枠に詰める (#1173)。
+          // 既定の 48px タップ枠のままだと、狭幅（375px）でタイトルが潰れる。
+          IconButtonTheme(
+            data: IconButtonThemeData(
+              style: IconButton.styleFrom(
+                minimumSize: const Size(36, 40),
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // ⚠ ライブ更新の接続インジケータは置かない（決定済み事項 7-2 / 7-3）。
+                // カラムごとに購読があるので、画面共通に 1 個置くと「N 本あるうちの
+                // どれの状態でもないもの」を出すことになる（#793 の再発）。
+                //
+                // ⚠ 実況の切り替え (#1173)。フィルタ自体はカラムにも既に効いて
+                // いるので入口だけ。**モバイルのデッキには入口が無かった**
+                // （デスクトップはメニューバーから切り替えられる）。
+                const LivecureFilterButton(),
+                IconButton(
+                  icon: const Icon(Icons.view_column_outlined),
+                  tooltip: 'カラム編集',
+                  onPressed: () => showDeckColumnsSheet(context),
+                ),
+                // タブ表示への切り替え (#1153)。タブ UI の AppBar の「デッキ表示に
+                // 切り替え」と対になる。⚠ **`go('/home')` は下に残っている
+                // HomeScreen を作り直さない**（go_router が同じページを使い回す・
+                // `deck_switch_test` で固定）。HomeScreen が同じ TL を watch し
+                // 続ける前提（決定済み事項 8）はこれで崩れない。
+                // ⚠ `push('/home')` にすると 2 枚目が積まれて壊れる。
+                IconButton(
+                  icon: const Icon(Icons.tab_outlined),
+                  tooltip: 'タブ表示に切り替え',
+                  onPressed: () => context.go('/home'),
+                ),
+                const SizedBox(width: 4),
+              ],
+            ),
           ),
-          // タブ表示への切り替え (#1153)。タブ UI の AppBar の「デッキ表示に
-          // 切り替え」と対になる。⚠ **`go('/home')` は下に残っている HomeScreen を
-          // 作り直さない**（go_router が同じページを使い回す・`deck_switch_test`
-          // で固定）。HomeScreen が同じ TL を watch し続ける前提（決定済み事項 8）
-          // はこれで崩れない。⚠ `push('/home')` にすると 2 枚目が積まれて壊れる。
-          IconButton(
-            icon: const Icon(Icons.tab_outlined),
-            tooltip: 'タブ表示に切り替え',
-            onPressed: () => context.go('/home'),
-          ),
-          const SizedBox(width: 4),
         ],
       ),
       // 各カラムの最後の投稿がナビゲーションバーに潜らないよう、下端の inset を
