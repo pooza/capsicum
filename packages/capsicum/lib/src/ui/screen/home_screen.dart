@@ -719,9 +719,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 // 各タブ (TimelineTab でない or 別購読) を素通りさせ、表示中の
                 // 内容と無関係な裏のホーム購読状態を出していた (#793)。現在の
                 // タブが本線 TimelineTab か否かを積極判定して直す。
-                if (ref.watch(selectedTabProvider) case TimelineTab(
-                  :final type,
-                ) when type != TimelineType.directMessages)
+                // ⚠ 判定はデッキのカラム見出しと共有する。
+                if (streamIndicatorTimelineType(
+                      ref.watch(selectedTabProvider),
+                    ) !=
+                    null)
                   const _StreamStatusIndicator(),
                 _LivecureFilterButton(ref: ref),
                 IconButton(

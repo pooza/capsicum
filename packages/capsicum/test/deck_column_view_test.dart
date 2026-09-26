@@ -184,4 +184,23 @@ void main() {
       expect(find.text('@someone@other.example'), findsOneWidget);
     });
   });
+
+  group('接続ドット (#793)', () {
+    const labels = {'ライブ更新中', '接続中…', '切断 — 再接続中', '接続が不安定 — 再試行中', 'ライブ更新オフ'};
+    final dot = find.byWidgetPredicate(
+      (w) => w is Tooltip && labels.contains(w.message),
+    );
+
+    testWidgets('本線のカラムには出す', (tester) async {
+      await pump(tester, const TimelineTab(TimelineType.home));
+      await tester.pump();
+      expect(dot, findsOneWidget, reason: '出ないなら下の DM の検査も空振りしている');
+    });
+
+    testWidgets('⚠ DM のカラムには出さない（タブ UI と同じ判定）', (tester) async {
+      await pump(tester, const TimelineTab(TimelineType.directMessages));
+      await tester.pump();
+      expect(dot, findsNothing);
+    });
+  });
 }

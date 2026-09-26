@@ -319,9 +319,9 @@ class _DeckColumnHeader extends ConsumerWidget {
                 ),
               ),
             ),
-            if (column.tab case TimelineTab(
-              :final type,
-            ) when account == ref.watch(currentAccountKeyProvider))
+            // ⚠ 出す条件はタブ UI の AppBar と共有する (#793)。DM には出さない。
+            if (streamIndicatorTimelineType(column.tab) case final type?
+                when account == ref.watch(currentAccountKeyProvider))
               // カラムのスコープの中なので、別アカウントのカラムでもここは一致する。
               _DeckStreamDot(
                 key: ValueKey(type),

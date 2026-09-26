@@ -21,6 +21,18 @@ final selectedTabProvider = StateProvider<TabType>(
   (ref) => const TimelineTab(TimelineType.home),
 );
 
+/// ライブ更新の接続インジケータを出すタブなら、その [TimelineType] を返す (#793)。
+///
+/// streaming する本線 TL (home / local / social / federated) だけが対象。DM は
+/// Mastodon では購読せず（`streamTimeline` が空）、表示中の内容と無関係な状態を
+/// 出すことになるので除く。
+/// ⚠ タブ UI の AppBar とデッキのカラム見出しの両方がこれを見る。判定を片方に
+/// 書き写すと、デッキだけ DM にドットが出た (2026-09-26) のと同じずれが再発する。
+TimelineType? streamIndicatorTimelineType(TabType tab) => switch (tab) {
+  TimelineTab(:final type) when type != TimelineType.directMessages => type,
+  _ => null,
+};
+
 /// Tab that HomeScreen should focus on its next build.
 ///
 /// Set by external entry points (notification taps, share intents) that want
