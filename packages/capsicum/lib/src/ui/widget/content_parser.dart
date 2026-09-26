@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
-import 'package:capsicum_core/capsicum_core.dart' show nyaize;
+import 'package:capsicum_core/capsicum_core.dart' show Post, nyaize;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:html_unescape/html_unescape.dart';
@@ -1934,3 +1934,52 @@ class _RubyWidget extends StatelessWidget {
 
   return (body: bodyHtml, trailingTags: trailingTags);
 }
+
+/// 投稿のハッシュタグを、**サーバーの正本と本文の表示形から合流**させる (#1056)。
+///
+/// ⚠⚠ **サーバーの `tags` をそのまま出してはいけない。**サーバーは索引のために
+/// **小文字へ正規化**して持っている。2026-09-26 の実測（230 投稿・861 タグ・
+/// 27 ホスト）では **7 割の投稿で本文と大小が違った**（`github` / `GitHub`・
+/// `spotify` / `Spotify`）。両 SNS の Web UI も本文の形で出すので、入れ替えると
+/// **見た目が劣化する**。
+///
+/// | 何を | どこから |
+/// | --- | --- |
+/// | どのタグがあるか | [serverTags]（正本） |
+/// | どう表示するか | [bodyTags]（本文のパース）。大小を無視して一致すれば本文の形 |
+/// | 本文に無いタグ | [serverTags] の形（＝今まで**出ていなかった**ぶん） |
+/// | 並び | 本文の出現順を先に、本文に無いぶんを後ろへ |
+///
+/// ⚠ **[serverTags] が空なら [bodyTags] をそのまま返す。**空はサーバーが返さな
+/// かった場合も含むので、**空を「タグが無い」と読むと今まで拾えていたものが消える**。
+/// 実測でタグの集合は 1 件もズレなかったので、[serverTags] は取りこぼし（リンクに
+/// ならずに連合してきたタグ）への備えであって、本文の置き換えではない。
+List<String> mergeHashtags(List<String> serverTags, List<String> bodyTags) {
+  if (serverTags.isEmpty) return bodyTags;
+  // 本文にある形を、小文字をキーに引けるようにする。⚠ 同じタグが大小違いで 2 回
+  // 出ていたら先に出たほうを採る（本文の見た目に合わせる）。
+  final byLower = <String, String>{};
+  for (final tag in bodyTags) {
+    byLower.putIfAbsent(tag.toLowerCase(), () => tag);
+  }
+  final serverLower = {for (final tag in serverTags) tag.toLowerCase()};
+  return [
+    // 本文の順で、サーバーが認めたものだけ。⚠⚠ **大小を無視して重複を落とす。**
+    // `extractHashtags` の重複排除は**綴りが同じもの**しか見ないので、本文に
+    // `#A` と `#a` が両方あると 2 件返る。サーバーから見れば同じ 1 個なので、
+    // そのまま並べるとタグが増えたように見える。
+    for (final tag in byLower.values)
+      if (serverLower.contains(tag.toLowerCase())) tag,
+    // 本文に無かったぶん（サーバーの形）。⚠ 重複を足さない。
+    for (final tag in serverTags)
+      if (!byLower.containsKey(tag.toLowerCase())) tag,
+  ];
+}
+
+/// [post] のハッシュタグ（表示・遷移に使う形）(#1056)。
+///
+/// サーバーの `tags` を正本に、表示の形は本文のパースから取る（[mergeHashtags]）。
+List<String> postHashtags(Post post) => mergeHashtags(
+  post.tags,
+  extractHashtags(post.content ?? '', isHtml: post.isHtml),
+);

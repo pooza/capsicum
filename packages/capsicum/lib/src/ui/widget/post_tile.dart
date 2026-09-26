@@ -1251,10 +1251,9 @@ class _PostTileState extends ConsumerState<PostTile> {
     // 外側 PostTile の context が deactivate 済みだと Localizations.localeOf が
     // null check で落ちるため、ここで一度だけ解決して閉包に取り込む（#659）。
     final locale = Localizations.localeOf(context);
-    final postHashtags = extractHashtags(
-      targetPost.content ?? '',
-      isHtml: targetPost.isHtml,
-    );
+    // ⚠ サーバーの `tags` を正本に、表示の形は本文から (#1056)。素の
+    // `extractHashtags` だと、リンクにならずに連合してきたタグを取りこぼす。
+    final hashtags = postHashtags(targetPost);
     final canRetag = _canRetag(targetPost);
     final hasNowPlayingTag = _hasNowPlayingTag(targetPost);
     final hasMulukhiya = ref.read(currentMulukhiyaProvider) != null;
@@ -1438,14 +1437,14 @@ class _PostTileState extends ConsumerState<PostTile> {
                       );
                     },
                   ),
-                if (postHashtags.isNotEmpty)
+                if (hashtags.isNotEmpty)
                   item(
                     leading: const Icon(Icons.tag),
                     title: const Text('全ハッシュタグをコピー'),
                     onSelected: () {
                       Clipboard.setData(
                         ClipboardData(
-                          text: postHashtags.map((t) => '#$t').join(' '),
+                          text: hashtags.map((t) => '#$t').join(' '),
                         ),
                       );
                       messenger.showSnackBar(

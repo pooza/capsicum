@@ -165,6 +165,7 @@ extension CapsicumMastodonStatusExtension on MastodonStatus {
       url: url,
       editedAt: editedAt,
       mentions: _parseMentions(mentions),
+      tags: _parseTags(tags),
     );
   }
 }
@@ -519,3 +520,16 @@ extension CapsicumMastodonMediaAttachmentExtension on MastodonMediaAttachment {
     );
   }
 }
+
+/// サーバーが正規化して返したハッシュタグ (#1056)。`name` から `#` を除いた形。
+///
+/// ⚠ `name` は**小文字へ正規化済み**（索引のため）。表示には使わない
+/// （`Post.tags` の注記・`mergeHashtags`）。
+///
+/// ⚠ 先頭の `#` は付かないのが仕様だが、**念のため落としておく**（付いた形で
+/// 返すフォークがあっても `#` が二重にならない）。
+List<String> _parseTags(List<Map<String, dynamic>>? raw) => [
+  for (final t in raw ?? const <Map<String, dynamic>>[])
+    if (t['name'] case final String name when name.isNotEmpty)
+      name.startsWith('#') ? name.substring(1) : name,
+];
