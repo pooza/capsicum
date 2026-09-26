@@ -29,6 +29,7 @@ import '../util/deck_compose.dart';
 import '../util/deck_tabs.dart';
 import 'emoji_text.dart';
 import 'home_menu.dart' show tabLabel;
+import 'notification_filter_button.dart';
 import 'post_tile.dart';
 import 'retry_error_view.dart';
 import 'user_avatar.dart';
@@ -358,6 +359,16 @@ class _DeckColumnHeader extends ConsumerWidget {
                 tooltip: 'このアカウントで投稿',
                 visualDensity: VisualDensity.compact,
                 onPressed: () => openDeckCompose(context, ref, column),
+              ),
+            // 通知の種別の絞り込み (#1042)。⚠ **通知のカラムにだけ出す。**
+            // ⚠⚠ **設定はアプリ全体で 1 つ**なので、カラムごとに別の絞り込みには
+            // ならない（カラムごとに持たせるのは #1042 の要求に無く、カラムの
+            // 保存形式から作り直しになる）。同じ絞り込みが全カラムに効く。
+            if (column.tab is NotificationsTab ||
+                column.tab is AllNotificationsTab)
+              const IconTheme(
+                data: IconThemeData(color: foreground),
+                child: NotificationFilterButton(),
               ),
             // カラムから開いたカラムは使い捨てなので、ヘッダーで閉じられるようにする
             // (#1148)。⚠ 列から外すだけで購読は止めない（autoDispose に任せる・#1093）。

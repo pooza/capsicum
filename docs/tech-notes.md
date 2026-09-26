@@ -463,6 +463,25 @@ client 実装は v1.60 で出荷済みだが、導線は `GET /mulukhiya/api/abo
 
 ⚠ **モロヘイヤの版が上がるだけでは復活しない。**2 が既定 false なのは、nginx の `$status_put_backend` map が 3 要素キーへ是正済みかをモロヘイヤ側から観測できないため。⚠ **`package.version` からは 1 を区別できない**ので、版番号で判定せず必ずフラグを見る（`attachment_description_edit.dart` の doc も同じことを書いている）。デプロイ時は Mastodon 3 台に 2 の追記が要る（Misskey は常に false）。
 
+### `GET /api/v2/notifications`（束ねた通知）の 4 つの罠（#1048 / #1042）
+
+1. ⚠⚠ **`limit` は「通知の件数」に掛かるのに、返るのは「グループの件数」。**同じ投稿への 20 件のリアクションは `limit: 20` に対して 1 グループで返る。**`groups.length >= limit` で最終ページを判定すると、そこで読み止まる。**判定は「ページが空でなければ続きがありうる」にして、最終ページの次に空の 1 回が走るのを許容する（`NotificationResponse.hasMore`）。⚠ その代わり「カーソルが進まなかったら打ち切る」歯止めが要る（無いと、サーバーが同じページを返し続けたときにスクロールのたびに同じ通知が積まれる）
+2. ⚠⚠ **次ページのカーソルは `page_min_id`。**`most_recent_notification_id` を `max_id` に渡すと、**末尾のグループの古いぶんを読み飛ばす**。`group_key` では辿れない（`max_id` / `since_id` は通知 ID を取る）
+3. ⚠ **グループに `created_at` が無い。**時刻は `latest_page_notification_at` だけで、しかも `paginated?` が false のとき（`GET /api/v2/notifications/:group_key`）は来ない
+4. ⚠ **`sample_account_ids` は同じ相手を複数回含みうる。**通知の `from_account_id` を新しい順に 8 件取ったものなので、フォロー → 解除 → 再フォローのように 1 人が複数の通知を作る種別では重複する。⚠ **`notifications_count` の方は畳まない**（本家 WebUI の「X and N others」も通知の件数を数えている）
+
+⚠ **束ねる種別は Mastodon と Misskey で揃っていない。**Mastodon は `GROUPABLE_NOTIFICATION_TYPES = favourite / reblog / follow / admin.sign_up` を `group_key` で**履歴全体にわたって**束ねる。Misskey の `i/notifications-grouped` は `reaction` / `renote` を**1 ページ内の連続したものだけ**束ねる（`notifications-grouped.ts` のループは直前の通知しか見ない）。⚠ Misskey の `reaction:grouped` / `renote:grouped` は **`user` を持たない**（`reactions[].user` / `users[]` へ移る）。
+
+⚠ **`:grouped` 付きの名前を送信用の型マップへ足さない。**あの表は `excludeTypes` に送る名前の正本でもあり、`reaction:grouped` は Misskey の `notificationTypes` enum に無いので **400 で一覧ごと落ちる**。
+
+### `supported_types` を送っても未知の型が必ず読めるようになるわけではない（#1042）
+
+`GET /api/v1|v2/notifications` に `supported_types[]` を送ると、サーバーは載っていない種別に `fallback: { title, summary }` を付けて返す。⚠ **送らないと `needs_fallback?` が `supported_notification_types.nil?` で即 false を返すので永久に来ない**——ここまでは #993 §9-3 のとおり。
+
+⚠⚠ **ただし文言が入っているのは 6 種別だけ。**`NotificationFallbackConcern#fallback_title` が `case` で名前を持っているのは `severed_relationships` / `moderation_warning` / `admin.sign_up` / `admin.report` / `added_to_collection` / `collection_update`。**本当に新しい種別では `fallback` キーは来るのに `title` も `summary` も null。**さらに `PROPERTIES[type][:baseline]` が true の種別（`quote` / `quoted_update` / `annual_report` 等）には `fallback` 自体が来ない。
+
+→ capsicum にとって実効があるのは **`admin.sign_up` / `admin.report`**（残り 4 つは既知）。**`NotificationType.other` の既定表示は受け皿として残す。**⚠ `fallback.title` / `summary` は **HTML**（`link_to` / `link_to_mention` を通る）。
+
 ### プロフィール編集の初期値
 
 `GET /api/v1/accounts/verify_credentials` のトップレベル `note` は HTML 化済み。編集画面の初期値に使うと編集時に HTML タグが丸見えになる。`source.note` / `source.fields` を参照すること（プレーンテキストで返る）。

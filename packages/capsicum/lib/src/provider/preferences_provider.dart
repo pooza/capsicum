@@ -2313,6 +2313,9 @@ final backedUpPreferenceProviders = <ProviderOrFamily>[
   updateCheckEnabledProvider,
   nowPlayingUrlProviderProvider,
   postTouchActionsProvider,
+  // 通知 (#1042 / #1048)
+  notificationGroupingProvider,
+  notificationExcludedTypesProvider,
   // 履歴
   recentEmojisProvider,
   composeTemplateHistoryProvider,

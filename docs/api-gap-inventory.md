@@ -95,6 +95,10 @@ capsicum は **block / unblock / mute / unmute をすべて実装済み**（`blo
 
 ⚠ **これは機能追加ではなくパラメータ 1 個の話**なので、A の中では最も軽い。
 
+⚠⚠ **この前提は誤っていた**（2026-09-04 実測）。capsicum には**種別フィルタの UI がそもそも無く**、「全種別を取ってからクライアントで捨てている」のではなく**絞っていなかった**。パラメータが未使用なのは絞り込みを持っていなかったからで、無駄な転送もページングの空振りも起きていない。[#1042](https://github.com/pooza/capsicum/issues/1042) は「種別フィルタを新機能として作る」に読み替えて v2.0 へ移した。
+
+✅ **実装済み**（2026-09-27・v2.0）。[#1048](https://github.com/pooza/capsicum/issues/1048) と同じ回に、最初から `GET /api/v2/notifications` で作った。⚠ **許可リスト（`types[]`）ではなく拒否リスト（`exclude_types[]`）を送る** — 許可リストにすると capsicum が名前を知らない種別が黙って消え、「絞り込み中だけ新しい通知が来ない」という原因の見えない形で出る。`account_id` は**通していない**（UI 上の要求が無く、Misskey に等価物が無い）。実装上の罠は `tech-notes.md`「`supported_types` を送っても未知の型が必ず読めるようになるわけではない」が正本。
+
 ### A-5. Misskey のリノート解除（**2026-08-31 確認済み → 起票不要へ格下げ**）
 
 **結論: 現状の実装は正しく、壊れてもいない。**ただし「元投稿を見ているときは解除できない」という制約が残り、それは **Misskey の API 側の制約**なので、素直に `notes/unrenote` を足しても解決しない。以下、確認した事実。
@@ -144,7 +148,7 @@ for (const note of renotes) { this.noteDeleteService.delete(..., note); }
 | 項目 | Mastodon | Misskey | 備考 |
 | --- | --- | --- | --- |
 | **フィルタ（キーワードミュート）** | `filters` v1/v2 + `filters/keywords` / `filters/statuses`、Status の `filtered` フィールド | `notes/thread-muting/*`、`renote-mute/*` | ⚠ **capsicum は Status の `filtered` を既に受け取っている**（`status.dart` に `filtered` あり）。つまり**サーバーが「これは伏せろ」と言ってきているのを読んでいる可能性がある**一方、フィルタの管理 UI が無い。CLAUDE.md の「見たくないものを見ないようにする道具は読む側に提供する」に真正面から合致する枠 |
-| **通知のグループ化** | `GET /api/v2/notifications`（`group_key` 単位） | `i/notifications-grouped` | **両 SNS に揃っている**。「10 人がお気に入りしました」形式。通知画面の構造変更を伴うので大更新 |
+| **通知のグループ化** | `GET /api/v2/notifications`（`group_key` 単位） | `i/notifications-grouped` | ✅ **実装済み**（2026-09-27・v2.0）。⚠ **束ねる種別は揃っていない** — Mastodon は favourite / reblog / follow を履歴全体で、Misskey は reaction / renote を 1 ページ内の連続したものだけ。罠は `tech-notes.md`「`GET /api/v2/notifications`（束ねた通知）の 4 つの罠」が正本 |
 | **トレンド** | `trends/tags` / `trends/links` / `trends/statuses` | `hashtags/trend` | 新しい画面。実況文化圏との相性は要検討（トレンドは全体の話題であって、プリセットサーバーのデフォルトタグ文化とは別軸） |
 | **クリップへの投稿追加**（Misskey） | ― | `clips/create` / `clips/add-note` / `clips/remove-note` / `clips/update` / `clips/delete` / `clips/show` | capsicum は**クリップの閲覧だけ**（11 本中 2 本）。作成・追加ができないので「読める整理棚」で止まっている |
 | **チャンネルの操作**（Misskey） | ― | 16 本中 14 本未使用（`create` / `update` / `follow` / `favorite` / `search` / `show` / `mute/*` / `owned` ほか） | 同上。閲覧のみ |

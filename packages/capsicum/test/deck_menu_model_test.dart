@@ -142,6 +142,30 @@ void main() {
           .where((s) => s.label == label)
           .firstOrNull;
 
+  group('表示 > 通知の絞り込み (#1042)', () {
+    testWidgets('⚠ タブ表示でもデッキでも出す（通知を開いていなくても届く）', (tester) async {
+      expect(
+        actionNamed(childrenOf(await buildModel(tester), '表示'), '通知の絞り込み…'),
+        isNotNull,
+      );
+      expect(
+        actionNamed(
+          childrenOf(await buildModel(tester, inDeck: true), '表示'),
+          '通知の絞り込み…',
+        ),
+        isNotNull,
+      );
+    });
+
+    testWidgets('絞り込んでいなければ ✓ は付かない', (tester) async {
+      final entry = actionNamed(
+        childrenOf(await buildModel(tester), '表示'),
+        '通知の絞り込み…',
+      );
+      expect(entry!.checked, isFalse);
+    });
+  });
+
   group('表示 > タブ / カラム', () {
     testWidgets('前提: デッキの外では「タブ」が出て「カラム」は出ない', (tester) async {
       final view = childrenOf(await buildModel(tester), '表示');

@@ -23,6 +23,7 @@ import '../util/deck_tabs.dart';
 import '../util/post_scope_display.dart';
 import '../util/provider_scope_carrier.dart';
 import 'desktop_menu_model.dart';
+import 'notification_filter_button.dart';
 
 /// デスクトップメニューの /（Ctrl+R）の「タイムラインを更新」から、現在表示中の
 /// タイムライン（HomeScreen）のリフレッシュを呼ぶためのコールバック登録口 (#834)。
@@ -407,6 +408,10 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
   final allLists = ref.watch(listsProvider).valueOrNull ?? const <PostList>[];
   final currentTab = ref.watch(selectedTabProvider);
   final hideLivecure = ref.watch(hideLivecureProvider);
+  // 通知の絞り込みが効いているか (#1042)。メニューに ✓ を出すためだけに読む。
+  final notificationFiltered = ref
+      .watch(notificationExcludedTypesProvider)
+      .isNotEmpty;
 
   // ⚠⚠ **デッキ中はタブ UI 前提の 3 か所を差し替える** (#1170・`docs/deck-ui-plan.md`
   // 決定済み事項 11)。メニューバーは ShellRoute に常駐していて**デッキでも同じものが
@@ -721,6 +726,16 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
           label: '実況を表示',
           checked: !hideLivecure,
           onSelected: () => ref.read(hideLivecureProvider.notifier).toggle(),
+        ),
+        // 通知の種別の絞り込み (#1042)。⚠ **タブ表示でもデッキでも出す。**
+        // AppBar / カラム見出しのボタンは通知を見ているときだけ出るので、
+        // デスクトップでは通知を開いていなくても届く入口をここに置く。
+        // ⚠ 絞り込み中は ✓ を付ける（見えないまま効いている設定を作らない）。
+        MenuActionEntry(
+          label: '通知の絞り込み…',
+          icon: Icons.filter_list,
+          checked: notificationFiltered,
+          onSelected: () => showNotificationFilterDialog(context),
         ),
         const MenuGroupSeparator(),
         MenuProvidedEntry(

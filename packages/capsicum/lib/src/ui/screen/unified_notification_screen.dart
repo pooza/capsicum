@@ -17,6 +17,7 @@ import '../util/relative_time.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/content_parser.dart';
 import '../widget/emoji_text.dart';
+import '../widget/notification_filter_button.dart';
 import '../widget/retry_error_view.dart';
 import '../widget/server_badge.dart';
 import '../widget/user_avatar.dart';
@@ -46,6 +47,7 @@ class UnifiedNotificationScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('すべての通知'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        actions: const [NotificationFilterButton()],
       ),
       body: BottomSafeArea(child: body),
     );

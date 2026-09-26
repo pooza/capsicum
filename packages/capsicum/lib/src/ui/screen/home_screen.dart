@@ -38,6 +38,7 @@ import '../widget/bottom_safe_area.dart';
 import '../widget/emoji_text.dart';
 import '../widget/home_menu.dart';
 import '../widget/livecure_filter_button.dart';
+import '../widget/notification_filter_button.dart';
 import '../widget/post_tile.dart';
 import '../widget/server_badge.dart';
 import '../widget/simple_post_bar.dart';
@@ -726,6 +727,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     ) !=
                     null)
                   const _StreamStatusIndicator(),
+                // 通知の種別の絞り込み (#1042)。⚠ **通知タブを見ているときだけ
+                // 出す。**この AppBar は全タブで共有なので、無条件に置くと
+                // タイムラインの絞り込みと読み違える。⚠ ベル（すべての通知）は
+                // 自分の AppBar に同じボタンを持つ。
+                if (ref.watch(selectedTabProvider) is NotificationsTab)
+                  const NotificationFilterButton(),
                 // ⚠ デッキの AppBar と共有する部品 (#1173)。
                 const LivecureFilterButton(),
                 IconButton(
