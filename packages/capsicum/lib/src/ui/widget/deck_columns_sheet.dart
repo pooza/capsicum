@@ -2,13 +2,16 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../model/account.dart';
 import '../../model/account_key.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/channel_provider.dart';
 import '../../provider/list_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../util/deck_tabs.dart';
+import 'emoji_text.dart';
 import 'home_menu.dart' show tabLabel;
+import 'user_avatar.dart';
 
 /// デッキのカラムを追加・並べ替え・削除するシート (#1093)。
 ///
@@ -151,9 +154,7 @@ class _DeckColumnsSheetState extends ConsumerState<DeckColumnsSheet> {
                             for (final account in accounts)
                               DropdownMenuItem(
                                 value: account.key,
-                                child: Text(
-                                  '@${account.key.username}@${account.key.host}',
-                                ),
+                                child: _AccountOption(account: account),
                               ),
                           ],
                           onChanged: (key) =>
@@ -174,6 +175,47 @@ class _DeckColumnsSheetState extends ConsumerState<DeckColumnsSheet> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// 「カラムを追加」のアカウント選択の 1 行。
+///
+/// `@user@host` だけでは同じサーバーの別アカウントを見分けにくいので、
+/// カラム見出し (#1152) と同じくアイコンと表示名を添える。⚠ 狭幅のシートに
+/// 収めるため 1 行に畳み、はみ出すぶんは `@user@host` の側から削る。
+class _AccountOption extends StatelessWidget {
+  const _AccountOption({required this.account});
+
+  final Account account;
+
+  @override
+  Widget build(BuildContext context) {
+    final user = account.user;
+    final acct = '@${account.key.username}@${account.key.host}';
+    return Row(
+      children: [
+        UserAvatar(user: user, size: 24, compact: true),
+        const SizedBox(width: 8),
+        Flexible(
+          child: EmojiText(
+            user.displayName ?? user.username,
+            emojis: user.emojis,
+            fallbackHost: user.host,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            acct,
+            style: Theme.of(context).textTheme.bodySmall,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
     );
   }
 }

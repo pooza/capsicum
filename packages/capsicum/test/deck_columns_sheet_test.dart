@@ -3,6 +3,7 @@ import 'package:capsicum/src/model/account_key.dart';
 import 'package:capsicum/src/provider/account_manager_provider.dart';
 import 'package:capsicum/src/provider/preferences_provider.dart';
 import 'package:capsicum/src/ui/widget/deck_columns_sheet.dart';
+import 'package:capsicum/src/ui/widget/user_avatar.dart';
 import 'package:capsicum/src/util/shared_preferences_cache.dart';
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
@@ -164,6 +165,56 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(container.read(deckColumnsProvider).single.account, other);
+  });
+
+  testWidgets('アカウントの選択肢にアイコンと表示名を添える', (tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    initSharedPreferencesCache(await SharedPreferences.getInstance());
+    tester.view.physicalSize = const Size(600, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    const other = AccountKey(
+      type: BackendType.mastodon,
+      host: 'mstdn.example',
+      username: 'other',
+    );
+    Account account(AccountKey key, String name) => Account(
+      key: key,
+      adapter: _Adapter(),
+      user: User(id: key.username, username: key.username, displayName: name),
+      userSecret: const UserSecret(accessToken: 'token'),
+    );
+    final container = ProviderContainer(
+      overrides: [
+        accountManagerProvider.overrideWith(
+          () => _TwoAccounts([account(_me, 'わたし'), account(other, 'べつのわたし')]),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: Scaffold(body: DeckColumnsSheet())),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final selector = find.byKey(const ValueKey('deck-account-selector'));
+    // 閉じた状態でも、選ばれているアカウントの表示名とアイコンが見える。
+    expect(
+      find.descendant(of: selector, matching: find.text('わたし')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: selector, matching: find.byType(UserAvatar)),
+      findsOneWidget,
+    );
+
+    await tester.tap(selector);
+    await tester.pumpAndSettle();
+    expect(find.text('べつのわたし'), findsOneWidget);
+    expect(find.text('@other@mstdn.example'), findsOneWidget);
   });
 
   testWidgets('カラム 0 本の状態が壊れない', (tester) async {
