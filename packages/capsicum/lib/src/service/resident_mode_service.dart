@@ -1,13 +1,37 @@
 import 'dart:io';
 
 import 'package:dbus/dbus.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../constants.dart';
 import '../util/exception_scrub.dart';
+
+/// トレイに出すバージョン表記 (#1154)。
+///
+/// ⚠⚠ **debug / profile の印が目的。**`version` / `buildNumber` は debug と
+/// release で同じ値なので、それだけ出しても**複数起動したときに見分けがつかない**
+/// （＝要望そのものが満たせない）。
+///
+/// ⚠ `kDebugMode` / `kProfileMode` は const なので、release ビルドでは印の分岐
+/// ごと落ちる。
+String trayVersionLabel({
+  required String version,
+  required String buildNumber,
+  bool isDebug = kDebugMode,
+  bool isProfile = kProfileMode,
+}) {
+  final flavor = isDebug
+      ? ' [debug]'
+      : isProfile
+      ? ' [profile]'
+      : '';
+  return 'v$version ($buildNumber)$flavor';
+}
 
 /// デスクトップ常駐モード (#752)。オンのとき、メインウィンドウを閉じても
 /// アプリを終了させず、システムトレイ (Windows / Linux) / メニューバー
@@ -123,16 +147,30 @@ class ResidentModeService with WindowListener, TrayListener {
     // システムがライト/ダークやハイライト時の色を自動で塗り分ける。Windows /
     // Linux は通常のカラーアイコンなので isTemplate は無視される。
     await trayManager.setIcon(_iconAsset, isTemplate: Platform.isMacOS);
+    // バージョンはメニューに出す (#1154)。⚠ **ツールチップだけでは Linux で
+    // 出せない**（下の #757 参照）ので、3 OS で効くメニュー項目が本体。
+    // ⚠ 取得に失敗してもトレイ全体を落とさない（#757 と同じ「1 つの失敗が
+    // 後続のメニュー構築を道連れにする」壊れ方を作らない）。
+    final version = await _versionLabel();
     // setToolTip は tray_manager の Linux 実装に存在せず（AppIndicator /
     // StatusNotifierItem はツールチップの概念を持たない）、呼ぶと
     // MissingPluginException を投げて以降の setContextMenu（表示 / 終了
     // メニュー）まで巻き添えで失敗する。Linux では飛ばす (#757)。
     if (!Platform.isLinux) {
-      await trayManager.setToolTip(AppConstants.appName);
+      await trayManager.setToolTip(
+        version == null
+            ? AppConstants.appName
+            : '${AppConstants.appName} $version',
+      );
     }
     await trayManager.setContextMenu(
       Menu(
         items: [
+          // 複数起動したときにどのビルドか見分けるための表示専用項目 (#1154)。
+          if (version != null) ...[
+            MenuItem(label: '${AppConstants.appName} $version', disabled: true),
+            MenuItem.separator(),
+          ],
           MenuItem(key: _kShow, label: '${AppConstants.appName} を表示'),
           MenuItem.separator(),
           MenuItem(key: _kExit, label: '終了'),
@@ -140,6 +178,23 @@ class ResidentModeService with WindowListener, TrayListener {
       ),
     );
     _trayCreated = true;
+  }
+
+  /// トレイに出すバージョン文字列。取得できなければ null（＝項目を出さない）。
+  ///
+  /// ⚠ **ここで投げさせない。**トレイの構築は 1 つの失敗が後続を道連れにする
+  /// （#757 の実例）ので、観測層へ流して null を返す。
+  Future<String?> _versionLabel() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      return trayVersionLabel(
+        version: info.version,
+        buildNumber: info.buildNumber,
+      );
+    } catch (e) {
+      debugLogException('capsicum: resident_mode: package info failed', e);
+      return null;
+    }
   }
 
   Future<void> _removeTray() async {
@@ -253,16 +308,25 @@ class ResidentModeService with WindowListener, TrayListener {
       case _kShow:
         _showWindow();
       case _kExit:
-        // 明示終了。preventClose を解いてから destroy し、onWindowClose の
-        // hide 分岐に吸われず確実にプロセスを終わらせる。setPreventClose は
-        // プラットフォームチャネル越しの非同期呼び出しのため、await せずに
-        // destroy すると解除が反映される前にウィンドウが閉じ、onWindowClose の
-        // hide 分岐に吸われうる。_enabled=false ガードで救済されるが綱渡りなので
-        // 解除完了を待ってから終了する (#763)。
-        _enabled = false;
-        await windowManager.setPreventClose(false);
-        await windowManager.destroy();
+        await quit();
     }
+  }
+
+  /// アプリを常駐ごと終了する。トレイの「終了」と、Windows / Linux のメニュー
+  /// バーの「終了」（capsicum メニュー）が呼ぶ。macOS のメニューバーは OS 提供の
+  /// 「終了」を使う。
+  ///
+  /// preventClose を解いてから destroy し、onWindowClose の hide 分岐に吸われず
+  /// 確実にプロセスを終わらせる。setPreventClose はプラットフォームチャネル越しの
+  /// 非同期呼び出しのため、await せずに destroy すると解除が反映される前に
+  /// ウィンドウが閉じ、onWindowClose の hide 分岐に吸われうる。_enabled=false
+  /// ガードで救済されるが綱渡りなので解除完了を待ってから終了する (#763)。
+  ///
+  /// 常駐モードがオフでも使ってよい（解除済みの preventClose をもう一度解くだけ）。
+  Future<void> quit() async {
+    _enabled = false;
+    await windowManager.setPreventClose(false);
+    await windowManager.destroy();
   }
 
   static const _kShow = 'show';

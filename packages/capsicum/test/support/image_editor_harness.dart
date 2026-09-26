@@ -21,6 +21,7 @@ library;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:capsicum/src/model/image_overlay_layer.dart';
 import 'package:capsicum/src/service/sticker_source.dart';
 import 'package:capsicum/src/ui/screen/image_overlay_screen.dart';
 import 'package:capsicum/src/ui/util/image_overlay_geometry.dart';
@@ -109,6 +110,9 @@ class ImageEditorHarness {
   /// 「完了」で返ってきた PNG バイト列。キャンセルなら null のまま。
   Uint8List? exported;
 
+  /// 「完了」で返ってきたレイヤ列 (#1129)。キャンセルなら null のまま。
+  List<OverlayLayerSpec>? exportedLayers;
+
   /// 画面を閉じたか（完了・キャンセルを問わず）。
   bool closed = false;
 
@@ -117,6 +121,7 @@ class ImageEditorHarness {
     WidgetTester tester, {
     required Uint8List imageData,
     StickerSource? stickerSource,
+    List<OverlayLayerSpec> initialLayers = const [],
     Size surfaceSize = const Size(800, 1000),
   }) async {
     final harness = ImageEditorHarness._(tester);
@@ -141,14 +146,18 @@ class ImageEditorHarness {
               body: Center(
                 child: ElevatedButton(
                   onPressed: () async {
-                    final result = await Navigator.of(context).push<Uint8List>(
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            ImageOverlayScreen(imageData: imageData),
-                      ),
-                    );
+                    final result = await Navigator.of(context)
+                        .push<ImageOverlayResult>(
+                          MaterialPageRoute(
+                            builder: (_) => ImageOverlayScreen(
+                              imageData: imageData,
+                              initialLayers: initialLayers,
+                            ),
+                          ),
+                        );
                     harness
-                      ..exported = result
+                      ..exported = result?.png
+                      ..exportedLayers = result?.layers
                       ..closed = true;
                   },
                   child: const Text('開く'),
@@ -217,6 +226,10 @@ class ImageEditorHarness {
   Future<void> setAngleDegrees(double degrees) =>
       setAngle((degrees + 180) / 360);
 
+  /// 選択中レイヤの不透明度スライダーを動かす (#1128)。0..1。
+  Future<void> setOpacity(double value) =>
+      _dragSlider(overlayOpacitySliderKey, value);
+
   /// 「角度をリセット」を押す (#946)。
   Future<void> resetAngle() async {
     await tester.tap(find.byTooltip('角度をリセット'));
@@ -232,6 +245,44 @@ class ImageEditorHarness {
     widget.onChanged!(widget.min + (widget.max - widget.min) * value);
     await tester.pump();
   }
+
+  /// レイヤ一覧を開く (#1126)。**既定は閉じている**ので、一覧を触るテストは必ず先に呼ぶ。
+  Future<void> openLayers() async {
+    await tester.tap(find.byKey(overlayLayerToggleKey));
+    await tester.pumpAndSettle();
+  }
+
+  /// レイヤ一覧の行（上が最前面）。
+  Finder get layerTiles => find.descendant(
+    of: find.byKey(overlayLayerListKey),
+    matching: find.byType(ListTile),
+  );
+
+  /// 編集キャンバスに載っている [image] のスタンプ。
+  ///
+  /// ⚠ **キャンバス配下に絞る。**一覧のサムネにも同じ [RawImage] が出るので、
+  /// 型だけで拾うと寸法や位置を測るときに取り違える。
+  Finder canvasSticker(ui.Image image) => find.descendant(
+    of: find.byKey(overlayCanvasKey),
+    matching: find.byWidgetPredicate(
+      (w) => w is RawImage && identical(w.image, image),
+    ),
+  );
+
+  /// 編集キャンバスに載っているスタンプを**背面から順に**返す。
+  ///
+  /// ⚠ 元画像も `Image.memory` 経由で [RawImage] として出てくるので、
+  /// **配った素材 [issued] に含まれるものだけ**に絞る。
+  List<ui.Image?> canvasStickers(List<ui.Image> issued) => tester
+      .widgetList<RawImage>(
+        find.descendant(
+          of: find.byKey(overlayCanvasKey),
+          matching: find.byType(RawImage),
+        ),
+      )
+      .map((w) => w.image)
+      .where((image) => issued.any((i) => identical(i, image)))
+      .toList();
 
   /// 「完了」を押して書き出す。戻り値は合成された PNG。
   ///
@@ -311,6 +362,16 @@ class DecodedPng {
     final g = (v >> 8) & 0xFF;
     final r = v & 0xFF;
     return Color.fromARGB(a, r, g, b);
+  }
+
+  /// 全ピクセルの指紋（FNV-1a 32bit）。**書き出し結果が 1px も変わっていない**
+  /// ことを、リファクタの前後で比べるのに使う (#1125)。
+  int get fingerprint {
+    var h = 0x811c9dc5;
+    for (final p in _pixels) {
+      h = ((h ^ p) * 0x01000193) & 0xFFFFFFFF;
+    }
+    return h;
   }
 
   /// [color] に十分近いピクセルの数。アンチエイリアスの縁を拾わないよう、

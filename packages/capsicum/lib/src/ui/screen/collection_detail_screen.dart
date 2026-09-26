@@ -2,12 +2,12 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../provider/is_cat_provider.dart';
 import '../../service/sentry_op_failure.dart';
 import '../../util/user_acct.dart';
+import '../util/deck_navigation.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/emoji_text.dart';
 import '../widget/section_header.dart';
@@ -21,7 +21,15 @@ import '../widget/user_avatar.dart';
 class CollectionDetailScreen extends ConsumerStatefulWidget {
   final String collectionId;
 
-  const CollectionDetailScreen({super.key, required this.collectionId});
+  /// デッキのカラムの中身として描く (#1150)。戻るボタンを出さない（操作が
+  /// あるので AppBar は残す）。
+  final bool embedded;
+
+  const CollectionDetailScreen({
+    super.key,
+    required this.collectionId,
+    this.embedded = false,
+  });
 
   @override
   ConsumerState<CollectionDetailScreen> createState() =>
@@ -121,6 +129,7 @@ class _CollectionDetailScreenState
     final detail = _detail;
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: !widget.embedded,
         title: Text(detail?.collection.name ?? 'コレクション'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
@@ -224,7 +233,7 @@ class _CollectionDetailScreenState
   }) {
     final isOwnerAccount = user.id == collection.ownerAccountId;
     return ListTile(
-      onTap: () => context.push('/profile', extra: user),
+      onTap: () => openProfile(context, user),
       leading: UserAvatar(user: user, size: 40),
       title: Row(
         children: [
@@ -354,7 +363,8 @@ class _CollectionDetailScreenState
 
   Future<void> _confirmDelete() async {
     final messenger = ScaffoldMessenger.of(context);
-    final navigator = Navigator.of(context);
+    // ⚠ カラムの中ではカラムを外す（pop するとデッキ画面ごと閉じる・#1150）。
+    final close = screenCloser(context);
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -380,7 +390,7 @@ class _CollectionDetailScreenState
         widget.collectionId,
       );
       messenger.showSnackBar(const SnackBar(content: Text('コレクションを削除しました')));
-      navigator.pop();
+      close();
     } catch (e, st) {
       reportOpFailure(
         tagKey: 'collections.op',

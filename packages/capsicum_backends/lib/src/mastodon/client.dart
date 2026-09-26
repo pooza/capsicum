@@ -117,6 +117,42 @@ class MastodonClient {
     }
   }
 
+  /// GET /api/v1/accounts/:id/featured_tags（プロフィールの掲載タグ・#1075）
+  Future<List<MastodonFeaturedTag>> getFeaturedTags(String id) async {
+    final response = await dio.get('/api/v1/accounts/$id/featured_tags');
+    return (response.data as List)
+        .map((e) => MastodonFeaturedTag.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// POST /api/v1/featured_tags（自分のプロフィールにタグを掲載・#1075）
+  Future<MastodonFeaturedTag> createFeaturedTag(String name) async {
+    final response = await dio.post(
+      '/api/v1/featured_tags',
+      data: {'name': name},
+    );
+    return MastodonFeaturedTag.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// DELETE /api/v1/featured_tags/:id（掲載を外す・#1075）
+  Future<void> deleteFeaturedTag(String id) async {
+    await dio.delete('/api/v1/featured_tags/$id');
+  }
+
+  /// GET /api/v1/featured_tags/suggestions（最近使ったタグ・#1075）。
+  ///
+  /// 返るのは `REST::TagSerializer`（`name` / `featuring` 等）の配列。必要なのは
+  /// 名前と掲載済みかだけなので DTO を作らずに読む。
+  Future<List<({String name, bool featuring})>>
+  getFeaturedTagSuggestions() async {
+    final response = await dio.get('/api/v1/featured_tags/suggestions');
+    return [
+      for (final e in response.data as List)
+        if (e is Map && e['name'] is String)
+          (name: e['name'] as String, featuring: e['featuring'] == true),
+    ];
+  }
+
   /// GET /api/v1/accounts/:id/statuses
   Future<List<MastodonStatus>> getAccountStatuses(
     String id, {

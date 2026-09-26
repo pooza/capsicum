@@ -1,8 +1,11 @@
+import 'package:capsicum/src/model/account.dart';
+import 'package:capsicum/src/model/account_key.dart';
 import 'package:capsicum/src/provider/account_manager_provider.dart';
 import 'package:capsicum/src/provider/hashtag_provider.dart';
 import 'package:capsicum/src/provider/list_provider.dart';
 import 'package:capsicum/src/ui/util/visible_timeline.dart';
 import 'package:capsicum/src/util/shared_preferences_cache.dart';
+import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -58,15 +61,33 @@ Post _post(String id, {String content = 'hello', bool isHtml = false}) => Post(
   isHtml: isHtml,
 );
 
+const _me = AccountKey(
+  type: BackendType.misskey,
+  host: 'example.test',
+  username: 'me',
+);
+
+const HashtagTimelineKey _tagKey = (account: _me, spec: 'capsicum');
+const ListTimelineKey _listKey = (account: _me, id: 'l1');
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   Future<ProviderContainer> makeContainer(List<Post> posts) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     initSharedPreferencesCache(await SharedPreferences.getInstance());
+    // TL の family はキーのアカウントと現在のアカウントが一致するときだけ取得する
+    // (#1088) ので、アダプタだけでなくアカウントごと渡す。
     return ProviderContainer(
       overrides: [
-        currentAdapterProvider.overrideWith((ref) => _FakeAdapter(posts)),
+        currentAccountProvider.overrideWith(
+          (ref) => Account(
+            key: _me,
+            adapter: _FakeAdapter(posts),
+            user: const User(id: 'u1', username: 'me'),
+            userSecret: const UserSecret(accessToken: 'token'),
+          ),
+        ),
       ],
     );
   }
@@ -76,12 +97,10 @@ void main() {
       final container = await makeContainer([_post('3'), _post('2')]);
       addTearDown(container.dispose);
 
-      await container.read(hashtagTimelineProvider('capsicum').future);
-      container
-          .read(hashtagTimelineProvider('capsicum').notifier)
-          .removePost('2');
+      await container.read(hashtagTimelineProvider(_tagKey).future);
+      container.read(hashtagTimelineProvider(_tagKey).notifier).removePost('2');
 
-      final state = container.read(hashtagTimelineProvider('capsicum')).value!;
+      final state = container.read(hashtagTimelineProvider(_tagKey)).value!;
       expect(state.posts.map((p) => p.id), ['3']);
     });
 
@@ -89,11 +108,10 @@ void main() {
       final container = await makeContainer([_post('3')]);
       addTearDown(container.dispose);
 
-      await container.read(hashtagTimelineProvider('capsicum').future);
-      final notifier =
-          container.read(hashtagTimelineProvider('capsicum').notifier)
-            ..insertOwnPost(_post('9'))
-            ..insertOwnPost(_post('9'));
+      await container.read(hashtagTimelineProvider(_tagKey).future);
+      final notifier = container.read(hashtagTimelineProvider(_tagKey).notifier)
+        ..insertOwnPost(_post('9'))
+        ..insertOwnPost(_post('9'));
 
       expect(notifier.state.value!.posts.map((p) => p.id), ['9', '3']);
     });
@@ -104,10 +122,10 @@ void main() {
       final container = await makeContainer([_post('3'), _post('2')]);
       addTearDown(container.dispose);
 
-      await container.read(listTimelineProvider('l1').future);
-      container.read(listTimelineProvider('l1').notifier).removePost('3');
+      await container.read(listTimelineProvider(_listKey).future);
+      container.read(listTimelineProvider(_listKey).notifier).removePost('3');
 
-      final state = container.read(listTimelineProvider('l1')).value!;
+      final state = container.read(listTimelineProvider(_listKey)).value!;
       expect(state.posts.map((p) => p.id), ['2']);
     });
 
@@ -115,12 +133,12 @@ void main() {
       final container = await makeContainer([_post('3', content: 'old')]);
       addTearDown(container.dispose);
 
-      await container.read(listTimelineProvider('l1').future);
+      await container.read(listTimelineProvider(_listKey).future);
       container
-          .read(listTimelineProvider('l1').notifier)
+          .read(listTimelineProvider(_listKey).notifier)
           .updatePost(_post('3', content: 'new'));
 
-      final state = container.read(listTimelineProvider('l1')).value!;
+      final state = container.read(listTimelineProvider(_listKey)).value!;
       expect(state.posts.single.content, 'new');
     });
   });

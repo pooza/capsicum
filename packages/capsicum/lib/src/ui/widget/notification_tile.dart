@@ -11,11 +11,15 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../service/tco_resolver.dart';
+import '../../url_helper.dart';
+import '../util/deck_navigation.dart';
 import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
+import '../util/moderation_notification_text.dart';
 import '../util/notification_type_display.dart';
 import '../util/post_actions.dart';
 import '../util/post_scope_display.dart';
+import '../util/provider_scope_carrier.dart';
 import '../util/reaction_acceptance.dart';
 import '../util/relative_time.dart';
 import '../util/visible_timeline.dart';
@@ -117,12 +121,10 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
   void _openAchievements(BuildContext context) {
     final user = ref.read(currentAccountProvider)?.user;
     if (user == null) return;
-    context.push(
-      '/achievements',
-      extra: {
-        'userId': user.id,
-        'displayName': user.displayName ?? user.username,
-      },
+    openAchievements(
+      context,
+      userId: user.id,
+      displayName: user.displayName ?? user.username,
     );
   }
 
@@ -131,21 +133,37 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
     final theme = Theme.of(context);
     final (icon, label) = _iconAndLabel;
     final content = notification.post?.content;
+    // 関係の切断・モデレーション警告 (#1084)。post も user も持たないので、
+    // 何が起きたかを本文として組み立てて出す。
+    final localHost = ref.watch(currentAccountProvider)?.key.host;
+    final moderationText = localHost == null
+        ? null
+        : moderationNotificationText(
+            notification,
+            localHost: localHost,
+            postLabel: widget.postLabel,
+          );
+    final moderationUri = localHost == null
+        ? null
+        : moderationNotificationWebUri(notification, localHost: localHost);
 
     return InkWell(
       onTap: notification.post != null
-          ? () => context.push('/post', extra: notification.post!)
+          ? () => openPost(context, notification.post!)
           // Collections 通知 (#741): post を持たないため、タップで対象コレクション
           // の詳細（#742）を開く。
           : notification.collection != null
-          ? () =>
-                context.push('/collection', extra: notification.collection!.id)
+          ? () => openCollection(context, notification.collection!.id)
           // 実績解除通知 (#918): post を持たないため、タップで実績一覧を開く。
           // ⚠ **`extra` は省略できない。** `/achievements` の builder は
           // `state.extra!` で `userId` を取り出すので、付けずに push すると
           // その場で例外になる（プロフィール画面の導線と同じ形で渡す）。
           : notification.type == NotificationType.achievementEarned
           ? () => _openAchievements(context)
+          // 関係の切断・モデレーション警告 (#1084): 対応する画面が capsicum に
+          // 無いので、WebUI の「詳細を確認」と同じページをブラウザで開く。
+          : moderationUri != null
+          ? () => launchUrlSafely(moderationUri)
           : null,
       onLongPress: notification.post != null
           ? () => _showActionMenu(context)
@@ -206,6 +224,32 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ],
+                  if (moderationText != null) ...[
+                    const SizedBox(height: 4),
+                    Text(moderationText, style: theme.textTheme.bodyMedium),
+                    // 管理者が添えた説明文（警告のみ・任意）。
+                    if (notification.moderationWarning?.text
+                        case final note?) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        note,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                    if (moderationUri != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        '詳細を確認（ブラウザで開きます）',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
+                    ],
+                  ],
                   if (notification.post != null)
                     PostTouchActionRow(
                       targetPost:
@@ -245,7 +289,12 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
                 title: const Text('返信'),
                 onTap: () {
                   Navigator.pop(sheetContext);
-                  context.push('/compose', extra: {'replyTo': targetPost});
+                  context.push(
+                    '/compose',
+                    extra: extraWithProviderScope(context, {
+                      'replyTo': targetPost,
+                    }),
+                  );
                 },
               ),
               if (targetPost.quotable)
@@ -254,7 +303,12 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
                   title: const Text('引用'),
                   onTap: () {
                     Navigator.pop(sheetContext);
-                    context.push('/compose', extra: {'quoteTo': targetPost});
+                    context.push(
+                      '/compose',
+                      extra: extraWithProviderScope(context, {
+                        'quoteTo': targetPost,
+                      }),
+                    );
                   },
                 ),
               if (adapter is FavoriteSupport)
@@ -534,7 +588,7 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
     return Row(
       children: [
         GestureDetector(
-          onTap: () => context.push('/profile', extra: user),
+          onTap: () => openProfile(context, user),
           child: UserAvatar(user: user, size: 24, borderRadius: 4),
         ),
         const SizedBox(width: 8),

@@ -1,0 +1,259 @@
+import 'package:capsicum/src/model/account.dart';
+import 'package:capsicum/src/model/account_key.dart';
+import 'package:capsicum/src/provider/account_manager_provider.dart';
+import 'package:capsicum/src/provider/deck_provider.dart';
+import 'package:capsicum/src/provider/preferences_provider.dart';
+import 'package:capsicum/src/ui/screen/deck_screen.dart';
+import 'package:capsicum/src/ui/widget/livecure_filter_button.dart';
+import 'package:capsicum/src/util/shared_preferences_cache.dart';
+import 'package:capsicum_backends/capsicum_backends.dart';
+import 'package:capsicum_core/capsicum_core.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+/// #1173: デッキの AppBar に何を置くか（`docs/deck-ui-plan.md` 決定済み事項 7-3）。
+class _Adapter extends Mock implements DecentralizedBackendAdapter {}
+
+Account _account(String username) => Account(
+  key: AccountKey(
+    type: BackendType.misskey,
+    host: 'misskey.example',
+    username: username,
+  ),
+  adapter: _Adapter(),
+  user: User(id: username, username: username),
+  userSecret: const UserSecret(accessToken: 'token'),
+);
+
+class _TestAccountNotifier extends AccountManagerNotifier {
+  _TestAccountNotifier(this._accounts);
+
+  final List<Account> _accounts;
+
+  @override
+  AccountManagerState build() =>
+      AccountManagerState(accounts: _accounts, current: _accounts.first);
+}
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  Future<ProviderContainer> pumpDeck(
+    WidgetTester tester, {
+    Size size = const Size(800, 600),
+    List<String> columnIds = const ['a'],
+    List<String> usernames = const ['me'],
+  }) async {
+    SharedPreferences.setMockInitialValues({
+      'deck_columns': [
+        for (final id in columnIds)
+          '$id|misskey://me@misskey.example|hashtag:$id',
+      ],
+    });
+    initSharedPreferencesCache(await SharedPreferences.getInstance());
+    tester.view.physicalSize = size;
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final container = ProviderContainer(
+      overrides: [
+        accountManagerProvider.overrideWith(
+          () => _TestAccountNotifier([for (final u in usernames) _account(u)]),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          home: DeckScreen(
+            columnBuilder: (column) => ColoredBox(
+              key: ValueKey('stub-${column.id}'),
+              color: const Color(0xFF202020),
+              child: const SizedBox.expand(),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    return container;
+  }
+
+  testWidgets('⚠ 実況の切り替えがデッキにもある（モバイルには入口が無かった）', (tester) async {
+    final container = await pumpDeck(tester);
+
+    expect(find.byType(LivecureFilterButton), findsOneWidget);
+    final before = container.read(hideLivecureProvider);
+
+    await tester.tap(find.byType(LivecureFilterButton));
+    await tester.pumpAndSettle();
+
+    expect(
+      container.read(hideLivecureProvider),
+      !before,
+      reason: '⚠ ボタンが置いてあるだけでなく、実際に設定が反転すること',
+    );
+  });
+
+  testWidgets('⚠ ライブ更新の接続インジケータは置かない（カラムの見出しにある）', (tester) async {
+    await pumpDeck(tester, columnIds: const ['a', 'b']);
+
+    // 決定済み事項 7-2 / 7-3。画面共通に 1 個置くと「N 本ある購読のどれの状態でも
+    // ないもの」を出すことになる（#793 の再発）。⚠ カラムの見出しの接続ドットは
+    // 中身を差し替えているこの検査には出ない（`deck_column_view` 側の検査が持つ）。
+    expect(find.byIcon(Icons.wifi), findsNothing);
+    expect(find.byIcon(Icons.wifi_off), findsNothing);
+  });
+
+  testWidgets('狭幅（375px）でも AppBar が overflow しない', (tester) async {
+    await pumpDeck(tester, size: const Size(375, 700));
+
+    expect(tester.takeException(), isNull);
+  });
+
+  group('検索 (#1173・決定済み事項 7-3)', () {
+    testWidgets('⚠⚠ 全画面ではなく、フォーカス中のカラムの右隣にカラムとして開く', (tester) async {
+      final container = await pumpDeck(tester, columnIds: const ['a', 'b']);
+      // フォーカスを 2 本目へ移してから押す。
+      await tester.tap(find.byKey(const ValueKey('stub-b')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byIcon(Icons.search));
+      await tester.pumpAndSettle();
+
+      final columns = container.read(deckColumnsProvider);
+      expect(columns.map((c) => c.id), ['a', 'b', columns.last.id]);
+      expect(
+        columns.last.tab,
+        const SearchTab(),
+        reason: '⚠ 全画面だと結果から開いた先がデッキの外になる',
+      );
+      expect(
+        columns.last.account.username,
+        'me',
+        reason: 'アカウントはフォーカス中のカラムから引き継ぐ',
+      );
+    });
+
+    testWidgets('開いた検索カラムがフォーカスになる', (tester) async {
+      final container = await pumpDeck(tester, columnIds: const ['a']);
+
+      await tester.tap(find.byIcon(Icons.search));
+      await tester.pumpAndSettle();
+
+      final opened = container.read(deckColumnsProvider).last;
+      expect(container.read(deckFocusProvider).columnId, opened.id);
+    });
+
+    testWidgets('⚠ 列が空のときは検索を出さない（宛先のアカウントが決まらない）', (tester) async {
+      await pumpDeck(tester, columnIds: const []);
+
+      expect(find.byIcon(Icons.search), findsNothing);
+      expect(find.text('カラムがありません'), findsOneWidget);
+    });
+
+    testWidgets('検索カラムは列に 2 本置ける（別のことを探せる）', (tester) async {
+      final container = await pumpDeck(tester, columnIds: const ['a']);
+
+      await tester.tap(find.byIcon(Icons.search));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(Icons.search));
+      await tester.pumpAndSettle();
+
+      final searches = container
+          .read(deckColumnsProvider)
+          .where((c) => c.tab == const SearchTab())
+          .toList();
+      expect(searches, hasLength(2));
+      expect(searches.first.id, isNot(searches.last.id));
+    });
+  });
+
+  group('通知 (#1173・決定済み事項 7-3)', () {
+    Finder bell() => find.byIcon(Icons.notifications_outlined);
+
+    testWidgets('アカウントが 1 つなら、そのアカウントの通知カラムを開く', (tester) async {
+      final container = await pumpDeck(tester);
+
+      await tester.tap(bell());
+      await tester.pumpAndSettle();
+
+      final opened = container.read(deckColumnsProvider).last;
+      expect(opened.tab, const NotificationsTab());
+      expect(container.read(deckFocusProvider).columnId, opened.id);
+    });
+
+    testWidgets('⚠ アカウントが複数なら「すべての通知」カラムを開く', (tester) async {
+      final container = await pumpDeck(
+        tester,
+        usernames: const ['me', 'other'],
+      );
+
+      await tester.tap(bell());
+      await tester.pumpAndSettle();
+
+      expect(
+        container.read(deckColumnsProvider).last.tab,
+        const AllNotificationsTab(),
+        reason: 'タブ UI のベルと同じ切り分け (#345)',
+      );
+    });
+
+    testWidgets('⚠⚠ 既にあれば足さず、そこへ送ってフォーカスを移す', (tester) async {
+      final container = await pumpDeck(
+        tester,
+        usernames: const ['me', 'other'],
+      );
+
+      await tester.tap(bell());
+      await tester.pumpAndSettle();
+      final first = container.read(deckColumnsProvider).last;
+      final lengthAfterFirst = container.read(deckColumnsProvider).length;
+      // 別のカラムへフォーカスを移してから、もう一度ベルを押す。
+      container.read(deckFocusProvider.notifier).focus('a');
+      await tester.pumpAndSettle();
+
+      await tester.tap(bell());
+      await tester.pumpAndSettle();
+
+      expect(
+        container.read(deckColumnsProvider),
+        hasLength(lengthAfterFirst),
+        reason: '⚠ 押すたびに増えると列が汚れる',
+      );
+      expect(container.read(deckFocusProvider).columnId, first.id);
+    });
+
+    testWidgets('⚠ 単一アカウントの通知は、同じアカウントのカラムだけを既存とみなす', (tester) async {
+      final container = await pumpDeck(tester);
+
+      await tester.tap(bell());
+      await tester.pumpAndSettle();
+      final opened = container.read(deckColumnsProvider).last;
+
+      await tester.tap(bell());
+      await tester.pumpAndSettle();
+
+      // 同じアカウントなので増えない。
+      expect(
+        container
+            .read(deckColumnsProvider)
+            .where((c) => c.tab == const NotificationsTab()),
+        hasLength(1),
+      );
+      expect(container.read(deckFocusProvider).columnId, opened.id);
+    });
+
+    testWidgets('⚠ 列が空のときは通知も出さない（宛先のアカウントが決まらない）', (tester) async {
+      await pumpDeck(tester, columnIds: const []);
+
+      expect(bell(), findsNothing);
+    });
+  });
+}

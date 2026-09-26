@@ -18,6 +18,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:yaml/yaml.dart';
 
 import '../model/account_key.dart';
+import '../model/deck_column.dart';
 import 'account_storage.dart';
 
 /// ファイル形式の版。読み込み側は未知の版を弾く。
@@ -144,6 +145,8 @@ const deviceLocalKeys = <String>{
   // ローカルファイルパス。他端末には存在しない。
   'background_image_path',
   // 画面サイズとキーボードに依存する。他端末へ持ち込む意味がない。
+  // デッキのカラム幅も画面幅に対する好みなので同じ扱い (#1092)。
+  'deck_column_width',
   'insert_picker_height',
   'reaction_picker_height',
   'sticker_picker_height',
@@ -168,6 +171,36 @@ const deviceLocalKeys = <String>{
 /// - `last_tab_` … 「最後に見ていたタブ」で、設定ではなく一時状態。移行先で復元
 ///   する意味が無く、`addAccount` がログイン直後に上書きする（#1057）。
 const accountScopedKeys = <String>{'background_opacity', 'last_tab_'};
+
+/// 書き出すかどうかが**まだ決まっていない**設定。今は書き出さない。
+///
+/// 「足し忘れ」と「意図的に外した」に加えて、**「判断待ち」を明示する**ための枠。
+/// ⚠ ここを [deviceLocalKeys] 等へ流用すると、判断が済んだように見えて宿題が消える。
+///
+/// ⚠ **いまは空。**`deck_columns` が入っていたが、#1101 で**含める**と決めて
+/// [deckColumnsBackupKey] として書き出すようになった。枠自体は残す（次に
+/// 「判断待ち」が出たときに、足し忘れと区別して置ける場所が要る）。
+const pendingBackupDecisionKeys = <String>{};
+
+/// デッキのカラム列の保存キー (#1101)。`preferences_provider.dart` の
+/// `_deckColumnsKey` と一致させる。YAML 上のトップレベル節の名前も同じ。
+///
+/// ⚠⚠ **`settings:` の中には入れない。**カラム列は**アカウント参照を含む**唯一の
+/// 設定で、取り込みに索引との照合が要る（決定済み事項 5-1）。`settings:` の汎用
+/// 経路は型しか見ないので、そこへ混ぜると照合が抜ける。`accounts:` /
+/// `account_settings:` と同じ階層に置く。
+const deckColumnsBackupKey = 'deck_columns';
+
+/// 取り込むカラムの上限 (#1101)。
+///
+/// ⚠ **これはアプリ内のカラム数上限ではない**（そちらは「実機で測ってから」で
+/// 保留・#1086 / #1160）。**手編集されたファイルへの防御**で、[maxBackupAccounts]
+/// と同じ役割。デッキは `Row` で全カラムを常に組み立てる（決定済み事項 5-3）ので、
+/// 巨大な列を取り込むと**開いた瞬間に固まる**。
+///
+/// ⚠ **超えたら黙って切り詰めず、丸ごと取り込まない**（[maxBackupAccounts] と
+/// 同じ判断。どれが落ちたか分からない列を作るより、理由を出すほうがよい）。
+const maxBackupDeckColumns = 100;
 
 /// アカウント別設定の保存キーに付ける引数の種別 (#1144)。
 enum SettingKeyedBy {
@@ -398,6 +431,41 @@ void _writeAccountSettings(StringBuffer buffer, SharedPreferences prefs) {
   }
 }
 
+/// デッキのカラム列を `deck_columns:` へ書く (#1101)。
+///
+/// ```yaml
+/// deck_columns:
+///   - "c1|misskey://alice@misskey.example|timeline:home"
+/// ```
+///
+/// ⚠ **索引に載っているアカウントを指すカラムだけ書く**（[_writeAccountSettings]
+/// と同じ。片方だけあるファイルを自分で作らない）。
+///
+/// ⚠ **行はそのまま写さず、読み直した形で書く。**`DeckColumn.deserialize` を
+/// 通して、読めない行（旧版・手編集・未知の種別）をここで落とす。
+void _writeDeckColumns(StringBuffer buffer, SharedPreferences prefs) {
+  final saved = prefs.getStringList(deckColumnsBackupKey);
+  if (saved == null || saved.isEmpty) return;
+
+  final known = readAccountKeysForBackup(
+    prefs,
+  ).map(_canonicalAccountKey).whereType<String>().toSet();
+
+  final lines = <String>[];
+  for (final raw in saved) {
+    final column = DeckColumn.deserialize(raw);
+    if (column == null) continue;
+    if (!known.contains(column.account.toStorageKey())) continue;
+    lines.add(column.serialize());
+  }
+  if (lines.isEmpty) return;
+
+  buffer.writeln('$deckColumnsBackupKey:');
+  for (final line in lines) {
+    buffer.writeln('  - ${_yamlString(line)}');
+  }
+}
+
 /// 未設定（既定値のまま）のキーは**書かない**。既定値を焼き込むと、後で既定が
 /// 変わったときに古い既定値が復活してしまう。
 String buildSettingsBackupYaml(
@@ -415,6 +483,7 @@ String buildSettingsBackupYaml(
 
   _writeAccounts(buffer, prefs);
   _writeAccountSettings(buffer, prefs);
+  _writeDeckColumns(buffer, prefs);
 
   // ⚠⚠ **本文を先に組んでから見出しを書く (#1119)。**以前は `settings:` を先に
   // 書き、1 件も書かなかったときだけ `replaceFirst('settings:\n', …)` で空マップに
@@ -682,6 +751,11 @@ Future<SettingsImportResult> applySettingsBackupYaml(
   applied.addAll(
     await _mergeAccountSettings(prefs, parsed['account_settings'], skipped),
   );
+  // ⚠ これもアカウントのマージより後 (#1101)。カラムが指すアカウントの照合に、
+  // このファイルで足したぶんを含める必要がある。
+  applied.addAll(
+    await _mergeDeckColumns(prefs, parsed[deckColumnsBackupKey], skipped),
+  );
 
   for (final entry in settings.nodes.entries) {
     final key = entry.key.toString();
@@ -711,6 +785,84 @@ Future<SettingsImportResult> applySettingsBackupYaml(
     skipped: skipped,
     addedAccountKeys: addedAccountKeys,
   );
+}
+
+/// バックアップの `deck_columns:` を取り込む (#1101)。返り値は書き込んだ
+/// SharedPreferences キー（[SettingsImportResult.applied] へ積む）。
+///
+/// ⚠⚠ **索引にあるアカウントを指すカラムだけ取り込む**（`docs/deck-ui-plan.md`
+/// 未決事項 5-1 の決着）。索引にあるアカウントは、トークンが無くても
+/// **「未接続」として一覧に並ぶ**（#967 / #1001）ので、**カラムは残してよい** ——
+/// ログインし直すとそのカラムが動き出す。**新しい概念（プレースホルダ）を
+/// 発明しない**のが決着の要点。
+///
+/// ⚠ 索引にも無いアカウント（手編集・自分で削除した）を指すカラムは取り込まない。
+/// 残しても `DeckColumnUnavailable` すら出せず、消す導線も無いカラムになる。
+///
+/// ⚠ **落ちたぶんは件数だけを 1 行にまとめる**（[_mergeAccountSettings] と同じ。
+/// アカウント名を `skipped` のキーにすると、**ファイル由来の文字列**が画面へ出る）。
+///
+/// ⚠⚠ **1 行も残らなければ何も書かない。**手元の列を空にしてしまうと、
+/// 「取り込んだら自分のデッキが消えた」になる。取り込めなかったことは理由で伝える。
+Future<List<String>> _mergeDeckColumns(
+  SharedPreferences prefs,
+  Object? node,
+  Map<String, String> skipped,
+) async {
+  if (node == null) return const [];
+  if (node is! YamlList) {
+    skipped[deckColumnsBackupKey] = 'デッキの構成が読めませんでした';
+    return const [];
+  }
+  if (node.length > maxBackupDeckColumns) {
+    skipped[deckColumnsBackupKey] = 'デッキのカラムが多すぎます（$maxBackupDeckColumns 件まで）';
+    return const [];
+  }
+
+  // ⚠ 索引は _mergeAccounts のマージ後を読む。突き合わせは正規形どうしで。
+  final known = readAccountKeysForBackup(
+    prefs,
+  ).map(_canonicalAccountKey).whereType<String>().toSet();
+
+  final lines = <String>[];
+  final seenIds = <String>{};
+  var unknownAccounts = 0;
+  var rejected = 0;
+  for (final raw in node) {
+    if (raw is! String) {
+      rejected++;
+      continue;
+    }
+    final column = DeckColumn.deserialize(raw);
+    if (column == null) {
+      rejected++;
+      continue;
+    }
+    if (!known.contains(column.account.toStorageKey())) {
+      unknownAccounts++;
+      continue;
+    }
+    // ⚠ id が重複した列を書かない。並べ替え・削除がどちらを指すか決まらなくなる
+    // （`DeckColumnsNotifier.build` も読み込み時に同じ判定で捨てている）。
+    if (!seenIds.add(column.id)) {
+      rejected++;
+      continue;
+    }
+    // ⚠ 行をそのまま写さず、読み直した形で書く（手編集の揺れを持ち込まない）。
+    lines.add(column.serialize());
+  }
+
+  final reasons = <String>[
+    if (unknownAccounts > 0) '$unknownAccounts 件はこの端末に無いアカウントのカラムでした',
+    if (rejected > 0) '$rejected 件はカラムの形式が合いませんでした',
+  ];
+  if (lines.isEmpty) {
+    if (reasons.isNotEmpty) skipped[deckColumnsBackupKey] = reasons.join(' / ');
+    return const [];
+  }
+  if (reasons.isNotEmpty) skipped[deckColumnsBackupKey] = reasons.join(' / ');
+  await prefs.setStringList(deckColumnsBackupKey, lines);
+  return [deckColumnsBackupKey];
 }
 
 /// バックアップの `account_settings:` を取り込む (#1119)。返り値は書き込んだ

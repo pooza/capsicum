@@ -13,6 +13,7 @@ import '../platform/platform_info.dart';
 import '../provider/account_manager_provider.dart';
 import '../provider/announcement_provider.dart';
 import '../provider/platform_providers.dart';
+import '../ui/util/moderation_notification_text.dart';
 import '../ui/util/notification_type_display.dart';
 import '../ui/widget/content_parser.dart';
 import '../util/exception_scrub.dart';
@@ -177,7 +178,7 @@ class DesktopNotificationDispatcher {
     // 複数アカウントがログインしているときだけ宛先を明示する (単一垢では冗長)。
     final multiAccount = _ref.read(accountManagerProvider).accounts.length > 1;
     final title = _title(n, display, multiAccount ? account.key : null);
-    final body = _body(n);
+    final body = _body(n, localHost: account.key.host);
     // 本文（ユーザーコンテンツ）はログに残さない。account/id/type と有無のみ。
     debugPrint(
       'capsicum: push.desktop: emit '
@@ -315,7 +316,7 @@ class DesktopNotificationDispatcher {
     return display.label;
   }
 
-  String _body(Notification n) {
+  String _body(Notification n, {required String localHost}) {
     if (n.type == NotificationType.announcement) {
       return _truncate(
         _plain(
@@ -331,6 +332,10 @@ class DesktopNotificationDispatcher {
     }
     final reaction = n.reaction;
     if (reaction != null && reaction.isNotEmpty) return reaction;
+    // 関係の切断・モデレーション警告 (#1084)。user を持たないので、何が
+    // 起きたかを本文にする（空だとタイトルの種別名しか出ない）。
+    final moderation = moderationNotificationText(n, localHost: localHost);
+    if (moderation != null) return _truncate(moderation);
     return n.user?.displayName ?? n.user?.username ?? '';
   }
 

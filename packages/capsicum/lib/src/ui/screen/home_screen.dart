@@ -30,12 +30,14 @@ import '../../service/update_checker.dart';
 import '../../url_helper.dart';
 import '../../util/startup_trace.dart';
 import '../util/about_dialog.dart';
+import '../util/deck_navigation.dart';
 import '../util/keyboard_list_navigation.dart';
 import '../util/mouse_drag_scroll_behavior.dart';
 import '../util/offline_account_display.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/emoji_text.dart';
 import '../widget/home_menu.dart';
+import '../widget/livecure_filter_button.dart';
 import '../widget/post_tile.dart';
 import '../widget/server_badge.dart';
 import '../widget/simple_post_bar.dart';
@@ -189,7 +191,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   @override
   void onKeyboardListActivate(int index) {
     if (index >= _keyboardPosts.length) return;
-    context.push('/post', extra: _keyboardPosts[index]);
+    openPost(context, _keyboardPosts[index]);
   }
 
   void _onPositionsChanged() {
@@ -203,13 +205,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     // Load more when near the end.
     final selectedHashtag = ref.read(selectedHashtagProvider);
     final selectedList = ref.read(selectedListProvider);
+    final accountKey = ref.read(currentAccountKeyProvider);
     final TimelineState? timeline;
     if (selectedHashtag != null) {
-      timeline = ref.read(hashtagTimelineProvider(selectedHashtag)).valueOrNull;
+      timeline = ref
+          .read(
+            hashtagTimelineProvider((
+              account: accountKey,
+              spec: selectedHashtag,
+            )),
+          )
+          .valueOrNull;
     } else if (selectedList != null) {
-      timeline = ref.read(listTimelineProvider(selectedList.id)).valueOrNull;
+      timeline = ref
+          .read(
+            listTimelineProvider((account: accountKey, id: selectedList.id)),
+          )
+          .valueOrNull;
     } else {
-      timeline = ref.read(timelineProvider).valueOrNull;
+      timeline = ref
+          .read(timelineProvider(ref.read(currentTimelineKeyProvider)))
+          .valueOrNull;
     }
     // 継続エラー時 (loadMoreError) は自動再試行を止め、リトライストームで末尾の
     // ローディングが固化するのを防ぐ (#678)。回復は pull-to-refresh / タブ再選択で
@@ -223,12 +239,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       if (maxIndex >= timeline.posts.length - 8) {
         if (selectedHashtag != null) {
           ref
-              .read(hashtagTimelineProvider(selectedHashtag).notifier)
+              .read(
+                hashtagTimelineProvider((
+                  account: accountKey,
+                  spec: selectedHashtag,
+                )).notifier,
+              )
               .loadMore();
         } else if (selectedList != null) {
-          ref.read(listTimelineProvider(selectedList.id).notifier).loadMore();
+          ref
+              .read(
+                listTimelineProvider((
+                  account: accountKey,
+                  id: selectedList.id,
+                )).notifier,
+              )
+              .loadMore();
         } else {
-          ref.read(timelineProvider.notifier).loadMore();
+          ref
+              .read(
+                timelineProvider(ref.read(currentTimelineKeyProvider)).notifier,
+              )
+              .loadMore();
         }
       }
     }
@@ -245,7 +277,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     // Notify timeline notifier whether the user is near the top so that
     // streaming posts can be queued while scrolling (#296).
     if (selectedHashtag == null && selectedList == null) {
-      ref.read(timelineProvider.notifier).setNearTop(minIndex <= 1);
+      ref
+          .read(timelineProvider(ref.read(currentTimelineKeyProvider)).notifier)
+          .setNearTop(minIndex <= 1);
     }
 
     // Save marker (home timeline only, debounced).
@@ -478,24 +512,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     }
 
     // Choose which timeline data to display.
-    final AsyncValue<TimelineState> timeline;
-    if (selectedHashtag != null) {
-      timeline = ref.watch(hashtagTimelineProvider(selectedHashtag));
-    } else if (selectedList != null) {
-      timeline = ref.watch(listTimelineProvider(selectedList.id));
-    } else {
-      timeline = ref.watch(timelineProvider);
-    }
+    final mainTimelineKey = ref.watch(currentTimelineKeyProvider);
+    final accountKey = ref.watch(currentAccountKeyProvider);
+    final HashtagTimelineKey? hashtagKey = selectedHashtag == null
+        ? null
+        : (account: accountKey, spec: selectedHashtag);
+    final ListTimelineKey? listKey = selectedList == null
+        ? null
+        : (account: accountKey, id: selectedList.id);
 
-    // Provider to listen for loadMore errors.
+    // Provider to listen for loadMore errors (and to display).
     final ProviderListenable<AsyncValue<TimelineState>> listenTarget;
-    if (selectedHashtag != null) {
-      listenTarget = hashtagTimelineProvider(selectedHashtag);
-    } else if (selectedList != null) {
-      listenTarget = listTimelineProvider(selectedList.id);
+    if (hashtagKey != null) {
+      listenTarget = hashtagTimelineProvider(hashtagKey);
+    } else if (listKey != null) {
+      listenTarget = listTimelineProvider(listKey);
     } else {
-      listenTarget = timelineProvider;
+      listenTarget = timelineProvider(mainTimelineKey);
     }
+    final AsyncValue<TimelineState> timeline = ref.watch(listenTarget);
 
     // Show a SnackBar when loadMore fails.
     ref.listen(listenTarget, (prev, next) {
@@ -629,7 +664,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               Padding(
                 padding: const EdgeInsets.only(right: 8),
                 child: GestureDetector(
-                  onTap: () => context.push('/profile', extra: account.user),
+                  onTap: () => openProfile(context, account.user),
                   child: UserAvatar(
                     user: account.user,
                     size: 28,
@@ -685,11 +720,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 // 各タブ (TimelineTab でない or 別購読) を素通りさせ、表示中の
                 // 内容と無関係な裏のホーム購読状態を出していた (#793)。現在の
                 // タブが本線 TimelineTab か否かを積極判定して直す。
-                if (ref.watch(selectedTabProvider) case TimelineTab(
-                  :final type,
-                ) when type != TimelineType.directMessages)
+                // ⚠ 判定はデッキのカラム見出しと共有する。
+                if (streamIndicatorTimelineType(
+                      ref.watch(selectedTabProvider),
+                    ) !=
+                    null)
                   const _StreamStatusIndicator(),
-                _LivecureFilterButton(ref: ref),
+                // ⚠ デッキの AppBar と共有する部品 (#1173)。
+                const LivecureFilterButton(),
                 IconButton(
                   icon: const Icon(Icons.search),
                   onPressed: () => context.push('/search'),
@@ -699,6 +737,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 // が許容する。
                 _NotificationBellButton(
                   hasMultipleAccounts: accountState.accounts.length > 1,
+                ),
+                // デッキ表示への切り替え (#1153)。デッキ側の AppBar に同じ位置で
+                // 「タブ表示に切り替え」を置いて対称にしてある。⚠ **実体は push**
+                // （HomeScreen を下に残す・`docs/deck-ui-plan.md` 決定済み事項 8）。
+                // モードとして持つ形にすると、現在のアカウントのカラムが
+                // HomeScreen と同じ購読を共有する前提が崩れる。
+                IconButton(
+                  icon: const Icon(Icons.view_week_outlined),
+                  tooltip: 'デッキ表示に切り替え',
+                  onPressed: () => context.push('/deck'),
                 ),
                 const SizedBox(width: 4),
               ],
@@ -796,6 +844,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     // MessagesTab のみ背景不要で除外する。
     final account = ref.watch(currentAccountProvider);
     final storageKey = account?.key.toStorageKey();
+    // 再取得・再試行で表示中の TL を指すキー (#1088)。build() 側の watch と同じ式。
+    final HashtagTimelineKey? hashtagKey = selectedHashtag == null
+        ? null
+        : (account: account?.key, spec: selectedHashtag);
+    final ListTimelineKey? listKey = selectedList == null
+        ? null
+        : (account: account?.key, id: selectedList.id);
     final bgPath = storageKey != null
         ? ref.watch(backgroundImageProvider(storageKey))
         : null;
@@ -854,10 +909,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         : timelineContextKey(
             account.key,
             selectedHashtag != null
-                ? 'tag:$selectedHashtag'
+                ? HashtagTab(selectedHashtag)
                 : selectedList != null
-                ? 'list:${selectedList.id}'
-                : 'tl:${selectedType.name}',
+                ? ListTab(id: selectedList.id)
+                : TimelineTab(selectedType),
           );
 
     // 文脈切替（アカウント / タブ / ハッシュタグ / リスト変更）で TL をロード中
@@ -927,18 +982,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     // データを残す。完了で必ず戻す。
                     setState(() => _pullRefreshing = true);
                     try {
-                      final Future<TimelineState> refreshed;
-                      if (selectedHashtag != null) {
-                        refreshed = ref.refresh(
-                          hashtagTimelineProvider(selectedHashtag).future,
-                        );
-                      } else if (selectedList != null) {
-                        refreshed = ref.refresh(
-                          listTimelineProvider(selectedList.id).future,
-                        );
-                      } else {
-                        refreshed = ref.refresh(timelineProvider.future);
-                      }
+                      // ⚠ 更新先の判定は provider へ寄せてある (#1157)。ここと
+                      // メニュー / Ctrl+R の経路で分岐が二重化し、**チャンネル
+                      // タブだけ本線 TL を取り直していた**ため。
+                      final refreshed = ref.refresh(
+                        ref.read(currentTimelineRefreshTargetProvider),
+                      );
                       await refreshed;
                     } finally {
                       if (mounted) {
@@ -1003,16 +1052,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                             // は気づける導線が無い）。分岐は loadMore /
                             // pull-to-refresh / [_refreshCurrentTimeline] と同型。
                             onPressed: () {
-                              if (selectedHashtag != null) {
+                              if (hashtagKey != null) {
                                 ref.invalidate(
-                                  hashtagTimelineProvider(selectedHashtag),
+                                  hashtagTimelineProvider(hashtagKey),
                                 );
-                              } else if (selectedList != null) {
-                                ref.invalidate(
-                                  listTimelineProvider(selectedList.id),
-                                );
+                              } else if (listKey != null) {
+                                ref.invalidate(listTimelineProvider(listKey));
                               } else {
-                                ref.invalidate(timelineProvider);
+                                ref.invalidate(
+                                  timelineProvider(
+                                    ref.read(currentTimelineKeyProvider),
+                                  ),
+                                );
                               }
                             },
                             child: const Text('再試行'),
@@ -1067,21 +1118,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     }
     // TL がまだ build されていない（ローディング / エラーで RefreshIndicator が
     // 未マウント）ときは currentState が null。スピナーは出せないが更新は行う。
-    final selectedHashtag = ref.read(selectedHashtagProvider);
-    final selectedList = ref.read(selectedListProvider);
     _rearmMarkerRestore();
     if (mounted) setState(() => _pullRefreshing = true);
     try {
-      final Future<TimelineState> refreshed;
-      if (selectedHashtag != null) {
-        refreshed = ref.refresh(
-          hashtagTimelineProvider(selectedHashtag).future,
-        );
-      } else if (selectedList != null) {
-        refreshed = ref.refresh(listTimelineProvider(selectedList.id).future);
-      } else {
-        refreshed = ref.refresh(timelineProvider.future);
-      }
+      // ⚠⚠ **チャンネルタブはここへ必ず落ちてくる。**ChannelTimelineView が
+      // 描いており、上の RefreshIndicator がマウントされないため。以前は
+      // ハッシュタグ / リスト / 本線の 3 分岐しか無く、**画面は変わらないのに
+      // 裏で本線 TL を取り直していた** (#1157)。
+      final refreshed = ref.refresh(
+        ref.read(currentTimelineRefreshTargetProvider),
+      );
       await refreshed;
     } finally {
       if (mounted) setState(() => _pullRefreshing = false);
@@ -1141,6 +1187,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) context.push('/chat');
         });
+      case DeckOnlyTab():
+        // デッキのカラム専用 (#1148)。タブとしては保存されない。
+        break;
     }
   }
 
@@ -1352,7 +1401,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                         onTap: current != null
                             ? () {
                                 dismiss();
-                                context.push('/profile', extra: current.user);
+                                openProfile(context, current.user);
                               }
                             : null,
                         child: current != null
@@ -1380,7 +1429,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                         onTap: current != null
                             ? () {
                                 dismiss();
-                                context.push('/profile', extra: current.user);
+                                openProfile(context, current.user);
                               }
                             : null,
                         child: Column(
@@ -1775,9 +1824,10 @@ class _StreamStatusIndicatorState
 
   @override
   Widget build(BuildContext context) {
-    final async = ref.watch(timelineProvider);
+    final key = ref.watch(currentTimelineKeyProvider);
+    final async = ref.watch(timelineProvider(key));
     // 切断検知 (reconnectCount 増加) を拾って flash を発火する (#782)。
-    ref.listen(timelineProvider, (prev, next) {
+    ref.listen(timelineProvider(key), (prev, next) {
       _onReconnectCount(next.valueOrNull?.reconnectCount ?? 0);
     });
     // リロード中（アカウント/文脈切替・起動時の current 着地・pull-to-refresh）は
@@ -1789,8 +1839,8 @@ class _StreamStatusIndicatorState
     // ケース）間も connecting を表示し、緑は「この文脈の TL がロード済み＋live」
     // だけを意味するようにする (#758)。
     final expectedContextKey = timelineContextKey(
-      ref.watch(currentAccountProvider)?.key,
-      'tl:${ref.watch(selectedTimelineTypeProvider).name}',
+      key.account,
+      TimelineTab(key.type),
     );
     final stale = _timelineIsStale(async, expectedContextKey);
     // 前文脈のキャッシュや build 中は再接続カウント等を出さない（現在の文脈の
@@ -1852,25 +1902,6 @@ class _StreamStatusIndicatorState
           ],
         ),
       ),
-    );
-  }
-}
-
-class _LivecureFilterButton extends StatelessWidget {
-  final WidgetRef ref;
-
-  const _LivecureFilterButton({required this.ref});
-
-  @override
-  Widget build(BuildContext context) {
-    final hide = ref.watch(hideLivecureProvider);
-    return IconButton(
-      icon: Icon(
-        hide ? Icons.mic_off : Icons.mic,
-        color: hide ? Theme.of(context).colorScheme.error : null,
-      ),
-      tooltip: hide ? '#実況 非表示中' : '#実況 表示中',
-      onPressed: () => ref.read(hideLivecureProvider.notifier).toggle(),
     );
   }
 }

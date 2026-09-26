@@ -80,6 +80,16 @@ NotificationTypeDisplay notificationTypeDisplay(
         icon: Icons.collections_bookmark,
         label: 'コレクションを更新',
       );
+    case NotificationType.severedRelationships:
+      return const NotificationTypeDisplay(
+        icon: Icons.link_off,
+        label: '関係が失われました',
+      );
+    case NotificationType.moderationWarning:
+      return const NotificationTypeDisplay(
+        icon: Icons.gavel,
+        label: '管理者からの警告',
+      );
     case NotificationType.other:
       return const NotificationTypeDisplay(
         icon: Icons.notifications,
@@ -137,6 +147,11 @@ NotificationType notificationTypeFromString(String? raw) {
       return NotificationType.addedToCollection;
     case 'collection_update':
       return NotificationType.collectionUpdate;
+    // 関係の切断・モデレーション警告 (#1084)。
+    case 'severed_relationships':
+      return NotificationType.severedRelationships;
+    case 'moderation_warning':
+      return NotificationType.moderationWarning;
     default:
       return NotificationType.other;
   }

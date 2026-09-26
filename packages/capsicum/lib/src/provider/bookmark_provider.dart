@@ -67,4 +67,5 @@ class BookmarkNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
 final bookmarkProvider =
     AsyncNotifierProvider.autoDispose<BookmarkNotifier, TimelineState>(
       BookmarkNotifier.new,
+      dependencies: [currentAdapterProvider],
     );

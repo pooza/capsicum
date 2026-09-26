@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../provider/preferences_provider.dart';
 import '../util/fediverse_link.dart';
+import '../util/provider_scope_carrier.dart';
 import '../widget/content_parser.dart';
 import 'as_ui.dart';
 import 'flash_runtime.dart';
@@ -392,7 +393,10 @@ class _PostFormButton extends StatelessWidget {
     void open() {
       // cw / visibility / localOnly は ComposeScreen が extra で受けないため
       // 現状は本文のみ引き渡す。必要になったら route 側を拡張する。
-      context.push('/compose', extra: {'initialText': text ?? ''});
+      context.push(
+        '/compose',
+        extra: extraWithProviderScope(context, {'initialText': text ?? ''}),
+      );
     }
 
     // 投稿導線は Play の主目的の出口なので、囲む container の align によらず

@@ -49,17 +49,23 @@ class _ChannelTimelineViewState extends ConsumerState<ChannelTimelineView> {
       // 継続エラー時 (loadMoreError) は自動再試行を止める (#678)。isLoadingMore /
       // hasMore は loadMore 側でも弾くが、リトライストーム抑止のため loadMoreError
       // はトリガー段で見る。回復は pull-to-refresh で build() 再実行時。
-      final state = ref
-          .read(channelTimelineProvider(widget.channelId))
-          .valueOrNull;
+      final ChannelTimelineKey key = (
+        account: ref.read(currentAccountKeyProvider),
+        id: widget.channelId,
+      );
+      final state = ref.read(channelTimelineProvider(key)).valueOrNull;
       if (state != null && state.loadMoreError != null) return;
-      ref.read(channelTimelineProvider(widget.channelId).notifier).loadMore();
+      ref.read(channelTimelineProvider(key).notifier).loadMore();
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final timeline = ref.watch(channelTimelineProvider(widget.channelId));
+    final ChannelTimelineKey key = (
+      account: ref.watch(currentAccountKeyProvider),
+      id: widget.channelId,
+    );
+    final timeline = ref.watch(channelTimelineProvider(key));
     final adapter = ref.watch(currentAdapterProvider);
     final canPost = adapter is ChannelSupport;
 
@@ -70,9 +76,8 @@ class _ChannelTimelineViewState extends ConsumerState<ChannelTimelineView> {
             data: (state) => state.posts.isEmpty
                 ? const Center(child: Text('投稿がありません'))
                 : RefreshIndicator(
-                    onRefresh: () => ref.refresh(
-                      channelTimelineProvider(widget.channelId).future,
-                    ),
+                    onRefresh: () =>
+                        ref.refresh(channelTimelineProvider(key).future),
                     child: ListView.separated(
                       controller: _scrollController,
                       itemCount:
@@ -96,8 +101,7 @@ class _ChannelTimelineViewState extends ConsumerState<ChannelTimelineView> {
             error: (error, stack) => RetryErrorView(
               message: '読み込みに失敗しました',
               isRetrying: timeline.isLoading,
-              onRetry: () =>
-                  ref.invalidate(channelTimelineProvider(widget.channelId)),
+              onRetry: () => ref.invalidate(channelTimelineProvider(key)),
             ),
           ),
         ),
@@ -105,8 +109,7 @@ class _ChannelTimelineViewState extends ConsumerState<ChannelTimelineView> {
           SimplePostBar(
             channelId: widget.channelId,
             channelName: widget.channelName,
-            onPosted: () =>
-                ref.invalidate(channelTimelineProvider(widget.channelId)),
+            onPosted: () => ref.invalidate(channelTimelineProvider(key)),
           )
         else
           // ⚠ 投稿できないチャンネルではバーが出ず、下端の inset を誰も吸わない

@@ -10,9 +10,11 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/is_cat_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
+import '../util/deck_navigation.dart';
 import '../util/keyboard_list_navigation.dart';
 import '../util/op_error.dart';
 import '../util/post_actions.dart';
+import '../util/provider_scope_carrier.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/desktop_menu_model.dart';
 import '../widget/post_tile.dart';
@@ -36,7 +38,16 @@ const double _jumpFabReservedHeight = 40 * 2 + 8 + 16;
 class PostDetailScreen extends ConsumerStatefulWidget {
   final Post post;
 
-  const PostDetailScreen({super.key, required this.post});
+  /// デッキのカラムの中身として描く (#1148)。AppBar を出さない（見出しと閉じる
+  /// ボタンはカラムのヘッダーが持つ）。⚠ AppBar の戻るボタンはデッキ画面ごと
+  /// 閉じてしまう。
+  final bool embedded;
+
+  const PostDetailScreen({
+    super.key,
+    required this.post,
+    this.embedded = false,
+  });
 
   @override
   ConsumerState<PostDetailScreen> createState() => _PostDetailScreenState();
@@ -86,7 +97,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen>
     final selected = _thread[index];
     // 対象リプライ自身（いま開いているスレッドの主役）は開き直さない。
     if (selected.id == post.id) return;
-    context.push('/post', extra: selected);
+    openPost(context, selected);
   }
 
   /// スレッド内で対象リプライ（タップした投稿）が並ぶ index。見つからない
@@ -155,12 +166,18 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen>
 
   void _replyToSelected() => _withSelected(
     (a) => a.canReply,
-    (a) => context.push('/compose', extra: {'replyTo': a.targetPost}),
+    (a) => context.push(
+      '/compose',
+      extra: extraWithProviderScope(context, {'replyTo': a.targetPost}),
+    ),
   );
 
   void _quoteSelected() => _withSelected(
     (a) => a.canQuote,
-    (a) => context.push('/compose', extra: {'quoteTo': a.targetPost}),
+    (a) => context.push(
+      '/compose',
+      extra: extraWithProviderScope(context, {'quoteTo': a.targetPost}),
+    ),
   );
 
   void _boostSelected() => _withSelected((a) => a.canBoost, (a) {
@@ -263,24 +280,26 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen>
     required bool showJump,
   }) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('スレッド'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-      ),
+      appBar: widget.embedded
+          ? null
+          : AppBar(
+              title: const Text('スレッド'),
+              backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+            ),
       body: _buildBody(context, ref, threadFuture, showJump: showJump),
       floatingActionButton: showJump
           ? Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 FloatingActionButton.small(
-                  heroTag: 'thread_jump_top',
+                  heroTag: widget.embedded ? null : 'thread_jump_top',
                   tooltip: '先頭へ',
                   onPressed: _jumpToTop,
                   child: const Icon(Icons.keyboard_arrow_up),
                 ),
                 const SizedBox(height: 8),
                 FloatingActionButton.small(
-                  heroTag: 'thread_jump_bottom',
+                  heroTag: widget.embedded ? null : 'thread_jump_bottom',
                   tooltip: '末尾へ',
                   onPressed: _jumpToBottom,
                   child: const Icon(Icons.keyboard_arrow_down),
@@ -427,4 +446,4 @@ final _threadProvider = FutureProvider.autoDispose.family<List<Post>, String>((
   if (adapter == null) return [];
   final thread = await adapter.getThread(postId);
   return ref.read(isCatEnricherProvider).enrichPosts(thread);
-});
+}, dependencies: [currentAdapterProvider, isCatEnricherProvider]);

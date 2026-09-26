@@ -1,3 +1,5 @@
+import 'package:capsicum/src/model/image_overlay_layer.dart';
+import 'package:capsicum/src/service/compose_draft_attachment.dart';
 import 'package:capsicum/src/service/compose_draft_store.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -101,6 +103,113 @@ void main() {
       final store = ComposeDraftStore();
       await store.save(const ComposeDraft(text: '本文'), now: fixedNow);
       expect((await store.restore())!.attachmentCount, 0);
+    });
+  });
+
+  group('ローカル添付の記述 (#1130)', () {
+    const attachment = ComposeDraftAttachment(
+      path: '/tmp/baked.png',
+      name: 'baked.png',
+      mimeType: 'image/png',
+      overlaySourcePath: '/tmp/source.png',
+      layers: [
+        StickerOverlayLayerSpec(
+          shortcode: 'capsicum',
+          url: 'https://mstdn.b-shock.org/emoji/capsicum.png',
+          nx: 0.4,
+          ny: 0.6,
+          sizeFrac: 0.2,
+          angle: 0.3,
+          opacity: 0.8,
+          visible: true,
+          locked: false,
+        ),
+      ],
+      description: 'ALT',
+      sensitive: true,
+    );
+
+    test('レイヤ列ごと往復する', () async {
+      final store = ComposeDraftStore();
+      await store.save(
+        const ComposeDraft(
+          text: '本文',
+          attachmentCount: 2,
+          attachments: [attachment],
+        ),
+        now: fixedNow,
+      );
+
+      final restored = await ComposeDraftStore().restore();
+      expect(restored!.attachmentCount, 2, reason: 'ドライブ添付を含む総数');
+      expect(restored.attachments, hasLength(1), reason: '実体を持つのはローカルだけ');
+      final saved = restored.attachments.single;
+      expect(saved.path, '/tmp/baked.png');
+      expect(saved.overlaySourcePath, '/tmp/source.png');
+      expect(saved.description, 'ALT');
+      expect(saved.sensitive, isTrue);
+      final layer = saved.layers.single as StickerOverlayLayerSpec;
+      expect(layer.shortcode, 'capsicum');
+      expect(layer.opacity, 0.8);
+    });
+
+    test('⚠ REGRESSION: 添付を全部外したら記述も消える', () async {
+      final store = ComposeDraftStore();
+      await store.save(
+        const ComposeDraft(
+          text: '本文',
+          attachmentCount: 1,
+          attachments: [attachment],
+        ),
+        now: fixedNow,
+      );
+      // 添付を外して保存し直す。⚠ 前回のぶんが残ると、復元で消した画像が戻る。
+      await store.save(const ComposeDraft(text: '本文'), now: fixedNow);
+
+      final restored = await ComposeDraftStore().restore();
+      expect(restored!.attachments, isEmpty);
+      expect(restored.attachmentCount, 0);
+    });
+
+    test('clear は添付の記述も消す', () async {
+      final store = ComposeDraftStore();
+      await store.save(
+        const ComposeDraft(
+          text: '本文',
+          attachmentCount: 1,
+          attachments: [attachment],
+        ),
+        now: fixedNow,
+      );
+      await store.clear();
+
+      final next = ComposeDraftStore();
+      await next.save(const ComposeDraft(text: '次の本文'), now: fixedNow);
+      expect((await next.restore())!.attachments, isEmpty);
+    });
+
+    test('⚠ 壊れた記述でも本文は戻る（投げない）', () async {
+      SharedPreferences.setMockInitialValues({
+        ComposeDraftStore.textKey: '書きかけの本文',
+        ComposeDraftStore.attachmentCountKey: 1,
+        ComposeDraftStore.attachmentsKey: '{これは JSON ではない',
+      });
+
+      final restored = await ComposeDraftStore().restore();
+      expect(restored, isNotNull);
+      expect(restored!.text, '書きかけの本文');
+      expect(restored.attachments, isEmpty);
+    });
+
+    test('旧スロット（記述が無い頃）は件数だけで読める', () async {
+      SharedPreferences.setMockInitialValues({
+        ComposeDraftStore.textKey: '旧スロットの本文',
+        ComposeDraftStore.attachmentCountKey: 2,
+      });
+
+      final restored = await ComposeDraftStore().restore();
+      expect(restored!.attachmentCount, 2);
+      expect(restored.attachments, isEmpty);
     });
 
     test('本文が空でも CW だけ生きていれば復元対象', () async {

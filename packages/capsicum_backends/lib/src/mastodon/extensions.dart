@@ -165,6 +165,7 @@ extension CapsicumMastodonStatusExtension on MastodonStatus {
       url: url,
       editedAt: editedAt,
       mentions: _parseMentions(mentions),
+      tags: _parseTags(tags),
     );
   }
 }
@@ -382,6 +383,19 @@ const mastodonNotificationTypeMap = <String, NotificationType>{
   // Mastodon 4.6 Collections (FEP-7aa9) の被フィーチャー通知 (#741)。
   'added_to_collection': NotificationType.addedToCollection,
   'collection_update': NotificationType.collectionUpdate,
+  // 関係の切断・モデレーション警告 (#1084)。
+  'severed_relationships': NotificationType.severedRelationships,
+  'moderation_warning': NotificationType.moderationWarning,
+};
+
+/// 起点となる相手がいない通知 (#1084)。
+///
+/// ⚠ **サーバーは `account` に受信者本人を入れて返す**（`Notification#set_from_account`
+/// のコメント「originating account が無いが data model 上必須なので受信者を入れる」）。
+/// そのまま渡すと見出しに自分のアイコンと名前が出て、自分が何かしたように読める。
+const _mastodonNotificationTypesWithoutActor = {
+  'severed_relationships',
+  'moderation_warning',
 };
 
 extension CapsicumMastodonNotificationExtension on MastodonNotification {
@@ -393,11 +407,61 @@ extension CapsicumMastodonNotificationExtension on MastodonNotification {
       id: id,
       type: mastodonNotificationTypeMap[type] ?? NotificationType.other,
       createdAt: createdAt,
-      user: account.toCapsicum(localHost, adminRoleIds: adminRoleIds),
+      user: _mastodonNotificationTypesWithoutActor.contains(type)
+          ? null
+          : account.toCapsicum(localHost, adminRoleIds: adminRoleIds),
       post: status?.toCapsicum(localHost, adminRoleIds: adminRoleIds),
       collection: collection?.toCapsicum(),
+      severance: event?.toCapsicum(),
+      moderationWarning: moderationWarning?.toCapsicum(),
     );
   }
+}
+
+extension CapsicumMastodonRelationshipSeveranceExtension
+    on MastodonRelationshipSeveranceEvent {
+  RelationshipSeverance toCapsicum() => RelationshipSeverance(
+    kind: switch (type) {
+      'domain_block' => RelationshipSeveranceKind.domainBlock,
+      'user_domain_block' => RelationshipSeveranceKind.userDomainBlock,
+      'account_suspension' => RelationshipSeveranceKind.accountSuspension,
+      _ => RelationshipSeveranceKind.unknown,
+    },
+    targetName: targetName,
+    followersCount: followersCount ?? 0,
+    followingCount: followingCount ?? 0,
+  );
+}
+
+extension CapsicumMastodonAccountWarningExtension on MastodonAccountWarning {
+  ModerationWarning toCapsicum() => ModerationWarning(
+    id: id,
+    action: switch (action) {
+      'none' => ModerationWarningAction.none,
+      'disable' => ModerationWarningAction.disable,
+      'mark_statuses_as_sensitive' =>
+        ModerationWarningAction.markStatusesAsSensitive,
+      'delete_statuses' => ModerationWarningAction.deleteStatuses,
+      'sensitive' => ModerationWarningAction.sensitive,
+      'silence' => ModerationWarningAction.silence,
+      'suspend' => ModerationWarningAction.suspend,
+      _ => ModerationWarningAction.unknown,
+    },
+    text: (text?.trim().isEmpty ?? true) ? null : text!.trim(),
+  );
+}
+
+extension CapsicumMastodonFeaturedTagExtension on MastodonFeaturedTag {
+  /// ⚠ 件数は文字列で来る・日付は日付だけ（#1075）。読めなければ 0 / null に倒し、
+  /// 掲載タグそのものは落とさない（表示の主役はタグ名）。
+  FeaturedTag toCapsicum() => FeaturedTag(
+    id: id,
+    name: name,
+    statusesCount: int.tryParse(statusesCount ?? '') ?? 0,
+    lastStatusAt: lastStatusAt == null
+        ? null
+        : DateTime.tryParse(lastStatusAt!),
+  );
 }
 
 extension CapsicumMastodonCollectionExtension on MastodonCollection {
@@ -456,3 +520,16 @@ extension CapsicumMastodonMediaAttachmentExtension on MastodonMediaAttachment {
     );
   }
 }
+
+/// サーバーが正規化して返したハッシュタグ (#1056)。`name` から `#` を除いた形。
+///
+/// ⚠ `name` は**小文字へ正規化済み**（索引のため）。表示には使わない
+/// （`Post.tags` の注記・`mergeHashtags`）。
+///
+/// ⚠ 先頭の `#` は付かないのが仕様だが、**念のため落としておく**（付いた形で
+/// 返すフォークがあっても `#` が二重にならない）。
+List<String> _parseTags(List<Map<String, dynamic>>? raw) => [
+  for (final t in raw ?? const <Map<String, dynamic>>[])
+    if (t['name'] case final String name when name.isNotEmpty)
+      name.startsWith('#') ? name.substring(1) : name,
+];

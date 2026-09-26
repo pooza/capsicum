@@ -47,7 +47,8 @@ class _StreamingFakeAdapter extends Mock
 
   @override
   Stream<Post> streamTimeline(
-    TimelineType type, {
+    String key,
+    TabType tab, {
     void Function(Object error, StackTrace stack)? onParseError,
     void Function(Object error, StackTrace stack)? onStreamError,
     void Function()? onReconnectExhausted,
@@ -56,7 +57,7 @@ class _StreamingFakeAdapter extends Mock
   }) => _controller.stream;
 
   @override
-  void disposeStream() {}
+  void disposeStream(String key) {}
 }
 
 class _FakeCapabilities extends Mock implements AdapterCapabilities {
@@ -70,6 +71,11 @@ Post _post(String id, {String authorId = 'u1'}) => Post(
   author: User(id: authorId, username: authorId),
   content: 'body $id',
 );
+
+/// 表示中の本線 TL のキー (#1087)。HomeScreen と同じく
+/// [currentTimelineKeyProvider] から引く。
+TimelineKey keyOf(ProviderContainer container) =>
+    container.read(currentTimelineKeyProvider);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -94,7 +100,11 @@ void main() {
     final container = ProviderContainer(
       overrides: [currentAccountProvider.overrideWith((ref) => account)],
     );
-    container.listen(timelineProvider, (_, _) {}, fireImmediately: true);
+    container.listen(
+      timelineProvider(keyOf(container)),
+      (_, _) {},
+      fireImmediately: true,
+    );
     return container;
   }
 
@@ -104,8 +114,10 @@ void main() {
     Post incoming,
   ) async {
     final container = makeContainer(adapter);
-    await container.read(timelineProvider.future);
-    final notifier = container.read(timelineProvider.notifier);
+    await container.read(timelineProvider(keyOf(container)).future);
+    final notifier = container.read(
+      timelineProvider(keyOf(container)).notifier,
+    );
 
     // 先頭から離れている＝新着を即座に差し込まない状態にする (#296)。
     notifier.setNearTop(false);
@@ -113,7 +125,7 @@ void main() {
     await Future<void>.delayed(Duration.zero);
 
     expect(
-      container.read(timelineProvider).value?.pendingCount,
+      container.read(timelineProvider(keyOf(container))).value?.pendingCount,
       1,
       reason: '前提: 新着が未表示バッファに溜まっている',
     );
@@ -130,11 +142,18 @@ void main() {
 
     notifier.removePostsByUser('blocked');
 
-    expect(container.read(timelineProvider).value?.pendingCount, 0);
+    expect(
+      container.read(timelineProvider(keyOf(container))).value?.pendingCount,
+      0,
+    );
 
     notifier.flushPending();
     expect(
-      container.read(timelineProvider).value?.posts.map((p) => p.id),
+      container
+          .read(timelineProvider(keyOf(container)))
+          .value
+          ?.posts
+          .map((p) => p.id),
       ['own1'],
       reason: '「新着 N 件」を開いてもブロックした相手の投稿は出てこない',
     );
@@ -154,7 +173,7 @@ void main() {
     notifier.removePostsByUser('blocked');
 
     expect(
-      container.read(timelineProvider).value?.pendingCount,
+      container.read(timelineProvider(keyOf(container))).value?.pendingCount,
       0,
       reason: 'ブロックした相手をブーストした第三者の投稿も残さない',
     );
@@ -167,12 +186,20 @@ void main() {
 
     notifier.removePost('doomed');
 
-    expect(container.read(timelineProvider).value?.pendingCount, 0);
+    expect(
+      container.read(timelineProvider(keyOf(container))).value?.pendingCount,
+      0,
+    );
 
     notifier.flushPending();
-    expect(container.read(timelineProvider).value?.posts.map((p) => p.id), [
-      'own1',
-    ]);
+    expect(
+      container
+          .read(timelineProvider(keyOf(container)))
+          .value
+          ?.posts
+          .map((p) => p.id),
+      ['own1'],
+    );
   });
 
   test('無関係な投稿は未表示バッファに残る（消しすぎない）', () async {
@@ -186,13 +213,20 @@ void main() {
     notifier.removePostsByUser('blocked');
     notifier.removePost('unrelated');
 
-    expect(container.read(timelineProvider).value?.pendingCount, 1);
+    expect(
+      container.read(timelineProvider(keyOf(container))).value?.pendingCount,
+      1,
+    );
 
     // 取り込み順は id の降順（[TimelineNotifier.flushPending]）なので、
     // ここで見るのは並びではなく「残っていること」。
     notifier.flushPending();
     expect(
-      container.read(timelineProvider).value?.posts.map((p) => p.id),
+      container
+          .read(timelineProvider(keyOf(container)))
+          .value
+          ?.posts
+          .map((p) => p.id),
       containsAll(<String>['keep1', 'own1']),
     );
   });

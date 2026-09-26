@@ -348,6 +348,8 @@ capsicum/
 
 ⚠ **1.x と 2.x は並走系列で、境界は「時期」でも「技術的な線」でもない。****メジャーに何を載せるかは製品判断（売りの束ね方）**で、pooza が決める。`v2.0` は [#720](https://github.com/pooza/capsicum/issues/720) デッキ UI + [#597](https://github.com/pooza/capsicum/issues/597) 有償リレー + [#884](https://github.com/pooza/capsicum/issues/884) 画像編集レイヤの **3 本を束ねるメジャーリリース**。⚠ **この枠には「大更新 0〜1 件」の目安を当てない**（容量は通常枠の数倍。実績の最大は v1.0 の 46 件に対し直近の平均は 13 件）。技術規模が決めるのは「点リリースで単独配置するか」と「万一入りきらないとき何から逃がすか（＝ #884）」だけ。⚠ **2026-08-17〜 の「外部要因の発生ベース」運用は v1.65 をもって終了**した。
 
+⚠⚠ **容量の特例が当たるのは「メジャーアップグレードの枠」（x.0）だけ**（2026-09-23 pooza）。**x.1 以降は通常の枠**なので、下の「大更新 0〜1 件 + 小粒・中粒 5〜12 件」がそのまま当たる。⚠ **特例を系列の性質（2.x だから大きい）と読み違えないこと** —— 大きいのは **v1.0 / v2.0 のような x.0 の枠**で、理由は**売りを束ねるメジャーだから**。⚠ 2026-09-23 に v2.1 がこの読み違いで過積載（13 件・大更新 2 件）になり、[v2.2](https://github.com/pooza/capsicum/milestone/88) を作って #1074 / #1053 / #1073 を逃がした。⚠ **積載を見るときは、件数より先に「大更新が何件あるか」を数える**（件数だけ見ると 13 件は「わずかな超過」に見える）。⚠ **次に特例が当たるのは 3.0 だが、起こすネタが無いので当分は発生しない見込み**（2026-09-23 pooza）。
+
 - **大更新は独立マイルストーンに単独配置**。UI の構造変更・既存モデルの拡張・複数画面への影響などが絡む「大更新」は、他に同規模以上の項目がないマイルストーンに入れる。並走させると設計検討・実装・動作確認がいずれも中途半端になるため
 - **規模の測り方は「大更新の数」が主軸**。1 マイルストーンに入れるのは大更新 0〜1 件 + 小粒・中粒 5〜12 件程度を目安とする。件数は目安であって閾値ではない。リリース前レビュー（5 観点）の followup が膨らんだ場合、上限に縛られて後送りするより同一マイルストーンに取り込んで消化する方が望ましい（直前リリースの設計理解が新鮮なうちに直したいため）。**P1（緊急性あり）に加え、極めて容易な P2/P3 も同一マイルストーンで消化する**（数行の bug fix・コメント書き直し・リネーム・型変更等）。それでも入りきらない場合は、(a) リファクタ系を次マイルストーンに送る、(b) 観測性強化系を分離する、のどちらかで調整する
 - **マイルストーン未設定は意図的な場合がある**。実現性検討中・Flutter 側の対応待ち・横断的タスクなどで pooza が意図的に未割り当てにしていることがあるため、「トリアージが必要」等と機械的に指摘しない。同期報告では一覧として淡々と列挙するに留める
@@ -361,7 +363,7 @@ capsicum/
 
 v2.0 に集めたメジャー級の大玉と、その種を見つける棚卸し 3 本（[#991](https://github.com/pooza/capsicum/issues/991) WebUI 差分 / [#992](https://github.com/pooza/capsicum/issues/992) サーバー保存設定 / [#993](https://github.com/pooza/capsicum/issues/993) 未使用 API）の回し方（2026-08-25 合意）。
 
-1. **棚卸しは 1 本ずつ回す。**3 本は母数も手法も違うので同時に走らせない。順序は **#993 → #991 → #992**（#993 が最も機械的で当たりが出やすく、その結果が #991 の見方を決めるため）。**3 本とも完了・親 Issue は 3 本とも close 済み**で、次は v2.x のロードマップ（枠の数・各枠の主題・1.x との境界）。
+1. **棚卸しは 1 本ずつ回す。**3 本は母数も手法も違うので同時に走らせない。順序は **#993 → #991 → #992**（#993 が最も機械的で当たりが出やすく、その結果が #991 の見方を決めるため）。**3 本とも完了・親 Issue は 3 本とも close 済み**。続く v2.x のロードマップ（枠の数・各枠の主題・1.x との境界）は [roadmap.md](roadmap.md) に策定済み（2026-09-04）。
 
    | 親（close 済み） | 完了日 | 成果物 | 続きの Issue |
    | --- | --- | --- | --- |
@@ -446,7 +448,7 @@ dart analyze --fatal-infos > /tmp/analyze.log 2>&1; echo "ANALYZE_EXIT=$?"
 
 ## 運営元
 
-capsicum の運営元は有限会社ビーショック（<https://www.b-shock.co.jp>）。課金（投げ銭サブスクは v1.27 で実装済み・外部ユーザー向け通知リレーの有償提供は構想中）を前提に、商品扱いとする方針。
+capsicum の運営元は有限会社ビーショック（<https://www.b-shock.co.jp>）。課金（投げ銭サブスクは v1.27 で実装済み・外部ユーザー向け通知リレーの有償提供は v2.0 で実装中・[#597](https://github.com/pooza/capsicum/issues/597)）を前提に、商品扱いとする方針。
 
 - サイト運営・問い合わせ窓口・特商法表示は法人名義（capsicum-site / Google Workspace アドレス経由）
 - 著作権表記は個人名義のままで問題なし
@@ -459,7 +461,7 @@ capsicum の運営元は有限会社ビーショック（<https://www.b-shock.co
 当初は「外部ユーザー向けプッシュ通知リレーのコスト補填」を想定していたが、プリセットサーバーの既存ユーザーから「機能差別化なしでよいので投げ銭させてほしい」という要望が先に顕在化したため、サポーターサブスク（[#428](https://github.com/pooza/capsicum/issues/428)）を主軸に設計検討する方針に変更（2026-04-30）。
 
 - 機能差別化なし、装飾レベルの視覚的フィードバック（サポーターバッジ等）にとどめる
-- 外部ユーザー向けプッシュ通知リレーの有償提供と同一 SKU で吸収できないか検討
+- 外部ユーザー向けプッシュ通知リレーの有償提供は、同一 SKU で吸収せず**既存の投げ銭（消耗型）を残したままサブスク SKU を追加する**形に決まった（[paid-relay-plan.md](paid-relay-plan.md)・[#1122](https://github.com/pooza/capsicum/issues/1122)）
 - ストア審査対策（"What does this app do?" で trivial 扱いを避ける）として複数階層・継続性のあるサブスクで構成
 
 v1.27 マイルストーンに単独配置し（大更新のため他項目と並走させず）、商品設計 + 課金経路 + 装飾範囲まで同マイルストーン内で実装・出荷した。並走した自動化系タスク [#544](https://github.com/pooza/capsicum/issues/544)（Microsoft Store Web UI 手動 publish ルート再開）も同マイルストーンで対応済み。Flathub 対応は 2026-05-29 に断念（提出 PR が AI Slop 判定、#604 / #470 とも close）。Linux 配布は AppImage 単独。
@@ -499,17 +501,11 @@ v1.27 マイルストーンに単独配置し（大更新のため他項目と�
 
 [GitHub Milestones](https://github.com/pooza/capsicum/milestones) が正本。各マイルストーンの概要・スコープはマイルストーンの description に記載し、CLAUDE.md には複写しない。個別 Issue の一覧・ステータスも同様。
 
-最新リリース: **v1.64.0**（2026-09-12 タグ、build 183、pubspec 1.64.0+183、リリース PR [#1102](https://github.com/pooza/capsicum/pull/1102)、merge `a1e9e5e4`）。**大更新なし — ユーザー報告と実機検証で出た不具合を消化する枠**（Android のログイン復帰と Linux のキーリングが中心）。**全 5 プラットフォーム公開済み**（2026-09-12 実測）: iOS / macOS とも 1.64.0 が `READY_FOR_SALE`（ASC API のプラットフォーム別 `appStoreState`）/ Android は production track の versionCode 183 が `completed`（Play API）/ Windows は Microsoft Store の現行パッケージが `9AFBB08E.capsicum_1.64.183.0_x64`（displaycatalog）/ Linux AppImage は [GitHub Release v1.64.0](https://github.com/pooza/capsicum/releases/tag/v1.64.0)（Latest）。⚠ **build 180〜182 はナイトリーで報告者に渡した番号なので、製品版は 183 から**。マイルストーン [#78](https://github.com/pooza/capsicum/milestone/78)。消化（18 件）: [#1085](https://github.com/pooza/capsicum/issues/1085) Linux: Secret Service が応答しないと起動が真っ黒なまま返らない（**この枠の主役**・ユーザー報告由来）/ [#1104](https://github.com/pooza/capsicum/issues/1104) Linux: キーリングの解錠に失敗すると secret を消してしまう / [#1115](https://github.com/pooza/capsicum/issues/1115) Linux: キーリングが戻っても「今すぐ再試行」で復帰しない / [#1108](https://github.com/pooza/capsicum/issues/1108) Android: 「承認」を押してもブラウザが固まったまま戻らない / [#1057](https://github.com/pooza/capsicum/issues/1057) Android: OAuth は成功しているのにログイン画面から遷移しない / [#1105](https://github.com/pooza/capsicum/issues/1105) ログイン済みアカウントを足し直すと赤画面 / [#1113](https://github.com/pooza/capsicum/issues/1113) 「削除して再編集」の引き継ぎ漏れ（**ユーザー報告由来**）/ [#1064](https://github.com/pooza/capsicum/issues/1064) await を跨いだ `ref.read` が成功を「失敗」に化けさせる / [#1082](https://github.com/pooza/capsicum/issues/1082) isCat のキャッシュが 2 系統ある / [#1038](https://github.com/pooza/capsicum/issues/1038) 絵文字画像が差し替わるとアスペクト比が古いまま / [#1062](https://github.com/pooza/capsicum/issues/1062) モーダルボトムシートの下端が潜り込む / [#1061](https://github.com/pooza/capsicum/issues/1061) 下端 inset のガードが粗い / [#1063](https://github.com/pooza/capsicum/issues/1063) lock ガードが入力未配線のとき fail-open / [#1067](https://github.com/pooza/capsicum/issues/1067) `Package.resolved` の形式が端末ごとに往復する / [#1035](https://github.com/pooza/capsicum/issues/1035) v1.61 レビューの送り分 / [#1083](https://github.com/pooza/capsicum/issues/1083) v1.63 レビューの送り分 / [#1065](https://github.com/pooza/capsicum/issues/1065) 小粒 2 件 / [#1116](https://github.com/pooza/capsicum/issues/1116) リリース前レビューでリリース前に直すもの。送り分は [#1117](https://github.com/pooza/capsicum/issues/1117)（v1.65）。**relay は v1.64 で触っていない**（同名マイルストーン無し）。⚠ **ただし relay の open は 3 件ある**（[relay#54](https://github.com/pooza/capsicum-relay/issues/54) WNS 接続の再利用 = **relay v1.65** / [relay#55](https://github.com/pooza/capsicum-relay/issues/55) 配送の非同期化 = #597 と同じ回 / [relay#56](https://github.com/pooza/capsicum-relay/issues/56) `dropped` 端末へのバックオフ = on-hold）。
+最新リリース: **v1.66.0**（2026-09-21 タグ、build 187、pubspec 1.66.0+187、リリース PR [#1164](https://github.com/pooza/capsicum/pull/1164)、merge `cb2c83ac`）+ **v1.66.1**（2026-09-22 タグ、build 188・**Windows のみ**、リリース PR [#1169](https://github.com/pooza/capsicum/pull/1169)、merge `79c815bc`）。**大更新なし — 返信の宛先を Web UI と同じにする回**（[#1161](https://github.com/pooza/capsicum/issues/1161) が出荷理由）+ v1.65 レビューの送り分。⚠ **この版から動作対象が iOS 15 / macOS 12 以降**（[#1162](https://github.com/pooza/capsicum/issues/1162)・Xcode 27 の下限）。**公開完了（2026-09-22 実測）**: iOS はストアページが 1.66.0 / macOS は lookup が 1.66.0（2026-09-21 公開）/ Windows は Microsoft Store が `1.66.188.0` を返す（displaycatalog）/ Android は production 187（2026-09-22 に Play API で `status=completed` を実測）/ Linux AppImage は [GitHub Release v1.66.0](https://github.com/pooza/capsicum/releases/tag/v1.66.0)（Latest。v1.66.1 は Windows のみのため非 Latest・MSIX のみ添付）。マイルストーン [#85](https://github.com/pooza/capsicum/milestone/85) / [#87](https://github.com/pooza/capsicum/milestone/87)（どちらも 2026-09-22 close）。消化（v1.66 は 9 件）: [#1161](https://github.com/pooza/capsicum/issues/1161) 返信の宛先にメンション全員 / [#1162](https://github.com/pooza/capsicum/issues/1162) 動作対象の引き上げ / [#1144](https://github.com/pooza/capsicum/issues/1144) v1.65 レビューの送り分 / [#1141](https://github.com/pooza/capsicum/issues/1141) Linux キーリング失敗の案内 / [#1120](https://github.com/pooza/capsicum/issues/1120) flutter_secure_storage 更新 / [#1134](https://github.com/pooza/capsicum/issues/1134) dSYM アップロード / [#1146](https://github.com/pooza/capsicum/issues/1146) CI の二重実行 / [#1137](https://github.com/pooza/capsicum/issues/1137) / [#1138](https://github.com/pooza/capsicum/issues/1138) スキル整理。送り分は [#1163](https://github.com/pooza/capsicum/issues/1163) / [#1165](https://github.com/pooza/capsicum/issues/1165)。**relay v1.66.1 は残 0 で完了**（[relay#65](https://github.com/pooza/capsicum-relay/issues/65) WNS 5000B 超過の degrade・`07b1a7e` をステージング / 本番へデプロイ済み・[枠も 2026-09-22 に close](https://github.com/pooza/capsicum-relay/milestone/13)）。
 
-⚠⚠ **実機で検証するまで、報告者のサーバーだけが直っていなかった**（#1113）。carry-over の「宣言」と「compose が読む」はガードで固定してあったのに、**アダプターが `Post` へ実際に入れているか**は誰も見ていなかった。Misskey の `Note → Post` 変換が `inReplyToId` を落としており、**報告元がダイスキー（Misskey）なので報告の本丸が未修正のまま**だった。⚠ **ガードの層が 1 つ抜けると、通っているテストの数は増えても守られていない。**同じ原因で Misskey の TL に「返信」の印も出ていなかった。
+⚠⚠ **v1.66 は v2.0 開発中の 1.x リリースの初回で、2 回とも `origin/main` から `release/x.y.z` を切って出した**（[develop が次リリース対象でないときの出し方](#develop-が次リリース対象でないときの出し方)・#1142）。**back-merge で pubspec が衝突したら develop 側の `2.0.0+…` を残す**（`81aa4c1c` / `d5628802`）。⚠ **v2.0 のビルド番号は 189 以上**（1.x が 188 まで使った）。
 
-⚠⚠ **Play の foreground service（#1108 の `shortService`）の用途申告は求められなかった**（2026-09-12 実測）。「アプリのコンテンツ」に項目が出ず、production への昇格も止められず公開された。⚠ **この件は「不要」→「必要」→「実測では求められなかった」と 2 回ひっくり返っている**ので、**次に触るときは実測を優先する**（型固有の権限 `FOREGROUND_SERVICE_<型>` を足すと話が変わる）。撮影した説明動画は使わずに済んだ。
-
-⚠⚠ **「手元は緑・CI は赤」を 2 回目に踏んだ**（`widget_test`）。`Platform.isLinux` でだけ通る疎通確認を足したため、macOS の手元は分岐を素通りし、Linux の CI だけ 800ms のタイマーが残って落ちた。⚠ **直し方を「macOS では skip」にしない**——守っている本体（Linux）を手元で一度も踏まなくなる。**テストは「その OS のふり」をして通す**（`debugSecretServiceOverride` 等の `debug*Override` はそのために置いてある）。同じ罠はソース検査で機械的に止めた。
-
-⚠ **リリース前レビュー（5 観点・1 巡）の赤は、この枠で入れた変更からは出なかった**（v1.59〜v1.63 と逆の出方で、赤 1 件は既存の Misskey フォロー一覧のページング）。代わりに**セキュリティが 3 件**出ている: 細工した設定バックアップで UI が長時間固まる（#1035 で入れた深さガードが引用符 1 個で回避できた）/ secret を含む例外が breadcrumb に載りうる（`exception_scrub_guard_test` が `cause` を見ていなかった）/ **外部の deep link からコールドスタートで任意ホストのログイン画面を開ける**（`/login` の引数をクエリへ移した副作用）。⚠ **いずれも「前の版で入れた対策の隣」から出ている。**
-
-⚠⚠ **#1085 は最初「ハング」しか塞いでいなかった**。libsecret が**例外で断る**経路は残っており、Sentry（`CAPSICUM-53`）で実発生して #1104 になった。⚠ **報告どおりの症状が消えても、同じ入口の別の分岐は開いている**ことがある。⚠ 根本原因は `flutter_secure_storage_linux` が**プラットフォームスレッドで同期呼び出しする**こと（Dart のタイマーは発火しても描くスレッドが居ない）で、純 Dart の D-Bus で先に疎通確認する形にした（正本は `secret_service_probe.dart` の doc）。
+⚠ **v1.66.1 は Windows 専用の点リリース**（relay#65）。relay が WNS raw の上限 5000B を超えた通知から暗号化本文を落として `degraded:"1"` で送り、Windows 側は iOS と同じ汎用文面（「capsicum」/「<account> に通知があります」）で出す。**起動中は 8 秒待って、同じアカウント宛を WebSocket 経路が出していなければ出す**（ID が無く dedup できないため・Codex P1 / P2 で詰めた）。実機で「終了中 / 起動中で WebSocket 無し / 8 秒以内に終了」の 3 ケースを本番 relay で確認済み。
 
 過去リリースの詳細ログは [archive/release-log.md](archive/release-log.md) に退避した（正本は [GitHub Releases](https://github.com/pooza/capsicum/releases) / Milestones）。マイルストーン移行時のログトリム手順は [milestone-transition.md](milestone-transition.md) を参照。
 
@@ -517,7 +513,7 @@ v1.27 マイルストーンに単独配置し（大更新のため他項目と�
 
 macOS / Linux / Windows のデスクトップ環境への展開。動機は、iOS 版を Mac 上で実況用途に使って手応えがあること。v1.21 以降のマイルストーンに組み込み済み（当初は v1.19 → v1.20 → v1.21 と後ろ倒しを重ね、プッシュ通知完成 v1.20 を挟んだ上で着手する並びに落ち着いた）。
 
-1. **第1段階: macOS ネイティブ化（v1.21、土台完成）** — `flutter config --enable-macos-desktop` を有効化し、Apple Developer Team / Apple Development 署名 / App Sandbox / Hardened Runtime / keychain-access-groups の設定を導入。Universal Purchase で iOS と同一 App レコードに紐付け済み。プラグインのデスクトップ対応状況の棚卸し・video_player → media_kit の事前調査もこの段階で完了。ストア配布（.pkg ラップ + fastlane の macOS lane）は [#407](https://github.com/pooza/capsicum/issues/407) で v1.21.x にて対応する
+1. **第1段階: macOS ネイティブ化（v1.21、土台完成）** — `flutter config --enable-macos-desktop` を有効化し、Apple Developer Team / Apple Development 署名 / App Sandbox / Hardened Runtime / keychain-access-groups の設定を導入。Universal Purchase で iOS と同一 App レコードに紐付け済み。プラグインのデスクトップ対応状況の棚卸し・video_player → media_kit の事前調査もこの段階で完了。ストア配布（.pkg ラップ + fastlane の macOS lane）は [#407](https://github.com/pooza/capsicum/issues/407) で対応済み
 2. **第2段階: バックグラウンド/通知モデルの再設計（v1.23、完了）** — デスクトップにはバックグラウンド更新の概念がないため、通知ポーリング相当の仕組みを抽象化して差し替え可能にした。v1.18 のプッシュ通知リレー完了・v1.19 (#348) での workmanager / iOS BGTask 撤去後、モバイル側は APNs / FCM 一本化済み。v1.23 で `BackgroundTaskScheduler`（#328、Dart `Timer` + 常駐前提のフォールバック実装）/ `MediaPicker`（#329、image_picker + file_selector 統合）/ `NotificationSubsystem`（#330、flutter_local_notifications プラットフォーム差吸収）の各層を導入
 3. **第3段階: Linux / Windows 対応（v1.24〜v1.27、完了）** — 第2段階で通知周りが整理され、プラグイン依存の棚卸しが済んでから着手。Linux は **AppImage 単独配布**（v1.24〜。Flathub は [#604](https://github.com/pooza/capsicum/issues/604) で 2026-05-29 断念、以降は AppImage 単独に確定）。Windows は v1.25 で **自己署名 MSIX 直配**（[#423](https://github.com/pooza/capsicum/issues/423)）、v1.27 で **Microsoft Store 公開達成**（[#544](https://github.com/pooza/capsicum/issues/544)、毎リリース Partner Center Web UI から手動 publish）。OAuth は 3 OS とも `flutter_web_auth_2` の localhost callback（port 7099、[`AppConstants.localhostOAuthPort`](../packages/capsicum/lib/src/constants.dart)）に統一。動画再生は media_kit 移行（[#492](https://github.com/pooza/capsicum/issues/492)、v1.30）で Linux / Windows も対応。コード署名証明書取得（[#534](https://github.com/pooza/capsicum/issues/534)）は Store 再署名のため当面不要（IV 証明書取得済みだが capsicum 適用はお蔵入りで close）。Windows push 本配線（[#474](https://github.com/pooza/capsicum/issues/474)）は **v1.40（「Windows 仕上げ」大更新マイルストーン）で出荷済み**（WNS 資格情報の満了は 2028-06-22）。Windows 投げ銭 IAP（[#599](https://github.com/pooza/capsicum/issues/599)）は当初 v1.40 に束ねる想定だったが、x64 実機環境・Partner Center アドオン審査待ちで分離し **v1.43 で出荷済み**（Microsoft Store IAP）。SMTC NowPlaying（[#484](https://github.com/pooza/capsicum/issues/484)）は v1.33 で実装・**実機検証済み**（C++/WinRT メソッドチャンネル。ARM64 Windows でローカル x64 ビルドは ATL 未導入 / jni / crashpad の x64-on-ARM64 で詰まるため、CI windows-release.yml の `capsicum-msix` artifact を gh run download → `Add-AppxPackage` で導入して検証する経路を確立）。実機検証は Linux [#425](https://github.com/pooza/capsicum/issues/425) / macOS [#494](https://github.com/pooza/capsicum/issues/494)。
 
@@ -539,7 +535,7 @@ Issue [#475](https://github.com/pooza/capsicum/issues/475) (Linux push 方針) �
 - **プラットフォーム定数はテーブル化**。ショートカット・メニュー構成などは1箇所にまとめ、プラットフォームごとにテーブルを差し替える
 - **条件付きコンパイル（conditional import）は最後の手段**。使う場合も `lib/src/platform/` のような特定ディレクトリに閉じ込める
 
-配布・ストア・ツールチェーンの方針（macOS は Apple Developer Program を iOS と共用、Linux は AppImage 単独（Flathub は 2026-05-29 断念 [#604](https://github.com/pooza/capsicum/issues/604)）、Snap は不採用、Windows は v1.25 で GitHub Releases 経由の自己署名 MSIX 直配を再開し v1.27 で Microsoft Store 公開を達成 ([#544](https://github.com/pooza/capsicum/issues/544)、2026-05-20 審査通過)。以降は Store 経由を主・自己署名直配を補助の 2 系統で運用）、および段階的な実装順序は [release-pipeline.md](archive/release-pipeline.md) を参照。プラグインのデスクトップ対応状況の棚卸しは [desktop-plugin-compatibility.md](desktop-plugin-compatibility.md) にまとめている。第2段階では `BackgroundTaskScheduler`（[#328](https://github.com/pooza/capsicum/issues/328)）/ `MediaPicker`（[#329](https://github.com/pooza/capsicum/issues/329)）/ 通知サブシステム（[#330](https://github.com/pooza/capsicum/issues/330)）の抽象化が主題となる。
+配布・ストア・ツールチェーンの方針（macOS は Apple Developer Program を iOS と共用、Linux は AppImage 単独（Flathub は 2026-05-29 断念 [#604](https://github.com/pooza/capsicum/issues/604)）、Snap は不採用、Windows は v1.25 で GitHub Releases 経由の自己署名 MSIX 直配を再開し v1.27 で Microsoft Store 公開を達成 ([#544](https://github.com/pooza/capsicum/issues/544)、2026-05-20 審査通過)。自己署名直配は v1.43（[#760](https://github.com/pooza/capsicum/issues/760)）で廃止し、以降は Store 単独）、および段階的な実装順序は [release-pipeline.md](archive/release-pipeline.md) を参照。プラグインのデスクトップ対応状況の棚卸しは [desktop-plugin-compatibility.md](desktop-plugin-compatibility.md) にまとめている。第2段階では `BackgroundTaskScheduler`（[#328](https://github.com/pooza/capsicum/issues/328)）/ `MediaPicker`（[#329](https://github.com/pooza/capsicum/issues/329)）/ 通知サブシステム（[#330](https://github.com/pooza/capsicum/issues/330)）を抽象化した。
 
 macOS の付加機能として、Music.app 等の「共有」メニューから capsicum に投稿を流す Share Extension（[#422](https://github.com/pooza/capsicum/issues/422)）を **v1.24 で同梱済み**。iOS の Share Extension と同パターンで App Group コンテナ経由、共有元（Music.app 等）が渡す URL・テキストをそのまま compose に流し込む。なお NowPlaying の整形そのものは、v1.33 の責務分担見直しで**クライアント（capsicum）側に確定**しており（[nowplaying-design.md](archive/nowplaying-design.md) §責務分担）、モロヘイヤ側に残すのは URL を持たない源向けの enrich（メタデータ → 共有 URL 解決、[mulukhiya #4382](https://github.com/pooza/mulukhiya-toot-proxy/issues/4382)）のみ。旧来の「サーバー側ハンドラへ整形委譲」は廃止方針。
 
@@ -591,6 +587,7 @@ v1.24 リリース直前の Linux 実機検証で判明・対応した、他プ�
 
 - **サーバーの呼称**: 「インスタンス」ではなく「サーバー」を使う
 - **ファイル参照**: マークダウンリンクにする
+- **見出しはプレーンにする**: ⚠ **見出しの先頭に `⚠` / `⚠⚠` を付けない。**GitHub はアンカーを作るときに記号を落とすため、`### ⚠⚠ develop が…` は `#-develop-…` という**先頭にハイフンが残る**形になり、同じ文書内からのリンクが前例のない綴りになる（2026-09-17 に #1142 で実際に踏んだ）。**強調は本文 1 行目へ移す**
 
 ### CLAUDE.md の定期見直し
 
