@@ -582,6 +582,29 @@ CREATE TABLE subscriptions (
 
 ⚠ **a の再評価が要る。**「迂回できる」を欠陥と見るか、「プリセットサーバーへの導線」と見るかで結論が変わる。**capsicum の主目的は自前インフラとの連携**（[CLAUDE.md](CLAUDE.md)）なので、**外部ユーザーがプリセットに来ること自体は目的と矛盾しない**。
 
+### 3-2. ⚠⚠ ~~`410 Gone` で購読が消えるかは未実測~~ → **2026-09-27 に実測（[relay#60](https://github.com/pooza/capsicum-relay/issues/60)）**
+
+本書 4-2 が「**410 が正しいと書いたが実測していない**」としていた前提。**ソースと実機の両方で確定した。**
+
+#### フォークのソース（⚠ 推測で語らないための一次情報）
+
+| | 購読を消す条件 |
+| --- | --- |
+| **Mastodon** `Web::PushNotificationWorker#send` | ⚠ **`408` / `429` 以外の 4xx すべて** |
+| **Misskey** `PushNotificationService` | ⚠⚠ **`410` だけ**（`if (err.statusCode === 410)`）。**403 / 404 では消さず永久に叩き続ける** |
+
+→ ⚠⚠ **両方に効くのは 410 だけ。**本書は「黙って 200 を返すと永久に叩かれる」と書いていたが、**403 / 404 でも Misskey については同じ**だった。`/push` の拒否は 410 以外にできない。
+
+#### ステージングでの実測（`st2.mstdn.b-shock.org` = dev24 → st.relay）
+
+⚠ **既存の購読には触らず**、relay が知らない `push_token` を指す購読を 1 件だけ作って踏んだ。nginx のアクセスログに `POST /push/… 410`、**Mastodon 側で購読が destroy された**（既存 2 件は無傷）。
+
+#### ⚠ 4-2 の「使った実績が無い」は解消した
+
+`st2.mstdn.b-shock.org → st.relay` の Web Push が**直近 7 日で 4 件**届いている（journald 実測）。
+
+⚠ **ただし `st2.misskey.delmulin.com → st.relay` は 0 件**（購読行はあるが通知が発生していない）。**Misskey 側のライブ確認は未了**でソース読みのみ。⚠ **Misskey は 410 でしか消さない**ので、[relay#62](https://github.com/pooza/capsicum-relay/issues/62) の回にここも踏む。
+
 ### 4. サブスクの失効をクライアントへどう伝えるか
 
 - 失効したとき、ユーザーには**何がどう見えるか**。⚠ **「いつのまにか通知が来ない」が最悪**
