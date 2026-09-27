@@ -45,6 +45,32 @@ class PushRegistrationService {
   static bool hasPresetAmong(Iterable<Account> accounts) =>
       accounts.any((a) => isPresetServer(a.key.host));
 
+  /// このアカウントで relay への登録を試みてよいか (#597 / #1181)。
+  ///
+  /// - [eligible] = プリセットのアカウントを 1 つでも持っている（[hasPresetAmong]）
+  /// - [hasEntitlement] = 有償リレーの利用権トークンを保持している（#1121）
+  ///
+  /// ⚠⚠ **以前は `eligible` と [isPresetServer] しか見ていなかったので、
+  /// プリセットのアカウントを持たない購入者は `/register` に一度も到達せず、
+  /// 購入が丸ごと死んでいた (#1181)。**relay 側（capsicum-relay#58 / #59 / #60）は
+  /// 「来た要求をどう扱うか」の話なので、**要求が来ないことは向こうからは見えない。**
+  ///
+  /// ⚠ **クライアント側のゲートは緩くてよい。認可は relay の仕事**
+  /// （設計書 決定済み事項 2-C「止めるのは `/push`」）。
+  ///
+  /// ⚠⚠ **token が本物かをここで判定しない。**`POST /entitlements` の認証は
+  /// 共有シークレット 1 本で**バイナリから取り出せる**ので、**token は購入の
+  /// 証拠にならない**。持っているのは「買ったつもりがある」という意思表示までで、
+  /// 有効かどうかは relay がレシートで決める（capsicum-relay#61 / #62）。
+  ///
+  /// ⚠ **`status` も見ない。**`unverified` のまま登録を止めると、relay 側の
+  /// 検証が済む前に自分で締め出すことになる。
+  static bool shouldAttemptRegistration({
+    required String host,
+    required bool eligible,
+    required bool hasEntitlement,
+  }) => eligible || isPresetServer(host) || hasEntitlement;
+
   /// 現在のプラットフォームで push backend (APNs/FCM 経由 + capsicum-relay)
   /// が本配線済みか。macOS / Linux / Windows のうち未対応のものは false にし、
   /// UI と service 層で push 機能を gate するときの単一の真実源とする (#502)。
@@ -131,7 +157,11 @@ class PushRegistrationService {
       // ので、アカウントごとに呼んでも secure storage を開くのは 1 回。
       // ⚠ 読めなくても null に倒れる（push 登録を道連れにしない）。
       final entitlement = await EntitlementTokenStore.load();
-      if (!eligible && !isPresetServer(account.key.host)) {
+      if (!shouldAttemptRegistration(
+        host: account.key.host,
+        eligible: eligible,
+        hasEntitlement: entitlement != null,
+      )) {
         debugPrint(
           'capsicum: push.registration: skipped (not preset): ${account.key.host}',
         );

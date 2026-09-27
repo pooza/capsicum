@@ -121,7 +121,10 @@ void main() {
     test('token が無い / 空なら null', () {
       expect(EntitlementToken.fromRelay(null), isNull);
       expect(EntitlementToken.fromRelay({'store': 'apple'}), isNull);
-      expect(EntitlementToken.fromRelay({'token': '', 'store': 'apple'}), isNull);
+      expect(
+        EntitlementToken.fromRelay({'token': '', 'store': 'apple'}),
+        isNull,
+      );
     });
 
     test('JSON へ往復できる', () {
