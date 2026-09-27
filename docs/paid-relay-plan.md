@@ -700,6 +700,12 @@ CREATE TABLE subscriptions (
 
 ⚠ **Linux にはネイティブ push の経路が無い**（[CLAUDE.md](CLAUDE.md)・[#475](https://github.com/pooza/capsicum/issues/475)）。**Linux ユーザーには売る商品が無い。**AppImage 直配なのでストア課金の経路も無い。⚠ **「買えないプラットフォームがある」ことを商品説明に書く必要がある。**
 
+### 7-2. TestFlight のサンドボックス購入と、テスターの範囲（2026-09-27 pooza 決定）
+
+- **本番 relay でもサンドボックスの購入を有効な利用権として扱う。**TestFlight 版は本番 relay を向き、その購入はサンドボックス（無料）になるため。`entitlements.environment` に印を付けて保存する（[relay#61](https://github.com/pooza/capsicum-relay/issues/61)）
+- ⚠⚠ **その代わり、TestFlight のテスターは身内だけにする。**テスターを外へ広げると無料で使える人が増える
+- ⚠ **外部テスター（公開リンク）を開くときはこの前提が崩れる。**そのときは本番 relay で `environment=Sandbox` の利用権を拒否する側へ切り替える
+
 ### 8. 特商法・規約の更新
 
 - 継続課金なので**解約方法の明示**が要る（現行の投げ銭は単発なので不要だった）
