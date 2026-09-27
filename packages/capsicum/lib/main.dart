@@ -43,6 +43,7 @@ import 'src/service/window_state_service.dart';
 import 'src/service/wns_service.dart';
 import 'src/util/action_labels.dart';
 import 'src/util/exception_scrub.dart';
+import 'src/util/sensitive_fields.dart';
 import 'src/util/sentry_observability.dart';
 import 'src/util/sentry_tag_hash.dart';
 import 'src/util/shared_preferences_cache.dart';
@@ -435,7 +436,7 @@ Object? _scrubRequestData(Object? data) {
   if (data is Map) {
     final copy = Map<String, dynamic>.from(data);
     for (final key in copy.keys.toList()) {
-      if (_isSensitiveFieldName(key.toString())) copy[key] = '[Filtered]';
+      if (isSensitiveFieldName(key.toString())) copy[key] = '[Filtered]';
     }
     return copy;
   }
@@ -448,7 +449,7 @@ Object? _scrubRequestData(Object? data) {
         final copy = Map<String, dynamic>.from(parsed);
         var changed = false;
         for (final key in copy.keys.toList()) {
-          if (_isSensitiveFieldName(key)) {
+          if (isSensitiveFieldName(key)) {
             copy[key] = '[Filtered]';
             changed = true;
           }
@@ -458,26 +459,6 @@ Object? _scrubRequestData(Object? data) {
     } catch (_) {}
   }
   return data;
-}
-
-bool _isSensitiveFieldName(String key) {
-  const names = [
-    'i', // Misskey access token
-    'access_token',
-    'refresh_token',
-    'token', // FCM / APNs device token in relay register
-    'client_secret', // OAuth completeLogin の exchangeExtra (#528 manual fallback)
-    'p256dh', // Web Push ECDH public key
-    'auth', // Web Push auth secret
-    'endpoint', // push_token が URL に埋め込まれた relay endpoint
-    'publickey', // Misskey sw/register (VAPID / subscription 公開鍵)
-    'privatekey', // 万一リクエストに載った場合の保険
-  ];
-  final lower = key.toLowerCase();
-  // 完全一致または末尾一致（FormData の subscription[keys][p256dh] 等）
-  return names.any(
-    (n) => lower == n || lower.endsWith('[$n]') || lower.endsWith('.$n'),
-  );
 }
 
 void _startApp() {

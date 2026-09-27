@@ -16,6 +16,7 @@ import '../util/sentry_tag_hash.dart';
 import 'announcement_subscription_service.dart';
 import 'apns_service.dart';
 import 'device_install_id.dart';
+import 'entitlement_token_store.dart';
 import 'fcm_service.dart';
 import 'push_device_type.dart';
 import 'push_key_store.dart';
@@ -126,6 +127,10 @@ class PushRegistrationService {
         store.update(accountKey, PushRegistrationState.skipped);
         return;
       }
+      // 有償リレーの利用権 (#597 / #1121)。⚠ **プロセス内でキャッシュされる**
+      // ので、アカウントごとに呼んでも secure storage を開くのは 1 回。
+      // ⚠ 読めなくても null に倒れる（push 登録を道連れにしない）。
+      final entitlement = await EntitlementTokenStore.load();
       if (!eligible && !isPresetServer(account.key.host)) {
         debugPrint(
           'capsicum: push.registration: skipped (not preset): ${account.key.host}',
@@ -199,6 +204,9 @@ class PushRegistrationService {
         account: '${account.key.username}@${account.key.host}',
         server: account.key.host,
         deviceId: deviceId,
+        // 有償リレーの利用権 (#597 / #1121)。⚠ **無ければ載せないだけ**で、
+        // relay 側は観測のために記録するだけ（判定は `device_id` から引く）。
+        entitlementToken: entitlement?.token,
       );
 
       relayId = PushRelayClient.parseRelayId(sub['id']);
