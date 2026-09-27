@@ -256,6 +256,63 @@ end
 - ⚠ **こちら側に打ち手は無い。**上流の仕様が変わるかどうかの問題なので、**回避策の実装を企図しない**（モロヘイヤ経由は既にあり、それはプリセット側の話）
 - ⚠ **したがって 1-6 は「いまの対象範囲」の記録であって、恒久的な非目標ではない。**上流が変われば market の前提ごと変わる
 
+##### ⚠ 2026-09-28 の調査 —— 制約の実体と他クライアントの実態（⚠⚠ **方針の追加・変更は無い**）
+
+> ここまでさんざん議論したこともあり、**ぞーぺんの状況だけは既知ではなかった情報**でした。**従来の方針に、追加や変更を検討すべき価値がある発見はなかった**と思います。（2026-09-28 pooza）
+
+⚠⚠ **この節は「同じことを調べ直さないための記録」であって、方針を足すものではない。**
+
+###### (1) `secure: true` の実体は「公式クライアントだけ」ではなく「**ネイティブトークンだけ**」
+
+Misskey 本家のソースで確定（pooza/misskey フォーク・2026.9.1+1）。
+
+```ts
+// packages/backend/src/server/api/ApiCallService.ts:362
+const isSecure = user != null && token == null;
+if (ep.meta.secure && !isSecure) throw new ApiError(accessDenied);
+```
+
+| トークン | 長さ | `AuthenticateService.authenticate()` の戻り | `secure: true` |
+| --- | --- | --- | --- |
+| **ネイティブトークン** | **16 文字**（`generateNativeUserToken` = `secureRndstr(16)`） | `[user, null]` | ✅ **通る** |
+| MiAuth | 32 文字（`miauth/gen-token.ts:58`） | `[user, accessToken]` | ❌ |
+| OAuth / アプリ | 32 文字（`auth/accept.ts:62`） | `[user, accessToken]` | ❌ |
+
+⚠ **ネイティブトークンは `POST /api/signin`（ID + パスワード）が `i: user.token` として返す**（`SigninService.ts:63`）。→ ⚠⚠ **パスワードログインを採れば、サードパーティでも `sw/register` は通る。**
+
+⚠⚠ **ただし capsicum は採らない。****既存の方針で答えが出ているので、未決事項に立てない。**
+
+- ⚠ **ネイティブトークンはユーザーにつき 1 本の master credential。**スコープが無く（`write:account` のような限定ができない）、⚠⚠ **個別に失効できない** —— `i/regenerate-token` はその 1 本を差し替えるので、**失効させると本人の Web UI も他アプリも全部切れる**
+- ⚠ **本書 2-A / 2-C の「relay は復号しない / 資格情報を持たない」という柱**と、capsicum が MiAuth を使っている現状に、そのまま反する
+
+⚠ **したがって上の「こちら側に打ち手は無い」は、厳密には「代償を見て選ばない」である。**⚠⚠ **区別はするが、結論は変わらない。**
+
+###### (2) モロヘイヤの経路は **DB へ直接 INSERT** ＝ サーバー運営者にしかできない
+
+> 現時点の例外は Misskey の `sw_subscription` のみ（`/api/sw/register` が重複行を溜め、それを修復する API が存在しないため）
+> —— mulukhiya `README.md`（**非 SELECT の唯一の例外**として明記）
+
+→ ⚠⚠ **構造的にプリセットへ閉じる。クライアント側の工夫では外へ出せない。**
+
+###### (3) ⚠ **ぞーぺん（ZonePane）も Misskey の push は実現していない**（← この調査で唯一の新情報）
+
+App Store の機能説明（2026-09-28 時点）:
+
+| サービス | Push 方式 | Streaming（WebSocket） | 自動更新（定期取得） |
+| --- | --- | --- | --- |
+| **Mastodon** | ✅ ⚠ **Basic / Pro プラン限定** | ✅ | ✅ |
+| **Misskey** | ❌ **記載なし** | ✅（⚠ **電池消費が増える**と注記） | ✅ |
+| Bluesky | — | — | ✅ |
+
+- ⚠⚠ **`secure: true` の壁を抜けた実例は見つからなかった。**抜けられないので **streaming 常駐とポーリングで埋めている**。→ **Misskey の穴は業界共通で、capsicum の競争上の不利ではない**
+- ⚠ **先行事例は Mastodon の push を有料プランに載せている。**[#597](https://github.com/pooza/capsicum/issues/597) の有償化そのものの傍証にはなる。⚠⚠ **ただし料金が公開情報に無いので、値付け（決定済み事項 5 の ¥200）の根拠には使わない**
+
+###### (4) ⚠ ポーリングは capsicum の選択肢にならない（実測済み・再検討しない）
+
+**#293 の観測性強化で iOS の BGTaskScheduler が発火回数 0 回**と判明し、**v1.19（#348）で workmanager ごと撤去済み**（`docs/archive/push-relay-plan.md`）。
+
+⚠ **streaming 常駐なら Android に余地はある**（デスクトップは #569 で既に streaming → OS ローカル通知を持つ）。⚠ **ただし iOS は常駐できず、電池も食う。**⚠⚠ **いずれも #597 のスコープ外**（有償リレーは push の話）。⚠ **Android の `OAuthKeepAliveService` は OAuth ログイン中だけの keep-alive で、streaming 用ではない**（転用は新規作業）。
+
 
 ### 2. 必要なものは 3 層。「ゲート 1 個」ではない
 
