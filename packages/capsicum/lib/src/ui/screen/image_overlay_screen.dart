@@ -1431,13 +1431,25 @@ class _TextPromptDialogState extends State<_TextPromptDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: const Text('テキスト / 絵文字'),
-      content: TextField(
-        controller: _controller,
-        autofocus: true,
-        maxLines: null,
-        decoration: const InputDecoration(
-          hintText: '重ねる文字や絵文字を入力',
-          border: OutlineInputBorder(),
+      // 字数も改行も制限していないが、1 行ぶんの欄だと「短い文字しか入らない」
+      // ように見える (#1126)。数行ぶんの高さと幅を最初から取っておく。
+      // ⚠ 幅は [double.maxFinite] で「ダイアログが許す最大」にし、上限だけ
+      // 絞る。固定幅にすると 320px の狭幅でダイアログからはみ出す。
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 480),
+        child: SizedBox(
+          width: double.maxFinite,
+          child: TextField(
+            controller: _controller,
+            autofocus: true,
+            minLines: 4,
+            maxLines: 10,
+            keyboardType: TextInputType.multiline,
+            decoration: const InputDecoration(
+              hintText: '重ねる文字や絵文字を入力（改行もできます）',
+              border: OutlineInputBorder(),
+            ),
+          ),
         ),
       ),
       actions: [
