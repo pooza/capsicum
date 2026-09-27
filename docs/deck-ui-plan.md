@@ -654,6 +654,7 @@ void disposeStream();                                  // 引数なし＝「唯�
 #### ⚠ 残る観測点
 
 - 再接続イベント（`timeline.stream.disconnected` / `reconnect_exhausted`・CAPSICUM-37 / 36 / 3D / 25）は**可視カラム数ぶんに増える**。`_catchUpSinceTop()` の REST 呼び出しも同じ倍率で増える
+  - ⚠ **2026-09-27 に実測して決着（[#1160](https://github.com/pooza/capsicum/issues/1160) close）。**6 本（美食丼 / キュアスタ！の ホーム・ローカル・連合）で実況 30 分、静かなカラムを含めて**再接続サイクル 0**（サーバーの nginx ログで、live のたびに走る `timelines/*` の取り直しが出ないことで判定）。**上限・LRU・「可視のみ live」は入れない。**列にあるカラムは全部購読したまま（決定済み事項 5-3）。見直しはユーザー報告など実害が出たとき
 - ユーザー向けの逃げ道は現状 `streamingEnabledProvider` の**全 ON / 全 OFF だけ**（`preferences_provider.dart:1095-1102`）。カラム単位の live トグルは無い。**要るかは出してから測る**
 - 先例として、**全ルーム常時購読を接続数とバッテリーを理由に諦めた判断が既にある**（`chat_thread_list_screen.dart:38-43`。「復帰時に再 fetch」の妥協ラインを採った）。2-B はこれと同じ形
 
