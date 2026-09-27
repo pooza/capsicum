@@ -132,6 +132,23 @@ Debug ビルドは「コードを動かしてみるための環境」であり�
 
 ## `flutter run` の実行手順
 
+**普段は `tool/dev-run.sh`（Windows は `tool/dev-run.ps1`）を使う**（[#1179](https://github.com/pooza/capsicum/issues/1179)）。`secrets.env` の読み込み → `build_runner` → `packages/capsicum` で `flutter run --dart-define=RELAY_SECRET=...` までを 1 本で回し、下の罠を踏まない。`-d` などの残りの引数は `flutter run` へそのまま渡る。
+
+```sh
+tool/dev-run.sh -d macos          # build_runner から
+tool/dev-run.sh -s -d macos       # build_runner を飛ばす
+tool/dev-run.sh -n -d macos       # 流すコマンドを表示するだけ（秘密は伏せる）
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tool\dev-run.ps1 -d windows
+powershell -ExecutionPolicy Bypass -File tool\dev-run.ps1 -SkipBuildRunner -d windows
+```
+
+⚠ Windows 版の自前オプション（`-SkipBuildRunner` / `-DryRun`）は**完全一致だけ**。PowerShell の `param()` は引数名の省略形を受け付けるので、`param()` で受けると `-d windows` が `-DryRun` に吸われる。そのため引数は `$args` から手で振り分けている。⚠ Windows 版は melos を通さず、`build_runner` に依存するパッケージで直接 `dart run build_runner build` する（下の Windows 節の注記と同じ理由）。
+
+中でやっていることは次の手順と同じ。
+
 ```sh
 source ~/.config/capsicum/secrets.env
 cd packages/capsicum
