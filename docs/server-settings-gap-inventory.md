@@ -118,19 +118,78 @@ capsicum は `draft.sensitive ? true : null` と書いてこれを回避して�
 | 項目 | 理由 |
 | --- | --- |
 | Misskey `alwaysMarkNsfw` / `autoSensitive` / `notificationRecieveConfig`、Mastodon `notifications/policy` | **サーバー側で効いている。**クライアントが読んでも二重判定になるだけ |
-| Misskey `i/registry/*` | WebUI のクライアント設定ストア。**capsicum には capsicum の設定がある**（#857 の設定バックアップが端末間移行を担当）。#993 の分類 C と同じ判断 |
+| Misskey `i/registry/*` | WebUI のクライアント設定ストア。**capsicum には capsicum の設定がある**（#857 の設定バックアップが端末間移行を担当）。#993 の分類 C と同じ判断。⚠⚠ **2026-09-29 に理由を差し替えた。**中に**投稿の挙動を決める値が実在する**（`defaultNoteVisibility` 等）ので「紛れていないから拾わない」は成り立たない。**§5-1 が正本** |
 | Misskey `roles/*`（ロールによる機能可否） | ⚠ **#993 §6 から回ってきたが、ここでも拾わない。**ロールは**サーバーが強制する**ので、capsicum が先読みして UI を出し分ける必要はない。出し分けないと「押せるが失敗する」になるが、それは**エラー処理の話**であって設定の反映漏れではない |
 | テーマ・フォント・カスタム CSS・サウンド・ウィジェット配置（両 SNS） | **#992 の優先順 3 で最初に切り離すと決めてあるもの。**サーバー側に保存されていても capsicum が従う筋合いはない |
 | Mastodon `indexable` / `discoverable` / `noindex` | 検索エンジン・ディレクトリへの掲載可否で、**サーバーとサーバー間の話**。⚠ `discoverable` は**既に対応済み**（プロフィール編集のトグル・[#865](https://github.com/pooza/capsicum/issues/865)） |
 | Mastodon `attribution_domains` | 記事の著者表示に使うサーバー側の検証情報。クライアントの表示に効かない |
 
-## 5. 未実施・次回の宿題（2026-09-04 に [#1078](https://github.com/pooza/capsicum/issues/1078) へ切り出し済み）
+## 5. 宿題 3 点の確定（2026-09-29・[#1078](https://github.com/pooza/capsicum/issues/1078)）
 
-⚠ **3 点とも「無かった」ではなく「見ていない」で終わっている。**#992 を close するにあたり、まとめて **[#1078](https://github.com/pooza/capsicum/issues/1078)（v2.0）** へ切り出した。
+#992 を close するとき「無かった」ではなく「**見ていない**」で終わっていた 3 点。**それぞれ「拾う / 拾わない」を確定させた。**
 
-- **Misskey の `i/registry` の中身を実データで見ていない。**分類 C としたのは「WebUI のクライアント設定ストアだから」という**性質による判定**で、⚠ **中に投稿の挙動を決める値が紛れていないかは未確認**。ダイスキーの実アカウントで `i/registry/keys` を引けば確定する
-- **Mastodon の `source` は `verify_credentials` 経由でしか見ていない。**⚠ 起動時に 1 回読むきりなら、**WebUI で設定を変えても capsicum を再起動するまで古い値のまま**という経路がありうる。反映のタイミングは未確認。⚠ これは「読んでいない」ではなく「**読んだ値が腐る**」型なので、§1 の母数の取り方では原理的に出てこない
-- **フォーク固有の設定は両 SNS とも見つからなかった**が、⚠ **モロヘイヤ側のユーザー設定（`GET/POST /mulukhiya/api/config`）は今回の母数に入れていない**。#992 の基準が「Mastodon / Misskey のサーバー側設定」だったため。**モロヘイヤの設定反映は別軸**として扱う
+⚠⚠ **収穫は 5-2 の 1 件**（`source.privacy` が腐る経路が実在する）。5-1 は**前提が事実として誤っていた**が結論は変わらず、5-3 は拾わない。
+
+### 5-1. Misskey の `i/registry` — ⚠ 前提は誤っていたが、結論は**拾わない**のまま
+
+**#992 は「WebUI のクライアント設定ストアだから」という性質で分類 C にしていた。**⚠⚠ **「投稿の挙動を決める値は紛れていない」という含みは事実として誤り。**
+
+**Misskey 本体のソースで確定した**（`packages/frontend/`・2026.9.1）:
+
+- 設定の定義は `preferences/def.ts`。**`defaultNoteVisibility` / `defaultNoteLocalOnly` / `keepCw` / `rememberNoteVisibility` がここにある** ＝ **投稿の挙動を決める値**
+- 同期先は `preferences.ts` の `cloudGet` / `cloudSet` で、**スコープ `['client','preferences','sync']`**。⚠ 同期は**キーごとのオプトイン**なので、registry に入っているとは限らない
+- registry へ書く経路は他に `lib/pizzax.ts`（旧ストア）とゲーム 2 本（`drop-and-fusion` / clicker）。ゲームは投稿に効かない
+
+**結論: 拾わない。**⚠ **理由を性質から実質へ差し替える**:
+
+- これは**「サーバーに保存された WebUI のローカル設定」**であって、サーバーが強制する設定ではない。capsicum には capsicum の設定がある（#857 の設定バックアップが端末間移行を担当）
+- ⚠ **従うと決めるなら、それは [#1079](https://github.com/pooza/capsicum/issues/1079)（Mastodon の `preferences` に従うか）と同じ判断**。**別々に決めない** —— 片方だけ従うと、同じ利用者の Mastodon と Misskey で挙動が割れる
+
+#### 🔴 ついでに見つかった死にコード
+
+⚠⚠ **`defaultNoteVisibility` は Misskey の API に存在したことが無い。**`packages/backend` / `misskey-js` で 0 ヒット、履歴を `git log -S` で追っても **frontend にしか現れない**。
+
+**にもかかわらず capsicum は読んでいる**: `fediverse_objects` の `MisskeyUser.defaultNoteVisibility` → `misskey/extensions.dart` の `defaultScope: misskeyVisibilityRosetta[defaultNoteVisibility]`。**サーバーが送らないので常に null** ＝ **Misskey アカウントの `User.defaultScope` は必ず null**。
+
+⚠ **実害は無い**（投稿フォームは capsicum 側の既定へ倒れる）。**誤解の元なので、消すか「常に null」と書き残すかを決める必要がある。**→ 5-4 で起票。
+
+### 5-2. Mastodon の `source` — 🔴 **腐る。拾う（要修正）**
+
+⚠⚠ **疑っていたとおりだった。**
+
+- `Account.user` を作るのは `account_manager_provider.dart` の `restoreSessions`（**起動時の 1 回だけ**）
+- 以後 `user` が差し替わるのは **capsicum 内でプロフィールを編集したとき**（`copyWithUser` の呼び出し元は `profile_edit_screen` の 2 箇所のみ）
+- → **Mastodon の WebUI で既定の公開範囲を変えても、capsicum を再起動するまで古い値のまま**
+
+**⚠⚠ `privacy` だけが危ない。**`source` の他の値と非対称になっている:
+
+| `source` の値 | capsicum の扱い | 腐るか |
+| --- | --- | --- |
+| `privacy` | **読んで `defaultScope` にし、投稿時に `visibility` を明示的に送る** | 🔴 **腐る** |
+| `sensitive` / `language` / `quote_policy` | **読まない・送らない**（§1 のとおり、サーバー側の既定に任せる） | ✅ 腐らない（毎回サーバーが最新の既定を当てる） |
+
+⚠ **「送らない」ほうが結果的に強かった**、という構図。⚠ **`privacy` を「送らない」に倒せるかは別問題**（capsicum は公開範囲を UI で選ばせるので、選んだ値は送る必要がある。倒せるのは「利用者が触っていないとき」だけ）。
+
+⚠ **窓の長さは端末で違う。**モバイルは OS がアプリを落とすので自然に直るが、**デスクトップは常駐するので何日も古いままになりうる**。
+
+→ **5-4 で起票。**
+
+### 5-3. モロヘイヤの `/mulukhiya/api/config` — **拾わない**
+
+**capsicum はこのエンドポイントを一度も呼んでいない**（`GET` / `POST /mulukhiya/api/config` とも 0 ヒット）。中身はハンドラーの有効 / 無効（`config.handler.*.disable`）。
+
+**結論: 拾わない。**理由は **capsicum がハンドラーの出力を予測して見せる UI を持たないから**:
+
+- タグ付けはモロヘイヤが**投稿時にサーバー側で**行う（透過プロキシ）。結果は投稿そのものに現れるので、capsicum が設定を読んでも出し分けるものが無い
+- `POST /mulukhiya/api/status/tags` は**プレビューではなく「削除してタグづけ」**（消して付け直す実行 API）。予測ではない
+
+⚠ **条件付きの結論。**「この投稿にはこのタグが付きます」という**プレビューを作るなら、そのときは母数に入る**（ハンドラーが無効なら予測が外れるため）。
+
+### 5-4. 起票（2026-09-29）
+
+- 🔴 **5-2 `source.privacy` が腐る** → [#1185](https://github.com/pooza/capsicum/issues/1185)
+- ⚠ **5-1 の死にコード（`defaultNoteVisibility`）** → 同 [#1185](https://github.com/pooza/capsicum/issues/1185) に同梱（どちらも `defaultScope` の出どころの話）
+- 5-1 の「registry に従うか」は **[#1079](https://github.com/pooza/capsicum/issues/1079) と同じ判断**として、あちらへ寄せる（Misskey 側の材料を #1079 にコメント済み）
 
 ## 6. 起票
 
