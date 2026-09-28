@@ -476,6 +476,26 @@ capsicum が送るのは `file` / `comment` / `isSensitive` / `folderId`。未�
 - **`chat/messages/search`**（`query` / `limit` / `userId` / `roomId`）— ⚠ **capsicum にメッセージ検索の導線が無い**（chat 系の画面は 8 つあるが検索は無し）。→ [#1188](https://github.com/pooza/capsicum/issues/1188)
 - **`chat/messages/show`**（単一メッセージの取得）— ⚠ **当たりではない。**プッシュのタップはスレッドを開く形（#440）なので、単一メッセージを引く必要が無い
 
+### 12-5-2. `emoji` / `role` entity — ⚠ 当たり無し（小粒が 2 つ）
+
+**`EmojiSimple`**: ✅ **7/7 一致**。⚠ **この回（2026-09-29）に [#1081](https://github.com/pooza/capsicum/issues/1081) で `isSensitive` / `localOnly` / `roleIdsThatCanBeUsedThisEmojiAsReaction` を足したばかり**なので、それ以前は 4/7 だった。
+
+**`RoleLite`**: 8 つのうち **5 つ読んでいる**（`id` / `name` / `color` / `iconUrl` / `isAdministrator`）。未読は 3 つ:
+
+| 未読 | 判定 |
+| --- | --- |
+| `displayOrder` | ⚠ **当たりではない。**サーバーが `UserEntityService` で**降順にソートして返す**ので、capsicum が順序をそのまま使えば表示順は保たれる |
+| `isModerator` | ⚠ **当たりではない。**capsicum が特別扱いするのは管理者だけ（アイコンの差し替え）で、モデレータは**素のロールチップとして名前・色・アイコンつきで出る**。表示の選択であって欠落ではない |
+| `description` | 小粒。ロールチップに説明を出す導線が無い。⚠ **単体では起票しない** |
+
+⚠ **`isAdmin` の出どころは 2 つある**（`role.isAdministrator` **または**モロヘイヤ由来の `adminRoleIds`）。**モロヘイヤ非導入サーバーでも `isAdministrator` で判定できている**ので、ここに穴は無い。
+
 ### 12-6. 残り（第 2 巡以降）
 
-`channel` / `clip` / `antenna` / `page` / `flash` / `chat-*` / `emoji` / `role` の各 entity と、Misskey ② の 109 経路・Mastodon ② の残り。⚠ **`clips` / `antennas` / `channels` は分類 B（v2.0 の「閲覧のみ」族）と母数が重なるので、B を着手する回に一緒に見る**（#1046 の優先順位の案 3）。
+**この回で済んだ**: `notification` / `drive-file`（12-1・12-2）/ `chat-*`（12-5）/ `emoji` / `role`（12-5-2）。
+
+**残り**: `channel` / `clip` / `antenna` / `page` / `flash` の各 entity と、Misskey ② の残り経路・Mastodon ② の残り。
+
+⚠⚠ **残っている entity は全部「分類 B と母数が重なる」側に寄った。**`clip` / `antenna` / `channel` は [#1050](https://github.com/pooza/capsicum/issues/1050) / [#1051](https://github.com/pooza/capsicum/issues/1051) / [#1052](https://github.com/pooza/capsicum/issues/1052)、`page` は [#1073](https://github.com/pooza/capsicum/issues/1073)、`flash` は [#1074](https://github.com/pooza/capsicum/issues/1074) で、いずれも**作成・編集 UI を作る回に同じコードを読む**。→ **単独で巡回する価値が薄くなったので、B を着手する回に一緒に見る**（#1046 の優先順位の案 3 を、残り全体へ広げた判断）。
+
+**単独で残っているのは Mastodon ② の残りだけ**だが、⚠ **層① で「フォーク固有 API なし・当たりは薄い」と分かっている**（優先順位の案 4）。
