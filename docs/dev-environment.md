@@ -174,6 +174,27 @@ flutter run -d <device-id> --dart-define=RELAY_SECRET=$RELAY_SECRET
 
 `flutter devices` は絞り込まずに全部並べるので、**「`flutter devices` には出るのに `flutter run` で選べない」**という食い違いが起きる。`packages/capsicum` へ `cd` してから実行する。
 
+## 課金 UI をストアなしで出す（StoreKit Configuration・#1122）
+
+`packages/capsicum/ios/Capsicum.storekit` に**ローカルの商品定義**がある。Xcode で有効にすると、**App Store Connect の状態に関係なく**購入 UI が出る。
+
+⚠⚠ **要るのは「審査用スクリーンショット」を撮るため。**App Store Connect のサブスクは商品ごとにこれを要求するが、⚠ **`MISSING_METADATA` のあいだ StoreKit は商品を返さない**ので、アプリ側の購入節は丸ごと隠れる（「押しても買えない入口を作らない」作り）。**鶏と卵になるのをこれで外す。**
+
+**有効にする**: Xcode → Product → Scheme → Edit Scheme → Run → Options → **StoreKit Configuration** に `Capsicum.storekit` を選ぶ。
+
+⚠ **共有スキーム（`Runner.xcscheme`）には入れていない。**入れると debug ビルドが常にローカル商品を使い、⚠⚠ **サンドボックスの実購入を一度も踏まないまま出荷しうる**。**撮るときだけ手で選ぶ。**
+
+### 🔴 これで購入しても「動いた」ことにはならない
+
+| | |
+| --- | --- |
+| 出るもの | ✅ 商品名・価格・購入シート（**見た目は本物と同じ**） |
+| 出ないもの | 🔴 **ストアの本物のレシート** |
+
+⚠⚠ **relay の `POST /entitlements` は偽の `purchase_id` を受け取る**ので、App Store Server API の検証が通らず **`unverified` のまま**になる。**「購入 → 利用権が有効」の実測にはならない。**それはサンドボックス（本物の Apple ID のテスター）でやる。
+
+⚠ **投げ銭 3 種もこのファイルに入れてある。**StoreKit Configuration を有効にすると**そのファイルにある商品しか返らない**ので、抜くと投げ銭の節が消えて**画面が本番と違う形で写る**。
+
 ## Claude Code の権限設定（auto モード・全端末）
 
 **目標は「本番サーバーを壊す操作でない限り確認 0」。**確認が出たら、その場でクリックして流すのではなく**設定を直して次から出ないようにする**。定形作業（同期・リリース・デプロイ）の途中でダイアログが連発するのは、たいてい手順書のコマンドが使う補助コマンドが allowlist に無いだけなので、1 つずつ足すのではなく**手順書を読み直してまとめて 1 回で足す**。
