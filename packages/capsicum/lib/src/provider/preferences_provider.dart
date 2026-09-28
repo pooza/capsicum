@@ -585,6 +585,8 @@ class TabConfigNotifier extends FamilyNotifier<List<TabConfigEntry>, String> {
 ///   アカウントに依存しない
 /// - ⚠⚠ **同じ中身を重複して置ける**（6-2）。並べ替え・削除は [DeckColumn.id] で
 ///   指す。**中身（アカウント + 種別）で指さない**
+///   - ⚠ **重複を許すのは [DeckColumnsNotifier.add]（カラム設定から足す）だけ**
+///     （#1182）。操作の結果として開く [DeckColumnsNotifier.insertAfter] は許さない
 ///
 /// ⚠ 削除しても購読を明示的に止めない（6-3）。重複カラムは provider を共有するので、
 /// 最後の 1 本が消えたときに autoDispose が片づける。
@@ -638,7 +640,18 @@ class DeckColumnsNotifier extends Notifier<List<DeckColumn>> {
   /// プロフィール等の出し先（決定済み事項 9・SubwayTooter の `nextPosition`）。
   ///
   /// [afterId] が列に無ければ（開いた直後に元のカラムが消された等）末尾に足す。
-  /// ⚠ 重複は許す（[add] と同じ）。
+  ///
+  /// ⚠⚠ **重複は許さない**（#1182・決定済み事項 9）。同じ中身
+  /// （[DeckColumn.contentKey] ＝ アカウント + 種別）のカラムが既にあれば
+  /// **足さずにそれを返す**。⚠ **[add] とはここが逆**。区分は種別ではなく
+  /// 入口で、カラム設定から意図して足す [add] は今どおり重複を許す（6-2）。
+  /// 操作の結果として開くこちらは、同じものが 2 本並んでも得るものが無い。
+  ///
+  /// ⚠ **返した既存カラムの位置は動かさない**（開いた元の右隣へ移さない）。
+  /// 呼ぶ側がスクロールして見せる（`deck_screen.dart` の `_openColumn`）。
+  ///
+  /// ⚠ アカウントもキーに含むので、**別アカウントのカラムから開けば別カラム**。
+  /// 投稿・プロフィールの ID はサーバーローカルで、取り違えると別のものを指す。
   Future<DeckColumn> insertAfter(
     String afterId,
     AccountKey account,
@@ -651,6 +664,10 @@ class DeckColumnsNotifier extends Notifier<List<DeckColumn>> {
       tab: tab,
       seed: seed,
     );
+    final existing = state
+        .where((c) => c.contentKey == column.contentKey)
+        .firstOrNull;
+    if (existing != null) return existing;
     final index = state.indexWhere((c) => c.id == afterId);
     final next = [...state];
     next.insert(index < 0 ? next.length : index + 1, column);

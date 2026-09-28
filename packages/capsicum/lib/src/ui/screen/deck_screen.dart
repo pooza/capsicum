@@ -177,22 +177,28 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
   /// 決定済み事項 9)。アカウントは元のカラムのものを引き継ぐ。
   /// [account] を渡すとそのアカウントのカラムになる (#1173)。⚠ 明示するのは
   /// 「すべての通知」のように**アカウントをまたぐカラム**から開くときだけ。
+  ///
+  /// ⚠⚠ **同じカラムが既にあれば足さず、そこへ送って点滅させる** (#1182)。
+  /// 判定は [DeckColumnsNotifier.insertAfter] 側にあるので、**操作から開く経路は
+  /// ここに集約しておく**（直接 `insertAfter` を呼ぶ入口を増やさない）。
   Future<void> _openColumn(
     DeckColumn from,
     TabType tab,
     Object? seed, {
     AccountKey? account,
   }) async {
-    final added = await ref
+    // ⚠ 既に同じ中身のカラムがあれば、足さずにそれが返る (#1182)。
+    final opened = await ref
         .read(deckColumnsProvider.notifier)
         .insertAfter(from.id, account ?? from.account, tab, seed: seed);
     if (!mounted) return;
     // ⚠ 開いた時点でフォーカスになり、枠を 1 回点滅させる (#1172・決定済み事項 10)。
     // 横送りで列がずれても、どこに出たかを見失わないため。アカウントは元のカラムを
     // 引き継ぐので、⌘N の宛先のアカウントは変わらない。
-    ref.read(deckFocusProvider.notifier).focusAndBlink(added.id);
+    // ⚠ 既存カラムが返ったときも同じ。**押したのに何も起きない**と見えるのを防ぐ。
+    ref.read(deckFocusProvider.notifier).focusAndBlink(opened.id);
     // ⚠ 足した直後のフレームではまだ Row に居ない。組み上がってから送る。
-    WidgetsBinding.instance.addPostFrameCallback((_) => _reveal(added.id));
+    WidgetsBinding.instance.addPostFrameCallback((_) => _reveal(opened.id));
   }
 
   /// [columnId] まで横に送り、フォーカスを移す（表示 > カラム・#1170）。
@@ -245,26 +251,18 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
   /// ⚠ **既に同じカラムが列にあれば足さず、そこへ送ってフォーカスを移す。**
   /// 「すべての通知」は 1 本あれば足りるうえ、押すたびに増えると列が汚れる。
   /// ⚠ 押した合図として点滅させる（足したときと同じ・決定済み事項 10）。
+  ///
+  /// ⚠⚠ **この判定はここ固有ではなくなった** (#1182)。操作から開くカラムは
+  /// すべて重複しないので、[_openColumn] に任せる。⚠ 単一アカウントの通知は
+  /// アカウントごとに別物だが、キーにアカウントが入っているのでそのまま成り立つ。
   Future<void> _openNotifications(
     DeckColumn from, {
     required bool multipleAccounts,
-  }) async {
-    final tab = multipleAccounts
-        ? const AllNotificationsTab()
-        : const NotificationsTab();
-    // ⚠ 単一アカウントの通知はアカウントごとに別物なので、**同じアカウントの**
-    // カラムだけを既存とみなす。
-    final existing = ref
-        .read(deckColumnsProvider)
-        .where((c) => c.tab == tab && c.account == from.account)
-        .firstOrNull;
-    if (existing != null) {
-      ref.read(deckFocusProvider.notifier).focusAndBlink(existing.id);
-      _reveal(existing.id);
-      return;
-    }
-    await _openColumn(from, tab, null);
-  }
+  }) => _openColumn(
+    from,
+    multipleAccounts ? const AllNotificationsTab() : const NotificationsTab(),
+    null,
+  );
 
   /// 中身の画面が「閉じる」とき（コレクションを削除した等）にカラムを外す (#1150)。
   void _closeColumn(DeckColumn column) =>

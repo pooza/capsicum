@@ -312,6 +312,121 @@ void main() {
       ]);
     });
 
+    // #1182: 操作の結果として開くカラムは重複させない。⚠ 区分は種別ではなく
+    // 入口（カラム設定から足す add / 操作から開く insertAfter）。
+    test('⚠ 同じ投稿を 2 回開いてもカラムは 1 本（#1182）', () async {
+      final container = await makeContainer();
+      final notifier = container.read(deckColumnsProvider.notifier);
+      final a = await notifier.add(_me, const HashtagTab('a'));
+
+      final first = await notifier.insertAfter(
+        a.id,
+        _me,
+        const PostThreadTab('p1'),
+      );
+      final second = await notifier.insertAfter(
+        a.id,
+        _me,
+        const PostThreadTab('p1'),
+      );
+
+      // 2 回目は足さずに 1 回目のカラムを返す。
+      expect(second.id, first.id);
+      expect(container.read(deckColumnsProvider).map((c) => c.id), [
+        a.id,
+        first.id,
+      ]);
+    });
+
+    test('⚠ 既存カラムの位置は動かさない（開いた元の右隣へ移さない・#1182）', () async {
+      final container = await makeContainer();
+      final notifier = container.read(deckColumnsProvider.notifier);
+      final a = await notifier.add(_me, const HashtagTab('a'));
+      final b = await notifier.add(_me, const HashtagTab('b'));
+      // a から開いて a の右隣に入る。
+      final opened = await notifier.insertAfter(
+        a.id,
+        _me,
+        const PostThreadTab('p1'),
+      );
+      expect(container.read(deckColumnsProvider).map((c) => c.id), [
+        a.id,
+        opened.id,
+        b.id,
+      ]);
+
+      // 今度は b から同じ投稿を開く。⚠ b の右隣へは移さない。
+      final again = await notifier.insertAfter(
+        b.id,
+        _me,
+        const PostThreadTab('p1'),
+      );
+      expect(again.id, opened.id);
+      expect(container.read(deckColumnsProvider).map((c) => c.id), [
+        a.id,
+        opened.id,
+        b.id,
+      ]);
+    });
+
+    test('⚠ 別アカウントのカラムから開けば別カラム（ID はサーバーローカル・#1182）', () async {
+      const other = AccountKey(
+        type: BackendType.misskey,
+        host: 'misskey.example',
+        username: 'other',
+      );
+      final container = await makeContainer();
+      final notifier = container.read(deckColumnsProvider.notifier);
+      final a = await notifier.add(_me, const HashtagTab('a'));
+
+      final mine = await notifier.insertAfter(
+        a.id,
+        _me,
+        const PostThreadTab('p1'),
+      );
+      final theirs = await notifier.insertAfter(
+        a.id,
+        other,
+        const PostThreadTab('p1'),
+      );
+
+      expect(theirs.id, isNot(mine.id));
+      expect(container.read(deckColumnsProvider).length, 3);
+    });
+
+    test('⚠ カラム設定からの追加（add）は今どおり重複できる（6-2・#1182）', () async {
+      final container = await makeContainer();
+      final notifier = container.read(deckColumnsProvider.notifier);
+      final first = await notifier.add(_me, const HashtagTab('delmulin'));
+      final second = await notifier.add(_me, const HashtagTab('delmulin'));
+
+      expect(second.id, isNot(first.id));
+      expect(container.read(deckColumnsProvider).map((c) => c.id), [
+        first.id,
+        second.id,
+      ]);
+    });
+
+    test('⚠ 重複を禁じるのは中身であって元のカラムではない（#1182）', () async {
+      final container = await makeContainer();
+      final notifier = container.read(deckColumnsProvider.notifier);
+      final a = await notifier.add(_me, const HashtagTab('a'));
+      // カラム設定から重複して置いたタグを、操作から開いても弾かれない。
+      final opened = await notifier.insertAfter(
+        a.id,
+        _me,
+        const ProfileTab('u1'),
+      );
+      final other = await notifier.insertAfter(
+        a.id,
+        _me,
+        const ProfileTab('u2'),
+      );
+
+      expect(other.id, isNot(opened.id));
+      expect(container.read(deckColumnsProvider).length, 3);
+    });
+
     test('insertAfter の元が列に無ければ末尾に足す', () async {
       final container = await makeContainer();
       final notifier = container.read(deckColumnsProvider.notifier);
