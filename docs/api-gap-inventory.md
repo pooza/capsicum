@@ -457,6 +457,25 @@ capsicum が送るのは `file` / `comment` / `isSensitive` / `folderId`。未�
 - **12-2 → [#1187](https://github.com/pooza/capsicum/issues/1187)**（通知の種別固有フィールド・#1177 の続き）
 - **12-3 は起票しない。**⚠ 単体では実害が無く、必要になった画面（ドライブ・アップロード）を触る回に一緒に見るほうが安い
 
-### 12-5. 残り（第 2 巡以降）
+### 12-5. chat 系（#1046 優先順 2）— ⚠ **層② / 層③ は取りこぼし 0 件**
+
+**#1046 の優先順位の案 2（Misskey ② の chat 系）。**capsicum は **23 経路**を呼んでおり、⚠ **「14 経路」という #1046 の見積もりより多い**（`rooms/invitations/*` の 4 本を含む）。
+
+| 層 | 結果 |
+| --- | --- |
+| **② パラメータ** | ✅ **取りこぼし無し。**`user-timeline` / `room-timeline` / `history` / `create-to-user` / `create-to-room` / `rooms/update` / `rooms/mute` / `rooms/members` とも、送れるものは送っている |
+| **③ entity** | ✅ **取りこぼし無し。**`chat-room` は **8/8 一致**。`chat-message` の未読は `fileId` / `fromUserId` / `toUserId` の 3 つだけで、**いずれも入れ子（`file.id` / `fromUser.id` / `toUser.id`）と重複** |
+| **① 経路** | ⚠ **2 本呼んでいない**（下） |
+
+⚠ **`sinceDate` / `untilDate`（日付ページング）は送っていないが、当たりではない。**capsicum は ID ページング（`sinceId` / `untilId`）を使っており、**同じことが達成できる**。
+
+⚠⚠ **「見ていない」が「無かった」に変わった範囲。**chat は #248 で実装した機能で、**パラメータの取りこぼしが体験に直結しやすい**という #1046 の見立てだったが、**実際には綺麗だった**。次に回す人はここを再走しなくてよい。
+
+#### 呼んでいない 2 本
+
+- **`chat/messages/search`**（`query` / `limit` / `userId` / `roomId`）— ⚠ **capsicum にメッセージ検索の導線が無い**（chat 系の画面は 8 つあるが検索は無し）。→ [#1188](https://github.com/pooza/capsicum/issues/1188)
+- **`chat/messages/show`**（単一メッセージの取得）— ⚠ **当たりではない。**プッシュのタップはスレッドを開く形（#440）なので、単一メッセージを引く必要が無い
+
+### 12-6. 残り（第 2 巡以降）
 
 `channel` / `clip` / `antenna` / `page` / `flash` / `chat-*` / `emoji` / `role` の各 entity と、Misskey ② の 109 経路・Mastodon ② の残り。⚠ **`clips` / `antennas` / `channels` は分類 B（v2.0 の「閲覧のみ」族）と母数が重なるので、B を着手する回に一緒に見る**（#1046 の優先順位の案 3）。
