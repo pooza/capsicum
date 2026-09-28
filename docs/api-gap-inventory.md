@@ -403,3 +403,60 @@ capsicum が送るのは `file` / `comment` / `isSensitive` / `folderId`。未�
 | Mastodon ② | 主要 6 経路 + 通知 以外 |
 
 ⚠ **「見ていない」であって「無かった」ではない。**主要経路だけで ★ が 5 件出ているので、**残りにも同じ密度で当たりがある前提**で扱うこと。
+
+## 12. 層③ の続き 第 1 巡（2026-09-29・[#1046](https://github.com/pooza/capsicum/issues/1046) 優先順 1）
+
+**Misskey ③ の `notification` / `drive-file`。**#1046 の「優先順位の案」1 に従って、母数の小さい 2 entity から入った。⚠ **前提どおり当たりがあった**（★ 2 件）。
+
+### ⚠⚠ 測り方でつまずいた点（次に回す人へ）
+
+**JSON Schema のキーワードをフィールドと数えてしまう。**`properties` と `items` はスキーマの構文で、**entity のフィールドではない**ことが多い。素朴に `^\t*name: {` を拾うと両方が「未読フィールド」に化ける。
+
+- `notification` の `items` / `properties` は**すべてスキーマ構文**（配列要素の定義）。⚠ **偽陽性**
+- `drive-file` の `properties` は**本物のフィールド**（`width` / `height` / `orientation` / `avgColor` を入れ子で持つ）
+
+→ **入れ子の中身まで開いて、型が `object` のものは必ず中を見る。**
+
+### 12-1. ★ 添付のプレースホルダ情報を**両 SNS とも 1 つも読んでいない**
+
+| | サーバーが返すもの | capsicum |
+| --- | --- | --- |
+| Misskey `drive-file` | `blurhash` / `properties.width` / `properties.height` / `properties.avgColor` | ❌ **どれも読んでいない** |
+| Mastodon `MediaAttachment` | `blurhash` / `meta.original.width` ほか | ❌ **同上**（`mastodon/` 配下でも 0 ヒット） |
+
+`Attachment`（`capsicum_core`）は `id` / `type` / `url` / `previewUrl` / `description` / `name` / `filePath` / `mimeType` / `sensitive` / `folderId` だけで、**縦横比を持つ入れ物が無い**。
+
+⚠ **結果として、読み込み前の高さが決まらない。**画像が届いた瞬間にタイムラインが伸び縮みする（レイアウトシフト）。⚠ **添付のある投稿すべてに毎回効く**ので、頻度は層③ の中で最大。
+
+⚠ **これは「壊れている」ではなく「捨てている」型。**#993 の層②③ が全部 bug だったのとは性質が違い、**品質側の当たり**。
+
+### 12-2. ★ 通知の**種別固有フィールド**を読んでいない（[#1177](https://github.com/pooza/capsicum/issues/1177) の裏返し）
+
+`misskey/extensions.dart` の `MisskeyNotification.toCapsicum` が読むのは **`id` / `type` / `createdAt` / `user` / `note` / `reaction` / `reactions` / `achievement` / `users`** だけ。
+
+⚠⚠ **#1177 で種別名は正しく出るようになったが、その種別の中身は空のまま**という組み合わせになっている:
+
+| 種別 | 捨てているフィールド | 何が出せないか |
+| --- | --- | --- |
+| `roleAssigned` | `role` | **どのロールが付いたか** |
+| `exportCompleted` | `exportedEntity` / `fileId` | **書き出したファイルへの導線**（何を書き出したかも） |
+| `scheduledNotePostFailed` | `noteDraft` | ⚠ **どの予約投稿が失敗したか**。#1177 は「失敗した」と読めるところまで |
+| `chatRoomInvitationReceived` | `invitation` | **招待に応じる導線** |
+| `followRequestAccepted` | `message` | 承認時にサーバーが添えたメッセージ |
+| `app` | `body` / `header` / `icon` | ⚠ **アプリ通知の本文そのもの**（見出しだけになる） |
+
+⚠ **`userId` も読んでいないが、これは `user.id` と重複**なので当たりではない。
+
+### 12-3. drive-file のその他（小粒）
+
+`md5`（重複検出）/ `size`（ファイルサイズ表示）/ `folder`（親フォルダの実体）を読んでいない。⚠ **`folderId` は `Attachment` に入れ物があるのに、Misskey のレスポンスからは読んでいない。**
+
+### 12-4. 起票
+
+- **12-1 → [#1186](https://github.com/pooza/capsicum/issues/1186)**（両 SNS・縦横比とプレースホルダ）
+- **12-2 → [#1187](https://github.com/pooza/capsicum/issues/1187)**（通知の種別固有フィールド・#1177 の続き）
+- **12-3 は起票しない。**⚠ 単体では実害が無く、必要になった画面（ドライブ・アップロード）を触る回に一緒に見るほうが安い
+
+### 12-5. 残り（第 2 巡以降）
+
+`channel` / `clip` / `antenna` / `page` / `flash` / `chat-*` / `emoji` / `role` の各 entity と、Misskey ② の 109 経路・Mastodon ② の残り。⚠ **`clips` / `antennas` / `channels` は分類 B（v2.0 の「閲覧のみ」族）と母数が重なるので、B を着手する回に一緒に見る**（#1046 の優先順位の案 3）。
