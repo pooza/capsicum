@@ -54,6 +54,12 @@ class MastodonNotificationGroup {
   final String type;
 
   /// グループ内で最も新しい通知の ID。
+  ///
+  /// ⚠⚠ **本家は数値で返す**（`NotificationGroupSerializer` がこれだけ `to_s`
+  /// していない。`page_min_id` / `page_max_id` は文字列）。型定義
+  /// (`api_types/notifications.ts`) は `string` だが実装と食い違っている。
+  /// `as String` で読むと Mastodon の全サーバーでグループ通知が取れなくなる。
+  @JsonKey(fromJson: _asString)
   final String mostRecentNotificationId;
 
   /// このページの範囲でグループに含まれる最も古い通知の ID。
@@ -104,3 +110,5 @@ class MastodonNotificationGroup {
 
   Map<String, dynamic> toJson() => _$MastodonNotificationGroupToJson(this);
 }
+
+String _asString(Object? value) => value.toString();

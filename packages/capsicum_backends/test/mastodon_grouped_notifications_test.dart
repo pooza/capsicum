@@ -106,6 +106,30 @@ void main() {
     expect(n.groupKey, 'follow-1');
   });
 
+  // ⚠⚠ 本家はこれだけ数値で返す（`NotificationGroupSerializer` が `to_s` して
+  // いない）。上のテストのように文字列で書くと実サーバーとずれ、Mastodon の
+  // 全サーバーで「すべての通知」が「取得に失敗しました」になったのを見逃した。
+  test('⚠ most_recent_notification_id は数値で来る（本家の実際の形）', () {
+    final n = convert(
+      parse({
+        'accounts': [account('1')],
+        'notification_groups': [
+          {
+            'group_key': 'follow-1',
+            'notifications_count': 1,
+            'type': 'follow',
+            'most_recent_notification_id': 9002,
+            'page_min_id': '9002',
+            'page_max_id': '9002',
+            'latest_page_notification_at': '2026-09-27T01:02:03.000Z',
+            'sample_account_ids': ['1'],
+          },
+        ],
+      }),
+    ).single;
+    expect(n.id, '9002');
+  });
+
   test('⚠ 件数は notifications_count（代表 8 人で止めない）', () {
     final n = convert(
       parse({
