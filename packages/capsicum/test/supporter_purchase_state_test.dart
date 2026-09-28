@@ -52,4 +52,39 @@ void main() {
       expect(s.lastOutcome, isNull);
     });
   });
+  group('利用権サブスク (#1122)', () {
+    test('SKU は単一・前方互換命名（supporter.*）', () {
+      // ⚠ 階層を増やさない（設計書 決定済み事項 5 の「単一階層」）。
+      expect(supporterSubscriptionProductId, 'supporter.relay.monthly');
+    });
+
+    // ⚠⚠ **投げ銭の SKU に混ぜない。**混ざると、投げ銭の一覧に利用権が並び、
+    // 購入後の処理（markTipped）がサブスクにも走る。
+    test('投げ銭の SKU 一覧に含めない', () {
+      expect(
+        supporterTipProductIds,
+        isNot(contains(supporterSubscriptionProductId)),
+      );
+    });
+
+    test('subscription は省略時に維持される', () {
+      const s = SupporterPurchaseState(hasEntitlement: true);
+      final next = s.copyWith(purchaseInProgress: true);
+      expect(next.hasEntitlement, isTrue);
+    });
+
+    // ⚠⚠ **明示的に null を渡せること**が要。ストアから商品が消えた
+    // （審査落ち・配信停止）ときに入口を引っ込められないと、
+    // **押しても買えないボタン**が残る。
+    test('subscription は明示的な null でクリアできる', () {
+      const s = SupporterPurchaseState();
+      final cleared = s.copyWith(subscription: null);
+      expect(cleared.subscription, isNull);
+    });
+
+    test('hasEntitlement は省略時に維持される', () {
+      const s = SupporterPurchaseState(hasEntitlement: true);
+      expect(s.copyWith(isAvailable: true).hasEntitlement, isTrue);
+    });
+  });
 }

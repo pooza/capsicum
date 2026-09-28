@@ -16,6 +16,18 @@ const supporterTipProductIds = <String>[
   'supporter.tip.big', // ¥800 相当
 ];
 
+/// 有償リレーの利用権 SKU（月額 ¥200・単一階層・#597 / #1122）。
+///
+/// ⚠⚠ **投げ銭（消耗型）を置き換えるものではない。**設計書 決定済み事項 3 の
+/// とおり「既存の投げ銭は残したまま、サブスクを**追加**する」。
+///
+/// ⚠ **金額をコードに書かない。**表示は [ProductDetails.price] を使う
+/// （日本の価格点は ¥50 から 10 円刻みで、¥200 は実在する・2026-09-27 実測）。
+///
+/// ⚠ **階層を増やさない。**設計書 決定済み事項 5 の「単一階層」は、
+/// 「Misskey 対応は別料金」のような分岐を作らないための決定。
+const supporterSubscriptionProductId = 'supporter.relay.monthly';
+
 /// 購入ライフサイクルの 1 イベント（課金 backend 非依存）。
 ///
 /// `in_app_purchase` の [PurchaseDetails] や Windows.Services.Store の購入結果を
@@ -26,6 +38,16 @@ enum SupporterPurchaseEventStatus { pending, purchased, canceled, error }
 class SupporterPurchaseEvent {
   final String productId;
   final SupporterPurchaseEventStatus status;
+
+  /// ストアの購入（取引）識別子。`purchased` のときだけ入る (#1122)。
+  ///
+  /// ⚠⚠ **サブスクではこれが無いと利用権を発行できない。**relay の
+  /// `POST /entitlements` は `purchase_id` で購入を引く（[PushRelayClient
+  /// .issueEntitlementToken]）。⚠ 投げ銭（消耗型）は使わない —— **ストアを
+  /// 信頼してローカルにバッジを立てるだけ**なので、取引を名指す必要が無い。
+  ///
+  /// ⚠ **ログに出さない。**ストアの購入を名指しできる値。
+  final String? purchaseId;
 
   /// error 時のみ。ストア固有のエラーコード（fingerprint 用・機密は載せない）。
   final String? errorCode;
@@ -42,6 +64,7 @@ class SupporterPurchaseEvent {
   const SupporterPurchaseEvent({
     required this.productId,
     required this.status,
+    this.purchaseId,
     this.errorCode,
     this.needsCompletion = false,
     this.completionToken,
@@ -69,6 +92,17 @@ abstract class SupporterPurchaseBackend {
 
   /// 指定商品を消耗型として購入する。結果は [purchaseEvents] へ流す。
   Future<void> buy(ProductDetails product);
+
+  /// 指定商品を**サブスク**として購入する (#1122)。結果は [purchaseEvents] へ。
+  ///
+  /// ⚠ [buy] と分ける理由は**商品タイプが違う**こと —— 消耗型は買い切りで
+  /// 消費するが、サブスクは非消耗型として扱う（`buyNonConsumable`）。⚠⚠ **消耗型
+  /// として買うと、ストアが更新を扱えない。**
+  ///
+  /// ⚠ **課金経路がサブスクを扱えない OS では [UnsupportedError]。**Windows の
+  /// ストアはサブスクが消耗型と別経路で、既存の自前 channel から作り直しになる
+  /// ため**後回し**（設計書 フェーズ 4 のストア順序）。
+  Future<void> buySubscription(ProductDetails product);
 
   /// ローカル永続化の成立後にストアトランザクションを確定させる
   /// （in_app_purchase は `completePurchase`、Windows は消費報告）。
@@ -133,6 +167,9 @@ class InAppPurchaseBackend implements SupporterPurchaseBackend {
         return SupporterPurchaseEvent(
           productId: p.productID,
           status: SupporterPurchaseEventStatus.purchased,
+          // ⚠ 復元 (`restored`) でも入る。⚠⚠ **サブスクはここが要**で、
+          // 機種変更や再インストールで復元された購入からも利用権を引き直せる。
+          purchaseId: p.purchaseID,
           needsCompletion: p.pendingCompletePurchase,
           completionToken: p,
         );
@@ -156,6 +193,15 @@ class InAppPurchaseBackend implements SupporterPurchaseBackend {
     // autoConsume=true: Android は即 consume して再投げ銭可能に。
     // iOS / macOS (StoreKit) は consumable のため指定は無視される。
     return InAppPurchase.instance.buyConsumable(
+      purchaseParam: PurchaseParam(productDetails: product),
+    );
+  }
+
+  @override
+  Future<void> buySubscription(ProductDetails product) {
+    // ⚠⚠ **`buyNonConsumable` を使う。**`in_app_purchase` はサブスクを
+    // 非消耗型として扱う（消耗型で買うと、ストアが更新を扱えない）。
+    return InAppPurchase.instance.buyNonConsumable(
       purchaseParam: PurchaseParam(productDetails: product),
     );
   }
@@ -190,6 +236,9 @@ class _UnsupportedPurchaseBackend implements SupporterPurchaseBackend {
 
   @override
   Future<void> buy(ProductDetails product) async {}
+
+  @override
+  Future<void> buySubscription(ProductDetails product) async {}
 
   @override
   Future<void> complete(SupporterPurchaseEvent event) async {}

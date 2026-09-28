@@ -8,12 +8,17 @@ import '../../util/launch_url_toast.dart';
 
 /// capsicum サポーター（投げ銭）画面 (#428 段 3)。
 ///
-/// B 確定方針:
-/// - 単発（消耗型）。サブスクではない（解約導線・継続課金なし）
+/// 投げ銭（#428 B 確定方針）:
+/// - 単発（消耗型）。⚠ **投げ銭そのものはサブスクではない**（解約導線なし）
 /// - 機能差別化なし。投げ銭しても全機能は誰でも使えるまま
 /// - 一度でも投げ銭すれば生涯サポーターバッジ（B-3）
 ///
-/// 購入導線は iOS / Android のみ（D-1）。非対応 OS では説明のみ表示する。
+/// ⚠⚠ **この画面には利用権サブスクも並ぶ (#597 / #1122)。**投げ銭とは別の商品で、
+/// **置き換えではなく追加**（設計書 決定済み事項 3）。⚠ **2 つを混ぜないこと** ——
+/// 投げ銭は「任意の応援」、利用権は「非プリセットサーバーでのプッシュ通知」という
+/// 機能に対する対価で、⚠ **成功時の文言も解約の扱いも違う。**
+///
+/// 購入導線は iOS / Android / macOS（D-1）。非対応 OS では説明のみ表示する。
 class SupporterScreen extends ConsumerWidget {
   const SupporterScreen({super.key});
 
@@ -25,10 +30,20 @@ class SupporterScreen extends ConsumerWidget {
       if (outcome == null || outcome == prev?.lastOutcome) return;
       final messenger = ScaffoldMessenger.of(context);
       messenger.hideCurrentSnackBar();
-      final text = switch (outcome.kind) {
-        SupporterPurchaseOutcomeKind.success => 'ありがとうございます！サポーターになりました。',
-        SupporterPurchaseOutcomeKind.canceled => '購入をキャンセルしました。',
-        SupporterPurchaseOutcomeKind.error => '購入を完了できませんでした。時間をおいて再度お試しください。',
+      // ⚠⚠ **投げ銭とサブスクで文言を分ける (#1122)。**成功の意味が違うので、
+      // 同じ文面だと**買ったものを取り違えて伝える**。
+      final text = switch ((outcome.kind, outcome.isSubscription)) {
+        (SupporterPurchaseOutcomeKind.success, true) =>
+          'ありがとうございます！リレーの利用権が有効になりました。',
+        (SupporterPurchaseOutcomeKind.success, false) =>
+          'ありがとうございます！サポーターになりました。',
+        (SupporterPurchaseOutcomeKind.canceled, _) => '購入をキャンセルしました。',
+        // ⚠ サブスクは購入が成立していても利用権の発行で落ちることがある
+        // （relay へ届かない等）。⚠⚠ **「購入できなかった」と言い切らない。**
+        (SupporterPurchaseOutcomeKind.error, true) =>
+          '利用権を有効にできませんでした。時間をおいてアプリを開き直してください。',
+        (SupporterPurchaseOutcomeKind.error, false) =>
+          '購入を完了できませんでした。時間をおいて再度お試しください。',
       };
       messenger.showSnackBar(SnackBar(content: Text(text)));
     });
@@ -161,6 +176,7 @@ class SupporterScreen extends ConsumerWidget {
     }
 
     return [
+      ..._subscriptionSection(ref, state),
       for (final product in state.products)
         ListTile(
           leading: Image.asset(
@@ -186,6 +202,71 @@ class SupporterScreen extends ConsumerWidget {
           style: TextStyle(fontSize: 12, color: Colors.grey),
         ),
       ),
+    ];
+  }
+
+  /// 有償リレーの利用権サブスク (#597 / #1122)。
+  ///
+  /// ⚠⚠ **投げ銭を置き換えない。**設計書 決定済み事項 3 のとおり「既存の投げ銭は
+  /// 残したまま、サブスクを**追加**する」。並べる順は**利用権が先**（機能に対する
+  /// 対価なので、任意の応援より先に説明が要る）。
+  ///
+  /// ⚠ **商品が取れなければ丸ごと出さない** —— ストア未登録・審査前・
+  /// サブスクを扱えない OS。**押しても買えない入口を作らない。**
+  List<Widget> _subscriptionSection(
+    WidgetRef ref,
+    SupporterPurchaseState state,
+  ) {
+    final product = state.subscription;
+    if (product == null) return const [];
+
+    return [
+      const Padding(
+        padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
+        child: Text(
+          'リレーの利用権',
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+        ),
+      ),
+      const Padding(
+        padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
+        child: Text(
+          // ⚠ **便益を正確に書く。**プリセットサーバーの利用者は元から無償で
+          // 使えるので、「これを買わないと通知が来ない」ではない。
+          'capsicum の運営元が用意したサーバー以外でも、プッシュ通知を'
+          '受け取れるようになります。運営元のサーバーをお使いの方は、'
+          '購入しなくてもこれまでどおり通知を受け取れます。',
+          style: TextStyle(fontSize: 13),
+        ),
+      ),
+      ListTile(
+        leading: const Icon(Icons.notifications_active_outlined),
+        title: Text(product.title),
+        subtitle: Text(product.description),
+        trailing: state.hasEntitlement
+            // ⚠ **持っている人にボタンを出さない。**1 つの購入を複数端末で
+            // 使えるので、押させると二重購入になる。
+            ? const Text('利用中')
+            : FilledButton(
+                onPressed: state.purchaseInProgress
+                    ? null
+                    : () => ref
+                          .read(supporterPurchaseProvider.notifier)
+                          .subscribe(product),
+                child: Text(product.price),
+              ),
+      ),
+      const Padding(
+        padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+        child: Text(
+          // ⚠ 解約の窓口はストア。⚠⚠ **アプリ内に解約導線を作らない**
+          // （ストアの規約上、アプリから直接は解約できない）。
+          '毎月の自動更新です。解約はご利用のストア（App Store / Google Play）から'
+          '行えます。',
+          style: TextStyle(fontSize: 12, color: Colors.grey),
+        ),
+      ),
+      const Divider(height: 1),
     ];
   }
 
