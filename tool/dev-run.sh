@@ -6,10 +6,12 @@
 # 手で打つと落としやすい 3 点をここで固定する（docs/dev-environment.md
 # 「flutter run の実行手順」）。
 #
-# - ⚠⚠ --dart-define=RELAY_SECRET を必ず付ける。source しただけでは Dart に
+# - ⚠⚠ RELAY_SECRET があれば必ず --dart-define で渡す。source しただけでは Dart に
 #   届かず、プッシュ登録が 401 で落ちる。relay 側にはログが残らない (#994)
 # - packages/capsicum で flutter run する。workspace 直下だと iOS が候補に出ない
-# - secrets.env が読めない / RELAY_SECRET が空なら止まる
+# - ⚠ secrets.env が読めない / RELAY_SECRET が空でも**止めない**（#1180）。警告を
+#   出して起動し、プッシュ通知だけ使えない状態にする。秘密を持てるのはメンテナ
+#   だけなので、止めると外部の開発者がこの手順を使えない
 #
 # SENTRY_DSN は渡さない。渡すと開発中の例外が本番プロジェクトへ流れる。
 #
@@ -53,15 +55,21 @@ done
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 secrets="${CAPSICUM_SECRETS:-$HOME/.config/capsicum/secrets.env}"
 
-if [ ! -r "$secrets" ]; then
-  echo "error: $secrets が読めません（Google ドライブのリンク切れを疑う）" >&2
-  exit 1
+# ⚠⚠ 秘密が無くても止めない（#1180）。RELAY_SECRET を持てるのはメンテナだけなので、
+# 止めると外部の開発者はこの手順でアプリを動かせない。**無ければ警告だけ出して
+# --dart-define を付けずに起動し、プッシュ通知だけ使えない状態にする。**
+# ⚠ メンテナが Google ドライブのリンク切れに気付けるよう、警告は必ず出す。
+if [ -r "$secrets" ]; then
+  # shellcheck disable=SC1090
+  source "$secrets"
 fi
-# shellcheck disable=SC1090
-source "$secrets"
+if [ ! -r "$secrets" ]; then
+  echo "warning: $secrets が読めません（メンテナなら Google ドライブのリンク切れを疑う）" >&2
+elif [ -z "${RELAY_SECRET:-}" ]; then
+  echo "warning: $secrets に RELAY_SECRET がありません" >&2
+fi
 if [ -z "${RELAY_SECRET:-}" ]; then
-  echo "error: $secrets に RELAY_SECRET がありません（空のまま焼き込むとプッシュが 401 になる）" >&2
-  exit 1
+  echo "warning: プッシュ通知は使えません（設定 → プッシュ通知の登録が 401 で落ちます）。他の機能は動きます" >&2
 fi
 
 # melos は Pub Cache の bin に入る。PATH 外だと melos run build_runner の中の
@@ -74,8 +82,13 @@ esac
 run() {
   if [ "$dry_run" -eq 1 ]; then
     # 秘密は伏せて表示する。sed だと値の中の記号を正規表現として読んでしまう。
+    # ⚠ 空文字での置換は全文字の間に挟まるので、秘密が無い回は素通しする。
     local line="$*"
-    printf '%s\n' "${line//"$RELAY_SECRET"/<RELAY_SECRET>}"
+    if [ -n "${RELAY_SECRET:-}" ]; then
+      printf '%s\n' "${line//"$RELAY_SECRET"/<RELAY_SECRET>}"
+    else
+      printf '%s\n' "$line"
+    fi
   else
     "$@"
   fi
@@ -89,4 +102,10 @@ fi
 cd "$repo_root/packages/capsicum"
 [ "$dry_run" -eq 1 ] && echo "(cd packages/capsicum)"
 # ${arr[@]+"${arr[@]}"}: bash 3.2 + set -u で空配列を展開すると落ちるための書き方。
-run flutter run --dart-define=RELAY_SECRET="$RELAY_SECRET" ${flutter_args[@]+"${flutter_args[@]}"}
+# ⚠ 秘密が無い回は --dart-define ごと落とす。空文字を焼き込むと、relay 側は
+# 「値が違う」ではなく「署名が合わない」で落ちて原因が読みにくくなる。
+if [ -n "${RELAY_SECRET:-}" ]; then
+  run flutter run --dart-define=RELAY_SECRET="$RELAY_SECRET" ${flutter_args[@]+"${flutter_args[@]}"}
+else
+  run flutter run ${flutter_args[@]+"${flutter_args[@]}"}
+fi

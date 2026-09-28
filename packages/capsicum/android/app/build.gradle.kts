@@ -6,7 +6,25 @@ plugins {
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
-    id("com.google.gms.google-services")
+}
+
+// google-services.json は .gitignore で除外されている（メンテナの手元にしか無い）。
+// ⚠ 無条件に適用すると :app:processDebugGoogleServices でビルドが落ちるので、
+// ファイルがあるときだけ当てる（#1180）。
+//
+// ⚠⚠ 実行時はこれで困らない。`_initFirebase()` が例外を握って rethrow しないので、
+// プラグインが無い＝プッシュ通知だけ使えない、に揃う（RELAY_SECRET / SENTRY_DSN が
+// 無いときと同じ扱い・docs/dev-environment.md「置かないと何が使えないか」）。
+//
+// ⚠ `plugins {}` の中では条件分岐できないので `apply(plugin = ...)` 形式。
+// 版は android/settings.gradle.kts の `apply false` で解決済み。
+if (project.file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+} else {
+    logger.lifecycle(
+        "capsicum: google-services.json がないため Firebase を組み込みません" +
+            "（プッシュ通知だけ使えません）",
+    )
 }
 
 val keystorePropertiesFile = rootProject.file("key.properties")

@@ -78,6 +78,16 @@ dart format --set-exit-if-changed .
 dart analyze --fatal-infos
 ```
 
+### 動かす
+
+```bash
+tool/dev-run.sh -d macos     # Windows は tool\dev-run.ps1
+```
+
+コード生成から `flutter run` までを 1 本で回します。`-d` などの引数はそのまま `flutter run` へ渡ります。手順の詳細と、手で打つときに踏みやすい罠は [docs/dev-environment.md の「`flutter run` の実行手順」](docs/dev-environment.md#flutter-run-の実行手順)にあります。
+
+秘密（`RELAY_SECRET` / `SENTRY_DSN`）と Android の `google-services.json` は**無くても起動します**。使えなくなるのは**プッシュ通知だけ**で、タイムライン・投稿などは影響を受けません（同じ節の「置かなくても動く」に一覧があります）。
+
 設計の出発点は [Kaiteki](https://github.com/Kaiteki-Fedi/Kaiteki) の Adapter パターンとモデル構造です。
 
 ## ドキュメント

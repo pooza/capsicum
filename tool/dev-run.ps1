@@ -9,9 +9,12 @@
     not reach Dart; without the define, push registration fails with 401 and
     the relay logs nothing (#994).
   - Runs flutter in packages/capsicum (the workspace root has no platform dirs).
-  - Stops if secrets.env is unreadable or RELAY_SECRET is empty. secrets.env is
-    a symlink into Google Drive (G:), which can stay unmounted after a failed
-    restart.
+  - Does NOT stop when secrets.env is unreadable or RELAY_SECRET is empty
+    (#1180). Only maintainers can have the secret, so stopping would leave
+    outside contributors unable to run the app at all. Warns and runs without
+    the define instead: everything works except push notifications.
+    secrets.env is a symlink into Google Drive (G:), which can stay unmounted
+    after a failed restart, so the warning still matters to maintainers.
   - Does NOT pass SENTRY_DSN (dev exceptions would go to the production project).
   - build_runner runs directly in each package that depends on it instead of
     "melos run build_runner", which fails on Windows when the Pub Cache bin is
@@ -52,26 +55,28 @@ $secrets = if ($env:CAPSICUM_SECRETS) { $env:CAPSICUM_SECRETS } else {
   Join-Path $env:USERPROFILE '.config\capsicum\secrets.env'
 }
 
-if (-not (Test-Path -LiteralPath $secrets)) {
-  Write-Error "cannot read $secrets (is Google Drive / G: mounted?)"
-  exit 1
-}
-
-# secrets.env is written for sh: "export KEY=value", optionally quoted.
 $relaySecret = $null
-foreach ($line in Get-Content -LiteralPath $secrets) {
-  if ($line -match '^\s*(?:export\s+)?RELAY_SECRET=(.*)$') {
-    $relaySecret = $Matches[1].Trim().Trim('"').Trim("'")
+if (Test-Path -LiteralPath $secrets) {
+  # secrets.env is written for sh: "export KEY=value", optionally quoted.
+  foreach ($line in Get-Content -LiteralPath $secrets) {
+    if ($line -match '^\s*(?:export\s+)?RELAY_SECRET=(.*)$') {
+      $relaySecret = $Matches[1].Trim().Trim('"').Trim("'")
+    }
   }
+} else {
+  Write-Warning "cannot read $secrets (maintainers: is Google Drive / G: mounted?)"
 }
 if ([string]::IsNullOrEmpty($relaySecret)) {
-  Write-Error "RELAY_SECRET is missing in $secrets (an empty value makes push registration fail with 401)"
-  exit 1
+  Write-Warning "RELAY_SECRET not found; push notifications will not work (registration fails with 401). Everything else runs."
 }
 
 function Invoke-Step([string]$dir, [string]$exe, [string[]]$argv) {
   if ($DryRun) {
-    $shown = ($argv -join ' ').Replace($relaySecret, '<RELAY_SECRET>')
+    $shown = $argv -join ' '
+    # Replacing an empty string would insert the marker between every char.
+    if (-not [string]::IsNullOrEmpty($relaySecret)) {
+      $shown = $shown.Replace($relaySecret, '<RELAY_SECRET>')
+    }
     Write-Output "(in $dir) $exe $shown"
     return
   }
@@ -95,5 +100,11 @@ if (-not $SkipBuildRunner) {
   }
 }
 
-$runArgs = @('run', "--dart-define=RELAY_SECRET=$relaySecret") + $FlutterArgs
+# Drop the define entirely when there is no secret: baking in an empty value
+# makes the relay fail on the signature instead of saying the value is missing.
+$runArgs = if ([string]::IsNullOrEmpty($relaySecret)) {
+  @('run') + $FlutterArgs
+} else {
+  @('run', "--dart-define=RELAY_SECRET=$relaySecret") + $FlutterArgs
+}
 Invoke-Step (Join-Path $repoRoot 'packages\capsicum') 'flutter' $runArgs

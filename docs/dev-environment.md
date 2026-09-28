@@ -155,6 +155,33 @@ cd packages/capsicum
 flutter run -d <device-id> --dart-define=RELAY_SECRET=$RELAY_SECRET
 ```
 
+### `secrets.env` を置く（メンテナ向け・[#1180](https://github.com/pooza/capsicum/issues/1180)）
+
+スクリプトもこの手順書も `~/.config/capsicum/secrets.env`（Windows は `%USERPROFILE%\.config\capsicum\secrets.env`）を読む。中身は sh の書式:
+
+```sh
+export RELAY_SECRET=...
+export SENTRY_DSN=...
+```
+
+- ⚠ **値そのものは公開リポジトリに書かない。**メンテナは共有ドライブから取る（メイン機では Google ドライブ上の実体への symlink で置いてある）
+- **debug で要るのは `RELAY_SECRET` だけ。**`SENTRY_DSN` はリリースビルドでしか使わない
+- ⚠ Windows 版スクリプトも**同じ sh 書式のファイル**を読む（`export` の有無とクォートは吸収する）
+- 置き場所を変えたいときは環境変数 `CAPSICUM_SECRETS` でファイルを指せる
+
+### ⚠⚠ 置かなくても動く（何が使えなくなるかだけ変わる）
+
+**秘密を持てるのはメンテナだけなので、どれも「無いと止まる」にしない**（#1180）。無ければ警告を出して起動し、**使えなくなるのはプッシュ通知だけ**に揃えてある。
+
+| 置かないもの | 起動 | 使えなくなるもの |
+| --- | --- | --- |
+| `RELAY_SECRET` | する | **プッシュ通知だけ。**登録が 401 で落ちる（設定 → プッシュ通知に 401 と出る）。タイムライン・投稿などは影響なし |
+| `SENTRY_DSN` | する | クラッシュ報告が送られない。⚠ **debug ではもともと渡さない**ので、開発では差が無い |
+| `packages/capsicum/android/app/google-services.json` | する | **プッシュ通知だけ**（Android）。⚠ `.gitignore` で除外されているので、外部の開発者は持てない |
+
+- ⚠ **`google-services.json` は 2026-09-29 まで「無いとビルドごと落ちる」だった。**`android/app/build.gradle.kts` が `com.google.gms.google-services` を無条件に適用しており、`:app:processDebugGoogleServices` で失敗していた。**ファイルがあるときだけ `apply(plugin = ...)` する**形に変えて、上の表の他の行と揃えた
+- ⚠ 実行時に困らないのは、`_initFirebase()` が例外を握って rethrow しないため。**プラグインが無い ＝ プッシュ通知だけ使えない**に収まる
+
 ### ⚠ `--dart-define` を省くとプッシュが 401 で落ちる
 
 `RELAY_SECRET` は `String.fromEnvironment` で読む **コンパイル時定数**（[`push_relay_client.dart`](../packages/capsicum/lib/src/service/push_relay_client.dart)）。**`secrets.env` を `source` して `export` しても Dart には届かない。**`--dart-define` で渡さないと空文字が焼き込まれ、relay の `authenticate!` が `halt 401` する。
