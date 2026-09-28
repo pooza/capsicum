@@ -386,6 +386,25 @@ const mastodonNotificationTypeMap = <String, NotificationType>{
   // 関係の切断・モデレーション警告 (#1084)。
   'severed_relationships': NotificationType.severedRelationships,
   'moderation_warning': NotificationType.moderationWarning,
+  // #1177 で足した 6 種。⚠⚠ **この表は絞り込みに送る名前の正本でもある**
+  // （`mastodonNotificationWireNames` が導出・#1042）ので、足した種別は
+  // **自動的に種別フィルタの候補にも出る。**
+  // ⚠ `filterable: false` の種別も `types[]` では使える（`Notification.browserable`
+  // が `TYPES` と交差するだけ。`filterable` は通知ポリシー用・2026-09-28 実測）。
+  'status': NotificationType.newPost,
+  'quote': NotificationType.quote,
+  'quoted_update': NotificationType.quotedUpdate,
+  'annual_report': NotificationType.annualReport,
+  // ⚠⚠ **`admin.sign_up` / `admin.report` はここに入れない (#1177)。**
+  //
+  // この表は `supported_types[]` の正本でもある（#1042）。**載せると「capsicum が
+  // 描ける」と申告したことになり、サーバーが `fallback` を送らなくなる**
+  // （`NotificationFallbackConcern#needs_fallback?`・非 baseline の種別だけに付く）。
+  // ⚠ capsicum は通報や新規登録の中身を読まないので、**自前のラベルより
+  // サーバーの文言のほうが情報量が多い。**載せると今より悪くなる。
+  //
+  // ⚠ `severed_relationships` / `moderation_warning` が載っているのは、
+  // **あちらは中身（`event` / `moderation_warning`）を実際に読んでいる**から（#1084）。
 };
 
 /// 起点となる相手がいない通知 (#1084)。

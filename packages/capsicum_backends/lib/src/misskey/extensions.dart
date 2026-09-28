@@ -169,6 +169,21 @@ const misskeyNotificationTypeMap = <String, NotificationType>{
   'login': NotificationType.login,
   'createToken': NotificationType.createToken,
   'achievementEarned': NotificationType.achievementEarned,
+  // #1177 で足した 8 種。⚠⚠ **`app` / `test` は入れない** —— この表は絞り込みの
+  // 候補の正本でもある（`misskeyNotificationWireNames` が導出・#1042）ので、
+  // **使う機会のほぼ無い種別で選択肢だけが増える。**
+  'note': NotificationType.newPost,
+  'quote': NotificationType.quote,
+  // ⚠⚠ **この Issue でいちばん実害がある。**capsicum 自身が予約投稿を作れるのに、
+  // 失敗が「通知」としか出ないと「投稿したつもりが出ていない」に気づけない。
+  'scheduledNotePostFailed': NotificationType.scheduledPostFailed,
+  'scheduledNotePosted': NotificationType.scheduledPostPosted,
+  'followRequestAccepted': NotificationType.followRequestAccepted,
+  'roleAssigned': NotificationType.roleAssigned,
+  // ⚠ `NotificationType.chat`（push の `newChatMessage`＝メッセージが来た）に
+  // 寄せない。**招待とは別物**なので、寄せると見出しが嘘になる。
+  'chatRoomInvitationReceived': NotificationType.chatInvitation,
+  'exportCompleted': NotificationType.exportCompleted,
 };
 
 /// [type] に対応するサーバー側の通知種別名 (#1042)。

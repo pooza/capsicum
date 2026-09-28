@@ -28,6 +28,44 @@ enum NotificationType {
   // Mastodon: 管理者からのモデレーション警告 (#1084)。中身は
   // [Notification.moderationWarning]。Misskey 等価なし。
   moderationWarning,
+  // 購読中のユーザーが投稿した (#1177)。Mastodon の `status` / Misskey の `note`。
+  // ⚠ ベル購読した相手の新規投稿で、メンションではない。
+  newPost,
+  // 引用された (#1177)。Mastodon / Misskey とも `quote`。
+  //
+  // ⚠⚠ **[mention] に寄せない。**寄せると**種別フィルタで切り分けられなくなる**
+  // （表が送信名の正本でもあるため・#1042）。⚠ ネイティブ側の
+  // `NotificationTypeLabel.swift` は #248 以来これを「メンション」と出していたので、
+  // **プッシュの見出しが「引用」に変わる。**
+  quote,
+  // 引用元の投稿が編集された (#1177)。Mastodon の `quoted_update`。Misskey 等価なし。
+  quotedUpdate,
+  // Mastodon の年間まとめ (#Wrapstodon・#1177)。⚠ **投稿が付かないので、
+  // 見出しが無いと何の通知か読めない。**
+  annualReport,
+  // 管理者向け: 新規登録があった / 通報があった (#1177)。
+  // ⚠ 管理者だけが受け取る。Misskey 等価なし。
+  adminSignUp,
+  adminReport,
+  // Misskey: 予約投稿が投稿された / 失敗した (#1177)。
+  //
+  // ⚠⚠ **[scheduledPostFailed] がこの Issue でいちばん実害がある。**capsicum
+  // 自身が予約投稿を作れるのに、**失敗したことが「通知」としか出ない** ＝
+  // 「投稿したつもりが出ていない」に気づけない。
+  scheduledPostPosted,
+  scheduledPostFailed,
+  // Misskey: 送ったフォローリクエストが承認された (#1177)。
+  // ⚠ 投稿が付かないので、見出しが無いと読めない。
+  followRequestAccepted,
+  // Misskey: ロールが付与された (#1177)。⚠ 同上。
+  roleAssigned,
+  // Misskey: チャットルームに招待された (#1177)。
+  //
+  // ⚠⚠ **[chat] に寄せない。**あれはプッシュ専用の `newChatMessage`
+  // （#248 / #765）＝「メッセージが来た」で、**招待とは別物**。寄せると見出しが嘘になる。
+  chatInvitation,
+  // Misskey: エクスポートが完了した (#1177)。⚠ 投稿が付かないので読めない。
+  exportCompleted,
   other,
 }
 
