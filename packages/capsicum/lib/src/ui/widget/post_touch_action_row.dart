@@ -305,6 +305,8 @@ class PostTouchActionRow extends ConsumerWidget {
       showReactionPickerSheet(
         context: context,
         ref: ref,
+        // 受付条件で使えない絵文字を無効化する (#1081)。
+        target: targetPost,
         onSelected: (emoji) => _runReactionAction(
           ref,
           messenger,

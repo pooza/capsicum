@@ -26,11 +26,15 @@ typedef ReactionPickerGuard =
 ///
 /// 選択された絵文字は [onSelected] に渡す。シートは選択時点で閉じるので、
 /// 呼び出し側で pop する必要はない。
+///
+/// [target] を渡すと、**受付条件で使えないカスタム絵文字を無効化**する (#1081)。
+/// ⚠ お知らせ・メッセージは投稿ではないので渡さない（受付条件を持たない）。
 Future<void> showReactionPickerSheet({
   required BuildContext context,
   required WidgetRef ref,
   required ValueChanged<String> onSelected,
   ReactionPickerGuard? canReact,
+  Post? target,
 }) async {
   final account = ref.read(currentAccountProvider);
   final adapter = account?.adapter;
@@ -60,6 +64,7 @@ Future<void> showReactionPickerSheet({
         mulukhiya: picker.mulukhiya,
         accessToken: picker.accessToken,
         forReaction: true,
+        reactionTarget: target,
         onSelected: (emoji) {
           Navigator.of(sheetContext).pop();
           onSelected(emoji);

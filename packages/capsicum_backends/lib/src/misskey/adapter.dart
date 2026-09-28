@@ -1324,6 +1324,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     final emojis = await client.getEmojis();
     return emojis
         .map(
+          // ⚠⚠ リアクションの受付条件に効く 3 つ（#1081）は、**false / 空のとき
+          // サーバーが値ごと省く**（`EmojiEntityService.packSimple`）。
+          // **欠落は「不明」ではなく「制限なし」**として読む。
           (e) => CustomEmoji(
             shortcode: e['name'] as String,
             url: (e['url'] as String?) ?? '',
@@ -1331,6 +1334,13 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
             aliases:
                 (e['aliases'] as List<dynamic>?)
                     ?.map((a) => a as String)
+                    .toList() ??
+                const [],
+            isSensitive: e['isSensitive'] == true,
+            localOnly: e['localOnly'] == true,
+            reactionRoleIds:
+                (e['roleIdsThatCanBeUsedThisEmojiAsReaction'] as List<dynamic>?)
+                    ?.map((r) => r as String)
                     .toList() ??
                 const [],
           ),
