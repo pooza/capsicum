@@ -225,6 +225,35 @@ class PushRelayClient {
     }
   }
 
+  /// 手元の利用権トークンの**いまの状態**を読む (#1123 / capsicum-relay#80)。
+  ///
+  /// ⚠⚠ **[issueEntitlementToken] を状態確認に使い回さない。**あちらは upsert
+  /// なので冪等ではあるが、呼ぶたびに relay 側の `relay_entitlement_token_total`
+  /// が増え `entitlement.issued` が出る —— **「発行の回数」を数えている counter が
+  /// 「画面を開いた回数」に汚染され、ゲートを閉じてよいかの判断材料が濁る。**
+  ///
+  /// ⚠⚠ **404（知らない token）は「失効」ではない。**呼び出し側で混ぜないこと ——
+  /// 前者は端末の保存が壊れた / 消された、後者は解約や支払い失敗で、**案内が違う。**
+  /// ここでは 404 を null で返す。
+  /// 🔴 **token は URL に載せない**（capsicum-relay#81 の Codex P2）。relay の
+  /// nginx は素の `access_log` を有効にしており、**リクエスト行に完全なパスが
+  /// 残る** —— ⚠⚠ **token はそのまま利用権として使える capability** なので、
+  /// 平文でログに溜まる。⚠ **ヘッダは既定のログ書式に含まれない。**
+  Future<Map<String, dynamic>?> fetchEntitlement(String token) async {
+    try {
+      final response = await _dio.get<Map<String, dynamic>>(
+        '/entitlements',
+        options: Options(
+          headers: {'X-Relay-Secret': _secret, 'X-Entitlement-Token': token},
+        ),
+      );
+      return response.data;
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) return null;
+      rethrow;
+    }
+  }
+
   /// リレー応答の `id` を防御的にパースする。整数・数値文字列の両方を許容し、
   /// 解釈不能なら null を返す（呼び出し側で契約違反として計装する）。
   /// register / announcement_subscriptions の両系統で共有する。
