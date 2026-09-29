@@ -15,8 +15,8 @@ import 'package:flutter_test/flutter_test.dart';
 /// `#-develop-…` という**先頭にハイフンが残る**綴りになる。同じ文書内からの
 /// リンクが前例のない形になり、2026-09-17 に #1142 で実際に踏んだ。
 /// 規約は [docs/CLAUDE.md]「ドキュメント表記規約」にあり、**強調は本文 1 行目へ
-/// 移す**。2026-09-30 の #1184 で、規約化より前の **48 件**（docs 44 / archive 10
-/// のうち 4 は本文側が既に `⚠` を持っていたもの / skills 4）を直した。
+/// 移す**。2026-09-30 の #1184 で、規約化より前の **58 件**（docs 直下 44 /
+/// docs/archive 10 / .claude/skills 4）を直した。
 ///
 /// ⚠⚠ **フェンスの中を見てはいけない。**`docs/dev-environment.md` と
 /// `.claude/skills/store-release/build-upload.md` には、シェルのコメントとして
