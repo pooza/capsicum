@@ -129,6 +129,21 @@ sealed class OverlayLayerSpec {
           visible: visible,
           locked: locked,
         );
+      case 'picture':
+        final path = json['path'];
+        final name = json['name'];
+        if (path is! String || path.isEmpty || name is! String) return null;
+        return PictureOverlayLayerSpec(
+          path: path,
+          name: name,
+          nx: nx,
+          ny: ny,
+          sizeFrac: sizeFrac,
+          angle: angle,
+          opacity: opacity,
+          visible: visible,
+          locked: locked,
+        );
       default:
         return null;
     }
@@ -188,6 +203,51 @@ class StickerOverlayLayerSpec extends OverlayLayerSpec {
     ...baseJson('sticker'),
     'shortcode': shortcode,
     'url': url,
+  };
+}
+
+/// 端末内の画像を素材にしたレイヤ (#1178)。
+///
+/// ⚠⚠ **「picture」は「端末から選んだ画像」の意。**このファイルと編集画面では
+/// 「image」が**添付画像そのもの**（レイヤを重ねる相手）を指すので、種別名に
+/// image を使うと `ImageOverlayScreen` / `imageData` / `ImageOverlayResult` と
+/// 見分けがつかなくなる。JSON の `type` も `picture` で揃えている。
+///
+/// ⚠⚠ **[path] は「取り直す先」ではなく「複製の置き場」。**スタンプはサーバーの
+/// URL から取り直せるが、端末の画像には取り直す先が無い —— 利用者が元の写真を
+/// 消したり、写真アプリ側の一時 URL が失効したりする。そこで**取り込んだ時点で
+/// 縮小した実体を複製し、そのパスを控える**（`overlaySourcePath` と同じ扱い）。
+///
+/// ⚠ **したがってファイルは失効しうる。**OS が一時領域を掃除すれば消える。
+/// 復元側（編集画面の `_restoreLayers`）が**読めなかったぶんだけ落として数を伝える**
+/// —— 黙って落とすと、開いて完了しただけで画像が消えた絵になる。
+class PictureOverlayLayerSpec extends OverlayLayerSpec {
+  const PictureOverlayLayerSpec({
+    required this.path,
+    required this.name,
+    required super.nx,
+    required super.ny,
+    required super.sizeFrac,
+    required super.angle,
+    required super.opacity,
+    required super.visible,
+    required super.locked,
+  });
+
+  /// 縮小済みの複製の置き場（絶対パス）。
+  final String path;
+
+  /// レイヤ一覧に出す表示名。選んだファイル名をそのまま持つ。
+  ///
+  /// ⚠ [path] から導けるが、複製は連番混じりの名前になるので**選んだ時点の名前**を
+  /// 別に持つ（`ComposeDraftAttachment.name` と同じ理由）。
+  final String name;
+
+  @override
+  Map<String, Object?> toJson() => {
+    ...baseJson('picture'),
+    'path': path,
+    'name': name,
   };
 }
 

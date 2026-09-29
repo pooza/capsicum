@@ -22,10 +22,12 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:capsicum/src/model/image_overlay_layer.dart';
+import 'package:capsicum/src/service/picture_layer_source.dart';
 import 'package:capsicum/src/service/sticker_source.dart';
 import 'package:capsicum/src/ui/screen/image_overlay_screen.dart';
 import 'package:capsicum/src/ui/util/image_overlay_geometry.dart';
 import 'package:capsicum_core/capsicum_core.dart';
+import 'package:cross_file/cross_file.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -101,6 +103,69 @@ class FakeStickerSource implements StickerSource {
   }
 }
 
+/// 端末のピッカー・ファイルシステムの代わりに、決め打ちの素材を返す
+/// [PictureLayerSource] (#1178)。
+///
+/// [file] が null なら「ピッカーをキャンセルした」。[imageBuilder] は呼ばれるたびに
+/// **新しいハンドル**を返すこと（画面側が dispose するため。`setUpAll` で作った
+/// 1 枚を `clone()` して返すのが定石）。⚠ **ここで新規に `toImage` を回さない** ——
+/// `load` / `restore` は擬似非同期の中から呼ばれるので完了せずハングする。
+class FakePictureLayerSource implements PictureLayerSource {
+  FakePictureLayerSource({
+    required this.imageBuilder,
+    this.file,
+    this.loadError,
+    this.missingPaths = const <String>{},
+    this.path = '/tmp/fake/overlay_picture_1_photo.png',
+    this.name = 'photo.png',
+  });
+
+  final ui.Image Function() imageBuilder;
+
+  /// ピッカーが返すファイル。null ならキャンセル。
+  final XFile? file;
+
+  /// 非 null なら [load] がこれを投げる（上限超過・デコード失敗の再現）。
+  final Object? loadError;
+
+  /// 控えが消えているものとして扱うパス (#1178)。[restore] がここに載っている
+  /// パスで投げる。⚠ **「1 枚だけ落ちる」を作れるようにするための口** ——
+  /// 全部落とすと「他のレイヤは残る」ことが確かめられない。
+  final Set<String> missingPaths;
+
+  /// [load] が控えとして返すパス。
+  final String path;
+
+  /// [load] が返す表示名。
+  final String name;
+
+  int loadCount = 0;
+  int restoreCount = 0;
+
+  @override
+  Future<XFile?> pick({required WidgetRef ref}) async => file;
+
+  @override
+  Future<PictureLayerMaterial> load(XFile file) async {
+    loadCount++;
+    final error = loadError;
+    if (error != null) throw error;
+    return PictureLayerMaterial(image: imageBuilder(), path: path, name: name);
+  }
+
+  @override
+  Future<ui.Image> restore(String path) async {
+    restoreCount++;
+    if (missingPaths.contains(path)) {
+      throw const FormatException('picture copy is gone');
+    }
+    return imageBuilder();
+  }
+
+  @override
+  Future<ui.Image> decode(Uint8List bytes) async => imageBuilder();
+}
+
 /// 画像オーバーレイ画面を立ち上げ、書き出し結果を受け取れる形で保持する。
 class ImageEditorHarness {
   ImageEditorHarness._(this.tester);
@@ -121,6 +186,7 @@ class ImageEditorHarness {
     WidgetTester tester, {
     required Uint8List imageData,
     StickerSource? stickerSource,
+    PictureLayerSource? pictureSource,
     List<OverlayLayerSpec> initialLayers = const [],
     Size surfaceSize = const Size(800, 1000),
   }) async {
@@ -139,6 +205,8 @@ class ImageEditorHarness {
         overrides: [
           if (stickerSource != null)
             stickerSourceProvider.overrideWithValue(stickerSource),
+          if (pictureSource != null)
+            pictureLayerSourceProvider.overrideWithValue(pictureSource),
         ],
         child: MaterialApp(
           home: Builder(
@@ -201,6 +269,12 @@ class ImageEditorHarness {
   /// 「スタンプを追加」を押す（素材は [FakeStickerSource] が返す）。
   Future<void> addSticker() async {
     await tester.tap(find.text('スタンプを追加'));
+    await settle();
+  }
+
+  /// 「画像を追加」を押す (#1178)（素材は [FakePictureLayerSource] が返す）。
+  Future<void> addPicture() async {
+    await tester.tap(find.text('画像を追加'));
     await settle();
   }
 

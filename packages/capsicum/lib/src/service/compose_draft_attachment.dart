@@ -44,6 +44,13 @@ class ComposeDraftAttachment {
   final String? overlaySourcePath;
 
   /// [overlaySourcePath] に重ねたレイヤ列（先頭が最背面）。
+  ///
+  /// ⚠⚠ **レイヤ自身が指すファイルの実在は、ここでは確かめない** (#1178)。
+  /// 画像レイヤ (`PictureOverlayLayerSpec`) は縮小済みの複製を指すので、
+  /// [overlaySourcePath] と同じく失効しうる。⚠ **だからといってここで落とさない**
+  /// —— 1 枚の控えが消えただけで添付やレイヤ列を丸ごと捨てると、**残っている
+  /// レイヤまで失う**。実在の確認と「N 個復元できませんでした」の集計は
+  /// **編集画面を開いたとき**（`_restoreLayers`）に 1 箇所で行う。
   final List<OverlayLayerSpec> layers;
 
   final String description;

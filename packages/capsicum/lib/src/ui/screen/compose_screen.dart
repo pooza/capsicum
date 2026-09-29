@@ -283,8 +283,13 @@ List<MenuEntry> buildAttachmentMenuEntries({
     onSelected: (busy || !croppable) ? null : callbacks.crop,
   ),
   MenuActionEntry(
-    label: '文字・スタンプを入れる…',
-    icon: Icons.title,
+    // ⚠ **入口はできることを書き、画面は「レイヤー」** (#1178・2026-09-27 pooza)。
+    // 絵は編集画面の一覧トグルと同じ `layers_outlined` に揃えて、入口と一覧を
+    // 目でつなぐ（`Icons.title` は文字入れだけの機能に見えていた）。
+    // ⚠ デスクトップのメニューは 1 行の見出しだけで補足を置けないので、
+    // **見出しだけで伝わる名前**にしてある（モバイルのシートとも揃える）。
+    label: '文字・スタンプ・画像を重ねる…',
+    icon: Icons.layers_outlined,
     onSelected: (busy || !croppable) ? null : callbacks.addOverlay,
   ),
   MenuActionEntry(
@@ -2414,7 +2419,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// いた。サムネタップでこの 1 枚のメニューを開き、全編集操作をここから分岐
   /// させて一貫した動線にまとめる（アクションメニューの設計方針に沿う）。
   ///
-  /// 「拡大して確認」「トリミング・回転」「文字・スタンプを入れる」は差し替え可能な
+  /// 「拡大して確認」「トリミング・回転」「文字・スタンプ・画像を重ねる」は差し替え可能な
   /// ローカル画像のみ。動画等プレビュー・編集できないエントリでは「説明 (ALT)」
   /// のみ表示する。削除はサムネ右上の × に残す（クイック操作）。
   Future<void> _showAttachmentMenu(int index) async {
@@ -2444,8 +2449,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
               ),
             if (croppable)
               ListTile(
-                leading: const Icon(Icons.title),
-                title: const Text('文字・スタンプを入れる'),
+                leading: const Icon(Icons.layers_outlined),
+                title: const Text('文字・スタンプ・画像を重ねる'),
                 onTap: () => Navigator.pop(
                   sheetContext,
                   _AttachmentMenuAction.addOverlay,

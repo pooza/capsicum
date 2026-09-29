@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../model/image_overlay_layer.dart';
+import '../../service/picture_layer_source.dart';
 import '../../service/sticker_source.dart';
 import '../../util/exception_scrub.dart';
 import '../util/image_overlay_geometry.dart';
@@ -84,19 +85,46 @@ class _TextOverlayItem extends _OverlayItem {
   IconData get icon => Icons.text_fields;
 }
 
-/// カスタム絵文字を素材にした画像スタンプのレイヤ (#883)。
+/// `ui.Image` を 1 枚貼るレイヤの共通部分 (#1178)。
+///
+/// ⚠⚠ **描き方を 2 本に増やさないための型。**スタンプ (#883) と端末の画像 (#1178)
+/// は「素材をどこから調達するか」だけが違い、**寸法・回転・不透明度・書き出しは
+/// 完全に同じ**。別々に描き始めると、片方にだけ効く修正が生まれて WYSIWYG が
+/// 割れる（このファイルが繰り返し警告している「層が割れる」形）。
 ///
 /// [image] は表示と書き出しで**同じ実体を共有する**。別々にデコードすると
 /// アニメーション絵文字でフレームがずれうるうえ、二重に取得することになる。
-class _StickerOverlayItem extends _OverlayItem {
+///
+/// ⚠ `sealed` なので、`switch` は `_TextOverlayItem` とこれの 2 本で網羅できる。
+/// スタンプと画像を**区別しなければならない場所だけ**が派生まで見ればよい
+/// （素材の出どころ・見出し・tooltip・記述への写し取り）。
+sealed class _ImageBackedOverlayItem extends _OverlayItem {
+  _ImageBackedOverlayItem({
+    required super.id,
+    required super.sizeFrac,
+    required this.image,
+  });
+
+  final ui.Image image;
+
+  /// 素材の縦横比。カスタム絵文字は横長のものが珍しくなく、端末の画像も縦横
+  /// どちらもあるので、高さ基準の [sizeFrac] から幅を復元するのに要る。
+  double get aspect => image.width / image.height;
+
+  /// サイズ比率スライダの上限 (#1178)。
+  ///
+  /// ⚠ **派生ごとに違う。**同じ 0.8 でも根拠が別（`image_overlay_geometry.dart`）。
+  double get maxSizeFrac;
+}
+
+/// カスタム絵文字を素材にした画像スタンプのレイヤ (#883)。
+class _StickerOverlayItem extends _ImageBackedOverlayItem {
   _StickerOverlayItem({
     required super.id,
-    required this.image,
+    required super.image,
     required this.shortcode,
     required this.url,
   }) : super(sizeFrac: kOverlayDefaultStickerSizeFrac);
-
-  final ui.Image image;
 
   /// 素材にしたカスタム絵文字のショートコード。選択枠の tooltip に使う。
   final String shortcode;
@@ -105,15 +133,43 @@ class _StickerOverlayItem extends _OverlayItem {
   /// [image] は画面と一緒に解放されるので、再入時はここから読み直す。
   final String url;
 
-  /// 元画像の縦横比。カスタム絵文字は横長のものが珍しくないので、高さ基準の
-  /// [sizeFrac] から幅を復元するのに要る。
-  double get aspect => image.width / image.height;
+  @override
+  double get maxSizeFrac => kOverlayMaxStickerSizeFrac;
 
   @override
   String get label => ':$shortcode:';
 
   @override
   IconData get icon => Icons.emoji_emotions_outlined;
+}
+
+/// 端末内の画像を素材にしたレイヤ (#1178)。
+///
+/// ⚠⚠ **[path] は「取り直す先」ではなく縮小済みの複製。**スタンプの [url] と
+/// 位置は同じだが意味が違う —— 端末の画像には取り直す先が無いので、取り込んだ
+/// 時点で縮小した実体を控えてある（`PictureOverlayLayerSpec` に経緯）。
+class _PictureOverlayItem extends _ImageBackedOverlayItem {
+  _PictureOverlayItem({
+    required super.id,
+    required super.image,
+    required this.path,
+    required this.name,
+  }) : super(sizeFrac: kOverlayDefaultPictureSizeFrac);
+
+  /// 縮小済みの複製の置き場。
+  final String path;
+
+  /// 選んだファイルの表示名。
+  final String name;
+
+  @override
+  double get maxSizeFrac => kOverlayMaxPictureSizeFrac;
+
+  @override
+  String get label => name;
+
+  @override
+  IconData get icon => Icons.image_outlined;
 }
 
 /// 削除したが、まだ取り消せるレイヤ (#1126 / #1131)。
@@ -131,8 +187,8 @@ class _PendingDeletion {
   final int index;
 }
 
-/// 添付画像に文字 / Unicode 絵文字 (#576) とカスタム絵文字スタンプ (#883) を
-/// 重ねて PNG に書き出すエディタ。
+/// 添付画像に文字 / Unicode 絵文字 (#576)・カスタム絵文字スタンプ (#883)・
+/// 端末内の画像 (#1178) を重ねて PNG に書き出すエディタ。
 ///
 /// mixi2 風のメモ書き・ミーム的キャプション用途。フィルタ / 落書き / 操作履歴
 /// （元に戻す）/ ベクター編集は対象外 (#568 の方針を継承)。⚠ **レイヤの管理
@@ -214,6 +270,10 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
   /// スタンプ素材の取得中。連打で同じ絵文字が二重に載るのを防ぐ。
   bool _loadingSticker = false;
 
+  /// 端末の画像の取り込み中 (#1178)。⚠ **スタンプとは別に持つ** —— 1 つにすると
+  /// 片方の取り込み中にもう片方も押せなくなる。
+  bool _loadingPicture = false;
+
   static const _colorOptions = <Color>[
     Colors.white,
     Colors.black,
@@ -232,7 +292,9 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
   @override
   void dispose() {
     for (final item in _items) {
-      if (item is _StickerOverlayItem) item.image.dispose();
+      // ⚠ **`_ImageBackedOverlayItem` で見る** (#1178)。スタンプだけを名指しすると、
+      // 端末の画像レイヤぶんのネイティブメモリが**画面を閉じるたびに漏れる**。
+      if (item is _ImageBackedOverlayItem) item.image.dispose();
     }
     // ⚠⚠ **取り消し待ちも必ず畳む。**`_items` から外れているので上のループには
     // 掛からず、SnackBar の `closed` は画面が消えた後に解決するとは限らない
@@ -290,7 +352,8 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
   /// 理由で、同じソースへ同時に投げても速くならないうえ失敗の扱いが増える。
   Future<void> _restoreLayers() async {
     if (widget.initialLayers.isEmpty) return;
-    final source = ref.read(stickerSourceProvider);
+    final stickers = ref.read(stickerSourceProvider);
+    final pictures = ref.read(pictureLayerSourceProvider);
     final restored = <_OverlayItem>[];
     var failed = 0;
 
@@ -303,7 +366,7 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
           );
         case StickerOverlayLayerSpec():
           try {
-            final image = await source.load(spec.url);
+            final image = await stickers.load(spec.url);
             if (!mounted) {
               image.dispose();
               return;
@@ -322,20 +385,45 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
             failed++;
             continue;
           }
+        case PictureOverlayLayerSpec():
+          // ⚠⚠ **控えが消えていることは日常的に起きる** (#1178)。OS が一時領域を
+          // 掃除すればこうなるので、**失敗しても他のレイヤは戻す**（スタンプと同じ
+          // 扱い）。⚠ パスを含む例外が来るので scrub を通す。
+          try {
+            final image = await pictures.restore(spec.path);
+            if (!mounted) {
+              image.dispose();
+              return;
+            }
+            restored.add(
+              _PictureOverlayItem(
+                id: _nextId++,
+                image: image,
+                path: spec.path,
+                name: spec.name,
+              ),
+            );
+          } catch (e, st) {
+            await Sentry.captureException(scrubException(e), stackTrace: st);
+            failed++;
+            continue;
+          }
       }
       _applySpec(restored.last, spec);
     }
 
     if (!mounted) {
       for (final item in restored) {
-        if (item is _StickerOverlayItem) item.image.dispose();
+        if (item is _ImageBackedOverlayItem) item.image.dispose();
       }
       return;
     }
     setState(() => _items.addAll(restored));
     if (failed > 0) {
+      // ⚠ **種別を名指ししない** (#1178)。スタンプと端末の画像のどちらも落ちうる
+      // ようになったので、「スタンプを N 個」と書くと**画像が落ちたときに嘘になる**。
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('スタンプを $failed 個復元できませんでした（このまま完了すると画像から外れます）')),
+        SnackBar(content: Text('レイヤーを $failed 個復元できませんでした（このまま完了すると画像から外れます）')),
       );
     }
   }
@@ -369,6 +457,17 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
     _StickerOverlayItem() => StickerOverlayLayerSpec(
       shortcode: item.shortcode,
       url: item.url,
+      nx: item.nx,
+      ny: item.ny,
+      sizeFrac: item.sizeFrac,
+      angle: item.angle,
+      opacity: item.opacity,
+      visible: item.visible,
+      locked: item.locked,
+    ),
+    _PictureOverlayItem() => PictureOverlayLayerSpec(
+      path: item.path,
+      name: item.name,
       nx: item.nx,
       ny: item.ny,
       sizeFrac: item.sizeFrac,
@@ -432,6 +531,52 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('スタンプを読み込めませんでした')));
+    }
+  }
+
+  /// 端末内の画像を選ばせ、レイヤとして追加する (#1178)。
+  ///
+  /// ⚠ **連打ガードはスタンプと別に持つ** ([_loadingPicture])。1 つにまとめると、
+  /// 画像の取り込み中にスタンプも押せなくなる（どちらも数秒かかりうる）。
+  Future<void> _addPictureItem() async {
+    if (_loadingPicture) return;
+    final source = ref.read(pictureLayerSourceProvider);
+    final file = await source.pick(ref: ref);
+    if (file == null || !mounted) return;
+
+    setState(() => _loadingPicture = true);
+    try {
+      final material = await source.load(file);
+      if (!mounted) {
+        material.image.dispose();
+        return;
+      }
+      setState(() {
+        final item = _PictureOverlayItem(
+          id: _nextId++,
+          image: material.image,
+          path: material.path,
+          name: material.name,
+        );
+        _items.add(item);
+        _selectedId = item.id;
+        _loadingPicture = false;
+      });
+    } catch (e, st) {
+      // ⚠ **端末のパスが例外に載る。**`FileSystemException` はパスを message に
+      // 入れるので、スタンプ側と同じく必ず scrub を通す (#953-4)。
+      await Sentry.captureException(scrubException(e), stackTrace: st);
+      if (!mounted) return;
+      setState(() => _loadingPicture = false);
+      // ⚠ **上限超過だけは別の文言にする** (#1178)。「読み込めませんでした」だと
+      // 利用者は同じ画像で何度も試すことになる（原因が分からないため）。
+      final oversized =
+          e is FormatException && e.message == 'picture too large';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(oversized ? 'この画像は大きすぎて重ねられませんでした' : '画像を読み込めませんでした'),
+        ),
+      );
     }
   }
 
@@ -515,7 +660,7 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
     // 削除からここまでに最低でも SnackBar 1 本ぶんのフレームが流れているので、
     // #953-4 のように次フレームまで待つ必要はない（まだ描いている RawImage は
     // もう無い）。画面終了時はツリーごと外れた後なので同じ。
-    if (item is _StickerOverlayItem) item.image.dispose();
+    if (item is _ImageBackedOverlayItem) item.image.dispose();
   }
 
   void _restoreDeletion(_PendingDeletion pending) {
@@ -636,8 +781,10 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
         switch (item) {
           case _TextOverlayItem():
             _paintText(canvas, item, w, h);
-          case _StickerOverlayItem():
-            _paintSticker(canvas, item, w, h);
+          // ⚠ スタンプと端末の画像は**同じ経路で描く** (#1178)。素材の出どころが
+          // 違うだけで、寸法・回転・不透明度の扱いは 1 ミリも変わらない。
+          case _ImageBackedOverlayItem():
+            _paintImageLayer(canvas, item, w, h);
         }
         if (grouped) canvas.restore();
       }
@@ -691,9 +838,13 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
     });
   }
 
-  void _paintSticker(
+  /// `ui.Image` を貼るレイヤの書き出し (#883 / #1178)。
+  ///
+  /// ⚠⚠ **スタンプと端末の画像で分けない。**分けると、片方にだけ効く修正が
+  /// 生まれてプレビューと書き出しが割れる（このファイルの他の警告と同じ型）。
+  void _paintImageLayer(
     Canvas canvas,
-    _StickerOverlayItem item,
+    _ImageBackedOverlayItem item,
     double w,
     double h,
   ) {
@@ -765,7 +916,11 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
         // ⚠ 1 行に固定する。狭幅では「戻る + タイトル + レイヤー + 完了」で
         // AppBar の幅を使い切り、折り返すと固定高の中で overflow する (#1126)。
         title: Text(
-          widget.title ?? '文字・スタンプを入れる',
+          // ⚠ **入口（添付メニュー）と画面で役割を分ける** (#1178・2026-09-27 pooza)。
+          // 入口は「文字・スタンプ・画像を重ねる…」と何ができるかを書き、画面は
+          // 「レイヤー」——「文字・スタンプ」だけだとレイヤー機能だと分からず、
+          // 「レイヤー」だけだと入口として何ができるか分からない。
+          widget.title ?? 'レイヤー',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
@@ -977,7 +1132,8 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
             textAlign: TextAlign.center,
             style: _textStyle(item.color, item.sizeFrac * dispH),
           ),
-          _StickerOverlayItem() => _buildStickerPreview(
+          // ⚠ 素材の出どころが違うだけなので、**プレビューも 1 本**にする (#1178)。
+          _ImageBackedOverlayItem() => _buildImageLayerPreview(
             item,
             dispH,
             tooltip: tooltip,
@@ -987,8 +1143,8 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
     );
   }
 
-  Widget _buildStickerPreview(
-    _StickerOverlayItem item,
+  Widget _buildImageLayerPreview(
+    _ImageBackedOverlayItem item,
     double dispH, {
     bool tooltip = true,
   }) {
@@ -1006,8 +1162,12 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
       fit: BoxFit.fill,
       filterQuality: FilterQuality.high,
     );
-    if (!tooltip) return image;
-    return Tooltip(message: ':${item.shortcode}:', child: image);
+    // ⚠ tooltip は [_OverlayItem.label] をそのまま使う (#1178)。スタンプは
+    // `:shortcode:`、端末の画像はファイル名で、**一覧の見出しと同じ文字列**になる
+    // （別に組むと「一覧では A、拡大では B」と読める）。空のときは出さない
+    // —— 中身の無い tooltip は当たり判定だけが残って邪魔になる。
+    if (!tooltip || item.label.isEmpty) return image;
+    return Tooltip(message: item.label, child: image);
   }
 
   /// レイヤ一覧 (#1126)。**最前面が先頭**で、ドラッグで重ね順を変えられる。
@@ -1026,7 +1186,7 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
               child: Padding(
                 padding: EdgeInsets.all(16),
                 child: Text(
-                  'テキストやスタンプを追加すると、ここに重ね順が出ます',
+                  'テキスト・スタンプ・画像を追加すると、ここに重ね順が出ます',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.white54, fontSize: 12),
                 ),
@@ -1335,7 +1495,10 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
     return Row(
       children: [
         Icon(
-          isText ? Icons.text_fields : Icons.emoji_emotions_outlined,
+          // ⚠ **種別アイコンは [_OverlayItem.icon] から取る** (#1178)。ここで
+          // 三項演算子を重ねると、レイヤ種別が増えるたびに一覧（`icon`）と
+          // この行の 2 箇所を直すことになり、片方だけ忘れると絵が食い違う。
+          item.icon,
           color: Colors.white,
           size: 20,
         ),
@@ -1343,9 +1506,15 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
           child: Slider(
             key: overlaySizeSliderKey,
             value: item.sizeFrac,
-            // スタンプは絵として見せるので、文字より大きく引き伸ばせる。
+            // 画像系（スタンプ・端末の画像）は絵として見せるので、文字より大きく
+            // 引き伸ばせる。⚠ **上限はレイヤ自身に持たせてある** (#1178) ——
+            // スタンプと端末の画像は同じ 0.8 でも根拠が別なので、片方を動かすとき
+            // もう片方を巻き込まないため。
             min: kOverlayMinSizeFrac,
-            max: isText ? kOverlayMaxTextSizeFrac : kOverlayMaxStickerSizeFrac,
+            max: switch (item) {
+              _TextOverlayItem() => kOverlayMaxTextSizeFrac,
+              _ImageBackedOverlayItem() => item.maxSizeFrac,
+            },
             onChanged: _canModify(item)
                 ? (v) => setState(() => item.sizeFrac = v)
                 : null,
@@ -1377,6 +1546,10 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
     // `Expanded` / `Flexible` ではなく `Wrap` を選んだのは、ラベルを省略記号で
     // 削るより 2 行に折り返す方がボタンの意味が残るため。入る幅では 1 行のまま
     // なので通常時の見た目は変わらない。
+    //
+    // ⚠⚠ **#1178 で 3 つ目（「画像を追加」）が並んだ。**`Wrap` なので折り返しは
+    // そのまま効くが、**同じ検査（320px / テキストスケール 1.3）を 3 つで通す**
+    // こと —— 2 つで足りていた余白は 3 つでは残っていない。
     return Wrap(
       children: [
         TextButton.icon(
@@ -1394,6 +1567,17 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
                 )
               : const Icon(Icons.add_reaction_outlined),
           label: const Text('スタンプを追加'),
+        ),
+        TextButton.icon(
+          onPressed: _loadingPicture ? null : _addPictureItem,
+          icon: _loadingPicture
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.image_outlined),
+          label: const Text('画像を追加'),
         ),
       ],
     );

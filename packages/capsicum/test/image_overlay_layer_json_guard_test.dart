@@ -110,6 +110,57 @@ void main() {
       expect(sticker.locked, isTrue);
     });
 
+    test('端末の画像レイヤは全項目が戻る (#1178)', () {
+      const spec = PictureOverlayLayerSpec(
+        path: '/tmp/overlay_picture_1_photo.png',
+        name: 'photo.png',
+        nx: 0.8,
+        ny: 0.15,
+        sizeFrac: 0.55,
+        angle: 0.9,
+        opacity: 0.35,
+        visible: false,
+        locked: true,
+      );
+
+      final restored = _roundTrip(spec);
+      expect(restored, isA<PictureOverlayLayerSpec>());
+      final picture = restored! as PictureOverlayLayerSpec;
+      expect(picture.path, '/tmp/overlay_picture_1_photo.png');
+      expect(picture.name, 'photo.png');
+      expect(picture.nx, 0.8);
+      expect(picture.ny, 0.15);
+      expect(picture.sizeFrac, 0.55);
+      expect(picture.angle, 0.9);
+      expect(picture.opacity, 0.35);
+      expect(picture.visible, isFalse);
+      expect(picture.locked, isTrue);
+    });
+
+    test('⚠ 端末の画像レイヤは path が空なら読まない (#1178)', () {
+      // ⚠⚠ **空のパスを通すと、復元で `File('')` を叩いて毎回失敗する。**
+      // 失敗自体は数えられるが、「復元できませんでした」が**理由もなく毎回出る**
+      // ことになるので、読めない記述として捨てるほうが正しい。
+      expect(
+        OverlayLayerSpec.fromJson(<String, Object?>{
+          ..._baseJson,
+          'type': 'picture',
+          'path': '',
+          'name': 'photo.png',
+        }),
+        isNull,
+      );
+      // name が欠けている場合も同じ（見出しに使うので既定値では補わない）。
+      expect(
+        OverlayLayerSpec.fromJson(<String, Object?>{
+          ..._baseJson,
+          'type': 'picture',
+          'path': '/tmp/x.png',
+        }),
+        isNull,
+      );
+    });
+
     test('⚠ 読めない記述は投げずに null（本文まで巻き添えにしない）', () {
       expect(OverlayLayerSpec.fromJson(null), isNull);
       expect(OverlayLayerSpec.fromJson('文字列'), isNull);
@@ -187,6 +238,10 @@ void main() {
           'color',
           'shortcode',
           'url',
+          // 端末の画像レイヤ (#1178)。⚠ **派生が増えたらここにも足す** —— 走査が
+          // 新しいクラスの本体を読めていないとき、これが無いと気づけない。
+          'path',
+          'name',
         ]),
         reason: '⚠⚠ ここが欠けているなら、項目の走査が本体を読めていない',
       );
@@ -197,7 +252,11 @@ void main() {
 
     test('toJson / fromJson の本体が切り出せていて、ファイル全体ではない', () {
       final to = _toJsonBodies(masked);
-      expect(to, hasLength(2), reason: '文字レイヤとスタンプレイヤの 2 つ');
+      // ⚠ **派生の数と一致させる。**`_specFields` は `extends OverlayLayerSpec` を
+      // 構造で拾うので派生が増えても自動で対象に入るが、**この本数だけは
+      // リテラル**なので、レイヤ種別を足したらここも上げる（上げ忘れると赤になり、
+      // 「検査が数え落としている」のか「種別が増えた」のか迷わずに済む）。
+      expect(to, hasLength(3), reason: '文字・スタンプ・端末の画像 (#1178) の 3 つ');
       for (final body in to) {
         expect(body.length, lessThan(masked.length ~/ 4));
       }
