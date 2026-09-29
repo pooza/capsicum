@@ -1614,7 +1614,11 @@ class _TextPromptDialogState extends State<_TextPromptDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('テキスト / 絵文字'),
+      // ⚠⚠ **「絵文字」を名乗らない** (#1178・2026-09-30 pooza)。この画面では
+      // 「絵文字」は**カスタム絵文字＝スタンプ**の意味で使っており、同じ語が
+      // 2 つのものを指していた。⚠ **Unicode 絵文字が打てることは説明しなくてよい**
+      // —— 文字として打てるのは当たり前で、書くと逆にスタンプと取り違えられる。
+      title: const Text('テキスト'),
       // 字数も改行も制限していないが、1 行ぶんの欄だと「短い文字しか入らない」
       // ように見える (#1126)。数行ぶんの高さと幅を最初から取っておく。
       // ⚠ 幅は [double.maxFinite] で「ダイアログが許す最大」にし、上限だけ
@@ -1630,7 +1634,8 @@ class _TextPromptDialogState extends State<_TextPromptDialog> {
             maxLines: 10,
             keyboardType: TextInputType.multiline,
             decoration: const InputDecoration(
-              hintText: '重ねる文字や絵文字を入力（改行もできます）',
+              // ⚠ 見出しと同じ理由で「絵文字」を外す（片方だけ直すと食い違う）。
+              hintText: '重ねる文字を入力（改行もできます）',
               border: OutlineInputBorder(),
             ),
           ),
