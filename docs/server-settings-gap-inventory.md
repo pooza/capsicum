@@ -47,9 +47,9 @@
 | Misskey `alwaysMarkNsfw` | ○ `DriveService.ts:609`（アップロード時） | 読んでいない | ✅ **読む必要なし** |
 | Misskey `autoSensitive` | ○ `DriveService.ts:614` | 読んでいない | ✅ **読む必要なし** |
 
-### ⚠ ここが唯一の地雷（すでに踏んでいない）
+### ここが唯一の地雷（すでに踏んでいない）
 
-Mastodon の `post_status_service.rb:73` は
+⚠ Mastodon の `post_status_service.rb:73` は
 
 ```ruby
 @sensitive = (@options[:sensitive].nil? ? @account.user&.setting_default_sensitive : @options[:sensitive]) || ...

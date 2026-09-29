@@ -31,9 +31,9 @@
 
 結果は §9。⚠ **層② は今も全数ではない。**「capsicum が呼んでいる経路のうち、主要なもの」に絞ってある。
 
-### ⚠ 層③ の測り方（2026-08-31 に誤診しかけた）
+### 層③ の測り方（2026-08-31 に誤診しかけた）
 
-**モデルのフィールド一覧で測ると間違える。**capsicum は一部の値を**型付きモデルを経由せず生の `Map<String, dynamic>` から読んでいる**（例: `isMuted` / `isBlocking` / `isFollowing` は `MisskeyUser` に無いが `misskey/adapter.dart:917-920` が生 map から読んでいる）。最初にモデルだけを見て「関係フラグが未読」と判定しかけた。
+⚠ **モデルのフィールド一覧で測ると間違える。**capsicum は一部の値を**型付きモデルを経由せず生の `Map<String, dynamic>` から読んでいる**（例: `isMuted` / `isBlocking` / `isFollowing` は `MisskeyUser` に無いが `misskey/adapter.dart:917-920` が生 map から読んでいる）。最初にモデルだけを見て「関係フラグが未読」と判定しかけた。
 
 正しい母数の取り方は **backends 配下で実際に参照している JSON キーの集合**:
 
@@ -408,9 +408,9 @@ capsicum が送るのは `file` / `comment` / `isSensitive` / `folderId`。未�
 
 **Misskey ③ の `notification` / `drive-file`。**#1046 の「優先順位の案」1 に従って、母数の小さい 2 entity から入った。⚠ **前提どおり当たりがあった**（★ 2 件）。
 
-### ⚠⚠ 測り方でつまずいた点（次に回す人へ）
+### 測り方でつまずいた点（次に回す人へ）
 
-**JSON Schema のキーワードをフィールドと数えてしまう。**`properties` と `items` はスキーマの構文で、**entity のフィールドではない**ことが多い。素朴に `^\t*name: {` を拾うと両方が「未読フィールド」に化ける。
+⚠⚠ **JSON Schema のキーワードをフィールドと数えてしまう。**`properties` と `items` はスキーマの構文で、**entity のフィールドではない**ことが多い。素朴に `^\t*name: {` を拾うと両方が「未読フィールド」に化ける。
 
 - `notification` の `items` / `properties` は**すべてスキーマ構文**（配列要素の定義）。⚠ **偽陽性**
 - `drive-file` の `properties` は**本物のフィールド**（`width` / `height` / `orientation` / `avgColor` を入れ子で持つ）

@@ -46,9 +46,9 @@ dart run melos bootstrap
 
 実例は #836（3.41.9 → 3.44.6）のコミット 2 本がそのまま雛形になる。**iOS / macOS のビルド構成に影響する変更（3.44 の SwiftPM 移行など）を含む場合は、製品版昇格前に内部ベータで検証すること。**
 
-## ⚠⚠ Xcode の版は pin していない（Flutter と違って勝手に動く）
+## Xcode の版は pin していない（Flutter と違って勝手に動く）
 
-**`flutter-version` は CI 3 本と全端末で pin してあるが、Xcode は pin していない。**この非対称が定期的に事故を起こす。
+⚠⚠ **`flutter-version` は CI 3 本と全端末で pin してあるが、Xcode は pin していない。**この非対称が定期的に事故を起こす。
 
 ⚠⚠ **CI は iOS / macOS をビルドしない。**Apple 向けビルドは Mac でしか走らないので、**Xcode 由来の破損は手元でしか捕まらない**。リリース当日に初めて気づく経路が実在する。
 
@@ -93,9 +93,9 @@ ls -la build/ios/ipa/*.ipa
 
 ⚠ **`Podfile` の `platform` は podspec が明示した値を上書きしない。**Flutter 標準の `flutter_additional_ios_build_settings` は **12.0 未満しか底上げしない**ので、13.0 を宣言しているもの（`flutter_web_auth_2`）は素通りする。
 
-### ⚠⚠ `/opt/flutter` にローカル patch がある（flutter/flutter#188461）
+### `/opt/flutter` にローカル patch がある（flutter/flutter#188461）
 
-**Xcode 27 の `lipo` は `-verify_arch` に複数アーキテクチャを渡せない**（`lipo: -verify_arch requires exactly one input file` を出して exit 1）。Flutter 3.44.6 は 1 回でまとめて渡すため、**バイナリに両方揃っていても失敗する**。
+⚠⚠ **Xcode 27 の `lipo` は `-verify_arch` に複数アーキテクチャを渡せない**（`lipo: -verify_arch requires exactly one input file` を出して exit 1）。Flutter 3.44.6 は 1 回でまとめて渡すため、**バイナリに両方揃っていても失敗する**。
 
 ```
 packages/flutter_tools/lib/src/build_system/targets/darwin.dart  # thinFramework
@@ -182,9 +182,9 @@ export SENTRY_DSN=...
 - ⚠ **`google-services.json` は 2026-09-29 まで「無いとビルドごと落ちる」だった。**`android/app/build.gradle.kts` が `com.google.gms.google-services` を無条件に適用しており、`:app:processDebugGoogleServices` で失敗していた。**ファイルがあるときだけ `apply(plugin = ...)` する**形に変えて、上の表の他の行と揃えた
 - ⚠ 実行時に困らないのは、`_initFirebase()` が例外を握って rethrow しないため。**プラグインが無い ＝ プッシュ通知だけ使えない**に収まる
 
-### ⚠ `--dart-define` を省くとプッシュが 401 で落ちる
+### `--dart-define` を省くとプッシュが 401 で落ちる
 
-`RELAY_SECRET` は `String.fromEnvironment` で読む **コンパイル時定数**（[`push_relay_client.dart`](../packages/capsicum/lib/src/service/push_relay_client.dart)）。**`secrets.env` を `source` して `export` しても Dart には届かない。**`--dart-define` で渡さないと空文字が焼き込まれ、relay の `authenticate!` が `halt 401` する。
+⚠ `RELAY_SECRET` は `String.fromEnvironment` で読む **コンパイル時定数**（[`push_relay_client.dart`](../packages/capsicum/lib/src/service/push_relay_client.dart)）。**`secrets.env` を `source` して `export` しても Dart には届かない。**`--dart-define` で渡さないと空文字が焼き込まれ、relay の `authenticate!` が `halt 401` する。
 
 症状の見え方:
 
@@ -195,9 +195,9 @@ export SENTRY_DSN=...
 
 `SENTRY_DSN` は debug では**渡さない**のが既定。渡すと開発中の例外が本番プロジェクトへ流れる。
 
-### ⚠ リポジトリ root では iOS がデバイス候補に出ない
+### リポジトリ root では iOS がデバイス候補に出ない
 
-`flutter run` は**カレントのプロジェクトが対応するプラットフォームだけ**を候補に出す。リポジトリ root は melos の workspace（`name: capsicum_workspace`）で `ios/` も `macos/` も持たないため、**シミュレータを起動していても iOS が候補から落ちる**。
+⚠ `flutter run` は**カレントのプロジェクトが対応するプラットフォームだけ**を候補に出す。リポジトリ root は melos の workspace（`name: capsicum_workspace`）で `ios/` も `macos/` も持たないため、**シミュレータを起動していても iOS が候補から落ちる**。
 
 `flutter devices` は絞り込まずに全部並べるので、**「`flutter devices` には出るのに `flutter run` で選べない」**という食い違いが起きる。`packages/capsicum` へ `cd` してから実行する。
 
@@ -298,9 +298,9 @@ export SENTRY_DSN=...
 | `TOKEN=$(...)` の変数代入から始める | トークンは**単独のコマンドで 1 回読んで**、以降のコマンドへ直接埋める |
 | `pgrep -f <パターン>` / `pkill -f <パターン>` をそのまま叩く | **`ps -u "$(id -u)" -o pid=,cmd=` + `grep '[p]attern'`**（bracket trick）。⚠⚠ **`-f` は全コマンドラインを見るので、そのパターン文字列を含む自分のシェルにも一致する** —— `pgrep` は毎回違う PID を返して「プロセスが増殖している」ように見え、`pkill` は**自分を殺す**（2026-09-13 に両方踏んだ）。対象を絞るときは**プロセス名（`pgrep -x`）と併せて二重に**当てる。⚠ `comm` は **15 文字で切り詰められる**（`gnome-keyring-daemon` は `gnome-keyring-d`）ので、`-x` には切り詰め後の名前を渡す |
 
-### ⚠⚠ インタプリタは「書き方」で分ける（禁止ではない）
+### インタプリタは「書き方」で分ける（禁止ではない）
 
-⚠ **禁じているのは「Python を使うこと」ではなく「Python に逃げること」。**
+⚠⚠ **禁じているのは「Python を使うこと」ではなく「Python に逃げること」。**
 `.claude/hooks/deny-interpreter-inline.sh` が **PreToolUse で機械的に弾く**
 （2026-09-28 に規約化。⚠ **2026-08-23 / 08-25 / 09-28 と 3 度破られた**ため、
 読んで守る仕組みから外した）。
@@ -313,7 +313,7 @@ export SENTRY_DSN=...
 | ✅ `python3 tool/foo.py` / `bundle exec ruby /tmp/probe.rb` | **通る** |
 | ✅ `bundle exec ruby -Ilib -Itest test/foo_test.rb` | **通る**（`-e` が無いオプション列は当たらない） |
 
-#### ⚠ 例外の判定基準
+#### 例外の判定基準
 
 「Python のほうが**楽か**」ではなく、
 
@@ -329,9 +329,9 @@ export SENTRY_DSN=...
 - 使い捨ての検証スクリプト（例: 2026-09-28 の `vapid_probe.rb` —— 生の P-256
   公開鍵から ES256 の検証鍵を組めるかを実測した）
 
-#### ⚠ 使うときはスクリプトにする
+#### 使うときはスクリプトにする
 
-**Write でスクラッチパッドに書いてから実行する。**
+⚠ **Write でスクラッチパッドに書いてから実行する。**
 
 - **コードが差分として会話に残る**ので、何をしたか後から読める
 - ⚠ 許可確認が「**不透明な 1 行**」ではなく「**レビューできる 1 本**」に対して出る
@@ -339,9 +339,9 @@ export SENTRY_DSN=...
 ⚠ **確認は出る**（`python3 *` は allowlist に載せない方針）。そのぶん、**出る回数を
 例外の回数に抑える**のがこの規約の狙い。
 
-### ⚠⚠ 検査コマンドをパイプに繋がない（exit code が消える）
+### 検査コマンドをパイプに繋がない（exit code が消える）
 
-**2026-09-19 に、`dart analyze` の失敗を見落としたままコミットした**（push 前に気づいて直した）。
+⚠⚠ **2026-09-19 に、`dart analyze` の失敗を見落としたままコミットした**（push 前に気づいて直した）。
 
 ```sh
 # ⚠ これは常に成功する。パイプラインの exit code は最後の tail のもの
@@ -354,9 +354,9 @@ dart analyze packages 2>&1 | tail -2 && git commit ...
 - ⚠ **`&&` で後続に繋ぐときは特に危ない。**「検査 → コミット」を 1 行にすると、検査が実質無効になっていても気づけない
 - ⚠ `flutter test` も同じ。**`| tail -3` で「All tests passed!」だけを見る書き方は、失敗時に行が流れて見落とす**ので、失敗の有無は終了コードで確かめる
 
-### ⚠⚠ `cd` は次のツール呼び出しにも残る（外部リポジトリへの誤爆を起こした）
+### `cd` は次のツール呼び出しにも残る（外部リポジトリへの誤爆を起こした）
 
-**2026-09-04 に、上流の `mastodon/mastodon` へコメントを投稿する誤爆を起こした。**約 1 分で削除したが、**公開リポジトリに他プロジェクトのメモが載った**。
+⚠⚠ **2026-09-04 に、上流の `mastodon/mastodon` へコメントを投稿する誤爆を起こした。**約 1 分で削除したが、**公開リポジトリに他プロジェクトのメモが載った**。
 
 経緯:
 

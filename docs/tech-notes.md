@@ -52,9 +52,9 @@
 
 `context.push<T>('/route')` + `context.pop(result)` を使う。`Navigator.pop(context, result)` では `go_router` が戻り値を握りつぶす。`showGeneralDialog` のコールバック方式もリビルドで消失するため不可。
 
-#### ⚠⚠ `extra` は refresh のたびに消える — 画面をまたぐ引数はクエリで運ぶ（#1057）
+#### `extra` は refresh のたびに消える — 画面をまたぐ引数はクエリで運ぶ（#1057）
 
-`refreshListenable` が鳴ると `RouteMatchList` が**シリアライズ経由で組み直される**。`extraCodec` を渡していないので `json.encoder.convert(extra)` に掛かり、**`BackendType`（enum）のような JSON にできない値が 1 つでも入っていると extra が丸ごと `null` に落ちる**（`RouteMatchListCodec._toPrimitives`）。⚠ **クエリパラメータは残る**ので、**画面の生存中ずっと要る引数はクエリで運ぶ**（`loginLocation()` / `resolveLoginArgs()` のように、組み立てと読み取りを 1 対で置いて両側を通す）。⚠ **refresh を跨いでも State は作り直されない**ので、クエリ化すれば画面の続行は保てる。
+⚠⚠ `refreshListenable` が鳴ると `RouteMatchList` が**シリアライズ経由で組み直される**。`extraCodec` を渡していないので `json.encoder.convert(extra)` に掛かり、**`BackendType`（enum）のような JSON にできない値が 1 つでも入っていると extra が丸ごと `null` に落ちる**（`RouteMatchListCodec._toPrimitives`）。⚠ **クエリパラメータは残る**ので、**画面の生存中ずっと要る引数はクエリで運ぶ**（`loginLocation()` / `resolveLoginArgs()` のように、組み立てと読み取りを 1 対で置いて両側を通す）。⚠ **refresh を跨いでも State は作り直されない**ので、クエリ化すれば画面の続行は保てる。
 
 ⚠⚠ **`push` で積んだぶんは top-level redirect の `matchedLocation` に出ない。**`RouteMatchList.push` は `copyWith(matches:)` だけで **`uri` を更新しない**。ホームから `/server` → `/login` と積んでも location は `/home` のままなので、**`matchedLocation` を見る分岐は「押し込み経路でだけ黙って成立しない」**。初回ログイン（`go('/server')`）では成立するため、**新規ユーザーでは動いて既存ユーザーで動かない**という割れ方をする。
 
@@ -488,9 +488,9 @@ client 実装は v1.60 で出荷済みだが、導線は `GET /mulukhiya/api/abo
 
 ## Misskey API
 
-### ⚠⚠ サーバーの挙動を推測で語らない — フォークのソースを引く
+### サーバーの挙動を推測で語らない — フォークのソースを引く
 
-**`~/repos/mastodon` / `~/repos/misskey` は運用中のサーバーソフトそのもの。**「送っていないから効かないはず」「送れば通るはず」の類は、**必ず該当の service / controller を開いて確かめる**。
+⚠⚠ **`~/repos/mastodon` / `~/repos/misskey` は運用中のサーバーソフトそのもの。**「送っていないから効かないはず」「送れば通るはず」の類は、**必ず該当の service / controller を開いて確かめる**。
 
 v1.63 で実際に踏んだ（#1043）:
 
