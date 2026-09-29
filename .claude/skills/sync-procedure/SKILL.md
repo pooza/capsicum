@@ -34,6 +34,13 @@ disable-model-invocation: true
 - `gh api repos/pooza/capsicum/milestones --jq '.[] | "\(.title) \(.state) \(.closed_at // "open")"'` — マイルストーンの open/closed 状態を確認
 - **`gh run list --workflow=analyze.yml --branch develop --limit 3` で CI の緑/赤を確認する。**赤なら**その場で直す**。develop は PR を経ずコミットが積まれるため、`dart format` / `dart analyze` の失敗が誰にも気付かれないまま残りうる。2026-08-05 の同期で、#934 のコミット以降 2 日間 format 失敗のまま develop が進んでいたのを発見した
 - 前回同期時点と比較して新しいリリースがあれば、実装ステータスやリリース計画セクションに反映する
+- **1 回で読めない大きさの docs を数える**（#1184）。⚠⚠ **ガードは「増えないこと」しか見ていない。**超過中のファイルは budget を持っているので**緑のまま**で、放っておくと 1 回で読めない状態が永久に続く。**減らす圧力はここでしか掛からない**ので、同期のたびに件数を出す:
+
+  ```sh
+  find docs -maxdepth 1 -name '*.md' -exec wc -c {} + | awk '$1 > 60000 && $2 != "total"' | sort -rn
+  ```
+
+  出たら報告に件数と最大のファイルを載せる。⚠ **その場で削らない**（同期は定形作業で、節の取捨は判断が要る）。削るのは **`/doc-maintenance` の step 6**。⚠ 0 件になったらガードの budget 表も空になっているはずなので、この項目ごと畳んでよい
 - **Flutter のバージョンが基準と合っているかを確認する**（[#836](https://github.com/pooza/capsicum/issues/836)）。端末が 3 つ以上あり、ズレたまま `flutter pub get` すると `pubspec.lock` が端末間で ping-pong するため、**着いた端末で最初に気付けるようにする**のが目的。正本は CI の pin:
 
   ```sh
@@ -149,5 +156,5 @@ capsicum-relay の Issue・マイルストーンは、**capsicum 本体と同じ
 
 ## 10. 同期結果の報告
 
-- 現在のブランチ・状態、前回以降にクローズされた Issue、マイルストーン別の残件数、未割り当て Issue 一覧、Sentry 新着イベント、Mastodon / Misskey の現行バージョン、各確認項目の結果をまとめて報告する
+- 現在のブランチ・状態、前回以降にクローズされた Issue、マイルストーン別の残件数、未割り当て Issue 一覧、Sentry 新着イベント、Mastodon / Misskey の現行バージョン、**1 回で読めない docs の件数**（#1184・0 件なら省略してよい）、各確認項目の結果をまとめて報告する
 - **capsicum と capsicum-relay の稼働中マイルストーンを、同じ見出しレベル・同じ粒度で並記する**（「relay を同列に扱う」節を参照）。relay の残件を末尾の 1 行に圧縮しない
