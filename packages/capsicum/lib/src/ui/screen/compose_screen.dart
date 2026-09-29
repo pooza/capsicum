@@ -39,6 +39,7 @@ import '../../util/upstream_error_message.dart';
 import '../../util/user_acct.dart';
 import '../util/annict_link.dart';
 import '../util/compose_draft_notice.dart';
+import '../util/compose_settings_display.dart';
 import '../util/compose_template_display.dart';
 import '../util/draft_display.dart';
 import '../util/drive_description_sync.dart';
@@ -747,30 +748,41 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     return {..._languageOptions, current: current};
   }
 
-  List<DropdownMenuItem<PostScope>> _scopeItems(WidgetRef ref) {
-    final adapter = ref.read(currentAdapterProvider);
-    // 送る手段のある範囲だけを出す (#1043)。⚠ **ただし現在値は必ず含める。**
-    // 返信・redraft 等で「指名」が入っていることがあり、items に無い値を
-    // DropdownButton に渡すと assert で落ちる。並び順は PostScope.values に
-    // 揃えたいので、`selectableScopes` に足すのではなく values 側で絞る。
-    final selectable = selectableScopes(adapter);
+  /// 公開範囲のドロップダウンに並べる値。
+  ///
+  /// 送る手段のある範囲だけを出す (#1043)。⚠ **ただし現在値は必ず含める。**
+  /// 返信・redraft 等で「指名」が入っていることがあり、items に無い値を
+  /// DropdownButton に渡すと assert で落ちる。並び順は PostScope.values に
+  /// 揃えたいので、`selectableScopes` に足すのではなく values 側で絞る。
+  ///
+  /// ⚠⚠ **`items` と `selectedItemBuilder` の両方がここを通ること** (#1167)。
+  /// `DropdownButton` は 2 つの**長さが一致していることを前提**にしており
+  /// （`selectedItemBuilder` は items と同じ順で引かれる）、絞り込みを片方だけに
+  /// 書くと**閉じているボタンに別の範囲の名前が出る**。しかも範囲が 1 つだけの
+  /// サーバーでは食い違わないので、**テストでも手元でも気づけない。**
+  List<PostScope> _scopeValues(WidgetRef ref) {
+    final selectable = selectableScopes(ref.read(currentAdapterProvider));
     return PostScope.values
         .where((s) => selectable.contains(s) || s == _scope)
-        .map((scope) {
-          final display = postScopeDisplay(scope, adapter);
-          return DropdownMenuItem(
-            value: scope,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(display.icon, size: 16),
-                const SizedBox(width: 4),
-                Text(display.label, style: const TextStyle(fontSize: 13)),
-              ],
-            ),
-          );
-        })
-        .toList();
+        .toList(growable: false);
+  }
+
+  List<DropdownMenuItem<PostScope>> _scopeItems(WidgetRef ref) {
+    final adapter = ref.read(currentAdapterProvider);
+    return _scopeValues(ref).map((scope) {
+      final display = postScopeDisplay(scope, adapter);
+      return DropdownMenuItem(
+        value: scope,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(display.icon, size: 16),
+            const SizedBox(width: 4),
+            Text(display.label, style: const TextStyle(fontSize: 13)),
+          ],
+        ),
+      );
+    }).toList();
   }
 
   @override
@@ -4275,6 +4287,258 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     ];
   }
 
+  /// 投稿画面の下のツールバー (#1167)。
+  ///
+  /// ⚠⚠ **横スクロールへ戻さない**（2026-09-26 pooza の案 3+2）。以前は
+  /// 「アイコン 11 個 + 公開範囲 + ローカル限定」を 1 行の横スクロールに並べて
+  /// いたが、**デスクトップは横スクロールに気付きにくく操作もしにくい**
+  /// （ホイールは縦にしか回らず、ドラッグでもスクロールしない）ので、はみ出た分は
+  /// 実質的に届かない場所になっていた。⚠ しかも**はみ出すのは公開範囲とローカル
+  /// 限定**——送る前に確かめたいものだった。
+  ///
+  /// ## 幅で 2 つの形を使い分ける（案 B・2026-09-28 pooza 決定）
+  ///
+  /// | 幅 | 形 |
+  /// | --- | --- |
+  /// | [kComposeToolbarTwoRowMinWidth] 以上 | **2 段**。アイコン列 + ラベル付きの設定を別行に（従来） |
+  /// | 下回る | **1 段**。設定を詰めてアイコン列の右端に固定し、畳むのはアイコンだけ |
+  ///
+  /// ⚠⚠ **1 段にしたのは高さのため。**案 3+2 のまま iPhone 13 mini（375pt）で
+  /// 使うと、**設定の行自体が折り返して 3 段になり**、1.x で節約してきた本文欄の
+  /// 高さが失われていた（2026-09-28 実測）。
+  ///
+  /// ⚠⚠ **どちらの形でも送信時の設定は畳まない。**「見えないまま効いている」は
+  /// #1167 の元の不具合そのもの。畳むのは [OverflowIconRow] に渡すアイコンだけで、
+  /// 効いているものが畳まれたときは「…」に印が出る。
+  Widget _buildToolbar(BuildContext context) {
+    final adapter = ref.watch(currentAdapterProvider);
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+    final accent = Theme.of(context).colorScheme.primary;
+
+    /// 送信時の設定。[compact] なら閉じているボタンの表示だけを詰める。
+    ///
+    /// ⚠ **選択肢（開いたときのメニュー）はどちらの形でもフルラベル。**詰めるのは
+    /// 閉じている側だけなので、選ぶときは必ず正式な名前が見える (#1167)。
+    List<Widget> settings({required bool compact}) => [
+      DropdownButton<PostScope>(
+        value: _scope,
+        underline: const SizedBox.shrink(),
+        isDense: true,
+        style: TextStyle(fontSize: 13, color: onSurface),
+        // ⚠⚠ **`items` と長さ・順序が一致していること。**両方 [_scopeValues] を
+        // 通すことで担保している（食い違うと閉じているボタンに別の範囲の名前が
+        // 出るが、範囲が 1 つだけのサーバーでは露見しない）。
+        selectedItemBuilder: compact
+            ? (context) => [
+                for (final scope in _scopeValues(ref))
+                  _compactSetting(
+                    icon: postScopeIcon(scope, adapter),
+                    label: compactSettingLabel(postScopeLabel(scope, adapter)),
+                    // ⚠ 詰めた形でもフルラベルへ辿れるようにする。
+                    tooltip: postScopeLabel(scope, adapter),
+                  ),
+              ]
+            : null,
+        onChanged: _sending
+            ? null
+            : (value) {
+                if (value != null) _scopeSetters[value]!();
+              },
+        items: _scopeItems(ref),
+      ),
+      // ⚠ 間隔は `Wrap` の `spacing` が持つ (#1167)。以前は項目ごとに
+      // `Padding(left: 8)` を足していたが、畳まれない行にしたので二重になる。
+      if (adapter is ReactionSupport)
+        if (compact)
+          // ⚠ 狭い幅ではアイコンの切り替えにする（2026-09-28 pooza）。⚠⚠ **効いて
+          // いるかは色と絵の両方で出す** —— 色だけだとテーマやコントラストの設定で
+          // 読めなくなる端末がある。
+          IconButton(
+            key: const ValueKey('compose-local-only-compact'),
+            icon: Icon(
+              _localOnly ? Icons.link_off : Icons.link,
+              size: 20,
+              color: _localOnly ? accent : null,
+            ),
+            tooltip: 'ローカルのみ',
+            visualDensity: VisualDensity.compact,
+            onPressed: _sending ? null : _toggleLocalOnly,
+          )
+        else
+          FilterChip(
+            label: const Text('ローカルのみ'),
+            selected: _localOnly,
+            onSelected: _sending ? null : (_) => _toggleLocalOnly(),
+            visualDensity: VisualDensity.compact,
+          ),
+      if (_language != null)
+        DropdownButton<String>(
+          value: _language,
+          underline: const SizedBox.shrink(),
+          isDense: true,
+          // ⚠ 狭い幅では言語コード表記（`ja`）。⚠⚠ **`_languageEntries` を両方が
+          // 通ること** —— 知らない言語を足す枝（#1113）があるので、片方だけ
+          // `_languageOptions` を見ると長さが食い違う。
+          selectedItemBuilder: compact
+              ? (context) => [
+                  for (final entry in _languageEntries.entries)
+                    Tooltip(
+                      message: entry.value,
+                      child: Text(
+                        entry.key,
+                        style: TextStyle(fontSize: 13, color: onSurface),
+                      ),
+                    ),
+                ]
+              : null,
+          onChanged: _sending
+              ? null
+              : (v) {
+                  if (v != null) setState(() => _language = v);
+                },
+          items: _languageEntries.entries
+              .map(
+                (e) => DropdownMenuItem(
+                  value: e.key,
+                  child: Text(e.value, style: const TextStyle(fontSize: 13)),
+                ),
+              )
+              .toList(),
+        ),
+      if (adapter is MastodonAdapter)
+        DropdownButton<String?>(
+          value: _quoteApprovalPolicy,
+          underline: const SizedBox.shrink(),
+          isDense: true,
+          // ⚠ 未選択のときは詰めても「引用許可」のまま（4 文字なので収まる）。
+          hint: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.format_quote, size: 16),
+              SizedBox(width: 4),
+              Text('引用許可', style: TextStyle(fontSize: 13)),
+            ],
+          ),
+          // ⚠ 公開範囲と詰め方が違う（機械的な省略ではなく**値の短縮**）。
+          // 選択肢が 3 つで固定され、「のみ」を落としても意味が変わらないため。
+          selectedItemBuilder: compact
+              ? (context) => [
+                  for (final entry in _quoteApprovalLabels.entries)
+                    _compactSetting(
+                      icon: _quoteApprovalIcons[entry.key]!,
+                      label:
+                          composeQuoteApprovalShortLabels[entry.key] ??
+                          entry.value,
+                      tooltip: '引用許可: ${entry.value}',
+                    ),
+                ]
+              : null,
+          onChanged: _sending
+              ? null
+              : (v) => setState(() => _quoteApprovalPolicy = v),
+          items: _quoteApprovalLabels.entries
+              .map(
+                (e) => DropdownMenuItem(
+                  value: e.key,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(_quoteApprovalIcons[e.key], size: 16),
+                      const SizedBox(width: 4),
+                      Text(e.value, style: const TextStyle(fontSize: 13)),
+                    ],
+                  ),
+                ),
+              )
+              .toList(),
+        ),
+      // ⚠ 予約が効いていることはこのチップで見える。だから予約のアイコンが
+      // 「…」へ畳まれても「見えないまま効いている」にならない (#1167)。
+      // ⚠ 日時表記はもともと短いので詰めない。
+      if (_scheduledAt != null)
+        Chip(
+          avatar: const Icon(Icons.schedule, size: 16),
+          label: Text(
+            '${_scheduledAt!.month}/${_scheduledAt!.day} '
+            '${_scheduledAt!.hour.toString().padLeft(2, '0')}:'
+            '${_scheduledAt!.minute.toString().padLeft(2, '0')}',
+            style: const TextStyle(fontSize: 12),
+          ),
+          onDeleted: _sending
+              ? null
+              : () => setState(() => _scheduledAt = null),
+          visualDensity: VisualDensity.compact,
+        ),
+    ];
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth >= kComposeToolbarTwoRowMinWidth) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              OverflowIconRow(actions: _toolbarActions(context)),
+              const SizedBox(height: 4),
+              // ⚠ 送る前に確かめたいものは畳まない。`Wrap` なので行が増えるだけで、
+              // 切れて届かなくなることが無い。
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: settings(compact: false),
+              ),
+            ],
+          );
+        }
+        // ⚠⚠ **設定を先に置き、アイコン列に残りを渡す。**逆（アイコンを固定幅で
+        // 先に確保する）にすると、設定が入りきらないときに**設定が切れる**
+        // ——この Issue の元の不具合に戻る。
+        final settingsMaxWidth =
+            constraints.maxWidth - kComposeToolbarMinIconRowWidth;
+        return Row(
+          children: [
+            Expanded(child: OverflowIconRow(actions: _toolbarActions(context))),
+            ConstrainedBox(
+              // ⚠ 「…」1 個ぶんは必ずアイコン列へ残す。0 幅にすると**畳まれた
+              // アイコンを開く手段が無くなる**。
+              constraints: BoxConstraints(
+                maxWidth: settingsMaxWidth > 0 ? settingsMaxWidth : 0,
+              ),
+              // ⚠ ここも `Wrap`。極端な幅（320px × テキストスケール 1.3 等）では
+              // **折り返してでも全部見せる**（切って隠すより段が増えるほうがまし）。
+              child: Wrap(
+                spacing: 4,
+                runSpacing: 4,
+                alignment: WrapAlignment.end,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: settings(compact: true),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// 詰めた設定 1 つ（アイコン + 短い文字）。⚠ tooltip でフルラベルへ辿れる。
+  Widget _compactSetting({
+    required IconData icon,
+    required String label,
+    required String tooltip,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16),
+          const SizedBox(width: 4),
+          Text(label, style: const TextStyle(fontSize: 13)),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final maxLength = ref.watch(maxPostLengthProvider);
@@ -4774,133 +5038,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                       ),
                     ),
                   const Divider(),
-                  // ⚠⚠ **横スクロールをやめた** (#1167・2026-09-26 pooza の案 3+2)。
-                  // 以前は「アイコン 11 個 + 公開範囲 + ローカル限定」を 1 行の
-                  // 横スクロールに並べていたが、**デスクトップは横スクロールに
-                  // 気付きにくく操作もしにくい**（ホイールは縦にしか回らず、
-                  // ドラッグでもスクロールしない）ので、はみ出た分は実質的に
-                  // 届かない場所になっていた。⚠ しかも**はみ出すのは公開範囲と
-                  // ローカル限定**——送る前に確かめたいものだった。
-                  //
-                  // アイコン列は幅に応じて「…」へ畳み（[OverflowIconRow]）、
-                  // 送信時の設定は下の行へ出して**常に見える**ようにする。
-                  OverflowIconRow(actions: _toolbarActions(context)),
-                  const SizedBox(height: 4),
-                  // ⚠ 送る前に確かめたいものは畳まない。`Wrap` なので狭い幅では
-                  // 行が増えるだけで、切れて届かなくなることが無い。
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 4,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      DropdownButton<PostScope>(
-                        value: _scope,
-                        underline: const SizedBox.shrink(),
-                        isDense: true,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Theme.of(context).colorScheme.onSurface,
-                        ),
-                        onChanged: _sending
-                            ? null
-                            : (value) {
-                                if (value != null) _scopeSetters[value]!();
-                              },
-                        items: _scopeItems(ref),
-                      ),
-                      // ⚠ 間隔は `Wrap` の `spacing` が持つ (#1167)。以前は項目ごとに
-                      // `Padding(left: 8)` を足していたが、畳まれない行にしたので
-                      // 二重になる。
-                      if (ref.watch(currentAdapterProvider) is ReactionSupport)
-                        FilterChip(
-                          label: const Text('ローカルのみ'),
-                          selected: _localOnly,
-                          onSelected: _sending
-                              ? null
-                              : (_) => _toggleLocalOnly(),
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      if (_language != null)
-                        DropdownButton<String>(
-                          value: _language,
-                          underline: const SizedBox.shrink(),
-                          isDense: true,
-                          onChanged: _sending
-                              ? null
-                              : (v) {
-                                  if (v != null) {
-                                    setState(() => _language = v);
-                                  }
-                                },
-                          items: _languageEntries.entries
-                              .map(
-                                (e) => DropdownMenuItem(
-                                  value: e.key,
-                                  child: Text(
-                                    e.value,
-                                    style: const TextStyle(fontSize: 13),
-                                  ),
-                                ),
-                              )
-                              .toList(),
-                        ),
-                      if (ref.watch(currentAdapterProvider) is MastodonAdapter)
-                        DropdownButton<String?>(
-                          value: _quoteApprovalPolicy,
-                          underline: const SizedBox.shrink(),
-                          isDense: true,
-                          hint: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.format_quote, size: 16),
-                              SizedBox(width: 4),
-                              Text('引用許可', style: TextStyle(fontSize: 13)),
-                            ],
-                          ),
-                          onChanged: _sending
-                              ? null
-                              : (v) => setState(() => _quoteApprovalPolicy = v),
-                          items: _quoteApprovalLabels.entries
-                              .map(
-                                (e) => DropdownMenuItem(
-                                  value: e.key,
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        _quoteApprovalIcons[e.key],
-                                        size: 16,
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        e.value,
-                                        style: const TextStyle(fontSize: 13),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              )
-                              .toList(),
-                        ),
-                      // ⚠ 予約が効いていることはこのチップで見える。だから予約の
-                      // アイコンが「…」へ畳まれても「見えないまま効いている」に
-                      // ならない (#1167)。
-                      if (_scheduledAt != null)
-                        Chip(
-                          avatar: const Icon(Icons.schedule, size: 16),
-                          label: Text(
-                            '${_scheduledAt!.month}/${_scheduledAt!.day} '
-                            '${_scheduledAt!.hour.toString().padLeft(2, '0')}:'
-                            '${_scheduledAt!.minute.toString().padLeft(2, '0')}',
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                          onDeleted: _sending
-                              ? null
-                              : () => setState(() => _scheduledAt = null),
-                          visualDensity: VisualDensity.compact,
-                        ),
-                    ],
-                  ),
+                  _buildToolbar(context),
                 ],
               ),
             ),

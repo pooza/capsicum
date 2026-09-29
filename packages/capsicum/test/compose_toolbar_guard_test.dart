@@ -19,13 +19,17 @@ void main() {
 
   String read() => File(path).readAsStringSync();
 
-  /// `_toolbarActions` の本体を切り出す。
-  String actionsBody(String source) {
-    final head = RegExp(
-      r'List<OverflowIconAction> _toolbarActions\([^)]*\) \{',
-    );
+  /// [head] に一致するメソッドの本体を、括弧の対応で切り出す。
+  ///
+  /// ⚠⚠ **「次に出てくるインデント 2 の `}`」で切らない** (#1167・案 B)。
+  /// 以前の `toolbarRegion` は `OverflowIconRow(actions:` の出現位置から
+  /// `\n  }` までを領域としていたが、案 B で `_buildToolbar` へ切り出したところ
+  /// **送信時の設定がその範囲の手前（ローカル関数の定義）へ移り、領域から外れた**。
+  /// 検査は「設定がツールバーの領域に実在する」ことを見ているので、
+  /// **領域の取り方が変わると意味ごと失われる**。メソッド単位で掴めばずれない。
+  String methodBody(String source, RegExp head) {
     final m = head.firstMatch(source);
-    expect(m, isNotNull, reason: '_toolbarActions が見つからない。変えたならこの検査も直す');
+    expect(m, isNotNull, reason: '$head が見つからない。変えたならこの検査も直す');
     var depth = 0;
     String? quote;
     for (var i = m!.end - 1; i < source.length; i++) {
@@ -48,18 +52,18 @@ void main() {
         if (depth == 0) return source.substring(m.end, i);
       }
     }
-    fail('_toolbarActions の終端が見つからない');
+    fail('$head の終端が見つからない');
   }
 
-  /// ツールバーを組んでいるところ（`OverflowIconRow` から build の終わりまで）。
-  String toolbarRegion(String source) {
-    final start = source.indexOf('OverflowIconRow(actions:');
-    expect(start, greaterThan(0), reason: 'OverflowIconRow を使っていない');
-    // build メソッドの終わり（インデント 2 の `}`）で切る。
-    final end = source.indexOf('\n  }', start);
-    expect(end, greaterThan(start));
-    return source.substring(start, end);
-  }
+  /// `_toolbarActions` の本体（＝**畳まれる側**）。
+  String actionsBody(String source) => methodBody(
+    source,
+    RegExp(r'List<OverflowIconAction> _toolbarActions\([^)]*\) \{'),
+  );
+
+  /// ツールバーを組んでいるところ（`_buildToolbar` の本体）。
+  String toolbarRegion(String source) =>
+      methodBody(source, RegExp(r'Widget _buildToolbar\([^)]*\) \{'));
 
   /// 送信時の設定が「畳まれる側」に混ざっていないか。
   ///
@@ -95,6 +99,28 @@ void main() {
       for (final needle in sendTimeSettings) {
         expect(region, contains(needle), reason: needle);
       }
+    });
+
+    test('前提: 領域は `_buildToolbar` 1 本ぶんで、ファイル全体ではない', () {
+      final source = read();
+      final region = toolbarRegion(source);
+
+      // ⚠ 上下の両端を持っていること（2 段側と 1 段側の両方が入る）。
+      expect(region, contains('OverflowIconRow(actions:'));
+      expect(region, contains('LayoutBuilder('));
+      // ⚠⚠ **括弧の対応が壊れてファイルを丸ごと掴んでいないこと。**丸ごとだと
+      // 「設定が領域にある」は常に真になり、検査が何も見ていない状態になる。
+      expect(region.length, lessThan(source.length ~/ 3));
+      expect(region, isNot(contains('Widget build(BuildContext context) {')));
+    });
+
+    test('前提: 畳まれる側と領域は別物（同じものを 2 回見ていない）', () {
+      final source = read();
+      // ⚠ `_toolbarActions` は `_buildToolbar` の外にあるので、領域に本体は
+      // 含まれない（呼び出しだけが入る）。ここが崩れると「混ざっていない」の
+      // 判定が自明に真になる。
+      expect(toolbarRegion(source), isNot(contains("key: 'media'")));
+      expect(actionsBody(source), contains("key: 'media'"));
     });
   });
 
@@ -158,6 +184,64 @@ void main() {
       reason: '⚠⚠ 横スクロールは「届かない場所」を作る。畳むか折り返すかにすること',
     );
     expect(region, contains('Wrap('), reason: '⚠ 送信時の設定は折り返す（切れて届かなくならないように）');
+  });
+
+  group('⚠ 案 B の形が崩れていない (#1167・2026-09-28 pooza 決定)', () {
+    test('幅で 2 つの形を使い分けている', () {
+      final region = maskComments(toolbarRegion(read()));
+
+      // ⚠ 境目は定数で持つ（リテラルを直に書くと、意味と値の対応が失われる）。
+      expect(
+        region,
+        contains('kComposeToolbarTwoRowMinWidth'),
+        reason: '⚠ 幅の境目が消えている。狭い幅で 3 段に戻る',
+      );
+      expect(
+        region,
+        contains('kComposeToolbarMinIconRowWidth'),
+        reason:
+            '⚠⚠ 「…」1 個ぶんの確保が消えている。設定が伸びきると、'
+            '**畳まれたアイコンを開く手段が無くなる**',
+      );
+    });
+
+    test('⚠⚠ 2 つの形は同じ builder から作る（片方だけ古くならない）', () {
+      final region = maskComments(toolbarRegion(read()));
+
+      // ⚠⚠ **設定の組み立てを 2 か所に書かないこと。**書くと、次に設定を 1 つ
+      // 足した人が片方だけ直し、**広い幅では出るのに狭い幅では出ない**（またはその逆）
+      // という「見えないまま効いている」を作る —— #1167 の元の不具合と同型。
+      final calls = RegExp(r'settings\(compact:').allMatches(region).length;
+      expect(
+        calls,
+        2,
+        reason:
+            '⚠ 2 段側と 1 段側で `settings(compact: …)` を 1 回ずつ呼ぶ形を保つこと。'
+            '2 か所に組み立てを写したら、この検査を消すのではなく形を戻す',
+      );
+      // 定義は 1 つだけ。
+      expect(
+        RegExp(
+          r'List<Widget> settings\(\{required bool compact\}\)',
+        ).allMatches(region).length,
+        1,
+      );
+    });
+
+    test('⚠ 詰めるのは閉じているボタンだけ（選択肢はフルラベル）', () {
+      final region = maskComments(toolbarRegion(read()));
+
+      // `selectedItemBuilder` は閉じている側の表示。⚠ **`items` 側を詰めると、
+      // 選ぶときに正式な名前が見えなくなる。**
+      expect(region, contains('selectedItemBuilder: compact'));
+      expect(
+        region,
+        isNot(
+          contains('compactSettingLabel(postScopeLabel(scope, adapter))\n'),
+        ),
+        reason: 'items 側で詰めていないこと（ここは目視できないので出現位置で見る）',
+      );
+    });
   });
 }
 
