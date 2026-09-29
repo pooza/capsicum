@@ -175,13 +175,27 @@ void main() {
     }
   });
 
-  test('⚠⚠ ツールバーの領域に横スクロールを戻していない', () {
+  test('⚠⚠ ツールバー自身が横スクロールを組み立てていない', () {
     final region = maskComments(toolbarRegion(read()));
 
+    // ⚠⚠ **2026-09-30 に禁止から条件付き許可へ変えた。**#1167 が横スクロールを
+    // 捨てたのは「気付けない・マウスで操作できない」からで、**機構そのものが
+    // 悪かったのではない**。畳む形を 13 mini へ当てたら**アイコンが 1 つも
+    // 出なくなった**ので、届く形（常時スクロールバー + マウスドラッグ）にして
+    // 戻した。⚠ **ただし組み立てるのはここではない** —— 生の
+    // `SingleChildScrollView` を置くと、送信時の設定を中に入れてしまえる。
     expect(
       region,
       isNot(contains('scrollDirection: Axis.horizontal')),
-      reason: '⚠⚠ 横スクロールは「届かない場所」を作る。畳むか折り返すかにすること',
+      reason:
+          '⚠⚠ ツールバーで直に横スクロールを組まないこと。`ScrollingIconRow` へ委ねる —— '
+          'あちらは `List<OverflowIconAction>` しか受け取らないので、'
+          '**送信時の設定が型として中に入らない**（元の不具合の再発を構造で止める）',
+    );
+    expect(
+      region,
+      contains('ScrollingIconRow('),
+      reason: '⚠ 狭い幅は流す形。畳む形は残り幅が小さいと 0 個になる',
     );
     expect(region, contains('Wrap('), reason: '⚠ 送信時の設定は折り返す（切れて届かなくならないように）');
   });
@@ -231,18 +245,76 @@ void main() {
     test('⚠ 詰めるのは閉じているボタンだけ（選択肢はフルラベル）', () {
       final region = maskComments(toolbarRegion(read()));
 
-      // `selectedItemBuilder` は閉じている側の表示。⚠ **`items` 側を詰めると、
+      // 閉じている側は詰めた文字、メニューはフルラベル。⚠ **`items` 側まで詰めると
       // 選ぶときに正式な名前が見えなくなる。**
-      expect(region, contains('selectedItemBuilder: compact'));
       expect(
         region,
-        isNot(
-          contains('compactSettingLabel(postScopeLabel(scope, adapter))\n'),
-        ),
-        reason: 'items 側で詰めていないこと（ここは目視できないので出現位置で見る）',
+        contains('compactSettingLabel(postScopeLabel(_scope, adapter))'),
+        reason: '⚠ 閉じている側は詰める',
+      );
+      expect(
+        region,
+        contains('label: postScopeLabel(scope, adapter)'),
+        reason: '⚠⚠ メニューの選択肢はフルラベル（`compactSettingLabel` を通さない）',
       );
     });
+
+    test('⚠⚠ 詰めた側で DropdownButton を使っていない', () {
+      final region = maskComments(toolbarRegion(read()));
+
+      // ⚠⚠ **`DropdownButton` は選択肢を `IndexedStack` に積むので、いちばん長い
+      // 選択肢ぶんの幅を常に確保する**（`dropdown.dart` の `innerItemsWidget`）。
+      // 13 mini では「公開」を選んでいても「非公開の…」ぶんの幅を取り続け、
+      // **設定だけで 375pt 中 300pt を占めてアイコンが 1 つも出なかった**
+      // （2026-09-30 実測）。⚠⚠ **表示文字を詰めても幅は詰まらない** ——
+      // 検査が文字列の規則だけを見ていたので、ここを捕まえられなかった。
+      expect(
+        region,
+        contains('_compactMenu<'),
+        reason: '⚠ 詰めた側は `PopupMenuButton`（閉じている子の幅しか取らない）',
+      );
+      // 詰めた側の枝（`if (compact)` の直後）に DropdownButton が無いこと。
+      final branches = _compactBranches(region);
+      // ⚠ 走査が空振りしていないこと。枝が取れていないと下のループは 0 回で、
+      // 検査が何も見ていない状態になる（公開範囲 / 言語 / 引用許可 / ローカルのみ）。
+      expect(branches, hasLength(4), reason: '⚠⚠ 詰めた側の枝は 4 つ');
+      for (final branch in branches) {
+        expect(
+          branch,
+          isNot(contains('DropdownButton')),
+          reason:
+              '⚠⚠ 詰めた側に `DropdownButton` がある。現在値が短くても'
+              '**最長の選択肢ぶんの幅**を取るので、いちばん狭いところで'
+              'アイコンが 0 個になる',
+        );
+      }
+      // ⚠ 歯の確認: 枝へ `DropdownButton` を差し込むと落ちること。
+      final hole = _compactBranches(
+        region.replaceFirst('_compactMenu<', 'DropdownButton<'),
+      );
+      expect(hole.any((b) => b.contains('DropdownButton')), isTrue);
+    });
   });
+}
+
+/// `if (compact)` 〜 対応する `else` までの本文（＝**詰めた側の枝**）。
+///
+/// ⚠ **同じインデントの `else` で閉じる。**ネストした `if` の `else` を拾うと
+/// 枝が途中で切れ、`DropdownButton` を見落とす。
+List<String> _compactBranches(String region) {
+  final branches = <String>[];
+  for (final m in RegExp(r'(?<indent>[ ]*)if \(compact\)').allMatches(region)) {
+    final indent = m.namedGroup('indent')!;
+    final close = region.indexOf(
+      '\n$indent'
+      'else',
+      m.end,
+    );
+    branches.add(
+      close < 0 ? region.substring(m.end) : region.substring(m.end, close),
+    );
+  }
+  return branches;
 }
 
 /// 判定に食わせる合成ソース。

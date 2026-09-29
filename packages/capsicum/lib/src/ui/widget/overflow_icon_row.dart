@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 /// [OverflowIconRow] に並べる 1 つ。
@@ -114,6 +115,112 @@ class OverflowIconRow extends StatelessWidget {
       ),
     );
   }
+}
+
+/// アイコン列を横スクロールで並べる (#1167・2026-09-30 pooza 決定の A+C)。
+///
+/// ## ⚠⚠ 「横スクロールをやめた」を部分的に覆している
+///
+/// #1167 が横スクロールを捨てたのは、**デスクトップでは気付けず操作もできない**
+/// から（ホイールは縦にしか回らず、既定の `ScrollBehavior` はマウスでのドラッグを
+/// 許さない）。⚠ **機構そのものが悪かったのではなく、届かないことが悪かった。**
+///
+/// [OverflowIconRow]（畳む）を狭い幅へ当てたところ、iPhone 13 mini では**設定が
+/// 幅の 8 割を占めてアイコンが 1 つも見えなくなった**（2026-09-30 実測）。畳む形は
+/// 幅が要るので、**いちばん狭いところでは成り立たない**。
+///
+/// そこでこの部品は、横スクロールを**届く形にして**戻す:
+///
+/// | 元の不満 | ここでの手当て |
+/// | --- | --- |
+/// | 気付けない | ⚠ **スクロールバーを常時表示**（`thumbVisibility: true`） |
+/// | マウスで操作できない | ⚠ **ドラッグできる入力にマウス / トラックパッドを足す** |
+/// | 送信時の設定が流れて届かない | ⚠⚠ **設定はここへ入れない**（引数が [OverflowIconAction] だけなので**型として入らない**） |
+///
+/// ⚠ **効いている設定が流れて見えなくなる心配は無い。**閲覧注意は本文欄の上に
+/// 入力欄が出るし、アンケートは編集欄、予約はチップ、センシティブは添付のサムネに
+/// 出る。**アイコンは入口であって、効いていることの表示ではない。**
+///
+/// ⚠ スクロールバーは子の上に描かれるので**高さを取らない**（1 段のまま）。
+class ScrollingIconRow extends StatelessWidget {
+  const ScrollingIconRow({
+    super.key,
+    required this.actions,
+    required this.controller,
+    this.itemExtent = 40,
+  });
+
+  final List<OverflowIconAction> actions;
+
+  /// ⚠ [Scrollbar] と [SingleChildScrollView] で**同じものを共有する**。別々だと
+  /// 「スクロールバーが動かない」ではなく **assert で落ちる**。
+  final ScrollController controller;
+
+  /// 1 つに割り当てる幅。⚠ [OverflowIconRow] と揃える（畳む形と流す形で
+  /// アイコンの大きさが変わらないように）。
+  final double itemExtent;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButtonTheme(
+      data: IconButtonThemeData(
+        style: IconButton.styleFrom(
+          minimumSize: Size(itemExtent, itemExtent),
+          padding: EdgeInsets.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          visualDensity: VisualDensity.compact,
+        ),
+      ),
+      child: ScrollConfiguration(
+        behavior: const _DragAnywhereScrollBehavior(),
+        child: Scrollbar(
+          controller: controller,
+          // ⚠⚠ **常時表示。**「気付けない」が元の不満なので、触るまで出ない
+          // スクロールバーでは直したことにならない。
+          thumbVisibility: true,
+          child: SingleChildScrollView(
+            controller: controller,
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (final action in actions)
+                  SizedBox(
+                    width: itemExtent,
+                    child: IconButton(
+                      key: ValueKey('compose-action-${action.key}'),
+                      onPressed: action.onPressed,
+                      icon: action.icon,
+                      tooltip: action.tooltip,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// マウス / トラックパッドでもドラッグしてスクロールできるようにする。
+///
+/// ⚠⚠ **既定の `ScrollBehavior` は `PointerDeviceKind.mouse` を外している。**
+/// これが「デスクトップではドラッグでもスクロールしない」の正体で、#1167 が
+/// 横スクロールを捨てる理由になっていた。⚠ **外していた理由は「マウスなら
+/// ホイールがあるから」**だが、**ホイールは縦にしか回らない**ので横方向では
+/// 代わりにならない。
+class _DragAnywhereScrollBehavior extends MaterialScrollBehavior {
+  const _DragAnywhereScrollBehavior();
+
+  @override
+  Set<PointerDeviceKind> get dragDevices => const {
+    PointerDeviceKind.touch,
+    PointerDeviceKind.mouse,
+    PointerDeviceKind.trackpad,
+    PointerDeviceKind.stylus,
+    PointerDeviceKind.invertedStylus,
+    PointerDeviceKind.unknown,
+  };
 }
 
 /// 畳んだぶんを出すメニュー。

@@ -463,6 +463,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     with WidgetsBindingObserver {
   final _controller = ShortcodeWarningController();
   final _cwController = TextEditingController();
+
+  /// 下のツールバーのアイコン列（狭い幅で横スクロールする側）(#1167)。
+  ///
+  /// ⚠ `Scrollbar` と `SingleChildScrollView` が**同じものを共有する**必要がある
+  /// ので、画面側で持って [ScrollingIconRow] へ渡す（別々だと assert で落ちる）。
+  final _toolbarScroll = ScrollController();
   final List<_MediaEntry> _attachments = [];
   // OS のファイラーからのドラッグ中だけ true。ドロップ可能なことを示す
   // ハイライト表示に使う (#571)。デスクトップ以外では発火しない。
@@ -1301,6 +1307,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     _controller.removeListener(_onTextChanged);
     _controller.dispose();
     _cwController.dispose();
+    _toolbarScroll.dispose();
     for (final c in _pollControllers) {
       c.dispose();
     }
@@ -4315,37 +4322,53 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     final onSurface = Theme.of(context).colorScheme.onSurface;
     final accent = Theme.of(context).colorScheme.primary;
 
-    /// 送信時の設定。[compact] なら閉じているボタンの表示だけを詰める。
+    /// 送信時の設定。[compact] なら**現在値ぴったりの幅**に詰める。
     ///
     /// ⚠ **選択肢（開いたときのメニュー）はどちらの形でもフルラベル。**詰めるのは
     /// 閉じている側だけなので、選ぶときは必ず正式な名前が見える (#1167)。
+    ///
+    /// ⚠⚠ **詰めた側で `DropdownButton` を使わない**（2026-09-30 の実測）。
+    /// `DropdownButton` は選択肢を `IndexedStack` に積む（`dropdown.dart` の
+    /// `innerItemsWidget`）ので、**いちばん長い選択肢の幅を常に確保する**。
+    /// 「公開」を選んでいても「非公開の…」ぶんの幅を取り続け、13 mini では
+    /// **設定だけで 375pt 中 300pt** を占めてアイコンが 1 つも出なくなっていた。
+    /// ⚠ **表示文字を詰めても幅は詰まらない** —— 検査が文字列だけを見ていたので
+    /// ここを捕まえられなかった。
     List<Widget> settings({required bool compact}) => [
-      DropdownButton<PostScope>(
-        value: _scope,
-        underline: const SizedBox.shrink(),
-        isDense: true,
-        style: TextStyle(fontSize: 13, color: onSurface),
-        // ⚠⚠ **`items` と長さ・順序が一致していること。**両方 [_scopeValues] を
-        // 通すことで担保している（食い違うと閉じているボタンに別の範囲の名前が
-        // 出るが、範囲が 1 つだけのサーバーでは露見しない）。
-        selectedItemBuilder: compact
-            ? (context) => [
-                for (final scope in _scopeValues(ref))
-                  _compactSetting(
-                    icon: postScopeIcon(scope, adapter),
-                    label: compactSettingLabel(postScopeLabel(scope, adapter)),
-                    // ⚠ 詰めた形でもフルラベルへ辿れるようにする。
-                    tooltip: postScopeLabel(scope, adapter),
-                  ),
-              ]
-            : null,
-        onChanged: _sending
-            ? null
-            : (value) {
-                if (value != null) _scopeSetters[value]!();
-              },
-        items: _scopeItems(ref),
-      ),
+      if (compact)
+        _compactMenu<PostScope>(
+          tooltip: '公開範囲: ${postScopeLabel(_scope, adapter)}',
+          child: _compactSetting(
+            icon: postScopeIcon(_scope, adapter),
+            label: compactSettingLabel(postScopeLabel(_scope, adapter)),
+          ),
+          // ⚠ メニューは**フルラベル**。`items` と同じ顔ぶれを [_scopeValues] から
+          // 引くので、送れない範囲が混ざることもない (#1043)。
+          items: [
+            for (final scope in _scopeValues(ref))
+              PopupMenuItem(
+                value: scope,
+                child: _compactSetting(
+                  icon: postScopeIcon(scope, adapter),
+                  label: postScopeLabel(scope, adapter),
+                ),
+              ),
+          ],
+          onSelected: (scope) => _scopeSetters[scope]!(),
+        )
+      else
+        DropdownButton<PostScope>(
+          value: _scope,
+          underline: const SizedBox.shrink(),
+          isDense: true,
+          style: TextStyle(fontSize: 13, color: onSurface),
+          onChanged: _sending
+              ? null
+              : (value) {
+                  if (value != null) _scopeSetters[value]!();
+                },
+          items: _scopeItems(ref),
+        ),
       // ⚠ 間隔は `Wrap` の `spacing` が持つ (#1167)。以前は項目ごとに
       // `Padding(left: 8)` を足していたが、畳まれない行にしたので二重になる。
       if (adapter is ReactionSupport)
@@ -4372,86 +4395,107 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
             visualDensity: VisualDensity.compact,
           ),
       if (_language != null)
-        DropdownButton<String>(
-          value: _language,
-          underline: const SizedBox.shrink(),
-          isDense: true,
-          // ⚠ 狭い幅では言語コード表記（`ja`）。⚠⚠ **`_languageEntries` を両方が
-          // 通ること** —— 知らない言語を足す枝（#1113）があるので、片方だけ
-          // `_languageOptions` を見ると長さが食い違う。
-          selectedItemBuilder: compact
-              ? (context) => [
-                  for (final entry in _languageEntries.entries)
-                    Tooltip(
-                      message: entry.value,
-                      child: Text(
-                        entry.key,
-                        style: TextStyle(fontSize: 13, color: onSurface),
-                      ),
-                    ),
-                ]
-              : null,
-          onChanged: _sending
-              ? null
-              : (v) {
-                  if (v != null) setState(() => _language = v);
-                },
-          items: _languageEntries.entries
-              .map(
-                (e) => DropdownMenuItem(
-                  value: e.key,
-                  child: Text(e.value, style: const TextStyle(fontSize: 13)),
-                ),
-              )
-              .toList(),
-        ),
-      if (adapter is MastodonAdapter)
-        DropdownButton<String?>(
-          value: _quoteApprovalPolicy,
-          underline: const SizedBox.shrink(),
-          isDense: true,
-          // ⚠ 未選択のときは詰めても「引用許可」のまま（4 文字なので収まる）。
-          hint: const Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.format_quote, size: 16),
-              SizedBox(width: 4),
-              Text('引用許可', style: TextStyle(fontSize: 13)),
-            ],
-          ),
-          // ⚠ 公開範囲と詰め方が違う（機械的な省略ではなく**値の短縮**）。
-          // 選択肢が 3 つで固定され、「のみ」を落としても意味が変わらないため。
-          selectedItemBuilder: compact
-              ? (context) => [
-                  for (final entry in _quoteApprovalLabels.entries)
-                    _compactSetting(
-                      icon: _quoteApprovalIcons[entry.key]!,
-                      label:
-                          composeQuoteApprovalShortLabels[entry.key] ??
-                          entry.value,
-                      tooltip: '引用許可: ${entry.value}',
-                    ),
-                ]
-              : null,
-          onChanged: _sending
-              ? null
-              : (v) => setState(() => _quoteApprovalPolicy = v),
-          items: _quoteApprovalLabels.entries
-              .map(
-                (e) => DropdownMenuItem(
-                  value: e.key,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(_quoteApprovalIcons[e.key], size: 16),
-                      const SizedBox(width: 4),
-                      Text(e.value, style: const TextStyle(fontSize: 13)),
-                    ],
+        if (compact)
+          // ⚠ 詰めた形は言語コード（`ja`）。⚠ 知らない言語を足す枝（#1113）が
+          // あるので、表示もメニューも `_languageEntries` から引く。
+          _compactMenu<String>(
+            tooltip: '言語: ${_languageEntries[_language] ?? _language!}',
+            child: Text(
+              _language!,
+              style: TextStyle(fontSize: 13, color: onSurface),
+            ),
+            items: [
+              for (final entry in _languageEntries.entries)
+                PopupMenuItem(
+                  value: entry.key,
+                  child: Text(
+                    entry.value,
+                    style: const TextStyle(fontSize: 13),
                   ),
                 ),
-              )
-              .toList(),
-        ),
+            ],
+            onSelected: (v) => setState(() => _language = v),
+          )
+        else
+          DropdownButton<String>(
+            value: _language,
+            underline: const SizedBox.shrink(),
+            isDense: true,
+            onChanged: _sending
+                ? null
+                : (v) {
+                    if (v != null) setState(() => _language = v);
+                  },
+            items: _languageEntries.entries
+                .map(
+                  (e) => DropdownMenuItem(
+                    value: e.key,
+                    child: Text(e.value, style: const TextStyle(fontSize: 13)),
+                  ),
+                )
+                .toList(),
+          ),
+      if (adapter is MastodonAdapter)
+        if (compact)
+          // ⚠⚠ **未設定のときはアイコンだけ。**未設定＝サーバーの既定に任せる＝
+          // 何も効いていない状態なので、「引用許可」の 4 文字ぶん（約 100pt）を
+          // 常時確保するのは高すぎる。⚠ 効いているときは値を出す（short label）。
+          _compactMenu<String>(
+            tooltip: _quoteApprovalPolicy == null
+                ? '引用許可'
+                : '引用許可: ${_quoteApprovalLabels[_quoteApprovalPolicy]}',
+            child: _quoteApprovalPolicy == null
+                ? const Icon(Icons.format_quote, size: 16)
+                : _compactSetting(
+                    icon: _quoteApprovalIcons[_quoteApprovalPolicy]!,
+                    label:
+                        composeQuoteApprovalShortLabels[_quoteApprovalPolicy] ??
+                        _quoteApprovalLabels[_quoteApprovalPolicy]!,
+                  ),
+            items: [
+              for (final entry in _quoteApprovalLabels.entries)
+                PopupMenuItem(
+                  value: entry.key,
+                  child: _compactSetting(
+                    icon: _quoteApprovalIcons[entry.key]!,
+                    label: entry.value,
+                  ),
+                ),
+            ],
+            onSelected: (v) => setState(() => _quoteApprovalPolicy = v),
+          )
+        else
+          DropdownButton<String?>(
+            value: _quoteApprovalPolicy,
+            underline: const SizedBox.shrink(),
+            isDense: true,
+            hint: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.format_quote, size: 16),
+                SizedBox(width: 4),
+                Text('引用許可', style: TextStyle(fontSize: 13)),
+              ],
+            ),
+            onChanged: _sending
+                ? null
+                : (v) => setState(() => _quoteApprovalPolicy = v),
+            items: _quoteApprovalLabels.entries
+                .map(
+                  (e) => DropdownMenuItem(
+                    value: e.key,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(_quoteApprovalIcons[e.key], size: 16),
+                        const SizedBox(width: 4),
+                        Text(e.value, style: const TextStyle(fontSize: 13)),
+                      ],
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
       // ⚠ 予約が効いていることはこのチップで見える。だから予約のアイコンが
       // 「…」へ畳まれても「見えないまま効いている」にならない (#1167)。
       // ⚠ 日時表記はもともと短いので詰めない。
@@ -4497,10 +4541,21 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
             constraints.maxWidth - kComposeToolbarMinIconRowWidth;
         return Row(
           children: [
-            Expanded(child: OverflowIconRow(actions: _toolbarActions(context))),
+            Expanded(
+              // ⚠⚠ **狭い幅では畳まず流す** (#1167・2026-09-30 の A+C)。畳む形
+              // ([OverflowIconRow]) は「何個入るか」を残り幅から決めるので、
+              // **設定に幅を取られるといちばん狭いところで 0 個になる** ——
+              // 13 mini で実際にそうなった（アイコンが 1 つも出ず「…」だけ）。
+              // ⚠ 流す形なら**残り幅が 1 つぶんでも全部のアイコンへ届く**。
+              // ⚠ 設定はこの中に入らない（引数が [OverflowIconAction] だけなので
+              // **型として入らない**）。
+              child: ScrollingIconRow(
+                actions: _toolbarActions(context),
+                controller: _toolbarScroll,
+              ),
+            ),
             ConstrainedBox(
-              // ⚠ 「…」1 個ぶんは必ずアイコン列へ残す。0 幅にすると**畳まれた
-              // アイコンを開く手段が無くなる**。
+              // ⚠ アイコン 1 つぶんは必ず残す。0 幅にするとアイコン列が消える。
               constraints: BoxConstraints(
                 maxWidth: settingsMaxWidth > 0 ? settingsMaxWidth : 0,
               ),
@@ -4520,20 +4575,45 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     );
   }
 
-  /// 詰めた設定 1 つ（アイコン + 短い文字）。⚠ tooltip でフルラベルへ辿れる。
-  Widget _compactSetting({
-    required IconData icon,
-    required String label,
+  /// 設定 1 つの見た目（アイコン + 文字）。詰めた側とメニューの両方が使う。
+  Widget _compactSetting({required IconData icon, required String label}) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 16),
+        const SizedBox(width: 4),
+        Text(label, style: const TextStyle(fontSize: 13)),
+      ],
+    );
+  }
+
+  /// 詰めた設定の入口 (#1167・A+C)。
+  ///
+  /// ⚠⚠ **`DropdownButton` ではなく `PopupMenuButton`。**前者は選択肢を
+  /// `IndexedStack` に積むので**いちばん長い選択肢ぶんの幅を常に確保する**が、
+  /// こちらは**閉じているときの子の幅しか取らない**。13 mini で設定が 300pt を
+  /// 占めていた原因がこれで、ここが本 Issue の効き所。
+  ///
+  /// ⚠ [tooltip] には**フルラベル**を入れる（詰めた文字から正式な名前へ辿れる）。
+  Widget _compactMenu<T>({
+    required Widget child,
+    required List<PopupMenuEntry<T>> items,
+    required ValueChanged<T> onSelected,
     required String tooltip,
   }) {
-    return Tooltip(
-      message: tooltip,
+    return PopupMenuButton<T>(
+      tooltip: tooltip,
+      // ⚠ 送信中は開けない（畳んだ側も押せないのと揃える）。
+      enabled: !_sending,
+      padding: EdgeInsets.zero,
+      onSelected: onSelected,
+      itemBuilder: (_) => items,
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 16),
-          const SizedBox(width: 4),
-          Text(label, style: const TextStyle(fontSize: 13)),
+          child,
+          // ⚠ 開けることが分かる印。`DropdownButton` の矢印より小さくしてある。
+          const Icon(Icons.arrow_drop_down, size: 18),
         ],
       ),
     );
