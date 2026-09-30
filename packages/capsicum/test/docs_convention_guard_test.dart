@@ -129,7 +129,7 @@ void main() {
   // ⚠ ここから下は「検査が動いていること」そのものの検査。
   group('⚠ 走査が空振りしていない', () {
     test('走査したファイル数が実態と合っている', () {
-      // 2026-09-30 時点で docs 40（直下 24 + archive 16）/ skills 13。
+      // 2026-09-30 時点で docs 46（直下 28 + archive 18）/ skills 13。
       // ⚠ **下限を固定する。**0 件でも `isEmpty` は通ってしまう。
       expect(headingScanFiles.length, greaterThanOrEqualTo(45));
       expect(sizeScanFiles.length, greaterThanOrEqualTo(20));
