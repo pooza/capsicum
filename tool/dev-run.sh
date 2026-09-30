@@ -81,14 +81,23 @@ esac
 
 run() {
   if [ "$dry_run" -eq 1 ]; then
-    # 秘密は伏せて表示する。sed だと値の中の記号を正規表現として読んでしまう。
+    # 引数ごとに伏せて、引数ごとにエスケープして表示する (#1190)。`$*` の連結だと
+    # `-d 'iPhone 17'` が 2 引数に見え、表示をそのまま貼ると別のコマンドになる。
+    #
+    # ⚠⚠ **伏せ字 → エスケープの順を入れ替えない。**先にエスケープすると、秘密に
+    # 記号が含まれる回は `\` が挟まって元の値と一致せず、**秘密がそのまま表示される**。
     # ⚠ 空文字での置換は全文字の間に挟まるので、秘密が無い回は素通しする。
-    local line="$*"
-    if [ -n "${RELAY_SECRET:-}" ]; then
-      printf '%s\n' "${line//"$RELAY_SECRET"/<RELAY_SECRET>}"
-    else
-      printf '%s\n' "$line"
-    fi
+    # sed で伏せないのは、値の中の記号を正規表現として読んでしまうため。
+    local shown=""
+    local arg
+    for arg in "$@"; do
+      if [ -n "${RELAY_SECRET:-}" ]; then
+        arg="${arg//"$RELAY_SECRET"/<RELAY_SECRET>}"
+      fi
+      # printf '%q' は macOS 標準の bash 3.2 にもある。
+      shown="${shown:+$shown }$(printf '%q' "$arg")"
+    done
+    printf '%s\n' "$shown"
   else
     "$@"
   fi

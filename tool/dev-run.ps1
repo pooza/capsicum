@@ -70,13 +70,28 @@ if ([string]::IsNullOrEmpty($relaySecret)) {
   Write-Warning "RELAY_SECRET not found; push notifications will not work (registration fails with 401). Everything else runs."
 }
 
+# Show one argument the way it would have to be typed again (#1190): quote it
+# when it contains whitespace or a quote, so "-d 'iPhone 17'" does not look
+# like two arguments in the dry-run output.
+function Format-DryRunArg([string]$value) {
+  if ($value -eq '') { return '""' }
+  if ($value -notmatch '[\s"'']') { return $value }
+  return '"' + $value.Replace('"', '\"') + '"'
+}
+
 function Invoke-Step([string]$dir, [string]$exe, [string[]]$argv) {
   if ($DryRun) {
-    $shown = $argv -join ' '
+    # Mask the secret per argument BEFORE quoting it. Quoting first can add
+    # escapes inside a secret that contains quotes; Replace then misses it and
+    # the secret is printed verbatim.
     # Replacing an empty string would insert the marker between every char.
-    if (-not [string]::IsNullOrEmpty($relaySecret)) {
-      $shown = $shown.Replace($relaySecret, '<RELAY_SECRET>')
-    }
+    $shown = (@($argv) | ForEach-Object {
+      $arg = [string]$_
+      if (-not [string]::IsNullOrEmpty($relaySecret)) {
+        $arg = $arg.Replace($relaySecret, '<RELAY_SECRET>')
+      }
+      Format-DryRunArg $arg
+    }) -join ' '
     Write-Output "(in $dir) $exe $shown"
     return
   }
