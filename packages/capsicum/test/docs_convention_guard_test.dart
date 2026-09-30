@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/source_files.dart';
+
 /// #1184: docs の表記規約とファイルサイズを機械で見る検査。
 ///
 /// ## なぜ要るか
@@ -78,11 +80,7 @@ void main() {
     // では参照しない」と docs/CLAUDE.md が定義しているので、1 回で読める必要が
     // ない（`archive/release-log.md` は 112KB ある）。⚠⚠ **逃がし先がここなので、
     // archive を対象に入れると案 A そのものが成立しなくなる。**
-    sizeScanFiles = Directory(docsDir)
-        .listSync()
-        .whereType<File>()
-        .where((f) => f.path.endsWith('.md'))
-        .toList();
+    sizeScanFiles = sourceFiles(docsDir, extension: '.md', recursive: false);
   });
 
   group('見出しの先頭に ⚠ を付けない (#1184)', () {
@@ -512,8 +510,4 @@ List<String> scanSizeViolations({
   return out;
 }
 
-List<File> _markdownFiles(String dir) => Directory(dir)
-    .listSync(recursive: true)
-    .whereType<File>()
-    .where((f) => f.path.endsWith('.md'))
-    .toList();
+List<File> _markdownFiles(String dir) => sourceFiles(dir, extension: '.md');

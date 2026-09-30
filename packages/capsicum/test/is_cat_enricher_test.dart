@@ -7,6 +7,7 @@ import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/dart_source.dart';
+import 'support/source_files.dart';
 
 /// #1082（実装の一本化）と #1083-C（観測性）の回帰テスト。
 ///
@@ -178,11 +179,7 @@ void main() {
       // ⚠ **超過の計装は 1 箇所にある。**呼び出し側で `.timeout` を掛け直すと、
       // そこの超過は誰にも見えないまま戻る（塞いだ穴そのもの）。
       final offenders = <String>[];
-      for (final file
-          in Directory('lib')
-              .listSync(recursive: true)
-              .whereType<File>()
-              .where((f) => f.path.endsWith('.dart'))) {
+      for (final file in sourceFiles('lib')) {
         if (file.path == enricherPath) continue;
         if (sourceOf(file.path).contains('kIsCatEnrichBudget')) {
           offenders.add(file.path);

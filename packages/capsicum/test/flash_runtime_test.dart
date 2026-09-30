@@ -5,6 +5,8 @@ import 'package:aiscript/aiscript.dart';
 import 'package:capsicum/src/ui/flash/flash_runtime.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/source_files.dart';
+
 /// フォーク (pooza/aiscript-dart) の中で乱数を引いている箇所の既知の全量 (#960)。
 ///
 /// `<ファイル名>:<直前の組み込み名>` の形。`<top-level>` は組み込みの外側で、
@@ -73,13 +75,7 @@ Set<String> _randomnessSitesInFork() {
   expect(libDir.existsSync(), isTrue, reason: '${libDir.path} が無い');
 
   final sites = <String>{};
-  final sources =
-      libDir
-          .listSync(recursive: true)
-          .whereType<File>()
-          .where((f) => f.path.endsWith('.dart'))
-          .toList()
-        ..sort((a, b) => a.path.compareTo(b.path));
+  final sources = sourceFiles(libDir.path);
 
   for (final file in sources) {
     final name = file.uri.pathSegments.last;

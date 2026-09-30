@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/dart_source.dart';
+import 'support/source_files.dart';
 
 /// #1107: `state.extra` を必須で読まない。
 ///
@@ -19,11 +20,7 @@ import 'support/dart_source.dart';
 /// 経路を塞ぐ。
 void main() {
   final libDir = Directory('lib');
-  final sources = libDir
-      .listSync(recursive: true)
-      .whereType<File>()
-      .where((f) => f.path.endsWith('.dart'))
-      .toList();
+  final sources = sourceFiles(libDir.path);
 
   /// `state.extra` を必須で読んでいる行を返す。
   ///

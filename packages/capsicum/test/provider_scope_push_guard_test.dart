@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/dart_source.dart';
+import 'support/source_files.dart';
 
 /// #1149: 投稿フォーム（`/compose`）とメディアビューア（`/media`）へは、開く側の
 /// スコープを `extraWithProviderScope` で載せて push する。#1150 でプロフィール編集
@@ -19,11 +20,7 @@ import 'support/dart_source.dart';
 /// アプリの入口から開くので、ルートのスコープで正しい。
 void main() {
   final libDir = Directory('lib');
-  final sources = libDir
-      .listSync(recursive: true)
-      .whereType<File>()
-      .where((f) => f.path.endsWith('.dart'))
-      .toList();
+  final sources = sourceFiles(libDir.path);
 
   const allowlist = ['lib/main.dart', 'src/ui/screen/splash_screen.dart'];
 

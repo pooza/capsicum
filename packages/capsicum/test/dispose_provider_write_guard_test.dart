@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/dart_source.dart';
+import 'support/source_files.dart';
 
 /// `dispose()` の中で provider を書き換えない。
 ///
@@ -98,10 +99,7 @@ void main() {
       if (write.hasMatch(stripDeferred(body))) body,
   ];
 
-  List<File> libFiles() => [
-    for (final entity in Directory('lib').listSync(recursive: true))
-      if (entity is File && entity.path.endsWith('.dart')) entity,
-  ];
+  List<File> libFiles() => sourceFiles('lib');
 
   test('⚠ 走査が空振りしていない（dispose の本体を実際に拾えている）', () {
     // ⚠⚠ **`expect(offenders, isEmpty)` は何も見ていなくても通る。**

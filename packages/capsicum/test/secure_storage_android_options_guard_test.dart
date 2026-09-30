@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/dart_source.dart';
+import 'support/source_files.dart';
 
 /// #1120: `FlutterSecureStorage(...)` を作るときは、必ず
 /// `aOptions: kSecureStorageAndroidOptions` を渡す。
@@ -54,11 +55,7 @@ int constructionsWithoutSharedAndroidOptions(String code) =>
 void main() {
   String normalize(String source) => maskStrings(maskComments(source));
 
-  List<File> libFiles() => Directory('lib')
-      .listSync(recursive: true)
-      .whereType<File>()
-      .where((f) => f.path.endsWith('.dart'))
-      .toList();
+  List<File> libFiles() => sourceFiles('lib');
 
   test('探索が空振りしていない', () {
     // ⚠ 3 つの店がそれぞれ 1 つずつ作っている。ここが減ると下の検査は

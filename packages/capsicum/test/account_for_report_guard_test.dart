@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/dart_source.dart';
+import 'support/source_files.dart';
 
 /// #1064: `catch` の中の `ref.read` が、元の例外を潰して観測を消すのを止める。
 ///
@@ -104,13 +105,7 @@ void main() {
   });
 
   group('ソース検査: 書き方が戻らないこと', () {
-    List<File> dartFiles() => Directory('lib')
-        .listSync(recursive: true)
-        .whereType<File>()
-        .where((f) => f.path.endsWith('.dart'))
-        .where((f) => !f.path.endsWith('.g.dart'))
-        .where((f) => !f.path.endsWith('.freezed.dart'))
-        .toList();
+    List<File> dartFiles() => sourceFiles('lib', skipGenerated: true);
 
     /// 拡張の宣言そのものが載っているファイル（doc に旧形が出てくる）。
     const declarationFile = 'lib/src/provider/account_manager_provider.dart';

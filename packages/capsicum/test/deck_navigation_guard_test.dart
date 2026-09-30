@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/dart_source.dart';
+import 'support/source_files.dart';
 
 /// #1148 / #1150: カラムの中身から開く画面は `deck_navigation.dart` の `open*` で
 /// 開く（投稿・プロフィール・ハッシュタグ・チャンネル・ユーザー一覧・引用一覧・
@@ -16,11 +17,7 @@ import 'support/dart_source.dart';
 /// ⚠ 対象外（理由つき）は [allowlist]。
 void main() {
   final libDir = Directory('lib');
-  final sources = libDir
-      .listSync(recursive: true)
-      .whereType<File>()
-      .where((f) => f.path.endsWith('.dart'))
-      .toList();
+  final sources = sourceFiles(libDir.path);
 
   const allowlist = <String, String>{
     'lib/src/ui/util/deck_navigation.dart': '振り分けの本体',

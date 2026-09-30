@@ -19,10 +19,11 @@
 library;
 
 import 'dart:collection';
-import 'dart:io';
 import 'dart:math' as math;
 
 import 'dart_source.dart';
+
+import 'source_files.dart';
 
 /// provider 1 つぶんの解析結果。
 class ProviderNode {
@@ -112,8 +113,7 @@ class ProviderGraph {
 /// `lib/` 配下の Dart ソースを読んで [ProviderGraph] を作る。
 ProviderGraph buildProviderGraphFromDirectory(String dir) {
   final sources = <String, String>{
-    for (final f in Directory(dir).listSync(recursive: true))
-      if (f is File && f.path.endsWith('.dart')) f.path: f.readAsStringSync(),
+    for (final f in sourceFiles(dir)) f.path: f.readAsStringSync(),
   };
   return buildProviderGraph(sources);
 }
