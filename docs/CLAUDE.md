@@ -297,7 +297,8 @@ capsicum/
     architecture.md       # アーキテクチャ設計
     annict-integration.md # Annict 連携機能の説明（モロヘイヤ前提・作品/エピソード検索〜感想投稿）
     tech-notes.md         # 実装の落とし穴・API 固有の注意点
-    dev-environment.md    # 開発マシン・検証端末・Sentry 環境
+    dev-environment.md    # 開発マシン（macOS）・Claude Code の権限とコマンドの書き方・Sentry・iOS / Android 検証端末
+    dev-environment-desktop.md  # 補助機（Linux / Windows）のセットアップ・ツールチェーン・実機検証の経路
     desktop-plugin-compatibility.md  # デスクトップ対応のプラグイン棚卸し
     flutter-upstream-watch.md  # Flutter 上流バグの追跡（月初に手動で chase・資格情報の満了チェックも相乗り）
     api-gap-inventory.md  # 棚卸し: API にあって capsicum が使っていない機能（#993 の成果物・1.x / 2.0 / 拾わない の分類）
@@ -565,7 +566,7 @@ v1.24 リリース直前の Linux 実機検証で判明・対応した、他プ�
 - **2 回目レビュー（差分レビュー）**: プラットフォーム追加・大更新独立配置マイルストーンに限り、1 回目の修正 commit に起因する新規問題を拾うため 2 回目を回す。対象は 1 回目以降の差分と新規サーフェスのみ。リリース 1 週間前までに完了させ、直前に出た P1 はホットフィックス前提で次リリースに送ってよい（詳細は [release-review スキル](../.claude/skills/release-review/SKILL.md)）
 - ATOK 二重入力（[#54](https://github.com/pooza/capsicum/issues/54)）は Flutter 側の対応待ち。リリースごとにリリースノートの「既知の不具合」に記載し、Flutter 側の関連 issue の動向を確認する。記載時は回避策も併記する: (1) ATOK の「インライン入力」を OFF にする、(2) インライン入力 ON のままでも ATOK の「従来のカーソル位置入力を使用」を ON にすれば回避可（インライン入力を活かせる分こちらが実用的）、(3) 標準キーボードに切り替える
 - マイルストーン未設定の Issue は `no:milestone` フィルタで確認する
-- **`Windows` / `Linux` ラベルは「その実機でないと進まない」の目印**（再現確認が起点・修正案の選択が実機の挙動次第）。開発のメインは macOS なので、着手できる端末が限られることを一目で分かるようにするためのもの。3 OS 共通のデスクトップ機能に付ける `desktop` とは別で、`desktop` は macOS でも進められる。拾い方は [dev-environment.md](dev-environment.md) の「その端末で拾う作業の探し方」
+- **`Windows` / `Linux` ラベルは「その実機でないと進まない」の目印**（再現確認が起点・修正案の選択が実機の挙動次第）。開発のメインは macOS なので、着手できる端末が限られることを一目で分かるようにするためのもの。3 OS 共通のデスクトップ機能に付ける `desktop` とは別で、`desktop` は macOS でも進められる。拾い方は [dev-environment-desktop.md](dev-environment-desktop.md) の「その端末で拾う作業の探し方」
 - Flutter framework 由来の不具合（capsicum 側で根治不能なもの、`flutter` ラベル付き）は [flutter-upstream-watch.md](flutter-upstream-watch.md) で集中管理し、**月初のセッションで手動 chase** して上流の進捗を巡回する。⚠ **クラウドの schedule routine は 2026-08-21 に廃止した**（4 か月連続で発火しても成果コミットが 1 件も残らず、実務はローカル頼みだった）。**資格情報の満了チェックがこの巡回に相乗りしている**点に注意
 
 ### 実装しない機能

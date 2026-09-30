@@ -129,7 +129,7 @@ void main() {
   // ⚠ ここから下は「検査が動いていること」そのものの検査。
   group('⚠ 走査が空振りしていない', () {
     test('走査したファイル数が実態と合っている', () {
-      // 2026-09-30 時点で docs 38（直下 23 + archive 15）/ skills 13。
+      // 2026-09-30 時点で docs 40（直下 24 + archive 16）/ skills 13。
       // ⚠ **下限を固定する。**0 件でも `isEmpty` は通ってしまう。
       expect(headingScanFiles.length, greaterThanOrEqualTo(45));
       expect(sizeScanFiles.length, greaterThanOrEqualTo(20));
@@ -385,7 +385,6 @@ const _threshold = 60000;
 /// 直し方の既定は **落ち着いた節を `docs/archive/` へ移す**（#1184 の案 A）。
 /// ⚠ **節番号は振り直さない** —— コードのコメントが節を名前で参照している。
 const _budgets = <String, int>{
-  'dev-environment.md': 91127,
   'tech-notes.md': 86271,
   'CLAUDE.md': 84859,
   'paid-relay-plan.md': 76463,
