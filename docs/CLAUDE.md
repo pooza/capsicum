@@ -184,6 +184,7 @@ capsicum/
     roadmap.md            # 枠の数・各枠の主題・1.x と 2.x の境界（2026-09-04 策定・含有 Issue は Milestones が正本）
     deck-ui-plan.md       # #720 デッキ表示の設計スパイク（2026-09-06・現アーキの前提棚卸し / 壊れる境界 / 段階性。⚠ 詳細 UI 仕様ではない）
     paid-relay-plan.md    # #597 有償プッシュリレーの設計書（2026-09-06。⚠ #596 は記録層で判定層ではない・認可を新規に作る話）
+    paid-relay-baseline.md  # #597 の前提になる実測（節番号 1-1〜1-6 は設計書と共通）。⚠ プリセット非保有の利用者は 0 人
     milestone-transition.md  # ⚠ ポインタのみ（本文は .claude/skills/milestone-transition/）
     doc-maintenance.md    # 配置の原則（公開境界・二重管理禁止・メモリは status を持たない）。⚠ 回す手順は .claude/skills/doc-maintenance/
     store-release-guide.md  # 初回セットアップ（署名・fastlane）とストア掲載情報・配布方針。⚠ 毎回の手順は .claude/skills/store-release/

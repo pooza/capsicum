@@ -109,7 +109,7 @@ capsicum は「最新版を対象にする」方針で開発しており、UI �
 
 v1.15 の観測性強化（#293）により、iOS のバックグラウンド通知は発火回数 0回で事実上機能していないことが確認された。v1.18 でプッシュ通知リレー（[#52](https://github.com/pooza/capsicum/issues/52)）を実装し、根本解決済み。リレーサーバー（Ruby、公開ドメイン `relay.capsicum.shrieker.net`）の実装は [pooza/capsicum-relay](https://github.com/pooza/capsicum-relay) リポジトリが正本（ホスト構成・デプロイ手順はインフラノートが正本）。初期設計判断の経緯は [archive/push-relay-plan.md](archive/push-relay-plan.md) に保存。具体的な課金設計（料金体系・ストア課金統合等）は [paid-relay-plan.md](paid-relay-plan.md) が正本（投げ銭本体は [#428](https://github.com/pooza/capsicum/issues/428) / [supporter-subscription-plan.md](supporter-subscription-plan.md)）。
 
-⚠ **配送の重さは device_type で大きく違う**（2026-09-06 実測・正本は [paid-relay-plan.md](paid-relay-plan.md) 1-5）。**Windows (WNS) が処理時間の 88% を占め、1 件あたり iOS の 16 倍**（2,056ms 対 126ms）。⚠ **APNs だけが永続 HTTP/2 接続を保持しており、WNS / FCM は 1 通ごとに TLS を張り直している**。改善は [relay#54](https://github.com/pooza/capsicum-relay/issues/54)（接続再利用・v1.65）/ [relay#55](https://github.com/pooza/capsicum-relay/issues/55)（非同期化・#597 と同じ回）/ [relay#56](https://github.com/pooza/capsicum-relay/issues/56)（バックオフ・on-hold）。⚠ **WNS の `dropped` は「端末が落ちている / スリープ」**であって dedup ではない。**raw notification は queue されない**ので、その間の通知は失われる。
+⚠ **配送の重さは device_type で大きく違う**（2026-09-06 実測・正本は [paid-relay-baseline.md](paid-relay-baseline.md) 1-5）。**Windows (WNS) が処理時間の 88% を占め、1 件あたり iOS の 16 倍**（2,056ms 対 126ms）。⚠ **APNs だけが永続 HTTP/2 接続を保持しており、WNS / FCM は 1 通ごとに TLS を張り直している**。改善は [relay#54](https://github.com/pooza/capsicum-relay/issues/54)（接続再利用・v1.65）/ [relay#55](https://github.com/pooza/capsicum-relay/issues/55)（非同期化・#597 と同じ回）/ [relay#56](https://github.com/pooza/capsicum-relay/issues/56)（バックオフ・on-hold）。⚠ **WNS の `dropped` は「端末が落ちている / スリープ」**であって dedup ではない。**raw notification は queue されない**ので、その間の通知は失われる。
 
 ### サポート優先順位
 
