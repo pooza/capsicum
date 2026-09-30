@@ -101,7 +101,7 @@ minor 内の patch 更新（自前 3 鯖は pooza が本番へリリース日に
 
 実測（2026-08-21）: 美食丼 / デルムリン丼 / キュアスタ！の `/api/v2/instance` はいずれも `4.7.0`。
 
-⚠ **この時点で書いた「モロヘイヤが 5.33.0 なので #121 はブロック中」は解消済み。**2026-09-01 に美食丼の `GET /mulukhiya/api/about` を引くと `package.version` は `5.35.0`（判定は `.config.features.<flag>` ではなく `.package.version`）。#121 の ALT 編集は **v1.60 で出荷済み**。プリセットで導線が出ないサーバーがあるのは fail-closed が効いている正常な状態で、条件の正本は `tech-notes.md`。
+⚠ **この時点で書いた「モロヘイヤが 5.33.0 なので #121 はブロック中」は解消済み。**2026-09-01 に美食丼の `GET /mulukhiya/api/about` を引くと `package.version` は `5.35.0`（判定は `.config.features.<flag>` ではなく `.package.version`）。#121 の ALT 編集は **v1.60 で出荷済み**。プリセットで導線が出ないサーバーがあるのは fail-closed が効いている正常な状態で、条件の正本は `tech-notes-api.md`。
 
 ### v4.7.0 → v4.7.1（本番 3 台適用済み・2026-09-03 トリアージ）
 

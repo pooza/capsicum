@@ -385,8 +385,6 @@ const _threshold = 60000;
 /// 直し方の既定は **落ち着いた節を `docs/archive/` へ移す**（#1184 の案 A）。
 /// ⚠ **節番号は振り直さない** —— コードのコメントが節を名前で参照している。
 const _budgets = <String, int>{
-  'tech-notes.md': 86271,
-  'CLAUDE.md': 84859,
   'paid-relay-plan.md': 76463,
 };
 

@@ -12,7 +12,7 @@
 
 | 置き場 | 公開範囲 | 何を置くか |
 |---|---|---|
-| `docs/`（GitHub・**公開**） | 公開 | プロジェクトの規約・設計方針・運用手順・再発する技術罠（[tech-notes.md](tech-notes.md)） |
+| `docs/`（GitHub・**公開**） | 公開 | プロジェクトの規約・設計方針・運用手順・再発する技術罠（[tech-notes.md](tech-notes.md) と、そこから分けた [tech-notes-native.md](tech-notes-native.md) / [tech-notes-api.md](tech-notes-api.md)。⚠ **行き先の表は tech-notes.md の冒頭**） |
 | `MEMORY.md` + `memory/*`（Google Drive 共有・**非公開**） | 全端末で共有・非公開 | Claude 向け作業ルール（feedback）・端末固有値・GitHub / コードから導けない状態や判断経緯 |
 | `docs/archive/`（GitHub・公開） | 公開 | 役目を終えた設計書・計画・廃止手順（参照はするが現役運用しない） |
 | chubo2 `docs/infra-note.md`（別リポジトリ・**private**・git 共有） | 全セッション共有・非公開 | サーバーインフラの構成・手順・再発する罠（capsicum の公開 docs に書けない内部情報） |

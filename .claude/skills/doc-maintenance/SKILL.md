@@ -24,7 +24,7 @@ disable-model-invocation: true
 ### 2. メモリ → docs（共有すべき知見の昇格）
 
 - `memory/*.md` を走査し、「全端末＋人間にも有益な一般知識（規約・手順・再発する技術罠）」で、かつ**非公開情報を含まない**ものを抽出する。
-- docs の該当箇所へ移す: 技術罠 → [tech-notes.md](../../../docs/tech-notes.md)、**手順 → 対応するスキル（`.claude/skills/<名前>/SKILL.md`・#1114）**、方針 → [CLAUDE.md](../../../docs/CLAUDE.md)。
+- docs の該当箇所へ移す: 技術罠 → [tech-notes.md](../../../docs/tech-notes.md)（⚠ **冒頭の行き先の表で native / api へ振る**）、**手順 → 対応するスキル（`.claude/skills/<名前>/SKILL.md`・#1114）**、方針 → [CLAUDE.md](../../../docs/CLAUDE.md)。
 - 移した後、memory 側は削除するか、一行ポインタ＋非自明ポイントだけ残す（値でなく docs パス参照にする）。
 - **昇格しない**: feedback 系（Claude 向け作業ルール）・端末固有値・特定運用者の判断は docs に上げない。
 

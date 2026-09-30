@@ -11,7 +11,7 @@
 ///   `wns.announcement_deduped` がまさにこの形だった）
 ///
 /// これまで一致を守っていたのは**両側のコメントだけ**で、検査が無かった。
-/// C++ 側のテストは tag ビルドでしか回らない（`docs/tech-notes.md`「Windows
+/// C++ 側のテストは tag ビルドでしか回らない（`docs/tech-notes-native.md`「Windows
 /// ネイティブを触ったときの検証手順」）ので、突き合わせは Dart 側の
 /// `test/wns_benign_codes_parity_test.dart` が `.cpp` を読んで行う。
 ///

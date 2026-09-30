@@ -118,7 +118,7 @@ capsicum-relay は独自のリリースサイクル（tag / GitHub Release）を
 CLAUDE.md は毎セッション全読されるため、リリースログを肥大させない。**CLAUDE.md の「リリース計画」節には「最新リリース」1 本だけを詳細で残し、それ以前は [archive/release-log.md](../../../docs/archive/release-log.md) へ退避する**。
 
 - 新しいリリースを出すたびに、CLAUDE.md の旧「最新リリース」段落を `docs/archive/release-log.md` の先頭（`---` の直後）へ移し、新リリースを「最新リリース: **vX.Y.Z**（…）」として CLAUDE.md に書き直す。CLAUDE.md 側にはアーカイブへのポインタ 1 行だけを残す。
-- リリース段落に埋もれた**運用上の罠**（build 番号ルール・msix_version・iOS 提出順・16KB 等）は、archive へ移す前に [tech-notes.md](../../../docs/tech-notes.md) / [store-release-guide.md](../../../docs/store-release-guide.md) の該当箇所へ反映する（archive は経緯ログ、再発防止の正本は tech-notes / guide 側）。
+- リリース段落に埋もれた**運用上の罠**（build 番号ルール・msix_version・iOS 提出順・16KB 等）は、archive へ移す前に [tech-notes-native.md](../../../docs/tech-notes-native.md)（⚠ **ビルド / リリース系の罠はこちら**・行き先の表は [tech-notes.md](../../../docs/tech-notes.md) の冒頭） / [store-release-guide.md](../../../docs/store-release-guide.md) の該当箇所へ反映する（archive は経緯ログ、再発防止の正本は tech-notes / guide 側）。
 - **ホットフィックス（x.y.z）でも同様にトリムする**（milestone transition を伴わないが、リリース＝ログ追加のたびに実施）。
 - 詳細なリリースノート・消化 Issue・公開状況の**正本は GitHub Releases / Milestones**。archive はあくまで CLAUDE.md から退避した作業ログであり、網羅的な履歴インデックスを目指さない。
 

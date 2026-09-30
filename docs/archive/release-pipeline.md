@@ -1,6 +1,6 @@
 # リリースパイプライン構想
 
-capsicum のリリースを複数プラットフォーム・複数ツールにまたがって一元管理するための構想ドキュメント。デスクトップ対応（[CLAUDE.md 長期構想](../CLAUDE.md#長期構想-デスクトップ対応)）の前段階として、全体像を先に描いておくことで実装時の迷いを減らす。
+capsicum のリリースを複数プラットフォーム・複数ツールにまたがって一元管理するための構想ドキュメント。デスクトップ対応（[CLAUDE.md 長期構想](../CLAUDE.md#デスクトップ対応)）の前段階として、全体像を先に描いておくことで実装時の迷いを減らす。
 
 ## 目的
 
@@ -62,7 +62,7 @@ flowchart TB
 | Windows (Store) | `msstore` CLI + MSIX packaging | Windows runner | Microsoft Store |
 | Linux (AppImage) | `appimagetool` / `linuxdeploy` | Ubuntu runner | GitHub Releases |
 
-Snap Store は[採用しない方針](../CLAUDE.md#長期構想-デスクトップ対応)。
+Snap Store は[採用しない方針](../CLAUDE.md#デスクトップ対応)。
 
 ### macOS は Mac App Store 一本化
 
