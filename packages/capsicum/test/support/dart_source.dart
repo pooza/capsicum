@@ -23,6 +23,27 @@
 /// （[maskComments]・`exception_scrub_guard_test` が持っていた）へ寄せた。
 library;
 
+/// [quoteIndex] の引用符が**生文字列** (`r'…'` / `r"…"`) の開きかどうか。
+///
+/// ⚠⚠ **生文字列では `\` がエスケープにならない。**`r'\'` は「`\` 1 文字の
+/// 文字列」で、直後の `'` はちゃんと閉じる。これを素朴に「`\` は次の 1 文字を
+/// エスケープする」と読むと**閉じ引用符を食べてしまい、そこから先の実コードが
+/// 文字列の中身として扱われる**。[maskStrings] はそれを空白へ潰すので、
+/// **続く数行の実コードが検査から消えて、ガードが黙って空振りする**。
+///
+/// ⚠ 実物がある: `lib/src/service/settings_backup.dart` の YAML パーサが
+/// `if (text[i] == r'\') {` と書いている（2026-09-30 に実測して確認）。
+///
+/// ⚠ 識別子の末尾の `r` と見分ける。Dart では識別子の直後に文字列リテラルを
+/// 書けないので、`r` の 1 つ前が識別子文字なら生文字列ではない。
+bool isRawStringStart(String source, int quoteIndex) {
+  if (quoteIndex == 0 || source[quoteIndex - 1] != 'r') return false;
+  if (quoteIndex == 1) return true;
+  return !_identifierChar.hasMatch(source[quoteIndex - 2]);
+}
+
+final _identifierChar = RegExp(r'[A-Za-z0-9_$]');
+
 /// コメントを**同じ長さの空白**へ潰す。改行は残すので index も行番号もずれない。
 ///
 /// ⚠ **括弧の対応付けはコメントを読んではいけない（#1020・Codex P2 の 6 巡目）。**
@@ -39,11 +60,12 @@ library;
 String maskComments(String source) {
   final out = StringBuffer();
   String? quote;
+  var raw = false;
   for (var i = 0; i < source.length; i++) {
     final c = source[i];
     if (quote != null) {
       out.write(c);
-      if (c == r'\' && i + 1 < source.length) {
+      if (!raw && c == r'\' && i + 1 < source.length) {
         out.write(source[i + 1]);
         i++;
       } else if (c == quote) {
@@ -53,6 +75,7 @@ String maskComments(String source) {
     }
     if (c == "'" || c == '"') {
       quote = c;
+      raw = isRawStringStart(source, i);
       out.write(c);
       continue;
     }
@@ -115,10 +138,11 @@ String maskStrings(String source) {
     final triple =
         i + 2 < source.length && source[i + 1] == c && source[i + 2] == c;
     final delimiter = triple ? c * 3 : c;
+    final raw = isRawStringStart(source, i);
     out.write(delimiter);
     i += delimiter.length;
     while (i < source.length) {
-      if (source[i] == r'\') {
+      if (!raw && source[i] == r'\') {
         out.write('  ');
         i += 2;
         continue;
