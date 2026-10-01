@@ -122,6 +122,15 @@ minor 内の patch 更新（自前 3 鯖は pooza が本番へリリース日に
 
 実測（2026-09-16）: 美食丼 / デルムリン丼 / キュアスタ！の `/api/v2/instance` はいずれも `4.7.2`。
 
+### v4.7.2 → v4.7.3（本番 3 台適用済み・2026-10-02 トリアージ）
+
+**client 影響なし（capsicum コード変更ゼロ）**。`app/serializers/rest/` と `config/routes/api.rb` の diff は**完全に空**。`app/controllers/api/` に出たのは 2 箇所だけ（計 +2 / -1 行）。
+
+- **none（capsicum は叩かない経路）**: `api/v1/accounts_controller#check_enabled_registrations` が `ENV['SSO_ACCOUNT_SIGN_UP']` があれば常に `forbidden` を返すようになった。⚠ これは **アプリ内でのアカウント新規作成（`POST /api/v1/accounts`）** の経路で、capsicum はサインアップを OAuth のブラウザ経路に委ねているため呼ばない。
+- **none（管理 API の監査ログ）**: `api/v1/admin/accounts_controller#destroy` に `log_action :destroy` を 1 行。応答は `render_empty` のままで、capsicum は admin API を叩かない。
+
+実測（2026-10-02）: 美食丼 / デルムリン丼 / キュアスタ！の `/api/v2/instance` はいずれも `4.7.3`。
+
 ## 関連
 
 - [#721](https://github.com/pooza/capsicum/issues/721) Mastodon 4.6 互換性確認（受動・closed）
