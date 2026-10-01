@@ -108,7 +108,11 @@ class User {
   /// サーバーでは null。
   ///
   /// ⚠⚠ **null は「端末のロケールへ倒す」。**Mastodon の `setting_default_language`
-  /// は WebUI で「未設定」にできるので、null が普通に来る。
+  /// は WebUI で「サイトの表示言語に合わせる」を選べるので、null が普通に来る。
+  ///
+  /// ⚠ **`''` はここへ来ない。**サーバーは「合わせる」を `''` で返すが、
+  /// アダプタ側で null へ畳んである（#1194）。**`''` を素通しすると投稿フォーム
+  /// の言語が空欄で開く**ので、判定を `== null` だけで済ませられる形を保つ。
   final String? defaultLanguage;
 
   /// 引用を許すのは誰か、の既定（Mastodon の `source.quote_policy`・#1194）。

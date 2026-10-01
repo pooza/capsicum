@@ -75,7 +75,17 @@ extension CapsicumMastodonAccountExtension on MastodonAccount {
       // ⚠ **`/api/v1/accounts/:id` には `source` が無い**（`verify_credentials`
       // だけ）。他人の User では null になるが、既定は自分のものしか使わない
       // ので困らない。
-      defaultLanguage: source?['language'] as String?,
+      // ⚠⚠ **「サイトの表示言語に合わせる」は null ではなく `''` で来る
+      // (#1194)。**WebUI の `<select>` は nil の選択肢を `value=""` で出し、
+      // `UserSettings#[]=` は `''` を String へ type_cast したうえで
+      // **nil でないので保存する**（nil のときだけ delete される）。`''` を
+      // そのまま渡すと呼ぶ側の `?? 端末ロケール` が効かず、**投稿フォームの
+      // 言語が空欄で開く**。
+      //
+      // ⚠ `quote_policy` / `privacy` は `setting ... in: %w(...)` の検証がある
+      // ので `''` を保存できない（ArgumentError になる）。**正規化が要るのは
+      // `in:` を持たない `language` だけ。**
+      defaultLanguage: _blankToNull(source?['language'] as String?),
       defaultQuotePolicy: source?['quote_policy'] as String?,
       defaultSensitive: source?['sensitive'] as bool?,
       showMedia: showMedia,
@@ -111,6 +121,13 @@ MovedTo? _movedTo(MastodonAccount? moved) {
   if (url == null || url.isEmpty) return null;
   return MovedTo(url: url, handle: '@${moved.acct}', userId: moved.id);
 }
+
+/// 空文字を「未設定」として扱う。
+///
+/// ⚠ Mastodon の `UserSettings` は `in:` の検証が無い設定で `''` をそのまま
+/// 保存するので、「未設定」が null と `''` の 2 通りで来る（#1194）。
+String? _blankToNull(String? value) =>
+    value == null || value.isEmpty ? null : value;
 
 FeatureApproval? _parseFeatureApproval(Map<String, dynamic>? raw) {
   if (raw == null) return null;

@@ -997,8 +997,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         // 範囲と同じ画面で設定するのに読んでおらず、**端末のロケールで上書き
         // して送っていた**ので、WebUI の設定が常に無視されていた。
         //
-        // ⚠ `setting_default_language` は WebUI で「未設定」にできるので null が
-        // 普通に来る。そのときは従来どおり端末ロケール。
+        // ⚠ `setting_default_language` は WebUI で「サイトの表示言語に合わせる」
+        // を選べるので null が普通に来る。そのときは従来どおり端末ロケールで、
+        // これは Mastodon 側の畳み方（`valid_locale_cascade` が利用者のロケール
+        // へ倒す）と同じ向き。⚠⚠ **サーバーは「合わせる」を `''` で返す**ので、
+        // アダプタで null へ畳んでいる（素通しだと `??` が効かず空欄になる）。
         final serverDefault = ref
             .read(currentAccountProvider)
             ?.user

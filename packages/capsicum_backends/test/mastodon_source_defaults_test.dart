@@ -60,6 +60,25 @@ void main() {
       expect(user.defaultLanguage, isNull);
     });
 
+    // ⚠⚠ **これが実際に踏んだ形 (#1194)。**WebUI で「サイトの表示言語に合わせる」
+    // を選ぶと、サーバーは null ではなく `''` を返す。`<select>` の nil 選択肢が
+    // `value=""` で、`UserSettings#[]=` は `''` を nil でないものとして保存する
+    // （`in:` の検証が無い `language` だけこれが起きる）。
+    //
+    // ⚠ 素通しすると `?? 端末ロケール` が効かず、**投稿フォームの言語が空欄で
+    // 開く**。上の null のテストだけでは**この穴を塞げていなかった**。
+    test('⚠⚠ 「表示言語に合わせる」の空文字も null へ畳む', () {
+      final user = account({
+        'source': {'privacy': 'public', 'language': ''},
+      }).toCapsicum('example.com');
+
+      expect(
+        user.defaultLanguage,
+        isNull,
+        reason: '⚠ `\'\'` を持つと呼ぶ側が端末ロケールへ倒せず、言語が空欄になる',
+      );
+    });
+
     // ⚠⚠ `source` は `verify_credentials` にしか無い。他人の Account では
     // 丸ごと欠けるので、全部 null に倒れること。
     test('⚠⚠ source が無い（他人の Account）なら全部 null', () {
