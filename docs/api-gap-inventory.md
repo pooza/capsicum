@@ -339,7 +339,15 @@ grep -rhoE "\['[a-zA-Z_][a-zA-Z0-9_]*'\]" packages/capsicum_backends/lib/src/mis
 - ⚠⚠ **`forward` を送らないので、他サーバーの利用者を通報しても相手のサーバーには届かない。**自分のサーバーのモデレータにしか伝わらない。WebUI は転送の可否を尋ねる
 - `category`（`spam` / `legal` / `violation` / `other`）と `rule_ids`（違反したサーバールールの指定）も未使用。⚠ **モデレータが分類し直す手間になる**
 
-### 13-3. ★ フォロー申請のプッシュ通知が来ない
+### 13-3. ★★ プッシュの購読種別が 7 つしかない（起票後に見立てを訂正）
+
+⚠⚠ **起票時は「フォロー申請だけ」と書いたが、数え直したら 10 種が未購読だった**（[#1204](https://github.com/pooza/capsicum/issues/1204) のコメントが正本）。Mastodon 4.7 の `Notification::PROPERTIES` は **17 種**、capsicum の購読は **7 種**、⚠ **画面（`notification_type_display.dart`）は 30 種を扱っている**。
+
+🔴 未購読のうち重いもの: **`moderation_warning`**（制限・凍結の予告）/ **`admin.report`**（通報が来た・pooza はプリセット 5 台の運営者）/ **`quote`**（引用された・`baseline: true` で全利用者対象）/ `severed_relationships`。⚠ **どれも #1084 / #1072 で画面には出している。**
+
+✅ **直しは軽い**（キーを足すだけ・移行不要）。`registerAllAccounts` が splash で毎起動走り（`splash_screen.dart:89`）、Mastodon の `create` は既存を destroy して作り直すので、**更新後の初回起動で反映される**。
+
+以下は起票時に書いた内容（フォロー申請の部分）。
 
 `POST /api/v1/push/subscription` の `data[alerts]` は **`Notification::TYPES` 全種**を受ける（`params.expect(data: [:policy, alerts: Notification::TYPES])`・⚠ `TYPES` は `PROPERTIES.keys` なので**版で増える**）。capsicum が立てているのは `mention` / `favourite` / `reblog` / `follow` / `poll` / `status` / `update` の 7 つで、⚠⚠ **`follow_request` が無い**。
 
