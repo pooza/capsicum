@@ -38,6 +38,7 @@ import '../widget/bottom_safe_area.dart';
 import '../widget/emoji_text.dart';
 import '../widget/home_menu.dart';
 import '../widget/livecure_filter_button.dart';
+import '../widget/notification_bell_button.dart';
 import '../widget/notification_filter_button.dart';
 import '../widget/post_tile.dart';
 import '../widget/server_badge.dart';
@@ -663,6 +664,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     isLabelVisible: unreadAnnouncements > 0,
                     child: const Icon(Icons.menu),
                   ),
+                  // ⚠ `automaticallyImplyLeading: false` で自前に置いている
+                  // ので、`DrawerButton` が付ける既定のツールチップが来ない
+                  // （#1196）。文面は Flutter と同じものを借りる。
+                  tooltip: MaterialLocalizations.of(
+                    context,
+                  ).openAppDrawerTooltip,
                   onPressed: () => Scaffold.of(context).openDrawer(),
                 ),
               ),
@@ -744,12 +751,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 const LivecureFilterButton(),
                 IconButton(
                   icon: const Icon(Icons.search),
+                  tooltip: '検索',
                   onPressed: () => context.push('/search'),
                 ),
                 // ベルは「すべての通知」への統合導線なので、通知タブの表示有無
                 // に関わらず常時表示する（#831）。通知タブ可視時は導線が重複する
                 // が許容する。
-                _NotificationBellButton(
+                NotificationBellButton(
                   hasMultipleAccounts: accountState.accounts.length > 1,
                 ),
                 // デッキ表示への切り替え (#1153)。デッキ側の AppBar に同じ位置で
@@ -1917,79 +1925,6 @@ class _StreamStatusIndicatorState
         ),
       ),
     );
-  }
-}
-
-/// AppBar 右上の通知ベル。
-///
-/// - 単一アカウント: タップで現在アカウントの通知画面（/notifications）
-/// - 複数アカウント: タップでまとめ画面（/notifications/all）— #345 で変更
-/// - 長押しでポップアップメニューから明示選択も可能
-class _NotificationBellButton extends StatelessWidget {
-  final bool hasMultipleAccounts;
-
-  const _NotificationBellButton({required this.hasMultipleAccounts});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onLongPress: hasMultipleAccounts ? () => _showMenu(context) : null,
-      child: IconButton(
-        icon: const Icon(Icons.notifications_outlined),
-        // 複数アカウント時は長押しメニューを自前で出すため IconButton の
-        // tooltip は付けない。built-in tooltip が long-press gesture を
-        // 横取りして、外側の GestureDetector.onLongPress が発火しない。
-        tooltip: hasMultipleAccounts ? null : '通知',
-        onPressed: () => context.push(
-          hasMultipleAccounts ? '/notifications/all' : '/notifications',
-        ),
-      ),
-    );
-  }
-
-  Future<void> _showMenu(BuildContext context) async {
-    final box = context.findRenderObject() as RenderBox?;
-    if (box == null) return;
-    final overlay =
-        Overlay.of(context).context.findRenderObject() as RenderBox?;
-    if (overlay == null) return;
-    final position = RelativeRect.fromRect(
-      Rect.fromPoints(
-        box.localToGlobal(Offset.zero, ancestor: overlay),
-        box.localToGlobal(box.size.bottomRight(Offset.zero), ancestor: overlay),
-      ),
-      Offset.zero & overlay.size,
-    );
-    // PopupMenuItem + ListTile は default height 制約（48dp）と ListTile の
-    // 推奨高（56dp+）がぶつかって 2 つ目以降が見切れる事象があったため、
-    // Row ベースのコンパクトなレイアウトに変更している。
-    final selection = await showMenu<String>(
-      context: context,
-      position: position,
-      items: const [
-        PopupMenuItem(
-          value: '/notifications/all',
-          child: Row(
-            children: [
-              Icon(Icons.notifications_active_outlined, size: 20),
-              SizedBox(width: 12),
-              Text('すべての通知'),
-            ],
-          ),
-        ),
-        PopupMenuItem(
-          value: '/notifications',
-          child: Row(
-            children: [
-              Icon(Icons.notifications_outlined, size: 20),
-              SizedBox(width: 12),
-              Text('このアカウントの通知'),
-            ],
-          ),
-        ),
-      ],
-    );
-    if (selection != null && context.mounted) context.push(selection);
   }
 }
 
