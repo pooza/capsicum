@@ -13,8 +13,15 @@ cd ~/repos/misskey
 git fetch origin --quiet
 OLD=<前回トリアージで記録した daisskey SHA>; NEW=daisskey
 
-# ① 集約 API 契約（これだけで entity フィールド + endpoint の変化を一網打尽）
-git diff $OLD..$NEW -- packages/misskey-js/src/autogen/entities.ts packages/misskey-js/src/autogen/endpoint.ts
+# ① 集約 API 契約（entity フィールド + endpoint + リクエスト/レスポンスの形）
+# ⚠⚠ types.ts を外さない。2026.10.0 の sw/unregister（必須パラメータ追加）は
+#     entities.ts / endpoint.ts に 1 行も出ず、types.ts にしか出なかった（#1201）
+git diff $OLD..$NEW -- packages/misskey-js/src/autogen/entities.ts packages/misskey-js/src/autogen/endpoint.ts packages/misskey-js/src/autogen/types.ts
+
+# ①の裏取り: required / requireCredential / limit が動いた endpoint を直に数える
+# （types.ts は「429 が増えた」までは出すが、どの endpoint が rate limit を得たかは出ない）
+git diff --unified=0 $OLD..$NEW -- packages/backend/src/server/api/endpoints/ \
+  | awk '/^\+\+\+ b\//{f=$2} /^\+\trequired: |^\+\tlimit: \{|^\+\trequireCredential: |^\+\tkind: /{print f" :: "$0}'
 
 # ② 裏取り: entity packed schema / 新規エンドポイント
 git diff --stat $OLD..$NEW -- packages/backend/src/models/json-schema/
@@ -110,6 +117,25 @@ daisskey（ダイスキー本番のフォーク本体）への**本番適用**�
 対して **Mastodon（美食丼ほか）はリリース当日〜遅くとも翌日に本番適用**する運用（[project_mastodon_46_posture] メモリの「pooza は本番をリリース日に必ずデプロイする」に対応）。Mastodon は本番投入そのものが早い／Misskey は準備は早いが本番投入を用心して遅らせる、という**運用スタイルの差**であって、どちらも「本家 GA より前に互換の目星をつけておける」点は共通。
 
 ## トリアージ履歴
+
+### baseline: `816846dc6d`（**2026.10.0**、2026-10-02 記録）
+
+`179cb2da75`（2026.9.0）..`daisskey`（2026.10.0+0）の差分トリアージ。**92 commits**。⚠ **本番昇格より前の前倒し**で、ステージング `st2.misskey.delmulin.com` が **2026.10.0+0**、**ダイスキー本番は 2026.9.1+1 / きゅあすきーは 2026.9.1 のまま**（いずれも `/api/meta` で実測）。
+
+🔴 **actionable 1 件（[#1201](https://github.com/pooza/capsicum/issues/1201)）: `sw/unregister` の `auth` / `publickey` が必須になった。**
+
+- `required: ['endpoint']` → `required: ['endpoint', 'auth', 'publickey']`。⚠ 上流の意図は権限の強化で、`requireCredential: false` のまま **auth secret (RFC 8291) を知っていること＝購読の所有者**という設計に変えた。あわせて **rate limit 30 回 / 1 時間**が付いた
+- ⚠⚠ **ステージングで実測した**（`sw/unregister` は未認証で叩けるので契約だけ確かめられる）。endpoint 単体 → **400 `INVALID_PARAM` / `must have required property 'auth'`**、3 点そろえ → **204**
+- capsicum は `MisskeyClient.unsubscribePush` が `createBody({'endpoint': endpoint})` だけを送る。⚠ **プリセット 2 サーバーは影響を受けない** —— モロヘイヤの `/sw/unregister` は本家 API を呼ばず `Misskey::SwSubscription` を**直接 DELETE** している（`misskey_service.rb`）ため。**実害は非プリセットの Misskey と、`PushKeyStore.read` が null になる古いインストール**
+
+**それ以外は client 影響なし。**
+
+- ⚠ **① の `entities.ts` / `endpoint.ts` は 2 回連続で diff が完全に空**（②の `models/json-schema/` と新規 endpoint も空）。動いたのは **`autogen/types.ts` の +21 / −1 だけ**で、⚠⚠ **上の契約変更はこのファイルにしか出なかった** —— **`types.ts` を見ないと `sw/unregister` の必須パラメータ追加を取りこぼす**。**抽出方法の ① に `types.ts` を加えること**
+- **none**: `federation/update-remote-user` が `requireCredential: true` + `kind: read:account` + rate limit 30/1h になった（capsicum は federation 系を 1 つも叩いていない）
+- **none**: `ugcVisibilityForVisitor`（`'all' | 'local' | 'none'`）が入り、`notes` / `channels/timeline` / `users/notes` / `users/show` に**未ログイン利用者向けの絞り込み**が乗った。⚠ **capsicum の未認証要求は `/.well-known/nodeinfo` と `/api/meta` だけ**なので当たらない（投稿・ユーザーは常に認証付きで引く）
+- **③ `@syuilo/aiscript` は据え置き**。Flash 互換ハーネスは**本番昇格後に回す**（ハーネスはプリセット本番の featured Play を取るため、ステージングでは前倒しできない）
+
+→ 次回は `816846dc6d..daisskey` から差分する。⚠ **本番昇格後にやること 2 つ**: (1) Flash 互換ハーネス、(2) #1201 の修正を実機で確認。
 
 ### baseline: `179cb2da75`（**2026.9.0**、2026-09-07 記録）
 
