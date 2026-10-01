@@ -153,6 +153,10 @@ capsicum は `draft.sensitive ? true : null` と書いてこれを回避して�
 
 ⚠ **実害は無い**（投稿フォームは capsicum 側の既定へ倒れる）。**誤解の元なので、消すか「常に null」と書き残すかを決める必要がある。**→ 5-4 で起票。
 
+**✅ 決着（2026-10-01・[#1185](https://github.com/pooza/capsicum/issues/1185)）: 消した。**`MisskeyUser.defaultNoteVisibility` のフィールドごと落とし、`misskey/extensions.dart` の `defaultScope:` も外した。5-2 で「**サーバー側の設定に従う**」を採った以上、**従う先が存在しない値を写し続ける理由が無い**ため。
+
+⚠ **消した跡には「足し直さない」理由を残した**（`user.dart` と `extensions.dart` の両方）。⚠⚠ **検査は「フィールドが無いこと」ではなく「サーバーが送ってきても写さないこと」で固定した**（`misskey_default_scope_absent_test.dart`）—— フィールドの有無だけ見ると、誰かが足し直したときに黙って復活する。⚠ **`misskeyVisibilityRosetta` 自体は生きている**（投稿の `visibility` 変換で使う）ので、対照群のテストで取り違えを防いでいる。
+
 ### 5-2. Mastodon の `source` — 🔴 **腐る。拾う（要修正）**
 
 ⚠⚠ **疑っていたとおりだった。**
@@ -173,6 +177,19 @@ capsicum は `draft.sensitive ? true : null` と書いてこれを回避して�
 ⚠ **窓の長さは端末で違う。**モバイルは OS がアプリを落とすので自然に直るが、**デスクトップは常駐するので何日も古いままになりうる**。
 
 → **5-4 で起票。**
+
+#### ✅ 決着（2026-10-01・[#1185](https://github.com/pooza/capsicum/issues/1185)）
+
+**「サーバー側の設定に従う。だから新鮮に保つ」を採った**（pooza 判断）。⚠ **これは [#1079](https://github.com/pooza/capsicum/issues/1079)「サーバー側の設定に従うか」への先行回答でもある** —— 候補にあった「直さない（capsicum の既定は capsicum で持つ）」を採ると、現に読んでいる `source.privacy` を**読まなくする＝挙動の削除**になるため、どちらを選んでも #1079 の向きが決まる関係にあった。
+
+実装は `AccountManagerNotifier.refreshCurrentUser()`（フォアグラウンド復帰で `getMyself()` を引き直す）。押さえた点:
+
+- ⚠ **引き直すのは現在アカウント 1 つだけ。**`defaultScope` を読む箇所は 5 つとも `currentAccountProvider`（`compose_screen.dart`）なので、アカウント数ぶんの往復は要らない
+- ⚠⚠ **TTL は [`kUserProfileFreshnessTtl`] ＝ 1 分で、`kServerMetadataFreshnessTtl`（1 時間）とは別物。**サーバーのソフトウェア版は月単位でしか動かないが、**既定の公開範囲は利用者がいつでも変えられる**うえ、実害の形が「WebUI で変えて capsicum に戻る」＝復帰の直前に変わるので、1 時間では取りこぼす
+- ⚠⚠ **0 にはできない。**デスクトップは**ウィンドウのフォーカスを取り戻すたびに `AppLifecycleState.resumed` が来る**（`inactive` が「前面に無いが可視」の意味・`sky_engine/lib/ui/platform_dispatcher.dart`）ので、TTL を外すと alt-tab のたびに 1 往復する
+- ⚠ **TTL は host ではなく `AccountKey` で持つ。**同一 host に複数アカウントがあるとき、片方の取得でもう片方を間引いてはいけない
+- ⚠⚠ **`updateCurrentUser` を使ってはいけない。**あれは `state.current` をそのまま書き換えるので、`getMyself()` の await 中にアカウント切替が起きると**切替後の別アカウントへ他人の `user` を書き込む**。key で引き直す（`refreshCurrentServerVersion` と同じ形）。**この壊れ方はテストで固定した**（`account_manager_refresh_user_test.dart`・実際に `updateCurrentUser` へ差し替えて狙ったテストだけが落ちることを確認済み）
+- ⚠ **取得に失敗したら既存値を維持する。**一過性の失敗で good な値を捨てると、投稿先が黙って変わる
 
 ### 5-3. モロヘイヤの `/mulukhiya/api/config` — **拾わない**
 

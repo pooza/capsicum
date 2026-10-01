@@ -44,6 +44,20 @@ const kSecureStorageWriteTimeout = kSecureStorageReadTimeout;
 /// モロヘイヤ自動再検出で同一の鮮度を共用する (#828)。
 const kServerMetadataFreshnessTtl = Duration(hours: 1);
 
+/// 現在アカウントのプロフィール (`User`) の鮮度 TTL (#1185)。Mastodon の
+/// `source.privacy`（既定の公開範囲）は起動時の `getMyself()` が読んだ値を保持
+/// するため、この期間を超えたら取り直す。
+///
+/// ⚠⚠ **[kServerMetadataFreshnessTtl]（1 時間）は当てられない。**サーバーの
+/// ソフトウェア版は月単位でしか動かないが、**既定の公開範囲は利用者がいつでも
+/// 変えられる**。しかも実害の形は「WebUI で変えて capsicum に戻る」＝復帰の
+/// 直前に変わるので、1 時間では取りこぼす。
+///
+/// ⚠ **0 にはできない。**デスクトップは**ウィンドウのフォーカスを取り戻すたび**
+/// に `AppLifecycleState.resumed` が来る（`inactive` が「前面に無いが可視」の
+/// 意味）ため、TTL を外すと alt-tab のたびに 1 往復する。
+const kUserProfileFreshnessTtl = Duration(minutes: 1);
+
 /// アプリ全体で使用する定数。
 class AppConstants {
   static const appName = 'capsicum';

@@ -162,6 +162,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       // 内の自動再取得（数秒）を使い切っても戻らなかった分の受け皿。成功して
       // いるときは no-op なので、復帰のたびに全件取り直すことにはならない。
       retryCustomEmojisIfFailed(ref);
+      // 現在アカウントの既定の公開範囲（Mastodon の `source.privacy`）を
+      // 取り直す (#1185)。WebUI で変えても再起動まで古いままだった。
+      //
+      // ⚠ **上の `refreshCurrentServerMetadata` に相乗りさせない。**あちらは
+      // 「サーバー側のメタデータ」の対 (#828) で TTL が 1 時間だが、こちらは
+      // 利用者がいつでも変えられる値なので別の TTL（1 分）を持つ。
+      unawaited(ref.read(accountManagerProvider.notifier).refreshCurrentUser());
     }
   }
 

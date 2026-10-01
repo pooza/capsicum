@@ -88,7 +88,12 @@ extension CapsicumMisskeyUserExtension on MisskeyUser {
           .toList(),
       url: 'https://${host ?? localHost}/@$username',
       createdAt: createdAt,
-      defaultScope: misskeyVisibilityRosetta[defaultNoteVisibility],
+      // ⚠⚠ **`defaultScope` は埋めない (#1185)。**Misskey は既定の公開範囲を
+      // API で返さない（`defaultNoteVisibility` は frontend のクライアント設定
+      // にしか無く、`MisskeyUser` からも消した）。⚠ **ここに何かを入れたく
+      // なったら、まずサーバーがその値を返すことを `packages/backend` で確かめる
+      // こと** —— 以前は常に null になる値を写していて、死にコードだった。
+      // 投稿フォームは `defaultScope == null` のとき capsicum 側の既定へ倒れる。
       canChat: canChat,
       locked: isLocked,
       discoverable: isExplorable,

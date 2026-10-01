@@ -152,6 +152,13 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
   final _mulukhiyaAutoRefreshedAt = <String, DateTime>{};
   static const _mulukhiyaAutoRefreshTtl = kServerMetadataFreshnessTtl;
 
+  /// アカウントごとの [User] 最終取得時刻。フォアグラウンド復帰のたびに
+  /// `getMyself()` を叩かないよう TTL で間引く (#1185)。
+  ///
+  /// ⚠ **host ではなく [AccountKey] で持つ。**同一 host に複数アカウントが
+  /// あるとき、片方の取得でもう片方の TTL を消費してはいけない。
+  final _currentUserRefreshedAt = <AccountKey, DateTime>{};
+
   /// 明示ログイン（[addAccount]）が完了したが、まだホームへ遷移していない
   /// (#1057)。
   ///
@@ -468,6 +475,74 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
       refreshCurrentServerVersion(),
       refreshCurrentMulukhiya(),
     ]);
+  }
+
+  /// 現在アカウントの [User] を取り直して state へ反映する (#1185)。
+  ///
+  /// `Account.user` を作るのは [restoreSessions] の `getMyself()` で、**起動時の
+  /// 1 回だけ**。以後 `user` が差し替わるのは capsicum 内でプロフィールを編集した
+  /// とき（`profile_edit_screen` → [updateCurrentUser]）に限られていた。
+  ///
+  /// ⚠⚠ **腐るのは Mastodon の `source.privacy`（既定の公開範囲）だけ。**
+  /// capsicum はこれを `User.defaultScope` にして**投稿時に `visibility` を明示
+  /// 送信する**ので、WebUI で変えても再起動するまで古い値で投稿フォームが開いた。
+  /// `sensitive` / `language` / `quote_policy` は**読まない・送らない**（サーバー
+  /// 既定に任せる）ので腐らない。正本は `docs/server-settings-gap-inventory.md`
+  /// §5-2。
+  ///
+  /// ⚠ **契機がフォアグラウンド復帰なのは、実質デスクトップの問題だから。**
+  /// モバイルは OS がアプリを落とすので再起動で自然に直るが、デスクトップは
+  /// 常駐するので何日も古いままになりうる。
+  ///
+  /// TTL 内は no-op（[kUserProfileFreshnessTtl]）。[force] で TTL を無視する。
+  ///
+  /// ⚠ **取得に失敗したら既存値を維持する。**一過性の失敗で good な値を捨てない
+  /// （[refreshCurrentServerVersion] と同じ方針）。
+  Future<void> refreshCurrentUser({bool force = false}) async {
+    final before = state.current;
+    if (before == null) return;
+    final key = before.key;
+    final last = _currentUserRefreshedAt[key];
+    if (!force &&
+        last != null &&
+        DateTime.now().difference(last) < kUserProfileFreshnessTtl) {
+      return;
+    }
+    // 再入・多重呼び出しの抑止も兼ねて、実行前に時刻を記録する。TTL 内の失敗も
+    // 次の満了まで待つ（到達不能なサーバーで復帰のたびに叩かない）。
+    // [refreshCurrentMulukhiya] と同じ形。
+    _currentUserRefreshedAt[key] = DateTime.now();
+
+    final User user;
+    try {
+      user = await before.adapter.getMyself();
+    } catch (e) {
+      // ⚠ **storage key はログ呼び出しの外で作る。**`exception_scrub_guard_test`
+      // の `.toStorageKey()` 判定はログの引数を文字列で見るので、
+      // `sentrySafeAccountKey(key.toStorageKey())` と畳むと**安全な形でも落ちる**
+      // （厳しい側に倒れているだけなので、ガードは触らない）。
+      final storageKey = key.toStorageKey();
+      debugLogException(
+        'capsicum: refreshCurrentUser failed for '
+        '${sentrySafeAccountKey(storageKey)}',
+        e,
+      );
+      return;
+    }
+
+    // ⚠⚠ **await 中にアカウント切替 / ログアウトが起きうる。**[updateCurrentUser]
+    // は `state.current` をそのまま書き換えるので、ここから使うと**切替後の別
+    // アカウントへ他人の user を書き込む**。必ず key で引き直す
+    // （[refreshCurrentServerVersion] と同じ）。
+    final idx = state.accounts.indexWhere((a) => a.key == key);
+    if (idx < 0) return;
+    final updated = state.accounts[idx].copyWithUser(user);
+    final accounts = [...state.accounts];
+    accounts[idx] = updated;
+    state = state.copyWith(
+      accounts: accounts,
+      current: state.current?.key == updated.key ? updated : state.current,
+    );
   }
 
   /// [AccountKey] を `username@host` 形式に直す。capsicum-relay が push payload
