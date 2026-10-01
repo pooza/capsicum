@@ -44,6 +44,23 @@ class ComposeDraft {
   /// 旧スロットから読んだときは null。
   final DateTime? savedAt;
 
+  /// 利用者が**自分で選んだ**設定の名前 (#1195)。いまは `scope` だけ。
+  ///
+  /// ⚠⚠ **[scope] が入っていることは「選んだ」を意味しない。**フォームを開いた
+  /// 時点でアカウントの既定が `_scope` に入るので、**公開範囲に一度も触らずに
+  /// 本文だけ打っても保存される**。それを「選択」として戻すと、サーバー側で
+  /// 既定を変えても古い値が残り続ける（[#1185](https://github.com/pooza/capsicum/issues/1185)
+  /// が反映されない）。
+  ///
+  /// ⚠ **null は「分からない」**（旧スロット由来でキーが無い）。⚠⚠ **安全側＝
+  /// 「全部選んだ」として扱う** —— #964 の守り（本文だけ戻して公開範囲が既定へ
+  /// 戻る事故を防ぐ）を、互換の都合で外さないため。空の集合は「何も選んでいない」。
+  ///
+  /// ⚠ [#1194](https://github.com/pooza/capsicum/issues/1194) で `sensitive` /
+  /// `language` もサーバー既定を読むようになったら、**ここに名前を足すだけ**で
+  /// 同じ扱いにできる（bool を増やさず集合にしてあるのはそのため）。
+  final Set<String>? chosen;
+
   const ComposeDraft({
     required this.text,
     this.cwText = '',
@@ -54,9 +71,34 @@ class ComposeDraft {
     this.sensitive = false,
     this.localOnly = false,
     this.savedAt,
+    this.chosen,
   });
 
   bool get hasText => text.isNotEmpty;
+
+  /// [field] を利用者が選んだか (#1195)。⚠ **旧スロット（[chosen] が null）は
+  /// 「選んだ」に倒す**（上の doc）。
+  bool isChosen(String field) => chosen == null || chosen!.contains(field);
+
+  /// 戻すものが何も無い (#1195)。
+  ///
+  /// ⚠⚠ **これを「下書きなし」として扱う。**`PopScope` の離脱時保存は無条件に
+  /// 走るので、**フォームを開いて何も打たずに閉じるだけで空の下書きが書かれて
+  /// いた**。`''` は `null` ではないため、以後ずっと「下書きあり」と判定され、
+  /// 触っていない公開範囲が固定されていた（#1195）。
+  ///
+  /// ⚠ **選んだ設定があるなら空ではない** —— 公開範囲だけ変えて本文を書かずに
+  /// 閉じた場合、それは**選択なので残す**。
+  ///
+  /// ⚠ 本文が無ければ #964 の守り（本文だけ戻して公開範囲が既定へ戻る事故）は
+  /// そもそも当たらないので、丸ごと捨ててよい。
+  bool get isEmpty =>
+      text.isEmpty &&
+      cwText.isEmpty &&
+      !cwEnabled &&
+      attachmentCount == 0 &&
+      attachments.isEmpty &&
+      !(chosen?.isNotEmpty ?? false);
 }
 
 /// 下書きの書き込みが拒まれた (#1011)。
@@ -137,6 +179,17 @@ class ComposeDraftStore {
   static const localOnlyKey = 'compose_draft_local_only';
   static const savedAtKey = 'compose_draft_saved_at';
 
+  /// 利用者が自分で選んだ設定の名前 (#1195)。⚠ **キーが無い＝旧スロット**で、
+  /// [ComposeDraft.isChosen] が「全部選んだ」に倒す。
+  static const chosenKey = 'compose_draft_chosen';
+
+  /// [chosenKey] に入る名前 (#1195)。⚠ **文字列を直に書かない** —— 保存した値と
+  /// 読む値がずれると、黙って「選んでいない」扱いになる。
+  ///
+  /// ⚠ [#1194](https://github.com/pooza/capsicum/issues/1194) で `sensitive` /
+  /// `language` もサーバー既定を読むようになったら、ここに足す。
+  static const chosenScope = 'scope';
+
   /// スロットの世代印 (#969)。[clear] のたびに +1 する。各インスタンスは
   /// [restore] / [save] で見た世代を [_syncedGeneration] に覚え、[save] 時に
   /// 現世代とズレていたら（＝別画面が [clear] したあと）書き戻さない。
@@ -154,6 +207,7 @@ class ComposeDraftStore {
     sensitiveKey,
     localOnlyKey,
     savedAtKey,
+    chosenKey,
   ];
 
   bool _discarded = false;
@@ -256,6 +310,21 @@ class ComposeDraftStore {
       _superseded = true;
       return null;
     }
+    // ⚠⚠ **空の下書きは書かずに消す (#1195)。**`PopScope` の離脱時保存は無条件に
+    // 走るので、**フォームを開いて何も打たずに閉じるだけ**でここへ来る。本文に
+    // `''` を書くと、`_read` の「キーが無ければ下書きなし」判定を抜けて**以後
+    // ずっと「下書きあり」**になり、触っていない公開範囲が固定されていた。
+    //
+    // ⚠ **残っているぶんも消す**（`_removeAll`）。書かないだけだと、前回までの
+    // 本文が残って「消したのに戻る」になる。添付が先に同じ形にしてある (#1130)。
+    //
+    // ⚠ **null を返す** —— 意図的な no-op なので、呼び出し側は「自動保存 hh:mm」を
+    // 出さない（世代ガードや破棄済みと同じ扱い）。
+    if (draft.isEmpty) {
+      await _removeAll(prefs, _k);
+      return null;
+    }
+
     // ⚠ **書けたかどうかを見る (#1011)。**`setString` 等は失敗しても throw せず
     // false を返す。捨てていたため、**書けていないのに画面へ「自動保存 12:34」**
     // が出ていた。ユーザーはそれを信じてアプリを終了し、本文を失う。
@@ -285,6 +354,16 @@ class ComposeDraftStore {
       ok = await prefs.setString(_k(scopeKey), draft.scope!.name) && ok;
     } else {
       await prefs.remove(_k(scopeKey));
+    }
+    // 利用者が自分で選んだ設定 (#1195)。⚠ **null（旧スロット）では書かない** ——
+    // 消すと「分からない＝全部選んだ」に戻ってしまい、せっかく立てた印が消える。
+    if (draft.chosen != null) {
+      ok =
+          await prefs.setStringList(
+            _k(chosenKey),
+            draft.chosen!.toList()..sort(),
+          ) &&
+          ok;
     }
     // 世代印は書き込みの成否と別（このスロットに触った事実は変わらない）。
     //
@@ -351,7 +430,8 @@ class ComposeDraftStore {
     if (text == null && cwText == null && !cwEnabled) return null;
     final scopeName = prefs.getString(key(scopeKey));
     final savedAt = prefs.getString(key(savedAtKey));
-    return ComposeDraft(
+    final chosen = prefs.getStringList(key(chosenKey));
+    final draft = ComposeDraft(
       text: text ?? '',
       cwText: cwText ?? '',
       cwEnabled: cwEnabled,
@@ -365,7 +445,14 @@ class ComposeDraftStore {
       sensitive: prefs.getBool(key(sensitiveKey)) ?? false,
       localOnly: prefs.getBool(key(localOnlyKey)) ?? false,
       savedAt: savedAt == null ? null : DateTime.tryParse(savedAt),
+      // ⚠ **キーが無ければ null のまま**（旧スロット＝「分からない」）。
+      chosen: chosen?.toSet(),
     );
+    // ⚠⚠ **読む側でも空を落とす (#1195)。**[_save] で書かないようにしただけでは、
+    // **修正前に書かれてしまった空の下書きが端末に残り続ける**（本文キーが `''`
+    // で存在するので上の null 判定を抜ける）。次に保存されるまで直らないので、
+    // ここでも落とす。
+    return draft.isEmpty ? null : draft;
   }
 
   /// 添付の記述を読む (#1130)。**読めなければ空**（投げない）。

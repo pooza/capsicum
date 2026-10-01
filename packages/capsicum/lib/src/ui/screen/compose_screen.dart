@@ -497,6 +497,14 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// （[_unsendableScopeReason]）。⚠ **広げる方向の自動補正はしない。**
   PostScope _scope = PostScope.public;
 
+  /// 利用者が**自分で操作した**設定の名前 (#1195)。下書きへ一緒に保存する。
+  ///
+  /// ⚠⚠ **[_scope] に値が入っていることは「選んだ」を意味しない。**フォームを
+  /// 開いた時点でアカウントの既定が入るので、**公開範囲に触らず本文だけ打っても
+  /// 保存される**。それを選択として戻すと、サーバー側で既定を変えても古い値が
+  /// 残り続ける（#1185 が反映されない）。
+  final _chosen = <String>{};
+
   /// ⚠ **この投稿が返信として送られるか (#1113)。**
   ///
   /// 送信側と同じ判定を使う。⚠ **`widget.replyTo != null` で見ない** — redraft
@@ -1386,6 +1394,13 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       if (before?.scope != null) _scope = before!.scope!;
       _sensitiveEnabled = before?.sensitive ?? false;
       _localOnly = before?.localOnly ?? false;
+      // ⚠ **「選んだ」の印も復元前へ戻す (#1195)。**控えを取ったのは復元が走る
+      // 前＝アカウントの既定が入っているだけの状態なので、取消したなら選択は
+      // 無かったことになる。⚠ 残すと、触っていない既定が「選択」として保存
+      // され続ける（この Issue そのもの）。
+      _chosen
+        ..clear()
+        ..addAll(before?.chosen ?? const <String>{});
       _draftRestoredNotice = false;
       _draftSavedAt = null;
     });
@@ -1454,6 +1469,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       scope: _scope,
       sensitive: _sensitiveEnabled,
       localOnly: _localOnly,
+      // ⚠ **何を自分で選んだか (#1195)。**これが空で本文も無ければ、ストアは
+      // 「下書きなし」として消す（開いて閉じただけで残らない）。
+      chosen: _chosen,
     );
 
     // 取消の消去と直列化する (Codex P2 / PR #1013)。並行に走ると、消去の
@@ -1556,6 +1574,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       scope: _scope,
       sensitive: _sensitiveEnabled,
       localOnly: _localOnly,
+      // ⚠ **控えにも印を入れる (#1195)。**取消で戻すときに使う。ここは復元の
+      // 直前なので、**たいてい空**（既定が入っているだけ）。
+      chosen: {..._chosen},
     );
 
     if (saved.hasText) {
@@ -1572,7 +1593,17 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       // 設定値も戻す (#964)。⚠ **scope が null なら触らない** — 旧スロット由来
       // （保存していなかった頃）で、既定値やアカウントの defaultScope を上書き
       // してしまう。
-      if (saved.scope != null) _scope = saved.scope!;
+      //
+      // ⚠⚠ **利用者が選んだものだけ戻す (#1195)。**触っていない既定まで戻すと、
+      // サーバー側で既定を変えても古い値が残り続ける（#1185 が反映されない）。
+      // ⚠ **旧スロット（印が無い）は「選んだ」に倒す** —— #964 の守り（本文だけ
+      // 戻して公開範囲が既定へ戻る事故）を互換の都合で外さないため。
+      if (saved.scope != null &&
+          saved.isChosen(ComposeDraftStore.chosenScope)) {
+        _scope = saved.scope!;
+        // 戻した選択は「選んだまま」。⚠ 印を引き継がないと、次の保存で消える。
+        _chosen.add(ComposeDraftStore.chosenScope);
+      }
       _sensitiveEnabled = saved.sensitive;
       _localOnly = saved.localOnly;
       _draftSavedAt = saved.savedAt;
@@ -3334,7 +3365,14 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// フィールドで一度だけ組む（上の値等価の話と同じ理由）(#835)。
   late final Map<PostScope, VoidCallback> _scopeSetters = {
     for (final scope in PostScope.values)
-      scope: () => setState(() => _scope = scope),
+      scope: () => setState(() {
+        _scope = scope;
+        // ⚠⚠ **ここだけが「利用者が選んだ」(#1195)。**`_scope` はフォームを
+        // 開いた時点でアカウントの既定が入っているので、**値が入っていること
+        // は選択を意味しない**。印を付けないと、触っていない既定が下書きに
+        // 「選択」として保存され、サーバー側で既定を変えても古い値が残る。
+        _chosen.add(ComposeDraftStore.chosenScope);
+      }),
   };
 
   /// 投稿言語 / 引用許可のメニュー項目のコールバック (#971)。[_scopeSetters] と
