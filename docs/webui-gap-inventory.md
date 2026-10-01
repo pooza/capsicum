@@ -177,3 +177,90 @@
 ### #993 側の訂正
 
 - [api-gap-inventory.md](api-gap-inventory.md) §1 の「capsicum が使っている `collections` / `in_collections` / `quotes` 系」— **`quotes` エンドポイントは使っていない**（§3 の A-3）。次に api-gap-inventory を触る回で直す
+
+## 8. 層② の変種と層③（2026-10-02・[#1077](https://github.com/pooza/capsicum/issues/1077)）
+
+**§6 の宿題 2 件を回した。**[#1046](https://github.com/pooza/capsicum/issues/1046) と同じ回に回し（母数が重なる）、⚠ **数え方は 2 通り維持した** —— API 基準の結果は [`api-gap-inventory.md`](api-gap-inventory.md) §13 / §14、画面基準はここ。
+
+### 8-0. 回し方
+
+**画面から入った。**capsicum の画面を開き、「この画面でできること」と「WebUI の同じ画面でできること」を突き合わせた。⚠ **層③ は entity のフィールド一覧で測らない**（§6 の注意）—— 画面に出ていない情報を先に挙げ、その出どころを後から API 側で確かめた。
+
+⚠⚠ **成果の性質が #991 の第 1 巡と違う。**層① は「画面が無い」＝**分類 A / B の新しい画面**になったが、層② 変種と層③ は**既にある画面の中の欠け**なので、**ほぼ全部が既存画面への追加**になる。新しい画面は 1 枚も増えない。
+
+### 8-1. ★ 変種「作成はできるが、あとから変えられない」
+
+| 項目 | 画面 | 変えられないもの |
+| --- | --- | --- |
+| **予約投稿** | 予約投稿一覧 | ⚠⚠ **予約の時刻。**シートは**タグ編集専用**（`scheduled_posts_screen.dart:140` の `_TagEditorSheet`）で、日時を動かす導線が無い。⚠ Mastodon は `PUT /api/v1/scheduled_statuses/:id` が **`scheduled_at` だけを permit** するので、**時刻変更こそが標準 API でできる唯一の編集**なのに呼んでいない |
+| **リスト** | リスト一覧 / メンバー | 返信の扱い・ホームからの排他・公開（Mastodon の `replies_policy` / `exclusive`、Misskey の `isPublic`）。⚠ **作成と改名とメンバーの出し入れだけができる** |
+| **引用** | 投稿のメニュー | 引用ポリシー（`PUT /api/v1/statuses/:id/interaction_policy`）。投稿時に `quote_approval_policy` を送るだけで、**あとから締められない** |
+| **フォロー** | プロフィール | フォロー時の `withReplies`（Misskey・返信も TL に流すか） |
+
+⚠ **本文・タグの編集を「できない」に数えないこと。**Mastodon の予約投稿は標準 API では本文を編集できず、capsicum がモロヘイヤ経由にしているのは**正しい設計**（`updateScheduledStatusTags`）。⚠⚠ **ただしモロヘイヤが無いサーバーでは「タグ編集にはモロヘイヤが必要です」で止まる** —— **時刻変更なら標準 API で通る**のに、そこへ落ちていない。
+
+### 8-2. ★ 変種「一覧はあるが、その中の操作が無い」
+
+| 項目 | 画面 | 無い操作 |
+| --- | --- | --- |
+| **DM（会話）** | DM タイムライン | ⚠⚠ **既読・未読・削除。**capsicum は DM を**タイムラインとして**実装しており（`mastodon/adapter.dart:417`・`TimelineType.directMessages`）、`GET /api/v1/conversations` の `unread` を読まず `read` / `unread` / `DELETE` も呼ばない。→ **WebUI の DM 未読が消えない** |
+| **通知** | 通知 | 個別削除・全消し（`notifications/:id/dismiss` / `clear`、Misskey の `notifications/flush`）。⚠ **Misskey は既読化そのものが無い**（api-gap §13-5） |
+| **引用** | 引用一覧（[#1072](https://github.com/pooza/capsicum/issues/1072)） | 引用の撤回（`POST /api/v1/statuses/:id/quotes/:id/revoke`）。⚠ **引用された側の道具**なので、一覧だけあって撤回が無いのは片肺 |
+| **リストのメンバー** | メンバー一覧 | ⚠⚠ **追加読み込み。**`list_members_screen.dart:34` は 1 回しか呼ばず、**Mastodon では 40 人で尻切れ**（api-gap §13-1） |
+| **検索** | 検索 | ⚠⚠ **サーバー検索の続き。**同じ画面で **notestock だけ `Link` ヘッダでページングしている**（`_searchNotestock`）のに、サーバー検索は 20 件で止まる |
+
+⚠⚠ **「一覧はあるが並べ替えられない」は 1 件も出なかった。**WebUI 側にも並べ替えの UI がほとんど無い（Misskey のドライブに `sort` があるだけ）ため。⚠ **#1077 の本文が例に挙げていた変種だが、母数に無かった** —— 次の棚卸しで探し直さなくてよい。
+
+### 8-3. ★ 層③ 画面内の表示要素
+
+| 項目 | 画面 | 出ていない情報 | 出どころ |
+| --- | --- | --- | --- |
+| **お知らせの期間** | お知らせ | **掲載期間**（いつからいつまでのお知らせか）と終日フラグ | `starts_at` / `ends_at` / `all_day` / `published_at` が未読（api-gap archive §9-6・Announcement 13 中 7 読み） |
+| **通知の未読数** | 通知バッジ | サーバーが持っている未読数。capsicum はクライアント側で数えている | `notifications/unread_count`（両 SNS・api-gap §13-4） |
+| **リストの設定** | リスト一覧 | 返信方針・排他・公開の**現在値**（設定できないだけでなく**見えない**） | `replies_policy` / `exclusive` / `isPublic` が未読 |
+| **投稿の編集履歴** | 投稿詳細 | ⚠ **「編集済み ○○」と出しておいて**（`post_tile.dart:620`）、**何がどう変わったかを見る導線が無い** | `GET /api/v1/statuses/:id/history` 未使用 |
+| **プレビューカードの著者** | タイムライン | 記事の著者（fedi アカウントへの紐付けを含む） | PreviewCard の `authors` / `author_name` が未読 |
+
+⚠ **「編集履歴」は優先度が低い。**⚠⚠ **プリセット 5 台では編集済み投稿がほぼ発生しない** —— pooza/mastodon は編集の導線をフォークで落としてあり、Misskey は上流に編集機能が無い（[#1054](https://github.com/pooza/capsicum/issues/1054) の close コメントで実測済み）。**踏むのはリモートから流れてくる投稿だけ。**
+
+### 8-4. 当たりではなかったもの
+
+⚠ **古いメモを写さず、実物で確かめた。**
+
+| 項目 | なぜ当たりではないか |
+| --- | --- |
+| **凍結・サイレンス・削除済みアカウントの表示** | ✅ **解決済み。**api-gap archive §9-6 に「凍結・削除済みのアカウントを普通のプロフィールとして表示している」と残っているが、**[#1055](https://github.com/pooza/capsicum/issues/1055) で両 SNS とも読むようになり**（`capsicum_core` の `User.suspended` / `silenced` / `deleted`）、**プロフィール画面に出ている**（`profile_screen.dart:1007`）。⚠ **archive 側の記述は 2026-08-31 時点のもの** |
+| 投稿の生テキスト（`/source`） | capsicum は投稿を編集しないので要らない。⚠ モロヘイヤが PUT の補完にサーバー側で使っているのは別の話 |
+| `endorsements` / `familiar_followers` / `suggestions` / `annual_reports` / `donation_campaigns` | **分類 C 既判定**（api-gap §5）。再判定しない |
+| `/notifications/requests` / `/notifications/policy` | [#992](https://github.com/pooza/capsicum/issues/992) へ回送済み（残りは [#1078](https://github.com/pooza/capsicum/issues/1078)） |
+
+### 8-5. 方法論の知見（次の棚卸しへ）
+
+⚠⚠ **1. 版追従の表の `none` を棚卸しの判定として読まない。**`misskey-capsicum-api-watch.md:153` は `notes/thread-muting/create` を「none（capsicum 無関係・呼んでいない）」としているが、**あれは「その版で変わったか」の判定**。棚卸しでは **「呼んでいない」は落とす理由ではなく見る理由**。この取り違えでスレッドのミュート（両 SNS にある）が 1 件落ちていた（api-gap §13-7）。
+
+⚠⚠ **2. 層① の「全数」でも取りこぼす。**routes に載っているのに層① で落ちた経路が 2 件あった（`notifications/unread_count` / `statuses/:id/mute`）。**どちらも層② の目で経路の中身を読んでいて気付いた。**→ **§0 の主張（母数の取り方が違うと別のものが見える）は、WebUI 基準と API 基準の間だけでなく、API 基準の層①と層②の間でも成り立つ。**
+
+⚠ **3. 「薄い」と見立てたほうを最後に回すと、最も多く出ることがある。**#1046 の優先順位は Mastodon ② を最後尾（「当たりは薄い」）に置いていたが、**★ 8 件でいちばん多かった**。
+
+⚠ **4. 画面を見ないと出ない当たりがある。**「同じ検索画面で notestock だけページングがある」「予約投稿のシートがタグ編集専用」は、**API 側のパラメータ表からは出てこない**。
+
+### 8-6. 分類と起票（2026-10-02）
+
+⚠ **チェックリスト型のアンブレラにしない**方針どおり 1 件 = 1 Issue。**この文書と api-gap 側で重複する項目は api-gap 側の Issue に寄せた**（同じ直し方になるため）。
+
+| | 内容 | 分類・Issue |
+| --- | --- | --- |
+| 8-1 | リストの設定（返信方針・排他・公開）を見られない / 変えられない（両 SNS）+ フォローの `withReplies` | **拾う** → [#1211](https://github.com/pooza/capsicum/issues/1211)（`enhancement`） |
+| 8-1 | 予約投稿の時刻を変更できない | **拾う** → [#1212](https://github.com/pooza/capsicum/issues/1212)（`enhancement`） |
+| 8-2 | 引用の撤回・引用ポリシーの事後変更 | **拾う** → [#1213](https://github.com/pooza/capsicum/issues/1213)（`enhancement`） |
+| 8-3 | お知らせの掲載期間 | **拾う** → [#1214](https://github.com/pooza/capsicum/issues/1214)（`enhancement`） |
+| 8-2 | DM の既読・削除が無い | **拾う** → [#1206](https://github.com/pooza/capsicum/issues/1206)（`bug`・api-gap §13-6 と同じ Issue） |
+| 8-2 | リストメンバー / 検索の尻切れ | **拾う** → [#1202](https://github.com/pooza/capsicum/issues/1202)（`bug`・api-gap §13-1 と同じ Issue） |
+| 8-3 | 通知の未読数 | **拾う** → [#1207](https://github.com/pooza/capsicum/issues/1207)（api-gap §13-4 と同じ Issue） |
+| 8-2 | 通知の個別削除・全消し | ⚠ **拾わない（単独では）** —— 通知の既読（[#1205](https://github.com/pooza/capsicum/issues/1205)）と未読数（[#1207](https://github.com/pooza/capsicum/issues/1207)）と**同じ画面**なので、あちらを触る回に一緒に見る |
+| 8-3 | 投稿の編集履歴 | ⚠ **拾わない。**プリセット 5 台では編集済み投稿がほぼ発生しない（8-3 の注）。⚠ **再浮上させないため理由を残す** |
+| 8-3 | プレビューカードの著者 | ⚠ **拾わない。**[#1033](https://github.com/pooza/capsicum/issues/1033) で「カードの大きさを一定にする」と決めており、カードに要素を足す方向を採っていない |
+
+⚠ **マイルストーンは付けていない。**⚠⚠ **棚卸し由来 13 件（api-gap §13-13 の 9 件 + ここの 4 件）の枠割りは pooza の判断。**v2.1〜v2.5 は「1 枠 1 大更新」で設計されている（`docs/roadmap.md` 2026-09-30）ので、**まとめて放り込むと枠の設計が壊れる**。
+
+⚠ **この文書の「まだ起票していないもの」は、上の「拾わない」3 件だけ**（理由つきで残している）。
