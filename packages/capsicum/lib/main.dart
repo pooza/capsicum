@@ -1223,8 +1223,27 @@ class _CapsicumAppState extends ConsumerState<CapsicumApp>
     super.dispose();
   }
 
+  /// 直前に breadcrumb へ記録した lifecycle の状態名（#1199）。
+  String? _lastLifecycleBreadcrumb;
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    // macOS の App Hang（CAPSICUM-5V / 5W → #1199）が「表示が落ちている間に
+    // 出たのか」を切り分けるための観測。エンジン側は表示の構成変更で
+    // `CVDisplayLinkStop` をメインスレッドで同期に呼ぶため、hidden / paused と
+    // ハングが並ぶなら upstream 側、並ばないなら capsicum 側を疑う。
+    // ⚠ 状態名だけ。PII は載せない。間引きの規約は
+    // [shouldRecordLifecycleBreadcrumb] 側に置いてある。
+    if (shouldRecordLifecycleBreadcrumb(_lastLifecycleBreadcrumb, state.name)) {
+      _lastLifecycleBreadcrumb = state.name;
+      Sentry.addBreadcrumb(
+        Breadcrumb(
+          category: 'app.lifecycle',
+          message: state.name,
+          level: SentryLevel.info,
+        ),
+      );
+    }
     if (state == AppLifecycleState.resumed) {
       _checkSharedText();
     }

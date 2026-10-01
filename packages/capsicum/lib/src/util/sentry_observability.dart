@@ -22,6 +22,24 @@ double? startupAwareTracesSampler(String? operation) {
   return null;
 }
 
+/// lifecycle 遷移を breadcrumb として残すかの判定（#1199）。
+///
+/// macOS の App Hang（CAPSICUM-5V / 5W）が「表示が落ちている間に出たのか」を
+/// 次のイベントで切り分けるための観測。[previous] は直前に**記録した**状態名
+/// （未記録なら null）、[next] は今回の状態名（`AppLifecycleState.name`）。
+///
+/// ⚠⚠ **`inactive` は落とす。**デスクトップでは**ウィンドウのフォーカスを
+/// 失うたび**に来る（`kUserProfileFreshnessTtl` の注記と同じ理由で、`inactive`
+/// は「前面に無いが可視」）。breadcrumb は既定 100 件で打ち切られるので、
+/// alt-tab のたびに 1 件積むと **push / timeline の記録を押し出す**。
+///
+/// ⚠ **同じ状態の連続も落とす。**復帰のたびに `resumed` が重なっても、
+/// 分かることは増えない。
+bool shouldRecordLifecycleBreadcrumb(String? previous, String next) {
+  if (next == 'inactive') return false;
+  return next != previous;
+}
+
 /// transaction の tag 値を scrub すべき sensitive なキー名か判定する（#743）。
 ///
 /// transaction は `beforeSend`（event scrub）を通らないため、`beforeSendTransaction`
