@@ -11,6 +11,17 @@ abstract mixin class DriveSupport {
     String? folderId,
     TimelineQuery? query,
   });
+
+  /// ID からドライブファイルを 1 件引く (#1187)。見つからなければ null。
+  ///
+  /// ⚠ **一覧の [getDriveFiles] とは用途が違う。**こちらは「ID しか持っていない
+  /// ものを開く」ための口で、`exportCompleted` 通知（書き出しの完了）が
+  /// `fileId` しか載せてこないために要る。
+  ///
+  /// ⚠⚠ **一覧を描くたびに呼ばない。**通知 1 件につき 1 往復になるので、
+  /// **開くと決めた時点**（タップ）で呼ぶこと。
+  Future<Attachment?> getDriveFile(String fileId);
+
   Future<void> deleteDriveFile(String fileId);
   Future<void> renameDriveFile(String fileId, String newName);
   Future<void> moveDriveFile(String fileId, String? folderId);

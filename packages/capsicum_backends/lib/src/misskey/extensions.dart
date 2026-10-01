@@ -238,6 +238,40 @@ extension CapsicumMisskeyNotificationExtension on MisskeyNotification {
       // ⚠⚠ **1 ページで見えたぶんの件数**にすぎない（Mastodon は履歴全体）。
       groupCount: samples.isEmpty ? 1 : samples.length,
       sampleUsers: sampleUsers,
+      // 種別固有の荷物 (#1187)。⚠ **`type` で分岐しない。**サーバーはその種別の
+      // ときにしか載せてこないので、来ていたら読む形で足りる。分岐を増やすと
+      // 「表に足したのに読まれない」経路ができる。
+      assignedRole: role == null
+          ? null
+          : UserRole(
+              id: role!['id']?.toString() ?? '',
+              name: role!['name'] as String? ?? '',
+              color: role!['color'] as String?,
+              iconUrl: role!['iconUrl'] as String?,
+              isAdmin: adminRoleIds.contains(role!['id']?.toString() ?? ''),
+            ),
+      export: (exportedEntity != null && fileId != null)
+          ? ExportCompletion(entity: exportedEntity!, fileId: fileId!)
+          : null,
+      failedScheduledPost: noteDraft == null
+          ? null
+          : misskeyScheduledPostFromMap(noteDraft!),
+      chatInvitation: invitation == null
+          ? null
+          : misskeyChatRoomInvitationFromMap(
+              invitation!,
+              localHost,
+              adminRoleIds: adminRoleIds,
+            ),
+      followRequestMessage: message,
+      // ⚠⚠ **`app` 通知は種別を増やさずに本文を出す (#1187)。**#1177 は `app` を
+      // [misskeyNotificationTypeMap] に入れないと決めた（あの表は絞り込みの
+      // 候補の正本でもあり、使う機会のほぼ無い種別で選択肢だけが増えるため）。
+      // そのぶん `app` は [NotificationType.other] に落ちるので、**未知種別の
+      // 受け皿である fallback (#1042) に載せる** —— 表を増やさずに「見出しだけで
+      // 本文が無い」を解消できる。
+      fallbackTitle: header,
+      fallbackBody: body,
     );
   }
 
@@ -486,6 +520,30 @@ ChatRoomMember? misskeyChatRoomMemberFromMap(
             userMap,
           ).toCapsicum(localHost, adminRoleIds: adminRoleIds)
         : null,
+  );
+}
+
+/// Misskey の `NoteDraft`（予約投稿）→ capsicum [ScheduledPost] (#1187)。
+///
+/// ⚠⚠ **`scheduledAt` は epoch ミリ秒の int。**ISO 文字列ではない（`createdAt`
+/// とは形が違う）。⚠ **`id` か `scheduledAt` が欠けていたら null を返す** ——
+/// `notes/drafts/list` は `scheduled: true` でも素の下書きが混じりうるため、
+/// 呼び出し側はこれで落とす（#174 からの挙動をそのまま引き継いでいる）。
+///
+/// 使い先は 2 つ: 予約投稿の一覧（`MisskeyClient.getScheduledNotes`）と、
+/// `scheduledNotePostFailed` 通知の `noteDraft`（同じ `NoteDraft` が来る）。
+ScheduledPost? misskeyScheduledPostFromMap(Map<String, dynamic> json) {
+  final id = json['id'] as String?;
+  final scheduledAt = json['scheduledAt'];
+  if (id == null || scheduledAt is! int) return null;
+  return ScheduledPost(
+    id: id,
+    scheduledAt: DateTime.fromMillisecondsSinceEpoch(scheduledAt, isUtc: true),
+    content: json['text'] as String?,
+    spoilerText: json['cw'] as String?,
+    visibility: json['visibility'] as String?,
+    mediaIds:
+        (json['fileIds'] as List?)?.map((id) => id as String).toList() ?? [],
   );
 }
 

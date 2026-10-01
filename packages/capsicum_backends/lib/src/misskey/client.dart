@@ -5,6 +5,7 @@ import 'package:http_parser/http_parser.dart';
 
 import '../network_timeouts.dart';
 import '../rate_limit_interceptor.dart';
+import 'extensions.dart';
 
 /// MiAuth の `/check` がセッションを承認済みとして返さなかった (`ok:false` /
 /// token 欠落) ことを示す。MiAuth はユーザー承認とサーバー反映の間に僅かな
@@ -460,6 +461,26 @@ class MisskeyClient {
     return MisskeyDriveFile.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// POST /api/drive/files/show — ID からドライブファイルを 1 件引く (#1187)。
+  ///
+  /// ⚠ **見つからない / 権限が無いときは 400 を返す**（`NO_SUCH_FILE` /
+  /// `ACCESS_DENIED`）。書き出したファイルは**期限で消える**ことがあるので、
+  /// 呼び出し側は「無い」を普通の結末として扱うこと。
+  Future<MisskeyDriveFile?> showDriveFile(String fileId) async {
+    try {
+      final response = await dio.post(
+        '/api/drive/files/show',
+        data: createBody({'fileId': fileId}),
+      );
+      return MisskeyDriveFile.fromJson(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 400 || e.response?.statusCode == 404) {
+        return null;
+      }
+      rethrow;
+    }
+  }
+
   /// POST /api/drive/files/delete
   Future<void> deleteDriveFile(String fileId) async {
     await dio.post(
@@ -619,29 +640,13 @@ class MisskeyClient {
       '/api/notes/drafts/list',
       data: createBody({'scheduled': true}),
     );
+    // ⚠ 変換は [misskeyScheduledPostFromMap] に寄せてある (#1187)。
+    // `scheduledNotePostFailed` 通知の `noteDraft` が同じ `NoteDraft` の形で
+    // 来るので、2 箇所で同じパースを書かないため。⚠ **`scheduledAt` を持たない
+    // 行を落とす**挙動は helper 側が引き継いでいる（null を返す）。
     return (response.data as List)
-        .where((e) {
-          final json = e as Map<String, dynamic>;
-          return json['scheduledAt'] != null;
-        })
-        .map((e) {
-          final json = e as Map<String, dynamic>;
-          return ScheduledPost(
-            id: json['id'] as String,
-            scheduledAt: DateTime.fromMillisecondsSinceEpoch(
-              json['scheduledAt'] as int,
-              isUtc: true,
-            ),
-            content: json['text'] as String?,
-            spoilerText: json['cw'] as String?,
-            visibility: json['visibility'] as String?,
-            mediaIds:
-                (json['fileIds'] as List?)
-                    ?.map((id) => id as String)
-                    .toList() ??
-                [],
-          );
-        })
+        .map((e) => misskeyScheduledPostFromMap(e as Map<String, dynamic>))
+        .nonNulls
         .toList();
   }
 

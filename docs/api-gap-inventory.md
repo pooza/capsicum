@@ -447,6 +447,27 @@ capsicum が送るのは `file` / `comment` / `isSensitive` / `folderId`。未�
 
 ⚠ **`userId` も読んでいないが、これは `user.id` と重複**なので当たりではない。
 
+#### ✅ 決着（2026-10-01・[#1187](https://github.com/pooza/capsicum/issues/1187)）
+
+**6 種類とも読むようにした。**入れ物は **[#1084](https://github.com/pooza/capsicum/issues/1084) の `severance` / `moderationWarning` と同じ「種別ごとに型付きのフィールドを 1 つ」**（Issue の候補 A）。⚠ **候補 C（sealed class で種別ごとに分ける）は採らない** —— `announcement` / `collection` / `achievement` / `severance` / `moderationWarning` と**既に 5 つ同じ形で積まれている**ので、ここだけ別の形にすると入れ物が 2 種類になる。
+
+| 種別 | 読んだ先 | 画面 |
+| --- | --- | --- |
+| `roleAssigned` | `Notification.assignedRole`（⚠ `User.roles` と同じ `UserRole` を使い回す） | ロール名 |
+| `exportCompleted` | `Notification.export`（`ExportCompletion`） | 「フォローを書き出しました」+ タップでファイルを開く |
+| `scheduledNotePostFailed` | `Notification.failedScheduledPost`（`ScheduledPost`） | 失敗した投稿の本文（空なら予約時刻） |
+| `chatRoomInvitationReceived` | `Notification.chatInvitation`（既存の `ChatRoomInvitation`） | ルーム名 + タップで招待一覧へ |
+| `followRequestAccepted` | `Notification.followRequestMessage` | 添えられた一言 |
+| `app` | ⚠⚠ **`fallbackTitle` / `fallbackBody`（#1042 の受け皿）** | 見出し + 本文 |
+
+⚠⚠ **`app` だけ入れ物が違う理由。**#1177 は `app` を `misskeyNotificationTypeMap` に**入れない**と決めた（あの表は絞り込みの候補の正本でもあり、使う機会のほぼ無い種別で選択肢だけが増えるため）。その判断を崩さずに本文を出すため、**未知種別の受け皿である fallback に載せた**。`app` は `NotificationType.other` のままになる。
+
+⚠ **`icon` は読むが使っていない。**通知の行頭は種別アイコンで揃えてあり、`app` だけ別の絵を出すと並びが崩れる。**読んでいることを残すためにモデルには持つ。**
+
+⚠ **`exportCompleted` の導線は 1 往復かかる。**通知には `fileId` しか載らないので、URL を得るには `drive/files/show` が要る（`DriveSupport.getDriveFile` を新設）。⚠⚠ **一覧を描くたびには引かない** —— 通知 1 件につき 1 往復になるので、**タップした時点**で引く。⚠ 書き出したファイルは期限で消えるので、**「無い」は普通の結末**として扱う（黙って何も起きない形にしない）。
+
+⚠ **`scheduledNotePostFailed` の `noteDraft` は予約投稿一覧と同じ `NoteDraft`。**パースを `misskeyScheduledPostFromMap` に寄せた。⚠⚠ **`scheduledAt` は epoch ミリ秒の int**（`createdAt` と形が違う）。⚠ **寄せる前はこのパースにテストが 1 本も無かった**ので、既存の振る舞い（int 以外は落とす・`scheduledAt` を持たない行を落とす）を併せて固定してある。
+
 ### 12-3. drive-file のその他（小粒）
 
 `md5`（重複検出）/ `size`（ファイルサイズ表示）/ `folder`（親フォルダの実体）を読んでいない。⚠ **`folderId` は `Attachment` に入れ物があるのに、Misskey のレスポンスからは読んでいない。**

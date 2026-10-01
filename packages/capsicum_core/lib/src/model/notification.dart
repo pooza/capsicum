@@ -1,6 +1,8 @@
 import 'announcement.dart';
+import 'chat_room_invitation.dart';
 import 'collection.dart';
 import 'post.dart';
+import 'scheduled_post.dart';
 import 'user.dart';
 
 enum NotificationType {
@@ -127,6 +129,24 @@ class ModerationWarning {
   const ModerationWarning({required this.id, required this.action, this.text});
 }
 
+/// `exportCompleted` 通知の中身 (#1187)。Misskey の `exportedEntity` / `fileId`。
+///
+/// ⚠ **書き出しの URL は持たない。**`fileId` は drive の ID で、URL を得るには
+/// `drive/files/show` をもう 1 往復する。通知を一覧で描くたびに全件引くのは
+/// 割に合わないので、**開くと決めた時点で引く**（`notification_tile` のタップ）。
+class ExportCompletion {
+  /// 何を書き出したか。Misskey の `userExportableEntities`
+  /// （`antenna` / `blocking` / `clip` / `favorite` / `following` / `muting`
+  /// / `note` / `userList`）。⚠ **未知の値がそのまま入る**ので、表示側が
+  /// 知らない値を受けても落ちないこと。
+  final String entity;
+
+  /// 書き出したファイルの drive ID。
+  final String fileId;
+
+  const ExportCompletion({required this.entity, required this.fileId});
+}
+
 class Notification {
   final String id;
   final NotificationType type;
@@ -196,6 +216,32 @@ class Notification {
   /// [fallbackTitle] に続く説明 (#1042)。こちらも HTML。
   final String? fallbackBody;
 
+  /// `type == roleAssigned` のとき付与されたロール (#1187)。それ以外は null。
+  ///
+  /// ⚠ `User.roles` と同じ [UserRole] を使う（Misskey は同じ `Role` の lite 形を
+  /// 返すので、別の入れ物を作ると同じものが 2 つになる）。
+  final UserRole? assignedRole;
+
+  /// `type == exportCompleted` のとき書き出しの中身 (#1187)。それ以外は null。
+  final ExportCompletion? export;
+
+  /// `type == scheduledPostFailed` のとき失敗した予約投稿 (#1187)。それ以外は null。
+  ///
+  /// ⚠⚠ **これが無いと「どれが失敗したか」が分からない。**#1177 で種別名は出る
+  /// ようになったが、中身が空のままでは「投稿したつもりが出ていない」を直しよう
+  /// がなかった。
+  final ScheduledPost? failedScheduledPost;
+
+  /// `type == chatInvitation` のとき招待 (#1187)。それ以外は null。
+  ///
+  /// ⚠ 招待に応じる導線は capsicum の招待一覧（`chat_invitations_screen`）が
+  /// 既に持っているので、通知からはそこへ送る。
+  final ChatRoomInvitation? chatInvitation;
+
+  /// `type == followRequestAccepted` のとき承認者が添えた一言 (#1187)。
+  /// サーバーが載せなければ null。
+  final String? followRequestMessage;
+
   const Notification({
     required this.id,
     required this.type,
@@ -214,5 +260,10 @@ class Notification {
     this.sampleUsers = const [],
     this.fallbackTitle,
     this.fallbackBody,
+    this.assignedRole,
+    this.export,
+    this.failedScheduledPost,
+    this.chatInvitation,
+    this.followRequestMessage,
   });
 }

@@ -1786,6 +1786,12 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }
 
   @override
+  Future<Attachment?> getDriveFile(String fileId) async {
+    final file = await client.showDriveFile(fileId);
+    return file?.toCapsicum();
+  }
+
+  @override
   Future<void> deleteDriveFile(String fileId) async {
     await client.deleteDriveFile(fileId);
   }

@@ -16,6 +16,7 @@ import '../util/deck_navigation.dart';
 import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
 import '../util/moderation_notification_text.dart';
+import '../util/notification_detail_text.dart';
 import '../util/notification_group_text.dart';
 import '../util/notification_type_display.dart';
 import '../util/post_actions.dart';
@@ -115,6 +116,36 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
         : _contentRenderer!.renderMfm(content);
   }
 
+  /// 書き出したファイルを開く (#1187)。`exportCompleted` 通知は `fileId` しか
+  /// 載せてこないので、**開くと決めた時点で** `drive/files/show` を 1 往復する。
+  ///
+  /// ⚠⚠ **「無い」は普通の結末。**書き出したファイルは期限で消えることがある
+  /// ので、見つからなかったことを利用者へ伝えて終わる（黙って何も起きない形に
+  /// しない —— タップが効かないのと区別できない）。
+  Future<void> _openExportedFile(
+    BuildContext context,
+    ExportCompletion export,
+  ) async {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! DriveSupport) return;
+    final drive = adapter as DriveSupport;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    Attachment? file;
+    try {
+      file = await drive.getDriveFile(export.fileId);
+    } catch (_) {
+      file = null;
+    }
+    final url = file?.url;
+    if (url == null) {
+      messenger?.showSnackBar(
+        const SnackBar(content: Text('書き出したファイルが見つかりませんでした')),
+      );
+      return;
+    }
+    await launchUrlSafely(Uri.parse(url));
+  }
+
   /// 実績一覧を開く (#918)。実績は自分のものしか通知されないので、対象は
   /// 常に現在のアカウント。
   ///
@@ -162,6 +193,16 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
           // その場で例外になる（プロフィール画面の導線と同じ形で渡す）。
           : notification.type == NotificationType.achievementEarned
           ? () => _openAchievements(context)
+          // チャットルームへの招待 (#1187): post を持たないため、タップで招待
+          // 一覧（#626）を開く。⚠ **承諾 / 無視の導線はあちらが持っている**ので、
+          // ここで作り直さない。
+          : notification.chatInvitation != null
+          ? () => context.push('/chat/invitations')
+          // 書き出しの完了 (#1187): `fileId` しか無いので、ここで drive を 1 往復
+          // してから開く。⚠ **一覧を描くたびには引かない**（通知 1 件につき
+          // 1 往復になる）。
+          : notification.export != null
+          ? () => unawaited(_openExportedFile(context, notification.export!))
           // 関係の切断・モデレーション警告 (#1084): 対応する画面が capsicum に
           // 無いので、WebUI の「詳細を確認」と同じページをブラウザで開く。
           : moderationUri != null
@@ -225,6 +266,37 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
+                  ],
+                  // 種別固有の荷物 (#1187)。ロール名 / 書き出した対象 / 失敗した
+                  // 予約投稿の本文 / 招待されたルーム名 / 承認時の一言。
+                  //
+                  // ⚠⚠ **#1177 で種別名は出るようになったが、中身は空のまま
+                  // だった。**ここが埋まらないと「ロールが付与されました（どの
+                  // ロール？）」「予約投稿に失敗しました（どれ？）」のように、
+                  // **読めても行動できない**通知になる。
+                  if (notificationDetailText(notification)
+                      case final detail?) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      detail,
+                      style: theme.textTheme.bodyMedium,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    // 開ける先があるときだけ、何が起きるかを 1 行で予告する。
+                    // ⚠ モデレーション警告 (#1084) の「詳細を確認」と同じ形。
+                    if (notification.export != null ||
+                        notification.chatInvitation != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        notification.export != null
+                            ? 'ファイルを開く（ブラウザで開きます）'
+                            : '招待を確認',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
+                    ],
                   ],
                   // capsicum が名前を知らない種別に、サーバーが用意した文言を
                   // 出す (#1042)。⚠ **HTML なのでタグを落として出す。**リンクは
