@@ -201,9 +201,23 @@ capsicum は `draft.sensitive ? true : null` と書いてこれを回避して�
 
 | `source` | 直す前 | 直した後 |
 | --- | --- | --- |
-| 🔴 `language` | **読まず、端末ロケールを送る**（WebUI の設定が無視される） | **サーバー既定 → 無ければ端末ロケール**。⚠ `setting_default_language` は「未設定」にできるので null が普通に来る |
+| 🔴 `language` | **読まず、端末ロケールを送る**（WebUI の設定が無視される） | **サーバー既定 → 無ければ端末ロケール**。⚠ `setting_default_language` は「サイトの表示言語に合わせる」を選べるので「未設定」が普通に来る（下） |
 | `quote_policy` | 読まない・送らない（表示が実態と違う） | 読んでフォームの初期値に。⚠ **知らない値は無視する**（メニューに無い値が選択済みとして残らないように） |
 | `sensitive` | 読まない・`false` は送らない | 読んで初期値に + **`false` を明示して送れるようにした**（下） |
+
+##### 「未設定」は null で来るとは限らない（`''` で来る）
+
+⚠⚠ **上の「null が普通に来る」だけでは足りず、空欄で開く不具合を出した**（pooza 報告・`99825675` で修正）。**「サイトの表示言語に合わせる」は `null` ではなく `''` で返る。**
+
+- WebUI の `<select>` は nil の選択肢を `value=""` で出す（`posting_defaults/show.html.haml` の `collection: [nil] + filterable_languages`）
+- `UserSettings#[]=` は `''` を `ActiveModel::Type::String` へ type_cast したうえで、**nil でないので保存する**（nil のときだけ `delete` される）
+- → `source.language` は `""`。capsicum 側の `serverDefault ?? 端末ロケール` は **`''` を非 null として採用**するので `??` が効かず、**投稿フォームの言語が空欄で開いた**
+
+⚠ **正規化が要るのは `language` だけ。**`user_settings.rb` で `in: %w(...)` の検証を持たず `default: nil` の設定は**これ 1 本だけ**（2026-10-01 にフォークで全数確認）。`privacy` / `quote_policy` は `in:` があるので `''` を保存できない（`ArgumentError`）。
+
+⚠ **畳む向きは Mastodon 自身と同じ。**`valid_locale_cascade(settings['default_language'], locale, I18n.locale)` が利用者のロケールへ倒すので、capsicum で端末ロケールへ倒すのが対応する。
+
+⚠⚠ **教訓: 「未設定」を null でしか検査しなかった。**#1194 の初回で入れた「未設定の言語は null のまま」は、**`''` を素通しする実装でも通る**テストだった。**「未設定」という状態が上流で何通りの表現を持つかを数える**のが先。
 
 ##### `sensitive` は「読む」だけでは足りなかった
 
