@@ -160,3 +160,13 @@ capsicum-relay の Issue・マイルストーンは、**capsicum 本体と同じ
 
 - 現在のブランチ・状態、前回以降にクローズされた Issue、マイルストーン別の残件数、未割り当て Issue 一覧、Sentry 新着イベント、Mastodon / Misskey の現行バージョン、**1 回で読めない docs の件数**（#1184・0 件なら省略してよい）、各確認項目の結果をまとめて報告する
 - **capsicum と capsicum-relay の稼働中マイルストーンを、同じ見出しレベル・同じ粒度で並記する**（「relay を同列に扱う」節を参照）。relay の残件を末尾の 1 行に圧縮しない
+- **`verification-pending` の件数と内訳を必ず載せる**（2026-10-01 新設・規約は `docs/CLAUDE.md`「運用ルール」）。**「実装は済んでいて動作確認だけが残っている」Issue** で、pooza が**手が空いたときにまとめて消化する**ための枠:
+
+  ```sh
+  # ⚠⚠ `gh issue list --label` は検索インデックス経由で数十秒遅れる。REST を使う
+  gh api 'repos/pooza/capsicum/issues?labels=verification-pending&state=open&per_page=50' \
+    --jq '.[] | select(.pull_request == null) | "#\(.number)\t[\([.labels[].name] | join(","))]\t\(.title)"'
+  ```
+
+  ⚠ **端末ラベル（`Windows` / `Linux`）の有無で並べ替えて出す** —— 付いていなければ**手元の Mac で見られる**、付いていればその実機が要る。⚠ **0 件でもその旨を 1 行書く**（「数え忘れ」と「本当に 0」を区別するため）。
+- ⚠⚠ **実装済みなのに `verification-pending` が付いていない Issue を見つけたら、その場で付ける。**同期は Issue の状態を実測する唯一の定期作業なので、**ここで拾わないと札が腐る**。判定は「末尾のコメントが実装完了を報告していて、close されていない」。⚠ **検証困難なもの（race / fork 依存 / 再現条件が薄い）には付けない**（`docs/CLAUDE.md` の基準）。

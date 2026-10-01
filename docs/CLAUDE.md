@@ -402,6 +402,9 @@ dart analyze --fatal-infos > /tmp/analyze.log 2>&1; echo "ANALYZE_EXIT=$?"
 - ATOK 二重入力（[#54](https://github.com/pooza/capsicum/issues/54)）は Flutter 側の対応待ち。リリースごとにリリースノートの「既知の不具合」に記載し、Flutter 側の関連 issue の動向を確認する。記載時は回避策も併記する: (1) ATOK の「インライン入力」を OFF にする、(2) インライン入力 ON のままでも ATOK の「従来のカーソル位置入力を使用」を ON にすれば回避可（インライン入力を活かせる分こちらが実用的）、(3) 標準キーボードに切り替える
 - マイルストーン未設定の Issue は `no:milestone` フィルタで確認する
 - **`Windows` / `Linux` ラベルは「その実機でないと進まない」の目印**（再現確認が起点・修正案の選択が実機の挙動次第）。開発のメインは macOS なので、着手できる端末が限られることを一目で分かるようにするためのもの。3 OS 共通のデスクトップ機能に付ける `desktop` とは別で、`desktop` は macOS でも進められる。拾い方は [dev-environment-desktop.md](dev-environment-desktop.md) の「その端末で拾う作業の探し方」
+- **`verification-pending` は「実装は済んでいて、動作確認だけが残っている」の目印**（2026-10-01 新設）。⚠ **`reproduction-needed` と逆向き** —— あちらは情報が足りず**着手しない**側、こちらは**出来上がっていて見るだけ**の側。**手が空いたときにまとめて消化する**ための札なので、`gh issue list --label verification-pending` で引けること自体が目的。⚠ **動作確認が済んだら、ラベルを外すのではなく Issue を close する**（close し忘れるとラベルだけが残って数が合わなくなる）。⚠⚠ **`gh issue list --label` は検索インデックス経由で数十秒遅れる** —— 付けた直後に数えるなら `gh api 'repos/pooza/capsicum/issues?labels=verification-pending&state=open'` を使う
+  - **付ける側の基準**: UI レイアウト / タップ挙動 / 画面遷移・設定画面の追加のように、**アプリを触れば分かるもの**。⚠ **検証困難なもの（race / fork 依存 / 認証エラーの類別 / 再現条件が薄いもの）には付けない** —— あれらは**動作確認なしで close してよい**側（修正コミットの hash を添えて閉じ、再発は Sentry で観察する）なので、札を付けると**永久に消えないキュー**になる
+  - **実機が要るものは端末ラベルと併用する**（例: #1190 は `verification-pending` + `Windows`）。⚠ **`verification-pending` 単独なら「手元の Mac で見られる」**と読めるようにしておく
 - Flutter framework 由来の不具合（capsicum 側で根治不能なもの、`flutter` ラベル付き）は [flutter-upstream-watch.md](flutter-upstream-watch.md) で集中管理し、**月初のセッションで手動 chase** して上流の進捗を巡回する。⚠ **クラウドの schedule routine は 2026-08-21 に廃止した**（4 か月連続で発火しても成果コミットが 1 件も残らず、実務はローカル頼みだった）。**資格情報の満了チェックがこの巡回に相乗りしている**点に注意
 
 ### 実装しない機能
