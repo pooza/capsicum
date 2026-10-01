@@ -104,6 +104,28 @@ class User {
   final DateTime? createdAt;
   final PostScope? defaultScope;
 
+  /// 投稿の既定の言語（Mastodon の `source.language`・#1194）。未設定 / 未対応
+  /// サーバーでは null。
+  ///
+  /// ⚠⚠ **null は「端末のロケールへ倒す」。**Mastodon の `setting_default_language`
+  /// は WebUI で「未設定」にできるので、null が普通に来る。
+  final String? defaultLanguage;
+
+  /// 引用を許すのは誰か、の既定（Mastodon の `source.quote_policy`・#1194）。
+  /// 未対応サーバーでは null。`public` / `followers` / `nobody` 等。
+  ///
+  /// ⚠ **文字列のまま持つ。**投稿時に送る `quote_approval_policy` と同じ語彙で、
+  /// capsicum 側で enum に直す意味が無い（上流が増やしたら素通しで追従する）。
+  final String? defaultQuotePolicy;
+
+  /// 添付を既定で閲覧注意にするか（Mastodon の `source.sensitive`・#1194）。
+  /// 未対応サーバーでは null。
+  ///
+  /// ⚠⚠ **これを読むなら、投稿時は `sensitive` を必ず送る必要がある。**送らない
+  /// と「サーバー既定が効く」ので、**既定が true のとき capsicum から OFF に
+  /// できない**（トグルが嘘になる）。
+  final bool? defaultSensitive;
+
   /// Misskey 用。サーバー側のロール policy から導出される
   /// 「このユーザーが chat を利用可能か」フラグ。Mastodon 等
   /// chat 概念のないサーバーでは null。
@@ -195,6 +217,9 @@ class User {
     this.url,
     this.createdAt,
     this.defaultScope,
+    this.defaultLanguage,
+    this.defaultQuotePolicy,
+    this.defaultSensitive,
     this.canChat,
     this.showMedia,
     this.showMediaReplies,
@@ -232,6 +257,9 @@ class User {
     url: url,
     createdAt: createdAt,
     defaultScope: defaultScope,
+    defaultLanguage: defaultLanguage,
+    defaultQuotePolicy: defaultQuotePolicy,
+    defaultSensitive: defaultSensitive,
     canChat: canChat,
     showMedia: showMedia,
     showMediaReplies: showMediaReplies,

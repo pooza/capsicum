@@ -68,6 +68,16 @@ extension CapsicumMastodonAccountExtension on MastodonAccount {
       url: url,
       createdAt: createdAt,
       defaultScope: mastodonVisibilityRosetta[source?['privacy'] as String?],
+      // 投稿設定の既定 (#1194)。⚠⚠ **`privacy` と同じ画面で設定するのに、
+      // これらだけ取り残されていた。**`source` は 4 つとも返している
+      // （`REST::CredentialAccountSerializer#source`）。
+      //
+      // ⚠ **`/api/v1/accounts/:id` には `source` が無い**（`verify_credentials`
+      // だけ）。他人の User では null になるが、既定は自分のものしか使わない
+      // ので困らない。
+      defaultLanguage: source?['language'] as String?,
+      defaultQuotePolicy: source?['quote_policy'] as String?,
+      defaultSensitive: source?['sensitive'] as bool?,
       showMedia: showMedia,
       showMediaReplies: showMediaReplies,
       showFeatured: showFeatured,

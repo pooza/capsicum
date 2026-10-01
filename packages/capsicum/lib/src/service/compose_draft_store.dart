@@ -189,6 +189,9 @@ class ComposeDraftStore {
   /// ⚠ [#1194](https://github.com/pooza/capsicum/issues/1194) で `sensitive` /
   /// `language` もサーバー既定を読むようになったら、ここに足す。
   static const chosenScope = 'scope';
+  static const chosenLanguage = 'language';
+  static const chosenQuotePolicy = 'quote_policy';
+  static const chosenSensitive = 'sensitive';
 
   /// スロットの世代印 (#969)。[clear] のたびに +1 する。各インスタンスは
   /// [restore] / [save] で見た世代を [_syncedGeneration] に覚え、[save] 時に

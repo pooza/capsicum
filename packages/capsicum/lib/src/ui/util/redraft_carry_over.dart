@@ -49,6 +49,7 @@ const redraftCarryOverPolicy = <String, RedraftCarryOver>{
   'mediaIds': RedraftCarryOver.carry,
   'spoilerText': RedraftCarryOver.carry,
   'sensitive': RedraftCarryOver.carry,
+  'sensitiveExplicit': RedraftCarryOver.notInPost,
   'localOnly': RedraftCarryOver.carry,
   'channelId': RedraftCarryOver.carry,
   'language': RedraftCarryOver.carry,
@@ -65,6 +66,10 @@ const redraftCarryOverPolicy = <String, RedraftCarryOver>{
 
 /// `carry` 以外を選んだ理由。⚠ **理由の無い `drop` は検査で落とす。**
 const redraftCarryOverReasons = <String, String>{
+  'sensitiveExplicit':
+      '「閲覧注意の false を明示して送るか」は送信時の都合で、投稿には載らない (#1194)。'
+      '⚠ サーバー既定を読めたか / 利用者が自分で切り替えたかで決まるので、'
+      '再編集のたびにフォーム側が決め直す',
   'pollHideTotals': 'Post.poll に「途中経過を隠す」が無い（Misskey の投稿には載らない）',
   'skipMulukhiya': 'モロヘイヤを通すかは送信時の選択で、投稿には残らない',
   'scheduledAt':

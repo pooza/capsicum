@@ -505,6 +505,39 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// 残り続ける（#1185 が反映されない）。
   final _chosen = <String>{};
 
+  /// 閲覧注意の `false` を**明示的に送れるか** (#1194)。サーバーが
+  /// `source.sensitive` を返したときだけ true。
+  ///
+  /// ⚠⚠ **既定が true の利用者は、送らないと閲覧注意を外せない**（省くと
+  /// サーバー既定が当たる）。⚠ **常に送る形にはできない** —— `source` を返さない
+  /// サーバーでは、いままで効いていた「サーバー既定に任せる」が壊れる。
+  bool _sensitiveExplicit = false;
+
+  /// アカウントの既定（サーバー側の投稿設定）をフォームへ入れる (#1194)。
+  ///
+  /// ⚠ **まっさらな新規投稿の枝からしか呼ばない。**返信・引用・再編集・下書きの
+  /// 復元は「その投稿の値」を引き継ぐ側で、既定より強い。
+  ///
+  /// ⚠⚠ **言語はここでは入れない。**`initState` の時点では `Localizations` が
+  /// まだ使えないので、post-frame で「サーバー既定 → 無ければ端末ロケール」の
+  /// 順に決める（下の `addPostFrameCallback`）。
+  void _applyAccountDefaults() {
+    final user = ref.read(currentAccountProvider)?.user;
+    if (user == null) return;
+    if (user.defaultScope != null) _scope = user.defaultScope!;
+    // ⚠ **知らない値は無視する。**上流が増やした policy を素通しで入れると、
+    // メニューに無い値が選択済みとして残る（再編集の引き継ぎと同じ守り）。
+    final quotePolicy = user.defaultQuotePolicy;
+    if (quotePolicy != null && _quoteApprovalLabels.containsKey(quotePolicy)) {
+      _quoteApprovalPolicy = quotePolicy;
+    }
+    if (user.defaultSensitive != null) {
+      _sensitiveEnabled = user.defaultSensitive!;
+      // 既定を読めた ＝ `false` を明示して送れる。
+      _sensitiveExplicit = true;
+    }
+  }
+
   /// ⚠ **この投稿が返信として送られるか (#1113)。**
   ///
   /// 送信側と同じ判定を使う。⚠ **`widget.replyTo != null` で見ない** — redraft
@@ -929,10 +962,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       _scope = widget.quoteTo!.scope;
     } else if (widget.sharedText != null) {
       _initSharedNowPlaying(widget.sharedText!);
-      final account = ref.read(currentAccountProvider);
-      if (account != null && account.user.defaultScope != null) {
-        _scope = account.user.defaultScope!;
-      }
+      _applyAccountDefaults();
     } else if (widget.initialText != null || widget.hashtags.isNotEmpty) {
       // ⚠⚠ **ハッシュタグもこの枝で処理する** (#1172)。下の「まっさらな新規投稿」の
       // 枝は保存済みの下書きを復元するので、タグを置いた上に下書きが載ると
@@ -941,21 +971,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         widget.initialText,
         widget.hashtags,
       );
-      final account = ref.read(currentAccountProvider);
-      if (account != null && account.user.defaultScope != null) {
-        _scope = account.user.defaultScope!;
-      }
+      _applyAccountDefaults();
     } else if (widget.template != null) {
       _applyTemplateContent(widget.template!);
-      final account = ref.read(currentAccountProvider);
-      if (account != null && account.user.defaultScope != null) {
-        _scope = account.user.defaultScope!;
-      }
+      _applyAccountDefaults();
     } else {
-      final account = ref.read(currentAccountProvider);
-      if (account != null && account.user.defaultScope != null) {
-        _scope = account.user.defaultScope!;
-      }
+      _applyAccountDefaults();
       // Fresh compose: enable draft auto-save and try to restore the
       // previously saved draft (if any).
       _draftAutoSave = true;
@@ -972,8 +993,19 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       // ため、**元投稿の言語を引き継いでも端末ロケールで潰されていた**
       // （引き継ぎを足すときに実際に踏みかけた）。
       if (adapter is MastodonAdapter && _language == null) {
+        // ⚠⚠ **サーバー側の既定を先に見る (#1194)。**`source.language` は公開
+        // 範囲と同じ画面で設定するのに読んでおらず、**端末のロケールで上書き
+        // して送っていた**ので、WebUI の設定が常に無視されていた。
+        //
+        // ⚠ `setting_default_language` は WebUI で「未設定」にできるので null が
+        // 普通に来る。そのときは従来どおり端末ロケール。
+        final serverDefault = ref
+            .read(currentAccountProvider)
+            ?.user
+            .defaultLanguage;
         setState(
-          () => _language = Localizations.localeOf(context).languageCode,
+          () => _language =
+              serverDefault ?? Localizations.localeOf(context).languageCode,
         );
       }
       // CustomEmojiSupport 対応サーバーなら絵文字を先読み (#308)。
@@ -1604,7 +1636,13 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         // 戻した選択は「選んだまま」。⚠ 印を引き継がないと、次の保存で消える。
         _chosen.add(ComposeDraftStore.chosenScope);
       }
-      _sensitiveEnabled = saved.sensitive;
+      // ⚠ **閲覧注意も同じ扱い (#1194)。**サーバー既定を読むようになったので、
+      // 触っていない値を戻すと既定を変えても反映されなくなる（#1195 と同型）。
+      if (saved.isChosen(ComposeDraftStore.chosenSensitive)) {
+        _sensitiveEnabled = saved.sensitive;
+        _sensitiveExplicit = true;
+        _chosen.add(ComposeDraftStore.chosenSensitive);
+      }
       _localOnly = saved.localOnly;
       _draftSavedAt = saved.savedAt;
       // 復元したこと自体を伝える (#964)。「復元されたことも伝わっていない」が
@@ -3356,8 +3394,14 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
 
   void _togglePoll() => setState(() => _pollEnabled = !_pollEnabled);
 
-  void _toggleSensitive() =>
-      setState(() => _sensitiveEnabled = !_sensitiveEnabled);
+  void _toggleSensitive() => setState(() {
+    _sensitiveEnabled = !_sensitiveEnabled;
+    // ⚠ **自分で切り替えた ＝ 明示 (#1194 / #1195)。**既定を読めなかった
+    // サーバーでも、ここを通ったら `false` を送れるようにする（送らないと
+    // サーバー既定が当たって、外したつもりが外れない）。
+    _sensitiveExplicit = true;
+    _chosen.add(ComposeDraftStore.chosenSensitive);
+  });
 
   void _toggleLocalOnly() => setState(() => _localOnly = !_localOnly);
 
@@ -3379,12 +3423,18 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// 同じ理由でフィールドに一度だけ組む。
   late final Map<String, VoidCallback> _languageSetters = {
     for (final code in _languageOptions.keys)
-      code: () => setState(() => _language = code),
+      code: () => setState(() {
+        _language = code;
+        _chosen.add(ComposeDraftStore.chosenLanguage);
+      }),
   };
 
   late final Map<String, VoidCallback> _quoteApprovalSetters = {
     for (final policy in _quoteApprovalLabels.keys)
-      policy: () => setState(() => _quoteApprovalPolicy = policy),
+      policy: () => setState(() {
+        _quoteApprovalPolicy = policy;
+        _chosen.add(ComposeDraftStore.chosenQuotePolicy);
+      }),
   };
 
   /// 添付 1 件ぶんのメニューコールバック (#941)。上 2 つと同じく、ビルドのたびに
@@ -3572,6 +3622,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           mediaIds: mediaIds,
           spoilerText: spoilerText?.isNotEmpty == true ? spoilerText : null,
           sensitive: _effectiveSensitive,
+          // ⚠ **`false` を送ってよいか (#1194)。**既定を読めたか、自分で切り替えた
+          // ときだけ明示する。常に送ると、`source` を返さないサーバーで
+          // 「サーバー既定に任せる」が壊れる。
+          sensitiveExplicit: _sensitiveExplicit,
           localOnly: _localOnly,
           channelId: _effectiveChannelId,
           visibleUserIds: visibleUserIds,
@@ -3768,6 +3822,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           mediaIds: mediaIds,
           spoilerText: spoilerText?.isNotEmpty == true ? spoilerText : null,
           sensitive: _effectiveSensitive,
+          // ⚠ **`false` を送ってよいか (#1194)。**既定を読めたか、自分で切り替えた
+          // ときだけ明示する。常に送ると、`source` を返さないサーバーで
+          // 「サーバー既定に任せる」が壊れる。
+          sensitiveExplicit: _sensitiveExplicit,
           localOnly: _localOnly,
           channelId: _effectiveChannelId,
           visibleUserIds: visibleUserIds,

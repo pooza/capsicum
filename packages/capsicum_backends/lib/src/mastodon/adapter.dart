@@ -350,7 +350,11 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         quoteId: draft.quoteId,
         spoilerText: draft.spoilerText,
         mediaIds: draft.mediaIds.isNotEmpty ? draft.mediaIds : null,
-        sensitive: draft.sensitive ? true : null,
+        // ⚠ false を送るのは「既定を読めた」ときだけ (#1194)。常に送ると、
+        // source を返さないサーバーで「サーバー既定に任せる」が壊れる。
+        sensitive: draft.sensitive
+            ? true
+            : (draft.sensitiveExplicit ? false : null),
         language: draft.language,
         quoteApprovalPolicy: draft.quoteApprovalPolicy,
         extraHeaders: draft.skipMulukhiya ? {'X-Mulukhiya': 'capsicum'} : null,
@@ -365,7 +369,11 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         quoteId: draft.quoteId,
         spoilerText: draft.spoilerText,
         mediaIds: draft.mediaIds.isNotEmpty ? draft.mediaIds : null,
-        sensitive: draft.sensitive ? true : null,
+        // ⚠ false を送るのは「既定を読めた」ときだけ (#1194)。常に送ると、
+        // source を返さないサーバーで「サーバー既定に任せる」が壊れる。
+        sensitive: draft.sensitive
+            ? true
+            : (draft.sensitiveExplicit ? false : null),
         language: draft.language,
         pollOptions: draft.pollOptions,
         pollExpiresIn: draft.pollExpiresIn,
