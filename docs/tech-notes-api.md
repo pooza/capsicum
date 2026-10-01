@@ -62,6 +62,26 @@ client 実装は v1.60 で出荷済みだが、導線は `GET /mulukhiya/api/abo
 
 → capsicum にとって実効があるのは **`admin.sign_up` / `admin.report`**（残り 4 つは既知）。**`NotificationType.other` の既定表示は受け皿として残す。**⚠ `fallback.title` / `summary` は **HTML**（`link_to` / `link_to_mention` を通る）。
 
+### 429 に `Retry-After` は付かない。窓が明ける時刻は `X-RateLimit-Reset` だけが持つ（#1103）
+
+⚠⚠ **Mastodon は 429 に `Retry-After` を付けない。**付くのは `X-RateLimit-Limit` / `-Remaining` / `-Reset`（**ISO 8601**）で、窓が明ける時刻を知る手段はこれだけ。⚠ モロヘイヤも **5.39.0〜 透過時にこの 3 本を中継する**（mulukhiya#4775）ので、経由してもしなくても同じ形で来る。
+
+⚠ **読めていても、遅延の計算に使っていなければ意味が無い。**`RateLimitInterceptor` はヘッダを読んでいたのに `_calculateDelay` が `Retry-After` しか見ておらず、**分単位の窓に対して秒単位のバックオフ（合計 1〜7 秒）で 3 回打ち返して尽きていた**。現在の優先順は **`Retry-After` → `X-RateLimit-Reset` → 指数バックオフ**。
+
+⚠ **窓が遠い（60 秒超）ときは待たずに諦める。**Mastodon の窓は 5 分なので、素直に待つと投稿ボタンが数分固まる。⚠⚠ **バックオフへ落とさない** —— 明けていないと分かっているところへ打ち返すのは無駄。
+
+#### 🔴 `X-RateLimit-Reset` を `DateTime.tryParse` に素で通さない
+
+⚠⚠ **`DateTime.tryParse('1790000000')` は null を返さない。**epoch 秒（GitHub 風）を返すサーバーの値が **compact ISO として「西暦 178999 年」に解釈される**（2026-10-01 実測）。
+
+```text
+1790000000     -> 178999-11-30 00:00:00.000   ← ⚠⚠ 17 万年後
+1790000000000  -> null
+2026-10-01T00:00:00Z -> 2026-10-01 00:00:00.000Z
+```
+
+そのまま信じると **先回りの待機が事実上永久に返らない**（`remaining` が閾値以下のとき `await Future.delayed(resetAt.difference(now))` に入る）。⚠ **レート制限の窓は長くても時間単位**なので、1 時間より先の値は読めなかったものとして捨てている。
+
 ### プロフィール編集の初期値
 
 `GET /api/v1/accounts/verify_credentials` のトップレベル `note` は HTML 化済み。編集画面の初期値に使うと編集時に HTML タグが丸見えになる。`source.note` / `source.fields` を参照すること（プレーンテキストで返る）。
