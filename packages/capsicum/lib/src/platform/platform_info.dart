@@ -69,13 +69,13 @@ bool get supportsMediaDragOut =>
 bool get usesLoopbackOAuthCallback =>
     isDesktop || (!kIsWeb && Platform.isAndroid);
 
-/// loopback OAuth の受け口を、flutter_web_auth_2 の server impl ではなく
-/// **自前の localhost HTTP サーバ**で立てるプラットフォームか (#276 / #654)。
-/// macOS は fwa2 に localhost server impl が無く、Android は Custom Tab が
-/// redirect を bounce するため、両者とも自前サーバで受ける。Linux / Windows は
-/// fwa2 の server impl が `http://localhost:{port}` を直接受ける。
-bool get usesSelfHostedOAuthLoopbackServer =>
-    !kIsWeb && (Platform.isMacOS || Platform.isAndroid);
+/// loopback OAuth の callback を受けたあと、アプリのウィンドウを前面へ出すか
+/// (#1140)。Linux / Windows はかつて flutter_web_auth_2 の server impl で受けて
+/// おり、そちらが `WindowToFront.activate()` で前面へ戻していた。自前サーバへ
+/// 寄せたときに挙動を落とさないためのもの。⚠ macOS は自前サーバの頃から
+/// 前面化していない（変えるなら実機で確かめてから）。
+bool get oauthCallbackRaisesAppWindow =>
+    !kIsWeb && (Platform.isLinux || Platform.isWindows);
 
 /// loopback callback ページから、コード受領後にアプリを前面へ戻す遷移
 /// （androidOAuthReturnUrl）が必要なプラットフォームか (#276)。Android は
