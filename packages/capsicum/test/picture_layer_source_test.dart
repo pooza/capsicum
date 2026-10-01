@@ -59,7 +59,10 @@ void main() {
     String name = 'photo.png',
   }) async {
     final bytes = await solidPng(width, height, const Color(0xFF3366CC));
-    final file = File('${tempRoot.path}/$name');
+    // ⚠ OS の区切りで組む (#1168)。`XFile.name` は `Platform.pathSeparator`
+    // でしか切らないので、Windows で `/` を混ぜると表示名にディレクトリ名が残る。
+    // ピッカー由来のパスは OS の区切りなので、本体ではこの形にならない。
+    final file = File('${tempRoot.path}${Platform.pathSeparator}$name');
     await file.writeAsBytes(bytes, flush: true);
     return XFile(file.path);
   }
