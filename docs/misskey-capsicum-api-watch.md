@@ -29,9 +29,30 @@ git diff --name-status --diff-filter=A $OLD..$NEW -- packages/backend/src/server
 
 # ③ AiScript のバージョンが動いたか（#830 Flash のトリガー）
 git diff $OLD..$NEW -- packages/frontend/package.json | grep -i aiscript
+
+# ④ WebUI の画面が増えたか（2026-10-02 追加・下の「WebUI 基準の母数」節）
+git diff $OLD..$NEW -- packages/frontend/src/router.definition.ts
 ```
 
 各項目を **none（server/web/連合内部・無関係）/ passive（probing で自動 degrade・対応不要）/ actionable（対応候補）** の3段で判定。capsicum の Misskey 連携は probing ベースなので passive 比率が高め。
+
+### none の書き分け（2026-10-02 に 1 件落とした）
+
+⚠⚠ **`none` は「server / web / admin 専用・連合内部」の意味で使う。「capsicum が呼んでいない」を理由に `none` と書かないこと。**
+
+この表は「**その版で何が変わったか**」を見るものなので、**前からある経路を capsicum が呼んでいないかどうかは、この表の管轄ではない**。それは棚卸し（[api-gap-inventory.md](api-gap-inventory.md) / [webui-gap-inventory.md](webui-gap-inventory.md)）の管轄で、⚠ **あちらでは「呼んでいない」は落とす理由ではなく見る理由**。
+
+⚠ **実際に落ちた**: 下の 2026.10.0 の節が **`notes/thread-muting/create` を「none（capsicum 無関係・呼んでいない）」** と書いたため、**両 SNS にあるスレッド（会話）のミュートが棚卸しの母数から外れていた**（2026-10-02 に [#1208](https://github.com/pooza/capsicum/issues/1208) として起票・経緯は [api-gap-inventory.md](api-gap-inventory.md) §13-7）。
+
+→ **呼んでいない経路が差分に出たら `passive` でも `none` でもなく、「棚卸しの母数（未使用）」として別に書き出す。**
+
+### WebUI 基準の母数も見る（2026-10-02 追加）
+
+⚠⚠ **API の diff だけでは、WebUI に増えた画面を取りこぼす。**既存 API の組み合わせで画面を作った場合、`autogen/` も `json-schema/` も 1 行も動かない。
+
+⚠ [#991](https://github.com/pooza/capsicum/issues/991) の棚卸しは **`packages/frontend/src/router.definition.ts` のルート定義（145 ルート）を母数**にして、API 基準（[#993](https://github.com/pooza/capsicum/issues/993)）では出なかったものを見つけた。**母数の取り方が違うと別のものが見える**ので、版追従でも両方を見る。
+
+⚠ **落とす基準は棚卸しと同じ**（`admin/*` / 設定 / 認証 / ゲーム / 開発者向けは母数外）。[webui-gap-inventory.md](webui-gap-inventory.md) §2 が正本。
 
 ## Flash / AiScript の互換確認（#830）
 

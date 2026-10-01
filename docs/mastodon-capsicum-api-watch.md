@@ -24,9 +24,29 @@ git diff $OLD..$NEW -- config/routes/api.rb
 # minor 跨ぎでは routes 全体・streaming・フォーク固有のオペ変更も見る（4.7 で追加）
 git diff --stat $OLD..$NEW -- config/routes/ streaming/
 git diff --name-status $OLD..$NEW | grep -iE 'nginx|mulukhiya|rc\.d'
+# WebUI の画面が増えたか（2026-10-02 追加・下の「WebUI 基準の母数」節）
+git diff $OLD..$NEW -- app/javascript/mastodon/features/ui/index.jsx
 ```
 
 各項目を **none（server/web 専用・無関係）/ passive（additive で自動追従・無害）/ actionable（対応候補）** の3段でトリアージする。
+
+### none の書き分け（2026-10-02 に 1 件落とした）
+
+⚠⚠ **`none` は「server / web / admin 専用・連合内部」の意味で使う。「capsicum が呼んでいない」を理由に `none` と書かないこと。**
+
+この表は「**その版で何が変わったか**」を見るものなので、**前からある経路を capsicum が呼んでいないかどうかは、この表の管轄ではない**。それは棚卸し（[api-gap-inventory.md](api-gap-inventory.md) / [webui-gap-inventory.md](webui-gap-inventory.md)）の管轄で、⚠ **あちらでは「呼んでいない」は落とす理由ではなく見る理由**。
+
+⚠ **実際に落ちた**: Misskey 版の表が `notes/thread-muting/create` を「none（capsicum 無関係・呼んでいない）」と書いたため、**両 SNS にあるスレッド（会話）のミュートが棚卸しの母数から外れていた**（2026-10-02 に #1208 として起票・経緯は api-gap-inventory.md §13-7）。
+
+→ **呼んでいない経路が差分に出たら `passive` でも `none` でもなく、「棚卸しの母数（未使用）」として別に書き出す。**
+
+### WebUI 基準の母数も見る（2026-10-02 追加）
+
+⚠⚠ **API の diff だけでは、WebUI に増えた画面を取りこぼす。**既存 API の組み合わせで画面を作った場合、`config/routes/api.rb` も `app/serializers/rest/` も 1 行も動かない。
+
+⚠ [#991](https://github.com/pooza/capsicum/issues/991) の棚卸しは **`app/javascript/mastodon/features/ui/index.jsx` のルート定義を母数**にして、API 基準（[#993](https://github.com/pooza/capsicum/issues/993)）では出なかった 3 件を見つけた（**capsicum が「付ける」側だけ実装して「見る」側を持っていない**形）。**母数の取り方が違うと別のものが見える**ので、版追従でも両方を見る。
+
+⚠ **ディレクトリ（`features/` の数）で測らない。**構造の入れ物を含むので機能の数とずれる。**ルート定義が正本。**
 
 ## トリアージ結果（v4.5.9 → v4.6.0）
 
