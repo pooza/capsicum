@@ -132,6 +132,7 @@ daisskey（ダイスキー本番のフォーク本体）への**本番適用**�
 
 - ⚠ **① の `entities.ts` / `endpoint.ts` は 2 回連続で diff が完全に空**（②の `models/json-schema/` と新規 endpoint も空）。動いたのは **`autogen/types.ts` の +21 / −1 だけ**で、⚠⚠ **上の契約変更はこのファイルにしか出なかった** —— **`types.ts` を見ないと `sw/unregister` の必須パラメータ追加を取りこぼす**。**抽出方法の ① に `types.ts` を加えること**
 - **none**: `federation/update-remote-user` が `requireCredential: true` + `kind: read:account` + rate limit 30/1h になった（capsicum は federation 系を 1 つも叩いていない）
+- **none（⚠ 疑ったが無害だった）**: `sw/register` に **endpoint の検証**が入った（`INVALID_ENDPOINT`）。⚠⚠ **登録が全部弾かれる可能性を疑って実装を読んだ**が、`isValidEndpoint` は **https であること・URL に userinfo が無いこと**だけを見る（**既知プッシュサービスの allowlist ではない**＝SSRF 対策）。capsicum が登録する `https://relay.capsicum.shrieker.net/push/<token>` は両方満たす。⚠ 同じ判定が**配信時にも効く**（`pushNotification` が `continue` する）ので、**http で登録された古い行は黙って配信対象外になる** —— capsicum は https しか登録しないので無関係
 - **none**: `ugcVisibilityForVisitor`（`'all' | 'local' | 'none'`）が入り、`notes` / `channels/timeline` / `users/notes` / `users/show` に**未ログイン利用者向けの絞り込み**が乗った。⚠ **capsicum の未認証要求は `/.well-known/nodeinfo` と `/api/meta` だけ**なので当たらない（投稿・ユーザーは常に認証付きで引く）
 - **③ `@syuilo/aiscript` は据え置き**。Flash 互換ハーネスは**本番昇格後に回す**（ハーネスはプリセット本番の featured Play を取るため、ステージングでは前倒しできない）
 
