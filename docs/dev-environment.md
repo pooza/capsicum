@@ -145,7 +145,7 @@ powershell -ExecutionPolicy Bypass -File tool\dev-run.ps1 -d windows
 powershell -ExecutionPolicy Bypass -File tool\dev-run.ps1 -SkipBuildRunner -d windows
 ```
 
-⚠ Windows 版の自前オプション（`-SkipBuildRunner` / `-DryRun`）は**完全一致だけ**。PowerShell の `param()` は引数名の省略形を受け付けるので、`param()` で受けると `-d windows` が `-DryRun` に吸われる。そのため引数は `$args` から手で振り分けている。⚠ Windows 版は melos を通さず、`build_runner` に依存するパッケージで直接 `dart run build_runner build` する（下の Windows 節の注記と同じ理由）。
+オプションの一覧（sh / ps1 の対応・`--dry-run` / `-DryRun` を含む）と、Windows 版の自前オプションが**完全一致だけ**である理由は [tool/README.md](../tool/README.md) にある（[#1192](https://github.com/pooza/capsicum/issues/1192)）。⚠ Windows 版は melos を通さず、`build_runner` に依存するパッケージで直接 `dart run build_runner build` する（下の Windows 節の注記と同じ理由）。
 
 中でやっていることは次の手順と同じ。
 
