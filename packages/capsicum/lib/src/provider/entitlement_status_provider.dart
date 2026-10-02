@@ -44,6 +44,32 @@ EntitlementView entitlementViewOf(String? status) {
   };
 }
 
+/// relay が返した判定（`reason`）を使って [entitlementViewOf] を**補正**する
+/// (#1123・relay#63)。
+///
+/// ⚠⚠ **`status` だけでは relay と違う結論になる。**relay はゲートで
+/// `expires_at` も見るようになったので、
+///
+/// | 形 | `status` だけの判定 | relay の実際 |
+/// | --- | --- | --- |
+/// | 猶予（未払い） | 「まだ届いている」 | 🔴 **止まる** |
+/// | `active` のまま期限切れ | 「有効」 | 🔴 **拒否**（更新の通知を取りこぼした形） |
+///
+/// ⚠ **`reason` は全部は使わない。**`no_entitlement` を「未購入」に倒すと、
+/// **relay がまだ検証できていない購入（`unverified`）を「買ってください」と
+/// 案内する** —— 二重購入は取り返しがつかないので、そこは従来どおり `status`
+/// 側の判断（知らない値は「有効」）に任せる。**補正するのは上の 2 つだけ。**
+///
+/// ⚠ **古い relay は `reason` を返さない**（本番が追いつくまで）。その場合は
+/// null で渡ってくるので、従来の判定がそのまま効く。
+EntitlementView entitlementViewOfRelay({String? status, String? reason}) {
+  return switch (reason?.toLowerCase()) {
+    'unpaid' => EntitlementView.grace,
+    'expired' => EntitlementView.expired,
+    _ => entitlementViewOf(status),
+  };
+}
+
 class EntitlementStatus {
   const EntitlementStatus({
     this.view = EntitlementView.absent,
@@ -113,8 +139,14 @@ class EntitlementStatusNotifier extends Notifier<EntitlementStatus> {
       }
       final fresh = EntitlementToken.fromRelay(json);
       if (fresh != null) await EntitlementTokenStore.save(fresh);
+      // ⚠ `reason` は relay が計算した判定（relay#63）。⚠⚠ **手元に保存しない**
+      // —— 保存すると「いつの判定か」が分からなくなる。画面に出すのは
+      // **いま問い合わせた結果**だけで、圏外のときは `status` 側の判定に戻る。
       state = EntitlementStatus(
-        view: entitlementViewOf(fresh?.status ?? local.status),
+        view: entitlementViewOfRelay(
+          status: fresh?.status ?? local.status,
+          reason: json['reason'] as String?,
+        ),
         expiresAt: fresh?.expiresAt ?? local.expiresAt,
       );
     } catch (e, st) {

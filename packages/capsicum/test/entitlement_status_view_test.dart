@@ -50,6 +50,69 @@ void main() {
     });
   });
 
+  // relay が返す判定で補正する (#1123・capsicum-relay#63)。
+  //
+  // ⚠⚠ **`status` だけだと relay と違う結論になる。**relay はゲートで
+  // `expires_at` も見るようになったので、「猶予＝まだ届く」「active のまま
+  // 期限切れ＝有効」はどちらも**嘘になった**。
+  group('entitlementViewOfRelay', () {
+    test('reason が無ければ従来どおり status で決める（古い relay 対策）', () {
+      expect(
+        entitlementViewOfRelay(status: 'active', reason: null),
+        EntitlementView.active,
+      );
+      expect(
+        entitlementViewOfRelay(status: 'grace', reason: null),
+        EntitlementView.grace,
+      );
+    });
+
+    // ⚠⚠ 2026-10-03 に「未払いの間は通さない」と決まった。
+    test('unpaid は grace（通知は止まっている）', () {
+      expect(
+        entitlementViewOfRelay(status: 'grace', reason: 'unpaid'),
+        EntitlementView.grace,
+      );
+    });
+
+    // 🔴 **これが status だけでは拾えない形。**更新の通知を取りこぼすと
+    // 行は `active` のまま残るので、relay が期限で落としていることが見えない。
+    test('🔴 active のまま期限切れ（reason=expired）は expired に倒す', () {
+      expect(
+        entitlementViewOfRelay(status: 'active', reason: 'expired'),
+        EntitlementView.expired,
+      );
+    });
+
+    // ⚠⚠ **`no_entitlement` を「未購入」に倒さない。**relay は未検証の購入
+    // （`unverified`）にもこの理由を返すので、倒すと**買った人に「買って
+    // ください」と出す** —— 二重購入は取り返しがつかない。
+    test('🔴 no_entitlement では未購入に倒さない（unverified を巻き込むため）', () {
+      expect(
+        entitlementViewOfRelay(status: 'unverified', reason: 'no_entitlement'),
+        EntitlementView.active,
+      );
+    });
+
+    test('知らない reason は status 側の判断に任せる', () {
+      expect(
+        entitlementViewOfRelay(status: 'active', reason: 'some_future_reason'),
+        EntitlementView.active,
+      );
+      expect(
+        entitlementViewOfRelay(status: 'expired', reason: 'some_future_reason'),
+        EntitlementView.expired,
+      );
+    });
+
+    test('大文字小文字を問わない', () {
+      expect(
+        entitlementViewOfRelay(status: 'active', reason: 'UNPAID'),
+        EntitlementView.grace,
+      );
+    });
+  });
+
   group('EntitlementStatus.copyWith', () {
     test('expiresAt は省略時に維持される', () {
       const s = EntitlementStatus(
