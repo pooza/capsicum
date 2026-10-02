@@ -18,6 +18,11 @@
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/deny-cd-then-git.sh\"",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/deny-bare-cd-chain.sh\"",
+            "timeout": 10
           }
         ]
       }

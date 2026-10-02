@@ -292,6 +292,7 @@ export SENTRY_DSN=...
 | **シェルの `for` ループで複数対象を回す** | **1 対象 1 ツール呼び出しにして並列に投げる**。ループは丸ごと未知のコマンド扱いになる。並列のほうが速い |
 | 関数定義・`$(...)`・`while` 等をコマンドに混ぜる | 同上。**複合シェル構文が 1 つでも入ると、中身が全部 allowlist に載っていても確認になる** |
 | 他リポジトリへ `cd` してから `git` | **`git -C <path> <sub>`**。許可済みは `fetch` / `log` / `pull` / `status` / `tag` / `show` / `diff` / `rev-parse` / `rev-list` / `branch` / `describe` の 11 個。⚠⚠ **`cd` は次のツール呼び出しにも残る**（下の「`cd` は残る」節） |
+| **サブシェルの外に `cd` を書く**（単独の `cd X` も含む） | **`(cd X && cmd)`** —— サブシェルなら cwd は残らない。配置依存で `-C` 相当が無いもの（`flutter test` / `dart test` / `pod install`）はこの形で書く。⚠ **フックで拒否する**（下の「`cd` は残る」節） |
 | `gh` をリポジトリ指定なしで書き込む | **`gh <sub> --repo pooza/capsicum`**。⚠ **書き込み系（`issue comment` / `issue create` / `issue edit` / `pr comment`）は必ず付ける。**読み取りだけなら省略してよい |
 | 絶対パスでコマンドを呼ぶ | **素の名前で呼ぶ**。`Bash(sentry-cli *)` は `/Users/…/.local/bin/sentry-cli` には**当たらない**（別コマンド扱い）。絶対パスが要る環境では settings.local.json に実パスで足す |
 | `curl -sL` / `curl -sX` のように短縮を連結 | **`curl -s -L` / `curl -s -X`**。allowlist は `curl -s ` の後ろに空白を要求する |
@@ -373,6 +374,18 @@ dart analyze packages 2>&1 | tail -2 && git commit ...
 - ⚠ **番号の衝突は日常的に起きる。**capsicum の #1054 は mastodon/mastodon にも存在した。**「番号が通ったから正しいリポジトリ」ではない**
 
 削除は `gh api -X DELETE repos/<owner>/<repo>/issues/comments/<id>`。実行後に同じ ID を GET して **404 を確認する**。
+
+#### サブシェルの外の `cd` は機械で止めている（2026-10-03・#1198）
+
+⚠⚠ **規約を置いても破られ続けた。**2026-09-29 に 3 回（[#1189](https://github.com/pooza/capsicum/issues/1189)）、2026-10-01 に 5 回、2026-10-03 にも 2 回。**読んで守る仕組みから外した。**
+
+- 実体: [`.claude/hooks/deny-bare-cd-chain.sh`](../.claude/hooks/deny-bare-cd-chain.sh)（`PreToolUse` / matcher `Bash`）。判定表は [`deny-bare-cd-chain.cases.sh`](../.claude/hooks/deny-bare-cd-chain.cases.sh)
+- 拒否するのは **行頭の `cd`**。⚠⚠ **単独の `cd X` も拒否する** —— 単独でも cwd は残り、**戻すためにまた `cd` を打つ**形になって目的（cwd を動かさない）を満たさないため（当初案は単独を通す線だったが、2026-10-03 に pooza 判断で強めた）
+- ⚠ **`(` で始まる行は通す。**`(cd X && cmd)` は cwd を残さない（CI の `analyze.yml` も既にこの形）。⚠⚠ **`flutter test` / `dart test` / `pod install` には `git -C` に相当するオプションが無い**ので、**ここが唯一の例外**
+- **heredoc の本文は検査しない**（この規約の話を文章として書くと、それ自身が拒否される）
+- ⚠ **既知の穴**: `cd` が行頭に無い形（`export FOO=1 && cd X && cmd`）は見ていない。実績のある形が全部行頭なので、まずそこだけ塞いだ
+
+⚠ [#1189](https://github.com/pooza/capsicum/issues/1189) の [`deny-cd-then-git.sh`](../.claude/hooks/deny-cd-then-git.sh) とは**役割が違う**。あちらは「`cd` のあとの `git`」＝**誤爆の本体**、こちらは**その手前**で cwd が動くこと自体。両方効く。
 
 ### ループと関数定義は機械で止めている
 

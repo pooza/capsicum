@@ -161,7 +161,8 @@ capsicum/
       login-troubleshooting/  # 「ログインできない」報告の切り分け
       release-review/     # リリース前レビュー（5 観点・赤黄緑の送り分け）
       store-release/      # 毎回のリリース手順（⚠ 工程ごとの補助ファイルつき）
-    hooks/                # 守らせたいものの機械化（deny-shell-loops.sh）
+    hooks/                # 守らせたいものの機械化（4 本。⚠ 規約は docs/dev-environment.md「コマンドの書き方」が正本）
+                          #   deny-shell-loops / deny-interpreter-inline / deny-cd-then-git / deny-bare-cd-chain
     scripts/              # 許可確認を出さずに回すための道具（sentry-api.sh: トークンを画面に出さず Sentry を叩く）
   docs/                   # 開発ドキュメント
     CLAUDE.md             # 本ファイル
