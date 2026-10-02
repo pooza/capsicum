@@ -384,7 +384,7 @@ dart analyze packages 2>&1 | tail -2 && git commit ...
 
 経緯:
 
-1. フォークを調べるため `cd /Volumes/extdata/repos/mastodon && git diff ...` を実行した（**この時点で `git -C` の規約に違反**）
+1. フォークを調べるため `cd ~/repos/mastodon && git diff ...` を実行した（**この時点で `git -C` の規約に違反**）
 2. Bash ツールの **working directory はツール呼び出しをまたいで持続する**
 3. 数手あとに `gh issue comment 1054 --body ...` を実行 → **`gh` は cwd の git remote を見る**ので `mastodon/mastodon` の #1054（無関係な PR）へ飛んだ
 
@@ -407,6 +407,7 @@ dart analyze packages 2>&1 | tail -2 && git commit ...
 - ⚠ **`(` で始まる行は通す。**`(cd X && cmd)` は cwd を残さない（CI の `analyze.yml` も既にこの形）。⚠⚠ **`flutter test` / `dart test` / `pod install` には `git -C` に相当するオプションが無い**ので、**ここが唯一の例外**
 - **heredoc の本文は検査しない**（この規約の話を文章として書くと、それ自身が拒否される）
 - ⚠ **既知の穴**: `cd` が行頭に無い形（`export FOO=1 && cd X && cmd`）は見ていない。実績のある形が全部行頭なので、まずそこだけ塞いだ
+- ⚠ **プライマリ作業ディレクトリと完全に同じパスへの `cd` は素通りする**（2026-10-03 実測）。ハーネスが no-op として畳むためスクリプトに届かない。**cwd が動かないので塞ぐ必要はない**が、⚠ **「単独の形は全部拒否される」と読むと誤診する** —— 1 階層下（`cd <repo>/docs && …`）は拒否されるので、素通りを見たら**移動先が cwd と同一か**を先に確かめる
 
 ⚠ [#1189](https://github.com/pooza/capsicum/issues/1189) の [`deny-cd-then-git.sh`](../.claude/hooks/deny-cd-then-git.sh) とは**役割が違う**。あちらは「`cd` のあとの `git`」＝**誤爆の本体**、こちらは**その手前**で cwd が動くこと自体。両方効く。
 

@@ -10,7 +10,7 @@
 | 層③ の entity 別の未読フィールド一覧（Misskey Note / User・Mastodon 8 entity） | 下の §9-6 |
 | 層② 主要経路（Misskey の投稿・TL・アップロード）の結果 | 下の §10 |
 
-**本体の対応節**: §11（未実施のまま残す範囲）/ §12（層③ 第 1 巡・2026-09-29）/ §13（Mastodon ② ・2026-10-02）。
+⚠ **第 2 巡（2026-09-29〜10-02・#1046 / #1077 を閉じた回）は [api-gap-inventory-round2-settled.md](api-gap-inventory-round2-settled.md) にある。**本体の §11（未実施のまま残す範囲）/ §12（層③ の続き）/ §13（Mastodon ②）/ §14（Misskey ②）の詳細はそちら。
 
 ---
 

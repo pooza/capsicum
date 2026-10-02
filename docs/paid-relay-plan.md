@@ -274,7 +274,7 @@
 
 ### 3-2. ⚠⚠ ~~`410 Gone` で購読が消えるかは未実測~~ → **2026-09-27 に実測（[relay#60](https://github.com/pooza/capsicum-relay/issues/60)）**
 
-**本書 4-2 が「410 が正しいと書いたが実測していない」としていた前提が、ソースと実機の両方で確定した。**⚠ **フォークのソースの読み・ステージングでの実測手順・`413` を返していた頃の誤りは [archive/paid-relay-plan-settled.md](archive/paid-relay-plan-settled.md) §3-2。**⚠⚠ **`410 Gone` の実測はステージング（triton / st.relay）でしか取れない。**
+**本書 4-2 が「410 が正しいと書いたが実測していない」としていた前提が、ソースと実機の両方で確定した。**⚠ **フォークのソースの読み・ステージングでの実測手順・`413` を返していた頃の誤りは [archive/paid-relay-plan-settled.md](archive/paid-relay-plan-settled.md) §3-2。**⚠⚠ **`410 Gone` の実測はステージング（st.relay）でしか取れない。**
 
 ### 4. サブスクの失効をクライアントへどう伝えるか
 

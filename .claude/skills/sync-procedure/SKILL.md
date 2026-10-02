@@ -33,6 +33,13 @@ disable-model-invocation: true
 - `gh release list --limit 5` — 最近の GitHub Releases を確認
 - `gh api repos/pooza/capsicum/milestones --jq '.[] | "\(.title) \(.state) \(.closed_at // "open")"'` — マイルストーンの open/closed 状態を確認
 - **`gh run list --workflow=analyze.yml --branch develop --limit 3` で CI の緑/赤を確認する。**赤なら**その場で直す**。develop は PR を経ずコミットが積まれるため、`dart format` / `dart analyze` の失敗が誰にも気付かれないまま残りうる。2026-08-05 の同期で、#934 のコミット以降 2 日間 format 失敗のまま develop が進んでいたのを発見した
+
+  ⚠⚠ **この応答は push した瞬間の真実を返さない**（2026-10-01 に 2 つの形で踏んだ）。**件数で判断しないこと**:
+
+  - **push 直後は run がまだ無い。**「0 件になるのを待つ」形の待ち受けは、**登録される前に 0 件を返して即座に抜ける**。⚠ **待つ条件は `conclusion` の有無で書く**（`--json conclusion,headSha,event` + `--jq` で対象 SHA の `push` イベントを選び、値が出るまで待つ）
+  - **数週間前の run を最新として返すことがある。**同じ瞬間に `--json` で引くと正しい当日のものが出た。⚠⚠ **これを「誰かが push した」と読んで誤報を出した実績がある** —— リモートの状態は `git fetch` + `git log HEAD..origin/<branch>` が正本
+  - ⚠ **1 コミットにつき `push` と `pull_request` の 2 行**出る（後者は `skipped`）ので `--limit 3` では足りない。`--event push` で絞る
+  - ⚠ 自分の push が**後続の push にキャンセルされる**ことがある（同一 workflow の concurrency）。`cancelled` を「失敗」と読まず、**後続の SHA の run を見る**
 - 前回同期時点と比較して新しいリリースがあれば、実装ステータスやリリース計画セクションに反映する
 - **1 回で読めない大きさの docs を数える**（#1184）。⚠⚠ **ガードは「増えないこと」しか見ていない。**超過中のファイルは budget を持っているので**緑のまま**で、放っておくと 1 回で読めない状態が永久に続く。**減らす圧力はここでしか掛からない**ので、同期のたびに件数を出す:
 

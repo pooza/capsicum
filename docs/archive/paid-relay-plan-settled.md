@@ -200,7 +200,7 @@ CREATE TABLE subscriptions (
 
 → ⚠⚠ **両方に効くのは 410 だけ。**本書は「黙って 200 を返すと永久に叩かれる」と書いていたが、**403 / 404 でも Misskey については同じ**だった。`/push` の拒否は 410 以外にできない。
 
-#### ステージングでの実測（`st2.mstdn.b-shock.org` = dev24 → st.relay）
+#### ステージングでの実測（`st2.mstdn.b-shock.org` → st.relay）
 
 ⚠ **既存の購読には触らず**、relay が知らない `push_token` を指す購読を 1 件だけ作って踏んだ。nginx のアクセスログに `POST /push/… 410`、**Mastodon 側で購読が destroy された**（既存 2 件は無傷）。
 
