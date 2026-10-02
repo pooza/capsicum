@@ -131,4 +131,81 @@ void main() {
       );
     });
   });
+
+  group('MisskeyAdapter.unsubscribePush (#1201)', () {
+    test('鍵を渡すと auth / publickey が body に入る', () async {
+      // Misskey 2026.10.0 の `paramDef` は endpoint / auth / publickey を
+      // required にしており、endpoint 単体では
+      // `INVALID_PARAM (must have required property 'auth')` の 400 になる。
+      final adapter = await MisskeyAdapter.create('misskey.example');
+      final capture = _CapturingAdapter();
+      adapter.client.dio.httpClientAdapter = capture;
+
+      await adapter.unsubscribePush(
+        endpoint: 'https://relay.example/push/abc',
+        p256dh: 'p256dh-dummy',
+        auth: 'auth-dummy',
+      );
+
+      expect(capture.lastPath, '/api/sw/unregister');
+      final body = capture.lastData as Map<String, dynamic>;
+      expect(body['endpoint'], 'https://relay.example/push/abc');
+      // ⚠ Misskey 側のキー名は `publickey`（capsicum 内部は `p256dh`）。
+      expect(body['publickey'], 'p256dh-dummy');
+      expect(body['auth'], 'auth-dummy');
+    });
+
+    test('⚠ 鍵が null なら送らない（2026.10.0 より前のサーバーと同じ body）', () async {
+      // 鍵が読めないインストール（v1.20 以前からのアップグレードで
+      // PushKeyStore.read が null）では、従来どおり endpoint だけで試す。
+      final adapter = await MisskeyAdapter.create('misskey.example');
+      final capture = _CapturingAdapter();
+      adapter.client.dio.httpClientAdapter = capture;
+
+      await adapter.unsubscribePush(endpoint: 'https://relay.example/push/abc');
+
+      final body = capture.lastData as Map<String, dynamic>;
+      expect(body['endpoint'], 'https://relay.example/push/abc');
+      // ⚠⚠ **null を値として送ると、Ajv の `type: string` で 400 になる。**
+      // キーごと落ちていることを見る（`containsPair(_, null)` では通る）。
+      expect(body.containsKey('publickey'), isFalse);
+      expect(body.containsKey('auth'), isFalse);
+    });
+
+    test('endpoint が null なら 1 本も投げない', () async {
+      final adapter = await MisskeyAdapter.create('misskey.example');
+      final capture = _CapturingAdapter();
+      adapter.client.dio.httpClientAdapter = capture;
+
+      await adapter.unsubscribePush(p256dh: 'p256dh-dummy', auth: 'auth-dummy');
+
+      expect(capture.lastPath, isNull);
+    });
+  });
+}
+
+/// 要求の path と body を控えるだけの adapter。
+class _CapturingAdapter implements HttpClientAdapter {
+  String? lastPath;
+  Object? lastData;
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<List<int>>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    lastPath = options.path;
+    lastData = options.data;
+    return ResponseBody.fromString(
+      jsonEncode({}),
+      200,
+      headers: {
+        Headers.contentTypeHeader: ['application/json'],
+      },
+    );
+  }
+
+  @override
+  void close({bool force = false}) {}
 }

@@ -1774,7 +1774,15 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<void> unsubscribePush({String? endpoint}) async {
+  Future<void> unsubscribePush({
+    String? endpoint,
+    String? p256dh,
+    String? auth,
+  }) async {
+    // p256dh / auth も Misskey 用（2026.10.0 の所有確認・#1201）。Mastodon は
+    // OAuth トークンで対象が決まるので鍵は要らない。⚠ **endpoint と違って
+    // 警告も出さない** —— 呼び出し側は両 SNS 共通の経路で常に渡してくるので、
+    // 非 null が来るのは通常動作であって「無視していたことの失念」ではない。
     // endpoint は Misskey 用。Mastodon の DELETE /api/v1/push/subscription は
     // 現 OAuth トークンのサブスクリプションを対象とするため引数では絞れない。
     // 将来 endpoint を使いたくなった際に「実は無視していた」ことを失念しない

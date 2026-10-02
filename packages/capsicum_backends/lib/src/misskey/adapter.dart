@@ -2155,9 +2155,19 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<void> unsubscribePush({String? endpoint}) async {
+  Future<void> unsubscribePush({
+    String? endpoint,
+    String? p256dh,
+    String? auth,
+  }) async {
     if (endpoint == null) return;
-    await client.unsubscribePush(endpoint: endpoint);
+    // ⚠ 2026.10.0 以降は auth / publickey が必須 (#1201)。鍵が読めなければ
+    // null のまま渡す（送らない）—— 従来どおり endpoint だけで試す。
+    await client.unsubscribePush(
+      endpoint: endpoint,
+      publickey: p256dh,
+      auth: auth,
+    );
   }
 
   // -- ChatSupport --

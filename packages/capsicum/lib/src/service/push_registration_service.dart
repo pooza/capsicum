@@ -444,13 +444,23 @@ class PushRegistrationService {
               auth: keys.auth,
             );
           } else {
+            // ⚠⚠ **鍵が読めないので、Misskey 2026.10.0 以降では解除できない**
+            // (#1201)。`auth` / `publickey` が必須になった版は `endpoint` 単体を
+            // 400 で断る。⚠ **それでも呼ぶ** —— 旧版では従来どおり成功するし、
+            // 新版でも悪化はしない（この経路はもともと「鍵が無い」救済措置）。
             await (account.adapter as PushSubscriptionSupport).unsubscribePush(
               endpoint: endpoint,
             );
           }
         } else {
+          // ⚠ モロヘイヤ非経由の Misskey（本家・2026.10.0 以降）は、ここで
+          // `auth` / `publickey` を送らないと購読が消えない (#1201)。鍵は
+          // 読めれば渡す（Mastodon 側は受け取って捨てる）。
+          final keys = await PushKeyStore.read(accountKey);
           await (account.adapter as PushSubscriptionSupport).unsubscribePush(
             endpoint: endpoint,
+            p256dh: keys?.p256dh,
+            auth: keys?.auth,
           );
         }
       } catch (e, st) {

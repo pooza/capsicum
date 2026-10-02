@@ -1889,10 +1889,30 @@ class MisskeyClient {
   }
 
   /// Web Push サブスクリプション解除。POST /api/sw/unregister
-  Future<void> unsubscribePush({required String endpoint}) async {
+  ///
+  /// ⚠⚠ **2026.10.0 以降は `auth` / `publickey` が必須**（#1201）。資格情報では
+  /// なく購読の auth secret (RFC 8291) で所有を確認する作りに変わったため、
+  /// `endpoint` 単体では `INVALID_PARAM`（`must have required property 'auth'`）
+  /// の 400 になる。
+  ///
+  /// ⚠ **版で分岐しない。**2026.10.0 より前の `paramDef` は `endpoint` のみを
+  /// 宣言しているが `additionalProperties: false` を持たず、Misskey の Ajv も
+  /// `removeAdditional` 無しなので**余分なキーは無視される**。
+  ///
+  /// ⚠ [publickey] / [auth] が null のときは送らない —— 鍵が読めないインストール
+  /// （v1.20 以前からのアップグレード）でも、従来どおり endpoint だけで試す。
+  Future<void> unsubscribePush({
+    required String endpoint,
+    String? publickey,
+    String? auth,
+  }) async {
     await dio.post(
       '/api/sw/unregister',
-      data: createBody({'endpoint': endpoint}),
+      data: createBody({
+        'endpoint': endpoint,
+        'publickey': ?publickey,
+        'auth': ?auth,
+      }),
     );
   }
 }
