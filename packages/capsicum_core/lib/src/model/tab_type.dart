@@ -233,6 +233,14 @@ sealed class DeckOnlyTab extends TabType {
 ///
 /// ⚠ 荷物を持たないので [toKey] は `search` の 1 語。**列に 2 本置いてよい**
 /// （別のアカウントで別のことを探せる・決定済み事項 6-2）。
+///
+/// ⚠⚠ **「同じアカウントで 2 本」も置いてよい**（#1193）。語も結果も
+/// `SearchScreen` の `State` に持つので中身は混ざらず、**語が違えば別のもの**。
+/// ⚠ 荷物を持たない＝`contentKey` が `search` の 1 語になるため、
+/// `DeckColumnsNotifier.insertAfter` の重複排除に通すと**全部同一視される**。
+/// そのため**あちらで [SearchTab] だけ対象外にしてある**（決定済み事項 9-2）。
+/// ⚠ **ここに検索語を持たせて `contentKey` を割る案は採っていない** —— 保存形式
+/// （`<id>|<アカウント>|<種別>`）に語が載り、何を検索したかが端末に残るため。
 class SearchTab extends DeckOnlyTab {
   const SearchTab();
 

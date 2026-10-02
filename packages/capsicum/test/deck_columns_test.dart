@@ -427,6 +427,65 @@ void main() {
       expect(container.read(deckColumnsProvider).length, 3);
     });
 
+    // #1193: 検索カラムだけは insertAfter でも重複できる（決定済み事項 9-2-1）。
+    // ⚠ SearchTab は荷物を持たないので contentKey が `<アカウント>|search` の
+    // 1 語になり、判定に通すと同じアカウントの検索カラムが全部同一視される。
+    test('⚠⚠ 同じアカウントで検索カラムを 2 本置ける（#1193）', () async {
+      final container = await makeContainer();
+      final notifier = container.read(deckColumnsProvider.notifier);
+      final a = await notifier.add(_me, const HashtagTab('a'));
+
+      final first = await notifier.insertAfter(a.id, _me, const SearchTab());
+      final second = await notifier.insertAfter(a.id, _me, const SearchTab());
+
+      // 2 本目は「既存を返す」ではなく、新しいカラムとして入る。
+      expect(second.id, isNot(first.id));
+      expect(container.read(deckColumnsProvider).length, 3);
+      // 前提の確認: contentKey は同じまま（割っていない＝保存形式を動かしていない）。
+      expect(second.contentKey, first.contentKey);
+      expect(first.contentKey, '${_me.toStorageKey()}|search');
+    });
+
+    test('⚠ 別アカウントの検索カラムも今どおり置ける（#1193 で壊していない）', () async {
+      const other = AccountKey(
+        type: BackendType.misskey,
+        host: 'misskey.example',
+        username: 'other',
+      );
+      final container = await makeContainer();
+      final notifier = container.read(deckColumnsProvider.notifier);
+      final a = await notifier.add(_me, const HashtagTab('a'));
+
+      final mine = await notifier.insertAfter(a.id, _me, const SearchTab());
+      final theirs = await notifier.insertAfter(a.id, other, const SearchTab());
+
+      expect(theirs.id, isNot(mine.id));
+      expect(container.read(deckColumnsProvider).length, 3);
+    });
+
+    // ⚠⚠ **例外は SearchTab だけ**。ここが「荷物を持たない DeckOnlyTab は全部
+    // 対象外」へ広がると、ベル（#1173・決定済み事項 7-3「既にあればそこへ送る」）
+    // が壊れて「すべての通知」が押すたびに増える。
+    test('⚠⚠ すべての通知は今どおり重複しない（例外を広げていない・#1193）', () async {
+      final container = await makeContainer();
+      final notifier = container.read(deckColumnsProvider.notifier);
+      final a = await notifier.add(_me, const HashtagTab('a'));
+
+      final first = await notifier.insertAfter(
+        a.id,
+        _me,
+        const AllNotificationsTab(),
+      );
+      final second = await notifier.insertAfter(
+        a.id,
+        _me,
+        const AllNotificationsTab(),
+      );
+
+      expect(second.id, first.id);
+      expect(container.read(deckColumnsProvider).length, 2);
+    });
+
     test('insertAfter の元が列に無ければ末尾に足す', () async {
       final container = await makeContainer();
       final notifier = container.read(deckColumnsProvider.notifier);

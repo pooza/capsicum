@@ -587,6 +587,8 @@ class TabConfigNotifier extends FamilyNotifier<List<TabConfigEntry>, String> {
 ///   指す。**中身（アカウント + 種別）で指さない**
 ///   - ⚠ **重複を許すのは [DeckColumnsNotifier.add]（カラム設定から足す）だけ**
 ///     （#1182）。操作の結果として開く [DeckColumnsNotifier.insertAfter] は許さない
+///   - ⚠⚠ **ただし [SearchTab] は [insertAfter] でも重複できる**（#1193）。検索は
+///     「中身へのナビゲーション」ではなく道具で、語が違えば中身も違う
 ///
 /// ⚠ 削除しても購読を明示的に止めない（6-3）。重複カラムは provider を共有するので、
 /// 最後の 1 本が消えたときに autoDispose が片づける。
@@ -652,6 +654,14 @@ class DeckColumnsNotifier extends Notifier<List<DeckColumn>> {
   ///
   /// ⚠ アカウントもキーに含むので、**別アカウントのカラムから開けば別カラム**。
   /// 投稿・プロフィールの ID はサーバーローカルで、取り違えると別のものを指す。
+  ///
+  /// ⚠⚠ **例外は [SearchTab] だけ**（#1193・決定済み事項 9-2 の「検索カラムは
+  /// 対象外」）。#1182 が重複を禁じた根拠は「同じ中身が 2 本並んでも得るものは
+  /// 無い」で、**開いた投稿・プロフィールへのナビゲーション**に当てた判断。
+  /// 検索ボタンは「この中身を見せて」ではなく**「検索の道具を 1 本ください」**
+  /// という操作で、⚠ **語が違えば中身も違う**ので根拠が当たらない。
+  /// ⚠ [SearchTab] は荷物を持たないため `contentKey` が `search` の 1 語になり、
+  /// 判定に通すと**同じアカウントの検索カラムが全部同一視される**。
   Future<DeckColumn> insertAfter(
     String afterId,
     AccountKey account,
@@ -664,9 +674,11 @@ class DeckColumnsNotifier extends Notifier<List<DeckColumn>> {
       tab: tab,
       seed: seed,
     );
-    final existing = state
-        .where((c) => c.contentKey == column.contentKey)
-        .firstOrNull;
+    // ⚠ 検索カラムは重複排除の対象外（#1193）。⚠⚠ **種別で例外を作るのはここ
+    // だけ**で、増やすなら決定済み事項 9-2 を先に直す。
+    final existing = tab is SearchTab
+        ? null
+        : state.where((c) => c.contentKey == column.contentKey).firstOrNull;
     if (existing != null) return existing;
     final index = state.indexWhere((c) => c.id == afterId);
     final next = [...state];
