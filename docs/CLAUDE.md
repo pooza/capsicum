@@ -316,6 +316,16 @@ dart analyze --fatal-infos > /tmp/analyze.log 2>&1; echo "ANALYZE_EXIT=$?"
 
 ⚠ これは「[ソース検査ガードの書き方](#ソース検査ガードの書き方)」と同じ形の failure — **検査そのものが動いていないのに緑**。CI で最後は捕まるが、手元で捕まえる意味が消える。
 
+#### docs / skills を触った回は、ガードのテストも通す
+
+⚠⚠ **`dart format` と `dart analyze` は Markdown を見ない。**docs の規約を見ているのは [`docs_convention_guard_test.dart`](../packages/capsicum/test/docs_convention_guard_test.dart) なので、**整形と解析だけで push すると素通りする**（対象は `docs/` 直下・`docs/archive/`・`.claude/skills/`）。
+
+```bash
+(cd packages/capsicum && flutter test test/docs_convention_guard_test.dart)
+```
+
+🔴 **2026-10-03 に 2 回踏んだ。**`⚠⚠` で始まる見出しを足して push し（`b95ac00b`）、⚠⚠ **CI は赤になるはずが、次の push に追い越されて `cancelled` になり表に出なかった**（追い越されると気付けない）。もう 1 回はこの節自身を足して**本ファイルが 60,000 バイトを超えた**。
+
 ⚠ **これは毎コミットの話で、リリース手順の一部ではない**（#1114 の棚卸しで、`store-release-guide.md` §4.0 の中＝リリース時しか読まれない場所に置かれていたのを移した）。
 
 ### クロスリファレンス

@@ -172,6 +172,14 @@ capsicum-relay の Issue・マイルストーンは、**capsicum 本体と同じ
 
 - 上記で検出した差分（Issue 状態、マイルストーン件数のズレ、リリース情報等）を反映
 
+⚠⚠ **docs を書き換えたら push 前にガードのテストを通す**（`docs/CLAUDE.md`「docs / skills を触った回は、ガードのテストも通す」）。同期は **docs を触る定形作業**なので、ここで踏みやすい:
+
+```bash
+(cd packages/capsicum && flutter test test/docs_convention_guard_test.dart)
+```
+
+⚠ `dart format` / `dart analyze` は Markdown を見ない。⚠⚠ **CI は赤になるが、次の push に追い越されると `cancelled` になって表に出ない**（2026-10-03 に `b95ac00b` で実際に起きた）。
+
 ## 10. 同期結果の報告
 
 - 現在のブランチ・状態、前回以降にクローズされた Issue、マイルストーン別の残件数、未割り当て Issue 一覧、Sentry 新着イベント、Mastodon / Misskey の現行バージョン、**1 回で読めない docs の件数**（#1184・0 件なら省略してよい）、各確認項目の結果をまとめて報告する
