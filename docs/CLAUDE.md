@@ -150,57 +150,7 @@ claude plugin install ginseng@ginseng-style
 
 ## ディレクトリ構成
 
-```text
-capsicum/
-  .claude/                # Claude Code の設定（settings.local.json だけ gitignore）
-    skills/               # 名前付き手順の正本（#1114。⚠ docs 側はポインタ）
-      sync-procedure/     # セッション開始時の同期
-      resume-work/        # 作業中断からの復帰
-      milestone-transition/  # マイルストーン完了→次着手の移行
-      doc-maintenance/    # docs / メモリの棚卸し（⚠ 配置の原則は docs 側）
-      login-troubleshooting/  # 「ログインできない」報告の切り分け
-      release-review/     # リリース前レビュー（5 観点・赤黄緑の送り分け）
-      store-release/      # 毎回のリリース手順（⚠ 工程ごとの補助ファイルつき）
-    hooks/                # 守らせたいものの機械化（4 本。⚠ 規約は docs/dev-environment.md「コマンドの書き方」が正本）
-                          #   deny-shell-loops / deny-interpreter-inline / deny-cd-then-git / deny-bare-cd-chain
-    scripts/              # 許可確認を出さずに回すための道具（sentry-api.sh: トークンを画面に出さず Sentry を叩く）
-  docs/                   # 開発ドキュメント
-    CLAUDE.md             # 本ファイル
-    architecture.md       # アーキテクチャ設計
-    product-policy.md     # ⚠ UI 設計方針・対応バージョン方針・運営元（UI を触る回は読む）
-    annict-integration.md # Annict 連携機能の説明（モロヘイヤ前提・作品/エピソード検索〜感想投稿）
-    tech-notes.md         # 落とし穴集（Dart / Flutter の実装・体感速度・Sentry・D&D・認証）。⚠ 冒頭に行き先の表がある
-    tech-notes-native.md  # 落とし穴集（ネイティブプッシュ APNs / WNS・CI / ビルド）
-    tech-notes-api.md     # 落とし穴集（NodeInfo / Mastodon / Misskey / モロヘイヤ の API）
-    dev-environment.md    # 開発マシン（macOS）・Claude Code の権限とコマンドの書き方・Sentry・iOS / Android 検証端末
-    dev-environment-desktop.md  # 補助機（Linux / Windows）のセットアップ・ツールチェーン・実機検証の経路
-    desktop-plugin-compatibility.md  # デスクトップ対応のプラグイン棚卸し
-    flutter-upstream-watch.md  # Flutter 上流バグの追跡（月初に手動で chase・資格情報の満了チェックも相乗り）
-    api-gap-inventory.md  # 棚卸し: API にあって capsicum が使っていない機能（#993 の成果物・1.x / 2.0 / 拾わない の分類）
-    webui-gap-inventory.md  # 棚卸し: WebUI にあって capsicum に無い機能（#991 の成果物・同じ 3 分類。層①＝画面 / ②＝画面内の操作 / ③＝表示要素）
-    server-settings-gap-inventory.md  # 棚卸し: サーバー側に保存された設定の反映漏れ（#992 の成果物・誤爆 0 件の実測記録。⚠ 送らない = サーバー既定が効く、の設計を壊さないための正本）
-    mastodon-capsicum-api-watch.md  # Mastodon 新バージョンの API 変更を client 影響でトリアージ（フォーク diff 手順つき・4.6 / 4.7 追従済み）
-    misskey-capsicum-api-watch.md  # Misskey 新バージョンの API 変更を client 影響でトリアージ（マイナー毎・daisskey SHA アンカー）
-    sync-procedure.md     # ⚠ ポインタのみ（本文は .claude/skills/sync-procedure / resume-work へ移した・#1114）
-    roadmap.md            # 枠の数・各枠の主題・1.x と 2.x の境界（2026-09-04 策定・含有 Issue は Milestones が正本）
-    deck-ui-plan.md       # #720 デッキ表示の設計スパイク（2026-09-06・現アーキの前提棚卸し / 壊れる境界 / 段階性。⚠ 詳細 UI 仕様ではない）
-    paid-relay-plan.md    # #597 有償プッシュリレーの設計書（2026-09-06。⚠ #596 は記録層で判定層ではない・認可を新規に作る話）
-    paid-relay-baseline.md  # #597 の前提になる実測（節番号 1-1〜1-6 は設計書と共通）。⚠ プリセット非保有の利用者は 0 人
-    milestone-transition.md  # ⚠ ポインタのみ（本文は .claude/skills/milestone-transition/）
-    doc-maintenance.md    # 配置の原則（公開境界・二重管理禁止・メモリは status を持たない）。⚠ 回す手順は .claude/skills/doc-maintenance/
-    store-release-guide.md  # 初回セットアップ（署名・fastlane）とストア掲載情報・配布方針。⚠ 毎回の手順は .claude/skills/store-release/
-    store-listing.md      # 各ストアの掲載文（提出のたびに参照する現役ドキュメント）
-    supporter-subscription-plan.md  # 投げ銭サブスクの商品設計（審査ノートの英文もここ）
-    msstore-review-notes-login.md   # Microsoft Store 審査向けのログイン説明（提出のたびに再利用）
-    login-troubleshooting.md  # ⚠ ポインタのみ（本文は .claude/skills/login-troubleshooting/）
-    brand/                # ブランドアセット（アイコン・ロゴ等。v1.53 でルート assets/ から移設）
-    archive/              # 過去の記録（現役運用では参照しない。release-log.md / release-pipeline.md 等）
-  packages/               # モノレポ構成（Melos）
-    capsicum/             # メインアプリ
-    capsicum_core/        # ドメインモデル・Adapter インターフェース
-    capsicum_backends/    # Mastodon / Misskey API 実装
-    fediverse_objects/    # API レスポンスのシリアライズモデル
-```
+⚠ **別ファイルにある → [architecture.md](architecture.md)「リポジトリの構成」。**`.claude/`（スキル・フック・スクリプト）と `docs/` の行き先の表、`packages/` のモノレポ構成はそちら（2026-10-03 に移した・#1184）。
 
 ## Issue 管理
 

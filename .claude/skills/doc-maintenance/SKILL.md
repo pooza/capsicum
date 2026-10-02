@@ -81,5 +81,5 @@ capsicum は公開リポジトリなので、**サーバーインフラの内部
 ## 実施後
 
 - 変更は docs 修正の commit で残す（memory は Google Drive 同期のため commit 不要）。infra-note（chubo2）を触った場合はそちらは別途 PR。
-- 大きく動かした場合は `MEMORY.md` の索引と関連 `[[リンク]]`、CLAUDE.md のディレクトリ構成・参照リンクの整合を確認する。
+- 大きく動かした場合は `MEMORY.md` の索引と関連 `[[リンク]]`、[architecture.md](../../../docs/architecture.md)「リポジトリの構成」（⚠ docs の行き先の表はここ・2026-10-03 に CLAUDE.md から移した）・参照リンクの整合を確認する。
 - ⚠ **step 6 を回したら、ガードを走らせて budget の表が実測と合っていることを見る**（`(cd packages/capsicum && flutter test test/docs_convention_guard_test.dart)`）。⚠⚠ **サブシェルで囲む** —— `cd` は次のツール呼び出しへ残る（#1189）。
