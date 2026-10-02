@@ -126,6 +126,22 @@ capsicum-relay の Issue・マイルストーンは、**capsicum 本体と同じ
 - ⚠ Windows（`sh` 不在）ではスクリプトが使えない。`sentry-cli` を `--org` 明示で叩く従来の形のまま
 - resolved 済みのイシューは報告不要
 
+⚠⚠ **「新着」だけ見ると、縮退して成功している記録を永久に見落とす**（2026-10-03 に実際に取りこぼした）。`Push degraded` のように**処理は成功しているが品質が落ちている**記録は level が `warning` で止まり、**件数がどれだけ増えても新着にも error にも出てこない**。そして「意図どおりの degrade」という過去の判定が残っているので、毎回それを読んで通してしまう。**既知の `warning` は件数の推移で見る**:
+
+```sh
+# 過去に「起票しない」と判定した warning の、現在の件数と最終発生
+.claude/scripts/sentry-api.sh get /issues/{issue_id}/ | jq -r '"count=\(.count) users=\(.userCount) firstSeen=\(.firstSeen[0:16]) lastSeen=\(.lastSeen[0:16])"'
+```
+
+⚠ **判定時の件数より一桁増えていたら、判定ごと作り直す**（コメントに当時の件数が残っているので比べられる）。⚠⚠ **`contexts` は `events/latest/` か `events/?full=true` でしか取れない**（`events/` の一覧には入らない）ので、実害の大きさを測るときはこちらを使う:
+
+```sh
+.claude/scripts/sentry-api.sh get '/issues/{issue_id}/events/?full=true' \
+  | jq -r '[.[] | select(.contexts.push != null) | .contexts.push.original_size] | sort'
+```
+
+⚠⚠ **同じ現象が複数のイシューに割れていることがある。**メッセージ文面を変えると fingerprint が変わるため、**リリースを境に片方が止まり、もう片方が始まる**。`lastSeen` が止まっているイシューを「収束した」と読む前に、**同じ時期に始まった別のイシューが無いか**を見る（2026-10-03 に `Push oversized degraded (ios)` 311 件と `Push degraded (ios)` 72 件が同一経路だったと判明し、78 件と見ていた規模が **383 件 / 7 週間**になった → [#1215](https://github.com/pooza/capsicum/issues/1215)）。
+
 ## 8. 関連リポジトリの同期確認
 
 - **mulukhiya-toot-proxy**: `git -C ~/repos/mulukhiya-toot-proxy fetch origin` + `git -C ~/repos/mulukhiya-toot-proxy log HEAD..origin/develop --oneline` でリモートとの差分を確認（`cd` しない理由は [dev-environment.md](../../../docs/dev-environment.md) の「コマンドの書き方」）。`docs/capsicum-requirements.md` や `docs/api.md` に変更があれば capsicum 側への影響を判断
