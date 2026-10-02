@@ -211,6 +211,29 @@ export SENTRY_DSN=...
 
 ⚠ **共有スキーム（`Runner.xcscheme`）には入れていない。**入れると debug ビルドが常にローカル商品を使い、⚠⚠ **サンドボックスの実購入を一度も踏まないまま出荷しうる**。**撮るときだけ手で選ぶ。**
 
+### ⚠⚠ この GUI 操作は 2 つのことを同時にやっている（2026-10-03 実測）
+
+**片方だけでは効かない。**
+
+| | 書かれる場所 |
+| --- | --- |
+| 1. `.storekit` を**プロジェクトに登録**する | `Runner.xcodeproj/project.pbxproj`（`PBXFileReference` + グループの `children`） |
+| 2. **スキームに参照を書く** | `Runner.xcscheme` の `<StoreKitConfigurationFileReference identifier = "../Capsicum.storekit">` |
+
+⚠ **`Capsicum.storekit` は `project.pbxproj` に登録されていない**（2026-10-03 時点）。なので**スキームだけ書いても Xcode が参照を解決できず、黙って無視される。**
+
+### 🔴 `flutter run` では効かない
+
+**スキームに書いても `flutter run` 経由では適用されない**（2026-10-03 実測）。あの設定は **Xcode の Run アクションが起動時に効かせる**もので、`flutter run` はビルド後に自前でインストール・起動するため通らない。⚠ **画面は出るが商品が 0 件**になり、「ストアに接続できないか、商品情報を取得できませんでした」と表示される。
+
+⚠ `xcodebuild test`（スキームの TestAction に同じ参照を書く）も試したが**効かなかった** —— アプリをホストにした unit test では適用されない模様。**撮影は Xcode の ▶︎ で起動する前提で組むこと。**
+
+### 画面の撮り方（操作を減らす）
+
+⚠ **外から `xcrun simctl io … screenshot` を撃つとビルド時間とレースになる**（2026-10-03 に 2 回外した）。⚠⚠ **`xcodebuild test` はシミュレータをクローンして走る**ので、アプリのサンドボックスへ書いたファイルは**クローンごと消える**（`-parallel-testing-enabled NO -disable-concurrent-destination-testing` で本体に寄せられる）。
+
+⚠ **到達に要るタップを減らす手がある。**`lib/src/router.dart` の `resolveRedirect` を素通しにし、`initialLocation` を `/settings/supporter` にすると、**起動直後に目的の画面が出る**（ログインも画面遷移も不要）。⚠⚠ **一時変更には目印を付け、絶対にコミットしないこと。**
+
 ### 🔴 これで購入しても「動いた」ことにはならない
 
 | | |
