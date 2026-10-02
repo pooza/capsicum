@@ -19,6 +19,53 @@ int? parseNextOffsetFromLink(String? link) {
   return match == null ? null : int.tryParse(match.group(1)!);
 }
 
+/// Web Push で購読する通知種別（`data[alerts][…]`・#1204）。
+///
+/// 正本は Mastodon の `Notification::PROPERTIES`（`TYPES = PROPERTIES.keys`）。
+/// **4.7.3 時点の全 17 種**で、`pooza/mastodon` の `app/models/notification.rb`
+/// から写した（2026-10-03 実測）。
+///
+/// ⚠⚠ **一部だけ立てると、その種別は画面には出るのにプッシュで届かない。**
+/// capsicum の `notification_type_display.dart` は 30 種に `case` を持つのに、
+/// 購読は 7 種しか立てていなかった（#1204）。⚠ 実害が出ていたのは
+/// `moderation_warning`（モデレーターの警告）/ `admin.report`（通報が来たこと）/
+/// `quote`（引用されたこと・`baseline: true` なので全利用者が対象）/
+/// `follow_request`（鍵アカウントへのフォロー申請）。
+///
+/// ⚠ **版で分岐しない。**サーバーが知らない種別を送っても
+/// `params.expect(data: [:policy, alerts: Notification::TYPES])` の strong
+/// parameters が**黙って落とす**だけで、エラーにはならない（コントローラを読んで
+/// 確認・2026-10-03）。つまり**新しい種別を先に送っておける**ので、サーバーの版を
+/// 見て出し分ける必要がない。
+///
+/// ⚠ `admin.sign_up` / `admin.report` は**権限を持つ利用者にしか発火しない**ので、
+/// 一般利用者に送っても無害。⚠⚠ **pooza はプリセット 5 台の運営者なので、ここが
+/// 抜けていると通報に気付けない。**
+///
+/// ⚠ **`data[policy]`（`all` / `followed` / `follower` / `none`）は送っていない。**
+/// 既定の `all` が効く。送る側の UI を持つかは #1204 の範囲外。
+const pushAlertTypes = <String>[
+  // 従来から立てていた 7 種
+  'mention',
+  'favourite',
+  'reblog',
+  'follow',
+  'poll',
+  'status',
+  'update',
+  // #1204 で足した 10 種
+  'follow_request',
+  'severed_relationships',
+  'moderation_warning',
+  'annual_report',
+  'admin.sign_up',
+  'admin.report',
+  'quote',
+  'quoted_update',
+  'added_to_collection',
+  'collection_update',
+];
+
 class MastodonClient {
   final Dio dio;
   final String host;
@@ -1341,13 +1388,7 @@ class MastodonClient {
         'subscription[standard]': 'true',
         'subscription[keys][p256dh]': p256dh,
         'subscription[keys][auth]': auth,
-        'data[alerts][mention]': 'true',
-        'data[alerts][favourite]': 'true',
-        'data[alerts][reblog]': 'true',
-        'data[alerts][follow]': 'true',
-        'data[alerts][poll]': 'true',
-        'data[alerts][status]': 'true',
-        'data[alerts][update]': 'true',
+        for (final type in pushAlertTypes) 'data[alerts][$type]': 'true',
       }),
     );
     return response.data as Map<String, dynamic>;
