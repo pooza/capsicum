@@ -716,6 +716,13 @@ void _routeFromNotificationPayload(String? payload) {
         _routeToAnnouncements(account);
         return;
       }
+      // 未払いの案内 (#1123)。⚠ **relay を経由しないローカル通知**なので
+      // account を持たない。行き先は登録ステータス画面（そこに直し方と
+      // 「登録し直す」ボタンがある）。
+      if (type == 'entitlement_unpaid') {
+        _routeToPushSettings();
+        return;
+      }
       _routeToNotificationsTab(account);
       return;
     }
@@ -904,6 +911,40 @@ void _routeToAnnouncements(String? accountString, {int attempt = 0}) {
     router.go('/home');
   }
   router.push('/announcements');
+}
+
+/// 未払いの案内をタップしたときの行き先 (#1123)。登録ステータス画面には
+/// 直し方と「購入を確認して登録し直す」ボタンがある。
+///
+/// ⚠ **アカウントの切り替えをしない。**利用権はストアのアカウントに紐づく
+/// （fedi のアカウントではない・設計書 2-A）ので、切り替える先が無い。
+void _routeToPushSettings({int attempt = 0}) {
+  const maxAttempts = 3600;
+  final context = rootNavigatorKey.currentContext;
+  if (context == null) {
+    if (attempt >= maxAttempts) return;
+    WidgetsBinding.instance.scheduleFrameCallback(
+      (_) => _routeToPushSettings(attempt: attempt + 1),
+    );
+    return;
+  }
+  final container = ProviderScope.containerOf(context);
+  if (!container.read(sessionsRestoredProvider)) {
+    if (attempt >= maxAttempts) return;
+    WidgetsBinding.instance.scheduleFrameCallback(
+      (_) => _routeToPushSettings(attempt: attempt + 1),
+    );
+    return;
+  }
+
+  final router = GoRouter.of(context);
+  final currentLocation = router.state.matchedLocation;
+  // ⚠ ゲートの最中（splash / EULA）に割り込まない。他の通知経路と同じ扱い。
+  if (currentLocation == '/splash' || currentLocation == '/eula') return;
+  if (currentLocation != '/home') {
+    router.go('/home');
+  }
+  router.push('/settings/push');
 }
 
 void _routeToNotificationsTab(String? accountString, {int attempt = 0}) {
