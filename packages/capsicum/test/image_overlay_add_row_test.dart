@@ -60,6 +60,10 @@ void main() {
       await pumpAt(tester, width: 320, textScale: 1.0);
       expect(find.text('テキストを追加'), findsOneWidget);
       expect(find.text('スタンプを追加'), findsOneWidget);
+      // #1178 で 3 つ目が並んだ。⚠ **数を固定する** —— 足したボタンが
+      // 「入らないので描かれていない」でも overflow は出ないため、
+      // takeException だけでは 3 つ目の欠落に気づけない。
+      expect(find.text('画像を追加'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 
@@ -77,7 +81,12 @@ void main() {
       await pumpAt(tester, width: 600, textScale: 1.0);
       final text = tester.getTopLeft(find.text('テキストを追加'));
       final sticker = tester.getTopLeft(find.text('スタンプを追加'));
+      // #1178 の 3 つ目も同じ行に載ることを見る。⚠ **3 つを 1 行に収める幅**を
+      // 固定しておかないと、ボタンが増えたときに「通常の幅でも 2 行」になった
+      // ことに気づけない（overflow は出ないので静かに変わる）。
+      final picture = tester.getTopLeft(find.text('画像を追加'));
       expect(text.dy, equals(sticker.dy));
+      expect(sticker.dy, equals(picture.dy));
       expect(tester.takeException(), isNull);
     });
   });

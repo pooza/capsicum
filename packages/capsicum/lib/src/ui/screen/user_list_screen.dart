@@ -1,10 +1,10 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../provider/is_cat_provider.dart';
 import '../../util/user_acct.dart';
+import '../util/deck_navigation.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/cursor_paged_list_view.dart';
 import '../widget/emoji_text.dart';
@@ -74,7 +74,7 @@ class UserListView extends ConsumerWidget {
             ref.read(isCatEnricherProvider).enrichUsers(users),
         emptyMessage: emptyMessage,
         itemBuilder: (context, user) => ListTile(
-          onTap: () => context.push('/profile', extra: user),
+          onTap: () => openProfile(context, user),
           leading: UserAvatar(user: user, size: 40),
           title: EmojiText(
             user.displayName ?? user.username,

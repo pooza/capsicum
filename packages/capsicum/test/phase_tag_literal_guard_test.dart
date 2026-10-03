@@ -4,6 +4,7 @@ import 'package:capsicum/src/constants.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/dart_source.dart';
+import 'support/source_files.dart';
 
 /// #1027-D: Sentry の `phase` タグの綴りを 1 箇所に保つ。
 ///
@@ -37,12 +38,9 @@ void main() {
   /// 綴りを持ってよい唯一の場所。
   const declarationFile = 'lib/src/constants.dart';
 
-  List<File> dartFiles() => Directory(root)
-      .listSync(recursive: true)
-      .whereType<File>()
-      .where((f) => f.path.endsWith('.dart'))
-      .where((f) => !f.path.endsWith('.g.dart'))
-      .toList();
+  // ⚠ `.freezed.dart` は外さない（綴りを持ち込む経路として見る対象に含める）。
+  List<File> dartFiles() =>
+      sourceFiles(root).where((f) => !f.path.endsWith('.g.dart')).toList();
 
   /// [ReactionPhase] が持っている綴りを**宣言から読む** (#1035-C3)。
   ///

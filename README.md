@@ -47,6 +47,8 @@ Misskey は upstream の仕様上、通常はサードパーティアプリか�
 
 ## 主な機能
 
+- **デッキ表示**（v2.0〜） — タイムライン・スレッド・プロフィールなどを横に並べて同時に見る、マルチカラムの表示。カラムごとにアカウントを持てるので、複数アカウントを並べて読めます
+- **添付画像のレイヤ編集**（v2.0〜） — 投稿する画像に文字やカスタム絵文字のスタンプを重ねる。位置・拡縮・回転・不透明度・重ね順を後から編集でき、下書きにも残ります
 - **劇中ワードサジェスト**（v1.35〜） — IME の変換候補に出てこない専門用語（必殺技名・キャラクター名など）を、ひらがなの読みから検索して投稿フォームに挿入。辞書を用意したモロヘイヤ導入サーバーで利用できる独自機能
 - **ナウプレ** — 聴いている曲を `#nowplaying` 付きの投稿としてワンアクションで作成。Apple Music や Spotify などの「共有」から作るほか、投稿フォームの ♪ ボタンから再生中の曲を直接取得できます（デスクトップの Linux / Windows は v1.33〜、iPhone / iPad / Mac の Apple Music は v1.37〜）
 - **Annict 連携** — 視聴中のアニメに対する実況投稿〜視聴後の感想記録までを capsicum 内で完結 (詳細は [docs/annict-integration.md](docs/annict-integration.md))
@@ -77,6 +79,16 @@ dart format --set-exit-if-changed .
 # 静的解析
 dart analyze --fatal-infos
 ```
+
+### 動かす
+
+```bash
+tool/dev-run.sh -d macos     # Windows は tool\dev-run.ps1
+```
+
+コード生成から `flutter run` までを 1 本で回します。`-d` などの引数はそのまま `flutter run` へ渡ります。オプションの一覧は [tool/README.md](tool/README.md) にあります。手順の詳細と、手で打つときに踏みやすい罠は [docs/dev-environment.md の「`flutter run` の実行手順」](docs/dev-environment.md#flutter-run-の実行手順)にあります。
+
+秘密（`RELAY_SECRET` / `SENTRY_DSN`）と Android の `google-services.json` は**無くても起動します**。使えなくなるのは**プッシュ通知だけ**で、タイムライン・投稿などは影響を受けません（[置かなくても動く](docs/dev-environment.md#置かなくても動く何が使えなくなるかだけ変わる)）。
 
 設計の出発点は [Kaiteki](https://github.com/Kaiteki-Fedi/Kaiteki) の Adapter パターンとモデル構造です。
 

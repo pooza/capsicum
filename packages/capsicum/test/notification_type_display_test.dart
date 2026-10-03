@@ -73,9 +73,11 @@ void main() {
     });
 
     test('Misskey 固有の type を Mastodon の enum に寄せる', () {
-      // reply / quote は概念的にメンションと同じ扱い
+      // reply は概念的にメンションと同じ扱い
       expect(notificationTypeFromString('reply'), NotificationType.mention);
-      expect(notificationTypeFromString('quote'), NotificationType.mention);
+      // ⚠⚠ **quote は #1177 で mention から外した。**寄せると種別フィルタで
+      // 切り分けられない（表が送信名の正本でもあるため・#1042）。
+      expect(notificationTypeFromString('quote'), NotificationType.quote);
       // pollEnded は poll に寄せる
       expect(notificationTypeFromString('pollEnded'), NotificationType.poll);
       // receiveFollowRequest は followRequest に寄せる

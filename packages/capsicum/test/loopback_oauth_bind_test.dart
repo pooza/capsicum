@@ -97,4 +97,105 @@ void main() {
       expect(sleeps, 0);
     });
   });
+
+  /// #1140: ブラウザが「前回のセッションを復元」すると、前回ログインしたときの
+  /// callback タブが承認より先に届く。⚠⚠ **それを受け取ってはいけない**（受け
+  /// 取って閉じると、今回の試行は照合に落ち、本物は「接続が拒否されました」）。
+  group('isExpectedOAuthCallback (#790 / #1140)', () {
+    const path = '/oauth/callback';
+    Uri cb(String query) => Uri.parse('http://localhost:7099$path?$query');
+
+    test('Mastodon: 今回の state なら受け取る（error 応答も）', () {
+      expect(
+        isExpectedOAuthCallback(
+          cb('code=c&state=now'),
+          callbackPath: path,
+          expectedState: 'now',
+        ),
+        isTrue,
+      );
+      expect(
+        isExpectedOAuthCallback(
+          cb('error=access_denied&state=now'),
+          callbackPath: path,
+          expectedState: 'now',
+        ),
+        isTrue,
+        reason: '拒否も今回の試行の応答（#620 の自己回復へ進む）',
+      );
+    });
+
+    test('⚠⚠ Mastodon: 前回の state の callback は受け取らない', () {
+      expect(
+        isExpectedOAuthCallback(
+          cb('code=old&state=before'),
+          callbackPath: path,
+          expectedState: 'now',
+        ),
+        isFalse,
+      );
+      expect(
+        isExpectedOAuthCallback(
+          cb('code=old'),
+          callbackPath: path,
+          expectedState: 'now',
+        ),
+        isFalse,
+        reason: 'state が無いものも今回の応答とはみなさない',
+      );
+    });
+
+    test('Misskey: 今回の session なら受け取る', () {
+      expect(
+        isExpectedOAuthCallback(
+          cb('session=now'),
+          callbackPath: path,
+          expectedSession: 'now',
+        ),
+        isTrue,
+      );
+    });
+
+    test('⚠⚠ Misskey: 前回の session の callback は受け取らない', () {
+      // #1140 の Linux の実測で、復元されたのはまさにこの形だった。受け取ると
+      // 今回の session で /check をポーリングし、未承認のまま枯渇する。
+      expect(
+        isExpectedOAuthCallback(
+          cb('session=before'),
+          callbackPath: path,
+          expectedSession: 'now',
+        ),
+        isFalse,
+      );
+    });
+
+    test('⚠ Mastodon の試行に Misskey の前回 callback が来ても受け取らない', () {
+      // 前回は別サーバー（Misskey）へログインしていた、という並び。
+      expect(
+        isExpectedOAuthCallback(
+          cb('session=before'),
+          callbackPath: path,
+          expectedState: 'now',
+        ),
+        isFalse,
+      );
+    });
+
+    test('パス違い・クエリ無しは対象外', () {
+      expect(
+        isExpectedOAuthCallback(
+          Uri.parse('http://localhost:7099/favicon.ico'),
+          callbackPath: path,
+        ),
+        isFalse,
+      );
+      expect(
+        isExpectedOAuthCallback(
+          Uri.parse('http://localhost:7099$path'),
+          callbackPath: path,
+        ),
+        isFalse,
+      );
+    });
+  });
 }

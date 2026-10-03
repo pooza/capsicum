@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/dart_source.dart';
+import 'support/source_files.dart';
 
 /// #1136: secure storage を**名前で握って直に叩く**クラスを作らせない。
 ///
@@ -99,11 +100,7 @@ void main() {
     'lib/src/service/device_install_id.dart',
   ];
 
-  List<File> libFiles() => Directory('lib')
-      .listSync(recursive: true)
-      .whereType<File>()
-      .where((f) => f.path.endsWith('.dart'))
-      .toList();
+  List<File> libFiles() => sourceFiles('lib');
 
   /// コメントと文字列を潰す。⚠ **文字列も潰す** —— import の
   /// `'package:flutter_secure_storage/flutter_secure_storage.dart'` は

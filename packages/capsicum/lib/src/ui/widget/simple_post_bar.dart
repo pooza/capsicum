@@ -9,7 +9,9 @@ import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../../util/reentrancy_guard.dart';
+import '../util/hashtag_body.dart';
 import '../util/livecure_snackbar.dart';
+import '../util/provider_scope_carrier.dart';
 import '../util/shortcode_warning_controller.dart';
 import '../util/visible_timeline.dart';
 import 'desktop_menu_model.dart';
@@ -23,18 +25,30 @@ class SimplePostBar extends ConsumerStatefulWidget {
   /// Channel name for display in compose screen.
   final String? channelName;
 
-  /// Hashtag to prepend to the post content.
-  final String? hashtag;
+  /// 投稿の末尾に付けるハッシュタグ（`#` を除いたタグ名の列）。
+  ///
+  /// ⚠ **spec（`c%2B%2B` / `a+b`）を渡さない** (#1159)。spec はエスケープと
+  /// AND 連結を含む内部表現なので、そのまま付けると `#c%2B%2B` のような
+  /// 存在しないタグで投稿してしまう。[hashtagSpecTags] で分解してから渡す。
+  final List<String> hashtags;
 
   /// Called after a successful post (for refreshing the caller's timeline).
   final VoidCallback? onPosted;
+
+  /// 入力欄の左に置く小さな部品 (#1172)。デッキでは**フォーカス中のカラムの
+  /// アカウントのアイコン**を出す（バーは画面に 1 本しか無く、どのアカウントで
+  /// 投稿するかがバー自身からは分からないため）。
+  ///
+  /// ⚠ タブ UI では渡さない。常に現在のアカウントなので、狭い横幅を食うだけになる。
+  final Widget? leading;
 
   const SimplePostBar({
     super.key,
     this.channelId,
     this.channelName,
-    this.hashtag,
+    this.hashtags = const [],
     this.onPosted,
+    this.leading,
   });
 
   @override
@@ -129,9 +143,8 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar>
     final adapter = ref.read(currentAdapterProvider);
     if (adapter == null) return;
 
-    final content = widget.hashtag != null
-        ? '$text\n\n#${widget.hashtag}'
-        : text;
+    // ⚠ 組み立ては投稿フォームの初期本文と同じ関数を通す (#1172)。
+    final content = appendHashtags(text, widget.hashtags);
 
     setState(() => _sending = true);
     try {
@@ -174,9 +187,14 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar>
       extra['channelId'] = widget.channelId;
       extra['channelName'] = widget.channelName;
     }
+    // ⚠⚠ **タグを引き継ぐ** (#1172)。バーから送るとタグが付くのに、**バーを開いて
+    // フォームにするとタグが消えていた**（チャンネルだけ渡していた）。
+    if (widget.hashtags.isNotEmpty) {
+      extra['hashtags'] = widget.hashtags;
+    }
     final posted = await context.push<bool>(
       '/compose',
-      extra: extra.isNotEmpty ? extra : null,
+      extra: extraWithProviderScope(context, extra),
     );
     if (posted == true && mounted) {
       _controller.clear();
@@ -346,6 +364,14 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar>
             ),
             child: Row(
               children: [
+                // ⚠ デッキではここに**フォーカス中のカラムのアカウント**のアイコンを
+                // 出す (#1172)。バーは画面に 1 本しか無いので、誰として投稿するかが
+                // 見えていないと誤投稿になる。タブ UI では常に現在のアカウントなので
+                // 渡さない（横幅を食わせない）。
+                if (widget.leading case final leading?) ...[
+                  leading,
+                  const SizedBox(width: 8),
+                ],
                 Expanded(
                   child: TextField(
                     controller: _controller,

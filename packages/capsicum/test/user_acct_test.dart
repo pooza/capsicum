@@ -1,10 +1,9 @@
-import 'dart:io';
-
 import 'package:capsicum/src/util/user_acct.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/dart_source.dart';
+import 'support/source_files.dart';
 
 /// #1027-D: `user@host` の組み立てを [userAcct] 1 箇所に寄せる。
 ///
@@ -79,11 +78,7 @@ void main() {
     ).hasMatch(source);
 
     final offenders = <String>[];
-    for (final file
-        in Directory('lib')
-            .listSync(recursive: true)
-            .whereType<File>()
-            .where((f) => f.path.endsWith('.dart'))) {
+    for (final file in sourceFiles('lib')) {
       if (file.path == 'lib/src/util/user_acct.dart') continue;
       final source = maskComments(file.readAsStringSync());
       for (final m in acctFromHost.allMatches(source)) {

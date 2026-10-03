@@ -99,6 +99,15 @@ class WindowsStoreBackend implements SupporterPurchaseBackend {
   }
 
   @override
+  Future<void> buySubscription(ProductDetails product) {
+    // ⚠⚠ **Windows は後回し**（設計書 フェーズ 4 のストア順序）。Microsoft Store の
+    // サブスクは消耗型と**別経路**で、この自前 channel（`Windows.Services.Store` の
+    // 消耗型）から**作り直しになる**。⚠ **黙って no-op にしない** —— 入口を出して
+    // しまった側の誤りが、買えたように見える形で隠れる。
+    throw UnsupportedError('Microsoft Store subscriptions are not wired yet');
+  }
+
+  @override
   Future<void> buy(ProductDetails product) async {
     final storeId = _storeIds[product.id];
     if (storeId == null) {

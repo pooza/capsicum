@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
+import '../../model/image_overlay_layer.dart';
+import '../../service/picture_layer_source.dart';
 import '../../service/sticker_source.dart';
 import '../../util/exception_scrub.dart';
 import '../util/image_overlay_geometry.dart';
@@ -15,7 +17,13 @@ import '../util/image_overlay_geometry.dart';
 /// する。こうすることで編集画面 (画像を画面に fit 表示) と書き出し (原寸
 /// Canvas) で同じ見た目を再現できる (WYSIWYG)。
 sealed class _OverlayItem {
-  _OverlayItem({required this.sizeFrac});
+  _OverlayItem({required this.id, required this.sizeFrac});
+
+  /// レイヤの同一性 (#1125)。画面の中で一意・不変。
+  ///
+  /// ⚠⚠ **選択は添字ではなくこれで持つ。**並べ替え・非表示・ロック（#884-B〜D）を
+  /// 入れると添字は動くので、添字で持つと並べ替えた瞬間に選択が別のレイヤを指す。
+  final int id;
 
   double nx = 0.5;
   double ny = 0.5;
@@ -30,48 +38,190 @@ sealed class _OverlayItem {
   /// なければならない。プレビューは [Transform.rotate]（既定で中心まわり）、
   /// 書き出しは `translate(中心) → rotate → 中心原点で描画` で揃えている。
   double angle = 0;
+
+  /// レイヤ全体の不透明度 (#1128)。0..1。
+  ///
+  /// ⚠⚠ **色の alpha ではなく「グループ不透明度」で掛ける。**文字レイヤは本体と
+  /// 4 方向の擬似アウトラインが重なっているので、色ごとに alpha を掛けると
+  /// **重なった部分だけ濃くなる**（重ね合わせが 2 回起きる）。プレビューの
+  /// [Opacity] は 1 枚に描いてから alpha を掛けるので、書き出しも
+  /// `saveLayer` で同じ意味にしないと WYSIWYG が割れる。
+  double opacity = kOverlayDefaultOpacity;
+
+  /// 画に出すか (#1127)。
+  ///
+  /// ⚠⚠ **見る側は 3 箇所ある** —— プレビューの構築・当たり判定・**書き出しループ**。
+  /// 書き出しを忘れると**プレビューでは消えているのに出力画像には出る**ので、
+  /// 気づくのが「投稿した後」になる。
+  bool visible = true;
+
+  /// 誤操作から守るか (#1127)。
+  ///
+  /// ロック中は**キャンバス上でつかめず・タップでも選べず**、大きさ / 角度 / 色 /
+  /// テキスト編集 / 削除がすべて効かない。⚠ **一覧での並べ替えだけは通す** ——
+  /// 重ね順はレイヤ自身の属性ではなく列の並びで、ロックの対象にすると
+  /// 「1 枚ロックすると他のレイヤの順序も動かせない」ことになる。
+  bool locked = false;
+
+  /// レイヤ一覧に出す見出し (#1126)。サムネだけでは小さすぎて見分けられない。
+  String get label;
+
+  /// レイヤ一覧に出す種別アイコン (#1126)。
+  IconData get icon;
 }
 
 /// 文字 / Unicode 絵文字のレイヤ (#576)。
 class _TextOverlayItem extends _OverlayItem {
-  _TextOverlayItem({required this.text})
+  _TextOverlayItem({required super.id, required this.text})
     : super(sizeFrac: kOverlayDefaultTextSizeFrac);
 
   String text;
   Color color = Colors.white;
+
+  @override
+  String get label => text;
+
+  @override
+  IconData get icon => Icons.text_fields;
 }
 
-/// カスタム絵文字を素材にした画像スタンプのレイヤ (#883)。
+/// `ui.Image` を 1 枚貼るレイヤの共通部分 (#1178)。
+///
+/// ⚠⚠ **描き方を 2 本に増やさないための型。**スタンプ (#883) と端末の画像 (#1178)
+/// は「素材をどこから調達するか」だけが違い、**寸法・回転・不透明度・書き出しは
+/// 完全に同じ**。別々に描き始めると、片方にだけ効く修正が生まれて WYSIWYG が
+/// 割れる（このファイルが繰り返し警告している「層が割れる」形）。
 ///
 /// [image] は表示と書き出しで**同じ実体を共有する**。別々にデコードすると
 /// アニメーション絵文字でフレームがずれうるうえ、二重に取得することになる。
-class _StickerOverlayItem extends _OverlayItem {
-  _StickerOverlayItem({required this.image, required this.shortcode})
-    : super(sizeFrac: kOverlayDefaultStickerSizeFrac);
+///
+/// ⚠ `sealed` なので、`switch` は `_TextOverlayItem` とこれの 2 本で網羅できる。
+/// スタンプと画像を**区別しなければならない場所だけ**が派生まで見ればよい
+/// （素材の出どころ・見出し・tooltip・記述への写し取り）。
+sealed class _ImageBackedOverlayItem extends _OverlayItem {
+  _ImageBackedOverlayItem({
+    required super.id,
+    required super.sizeFrac,
+    required this.image,
+  });
 
   final ui.Image image;
+
+  /// 素材の縦横比。カスタム絵文字は横長のものが珍しくなく、端末の画像も縦横
+  /// どちらもあるので、高さ基準の [sizeFrac] から幅を復元するのに要る。
+  double get aspect => image.width / image.height;
+
+  /// サイズ比率スライダの上限 (#1178)。
+  ///
+  /// ⚠ **派生ごとに違う。**同じ 0.8 でも根拠が別（`image_overlay_geometry.dart`）。
+  double get maxSizeFrac;
+}
+
+/// カスタム絵文字を素材にした画像スタンプのレイヤ (#883)。
+class _StickerOverlayItem extends _ImageBackedOverlayItem {
+  _StickerOverlayItem({
+    required super.id,
+    required super.image,
+    required this.shortcode,
+    required this.url,
+  }) : super(sizeFrac: kOverlayDefaultStickerSizeFrac);
 
   /// 素材にしたカスタム絵文字のショートコード。選択枠の tooltip に使う。
   final String shortcode;
 
-  /// 元画像の縦横比。カスタム絵文字は横長のものが珍しくないので、高さ基準の
-  /// [sizeFrac] から幅を復元するのに要る。
-  double get aspect => image.width / image.height;
+  /// 素材の取得元 (#1129)。⚠ **画面を閉じた後に取り直すための控え。**
+  /// [image] は画面と一緒に解放されるので、再入時はここから読み直す。
+  final String url;
+
+  @override
+  double get maxSizeFrac => kOverlayMaxStickerSizeFrac;
+
+  @override
+  String get label => ':$shortcode:';
+
+  @override
+  IconData get icon => Icons.emoji_emotions_outlined;
 }
 
-/// 添付画像に文字 / Unicode 絵文字 (#576) とカスタム絵文字スタンプ (#883) を
-/// 重ねて PNG に書き出すエディタ。
+/// 端末内の画像を素材にしたレイヤ (#1178)。
 ///
-/// mixi2 風のメモ書き・ミーム的キャプション用途。フィルタ / 落書き / レイヤ履歴 /
-/// ベクター編集は対象外 (#568 の方針を継承)。入力バイト列をメモリ上で合成し、
+/// ⚠⚠ **[path] は「取り直す先」ではなく縮小済みの複製。**スタンプの [url] と
+/// 位置は同じだが意味が違う —— 端末の画像には取り直す先が無いので、取り込んだ
+/// 時点で縮小した実体を控えてある（`PictureOverlayLayerSpec` に経緯）。
+class _PictureOverlayItem extends _ImageBackedOverlayItem {
+  _PictureOverlayItem({
+    required super.id,
+    required super.image,
+    required this.path,
+    required this.name,
+  }) : super(sizeFrac: kOverlayDefaultPictureSizeFrac);
+
+  /// 縮小済みの複製の置き場。
+  final String path;
+
+  /// 選んだファイルの表示名。
+  final String name;
+
+  @override
+  double get maxSizeFrac => kOverlayMaxPictureSizeFrac;
+
+  @override
+  String get label => name;
+
+  @override
+  IconData get icon => Icons.image_outlined;
+}
+
+/// 削除したが、まだ取り消せるレイヤ (#1126 / #1131)。
+///
+/// ⚠⚠ **スタンプの `ui.Image` はここに掴まれている間は解放しない。**「元に戻す」で
+/// 戻したレイヤが描けないと取り消しの意味が無いため。代わりに解放の期限を
+/// [kOverlayUndoWindow]（SnackBar が閉じるまで）で切り、閉じたら必ず解放する。
+class _PendingDeletion {
+  _PendingDeletion({required this.item, required this.index});
+
+  final _OverlayItem item;
+
+  /// 消す前の重ね順の位置。取り消しは**同じ高さへ戻す**（末尾へ積み直すと、
+  /// 背面にあったレイヤが最前面になって画が変わる）。
+  final int index;
+}
+
+/// 添付画像に文字 / Unicode 絵文字 (#576)・カスタム絵文字スタンプ (#883)・
+/// 端末内の画像 (#1178) を重ねて PNG に書き出すエディタ。
+///
+/// mixi2 風のメモ書き・ミーム的キャプション用途。フィルタ / 落書き / 操作履歴
+/// （元に戻す）/ ベクター編集は対象外 (#568 の方針を継承)。⚠ **レイヤの管理
+/// （重ね順・表示/非表示・ロック・不透明度・再編集）は #884 で対象に入れた**
+/// ——以前はここに「レイヤ履歴は対象外」と書いていたが、#884 はその一文の
+/// 再交渉にあたる。入力バイト列をメモリ上で合成し、
 /// 結果の PNG バイト列を [Navigator.pop] で返す（キャンセル時は null）。
 /// トリミング ([ImageCropScreen]) と同じく純 Flutter 実装で全プラットフォーム
 /// 動作する。
+///
+/// ⚠⚠ **戻り値は [ImageOverlayResult]**（焼き込み済みの PNG + レイヤ列）で、
+/// キャンセル時は null (#1129)。**PNG だけを返していた頃は、閉じた瞬間にレイヤが
+/// 消えて再編集できなかった。**呼び出し側は結果のレイヤ列を添付に紐づけて持ち、
+/// 次に開くときに [initialLayers] へ渡す。
 class ImageOverlayScreen extends ConsumerStatefulWidget {
-  const ImageOverlayScreen({super.key, required this.imageData, this.title});
+  const ImageOverlayScreen({
+    super.key,
+    required this.imageData,
+    this.initialLayers = const [],
+    this.title,
+  });
 
   /// 対象の元画像バイト列。
+  ///
+  /// ⚠ **焼き込み前の画像を渡すこと** (#1129)。焼き込み済みの PNG を渡したうえで
+  /// [initialLayers] も渡すと、同じレイヤが二重に乗る。
   final Uint8List imageData;
+
+  /// 前回の編集で残したレイヤ列（先頭が最背面）。
+  ///
+  /// スタンプは URL から取り直す。⚠ **取り直せなかったぶんは落として利用者に
+  /// 伝える**（黙って落とすと、完了した瞬間にスタンプが消えた画像になる）。
+  final List<OverlayLayerSpec> initialLayers;
 
   /// AppBar に表示するタイトル。未指定時は既定文言。
   final String? title;
@@ -87,14 +237,42 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
   /// 原寸の画像サイズ（書き出し座標計算に使う）。
   Size? _imageSize;
 
+  /// 重ね順（先頭が最背面）。
   final List<_OverlayItem> _items = [];
-  int? _selected;
+
+  /// 選択中のレイヤの ID (#1125)。⚠ 添字で持たない（[_OverlayItem.id]）。
+  int? _selectedId;
+
+  /// 次に足すレイヤの ID。画面の中で使い回さない。
+  int _nextId = 0;
+
+  /// 削除したが取り消せる状態のレイヤ (#1126)。⚠ **ここに残っている間は
+  /// `ui.Image` を解放しない。**解放は [_finalizeDeletion] だけが行う。
+  final List<_PendingDeletion> _pendingDeletions = [];
+
+  /// レイヤ一覧を開いているか (#1126)。
+  ///
+  /// ⚠ **既定は閉じた状態にする。**一覧は広い幅ならキャンバスの横を 280px、
+  /// 狭い幅なら下を 176px 取る。既定で開くと**何もしていないのに編集面が狭くなる**
+  /// ので、開くかどうかは常に利用者に決めさせる。幅が決めるのは**置き場所だけ**。
+  bool _layersOpen = false;
+
+  _OverlayItem? get _selectedItem {
+    for (final item in _items) {
+      if (item.id == _selectedId) return item;
+    }
+    return null;
+  }
 
   /// 書き出し中は再押下・離脱を防ぐ。
   bool _rendering = false;
 
   /// スタンプ素材の取得中。連打で同じ絵文字が二重に載るのを防ぐ。
   bool _loadingSticker = false;
+
+  /// 端末の画像の取り込み中 (#1178)。⚠ **スタンプとは別に持つ** —— 1 つにすると
+  /// 片方の取り込み中にもう片方も押せなくなる。
+  bool _loadingPicture = false;
 
   static const _colorOptions = <Color>[
     Colors.white,
@@ -114,7 +292,16 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
   @override
   void dispose() {
     for (final item in _items) {
-      if (item is _StickerOverlayItem) item.image.dispose();
+      // ⚠ **`_ImageBackedOverlayItem` で見る** (#1178)。スタンプだけを名指しすると、
+      // 端末の画像レイヤぶんのネイティブメモリが**画面を閉じるたびに漏れる**。
+      if (item is _ImageBackedOverlayItem) item.image.dispose();
+    }
+    // ⚠⚠ **取り消し待ちも必ず畳む。**`_items` から外れているので上のループには
+    // 掛からず、SnackBar の `closed` は画面が消えた後に解決するとは限らない
+    // （ScaffoldMessenger ごと外れると来ない）。ここで畳まないと、削除して
+    // すぐ閉じたぶんだけスタンプの原寸画像が漏れる (#1126)。
+    for (final pending in _pendingDeletions.toList()) {
+      _finalizeDeletion(pending);
     }
     super.dispose();
   }
@@ -141,6 +328,7 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
         _image = data.buffer.asUint8List();
         _imageSize = size;
       });
+      await _restoreLayers();
     } catch (e, st) {
       await Sentry.captureException(scrubException(e), stackTrace: st);
       if (!mounted) return;
@@ -153,6 +341,142 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
       codec?.dispose();
     }
   }
+
+  /// 前回の編集で残したレイヤを戻す (#1129)。
+  ///
+  /// ⚠ **スタンプは URL から取り直す。**記述は `ui.Image` を持たないので、ここで
+  /// 初めてネイティブ側の画像が載る。**取り直せなかったぶんは落として数を伝える**
+  /// —— 黙って落とすと、開いて完了しただけでスタンプが消えた画像になる。
+  ///
+  /// ⚠ 素材の取得は 1 枚ずつ直列に回す。連打ガード ([_loadingSticker]) と同じ
+  /// 理由で、同じソースへ同時に投げても速くならないうえ失敗の扱いが増える。
+  Future<void> _restoreLayers() async {
+    if (widget.initialLayers.isEmpty) return;
+    final stickers = ref.read(stickerSourceProvider);
+    final pictures = ref.read(pictureLayerSourceProvider);
+    final restored = <_OverlayItem>[];
+    var failed = 0;
+
+    for (final spec in widget.initialLayers) {
+      switch (spec) {
+        case TextOverlayLayerSpec():
+          restored.add(
+            _TextOverlayItem(id: _nextId++, text: spec.text)
+              ..color = spec.color,
+          );
+        case StickerOverlayLayerSpec():
+          try {
+            final image = await stickers.load(spec.url);
+            if (!mounted) {
+              image.dispose();
+              return;
+            }
+            restored.add(
+              _StickerOverlayItem(
+                id: _nextId++,
+                image: image,
+                shortcode: spec.shortcode,
+                url: spec.url,
+              ),
+            );
+          } catch (e, st) {
+            // ⚠ リモート URL 由来の例外が来るので必ず scrub を通す (#953-4)。
+            await Sentry.captureException(scrubException(e), stackTrace: st);
+            failed++;
+            continue;
+          }
+        case PictureOverlayLayerSpec():
+          // ⚠⚠ **控えが消えていることは日常的に起きる** (#1178)。OS が一時領域を
+          // 掃除すればこうなるので、**失敗しても他のレイヤは戻す**（スタンプと同じ
+          // 扱い）。⚠ パスを含む例外が来るので scrub を通す。
+          try {
+            final image = await pictures.restore(spec.path);
+            if (!mounted) {
+              image.dispose();
+              return;
+            }
+            restored.add(
+              _PictureOverlayItem(
+                id: _nextId++,
+                image: image,
+                path: spec.path,
+                name: spec.name,
+              ),
+            );
+          } catch (e, st) {
+            await Sentry.captureException(scrubException(e), stackTrace: st);
+            failed++;
+            continue;
+          }
+      }
+      _applySpec(restored.last, spec);
+    }
+
+    if (!mounted) {
+      for (final item in restored) {
+        if (item is _ImageBackedOverlayItem) item.image.dispose();
+      }
+      return;
+    }
+    setState(() => _items.addAll(restored));
+    if (failed > 0) {
+      // ⚠ **種別を名指ししない** (#1178)。スタンプと端末の画像のどちらも落ちうる
+      // ようになったので、「スタンプを N 個」と書くと**画像が落ちたときに嘘になる**。
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('レイヤーを $failed 個復元できませんでした（このまま完了すると画像から外れます）')),
+      );
+    }
+  }
+
+  /// 記述からレイヤの状態を写す。⚠ **項目を足したらここと [_specOf] の両方を直す**
+  /// —— 片方だけだと「保存はされるが戻らない」（またはその逆）になる (#1129)。
+  void _applySpec(_OverlayItem item, OverlayLayerSpec spec) {
+    item
+      ..nx = spec.nx
+      ..ny = spec.ny
+      ..sizeFrac = spec.sizeFrac
+      ..angle = spec.angle
+      ..opacity = spec.opacity
+      ..visible = spec.visible
+      ..locked = spec.locked;
+  }
+
+  /// レイヤを記述へ写す。⚠ [_applySpec] と対。
+  OverlayLayerSpec _specOf(_OverlayItem item) => switch (item) {
+    _TextOverlayItem() => TextOverlayLayerSpec(
+      text: item.text,
+      color: item.color,
+      nx: item.nx,
+      ny: item.ny,
+      sizeFrac: item.sizeFrac,
+      angle: item.angle,
+      opacity: item.opacity,
+      visible: item.visible,
+      locked: item.locked,
+    ),
+    _StickerOverlayItem() => StickerOverlayLayerSpec(
+      shortcode: item.shortcode,
+      url: item.url,
+      nx: item.nx,
+      ny: item.ny,
+      sizeFrac: item.sizeFrac,
+      angle: item.angle,
+      opacity: item.opacity,
+      visible: item.visible,
+      locked: item.locked,
+    ),
+    _PictureOverlayItem() => PictureOverlayLayerSpec(
+      path: item.path,
+      name: item.name,
+      nx: item.nx,
+      ny: item.ny,
+      sizeFrac: item.sizeFrac,
+      angle: item.angle,
+      opacity: item.opacity,
+      visible: item.visible,
+      locked: item.locked,
+    ),
+  };
 
   /// テキスト入力ダイアログ。[initial] を渡すと既存レイヤの編集。
   Future<String?> _promptText({String initial = ''}) {
@@ -167,8 +491,9 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
     if (!mounted) return;
     if (text == null || text.trim().isEmpty) return;
     setState(() {
-      _items.add(_TextOverlayItem(text: text));
-      _selected = _items.length - 1;
+      final item = _TextOverlayItem(id: _nextId++, text: text);
+      _items.add(item);
+      _selectedId = item.id;
     });
   }
 
@@ -187,10 +512,14 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
         return;
       }
       setState(() {
-        _items.add(
-          _StickerOverlayItem(image: image, shortcode: emoji.shortcode),
+        final item = _StickerOverlayItem(
+          id: _nextId++,
+          image: image,
+          shortcode: emoji.shortcode,
+          url: emoji.url,
         );
-        _selected = _items.length - 1;
+        _items.add(item);
+        _selectedId = item.id;
         _loadingSticker = false;
       });
     } catch (e, st) {
@@ -205,12 +534,64 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
     }
   }
 
+  /// 端末内の画像を選ばせ、レイヤとして追加する (#1178)。
+  ///
+  /// ⚠ **連打ガードはスタンプと別に持つ** ([_loadingPicture])。1 つにまとめると、
+  /// 画像の取り込み中にスタンプも押せなくなる（どちらも数秒かかりうる）。
+  Future<void> _addPictureItem() async {
+    if (_loadingPicture) return;
+    final source = ref.read(pictureLayerSourceProvider);
+    final file = await source.pick(ref: ref);
+    if (file == null || !mounted) return;
+
+    setState(() => _loadingPicture = true);
+    try {
+      final material = await source.load(file);
+      if (!mounted) {
+        material.image.dispose();
+        return;
+      }
+      setState(() {
+        final item = _PictureOverlayItem(
+          id: _nextId++,
+          image: material.image,
+          path: material.path,
+          name: material.name,
+        );
+        _items.add(item);
+        _selectedId = item.id;
+        _loadingPicture = false;
+      });
+    } catch (e, st) {
+      // ⚠ **端末のパスが例外に載る。**`FileSystemException` はパスを message に
+      // 入れるので、スタンプ側と同じく必ず scrub を通す (#953-4)。
+      await Sentry.captureException(scrubException(e), stackTrace: st);
+      if (!mounted) return;
+      setState(() => _loadingPicture = false);
+      // ⚠ **上限超過だけは別の文言にする** (#1178)。「読み込めませんでした」だと
+      // 利用者は同じ画像で何度も試すことになる（原因が分からないため）。
+      final oversized =
+          e is FormatException && e.message == 'picture too large';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(oversized ? 'この画像は大きすぎて重ねられませんでした' : '画像を読み込めませんでした'),
+        ),
+      );
+    }
+  }
+
+  /// そのレイヤを変えてよいか (#1127)。
+  ///
+  /// ⚠⚠ **ボタンの活殺と実処理の両方がこれを見る。**判定をボタン側だけに置くと
+  /// **実処理のガードが一度も呼ばれない**ので、壊しても誰も気づかない（逆に実処理
+  /// 側だけだと、押せる見た目のまま無反応になって「壊れている」と読まれる）。
+  /// 変更系の導線が増えたときは、その入口からもこれを呼ぶ。
+  bool _canModify(_OverlayItem item) => !item.locked;
+
   Future<void> _editSelected() async {
-    final index = _selected;
-    if (index == null) return;
-    final item = _items[index];
+    final item = _selectedItem;
     // 編集できるのは文字レイヤだけ。スタンプは貼り直しで差し替える。
-    if (item is! _TextOverlayItem) return;
+    if (item is! _TextOverlayItem || !_canModify(item)) return;
     final text = await _promptText(initial: item.text);
     if (!mounted) return;
     if (text == null) return;
@@ -222,20 +603,103 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
   }
 
   void _deleteSelected() {
-    final index = _selected;
-    if (index == null) return;
-    final removed = _items[index];
+    final removed = _selectedItem;
+    if (removed != null) _deleteLayer(removed);
+  }
+
+  /// レイヤを 1 枚消し、取り消しの導線を出す (#1126 / #1131)。
+  ///
+  /// ⚠⚠ **汎用の Undo / Redo は作らない。**#884 で入る操作のうち**不可逆なのは削除だけ**
+  /// で、並べ替え・表示/非表示・不透明度はいずれも同じ操作で元へ戻せる。一覧が
+  /// できてまとめて消しやすくなったぶんだけ、削除にだけ取り消しを付ける。
+  void _deleteLayer(_OverlayItem removed) {
+    // ⚠ ロック中は消せない (#1127)。導線が 2 つある（ツールバーと一覧）ので、
+    // 入口の活殺と同じ判定をここでも通す。
+    if (!_canModify(removed)) return;
+    final index = _items.indexOf(removed);
+    if (index < 0) return;
     setState(() {
       _items.removeAt(index);
-      _selected = null;
+      if (_selectedId == removed.id) _selectedId = null;
     });
-    if (removed is _StickerOverlayItem) {
-      // ツリーから外れるのは次フレーム。同フレーム内で dispose すると、まだ
-      // 描画中の RawImage が破棄済み画像を掴んで落ちる。
-      WidgetsBinding.instance.addPostFrameCallback(
-        (_) => removed.image.dispose(),
+
+    final pending = _PendingDeletion(item: removed, index: index);
+    _pendingDeletions.add(pending);
+
+    // 連続して消したときは、前の SnackBar を先に閉じて取り消し先を 1 つに保つ。
+    // 閉じた側は `closed` が解決して確定（＝解放）へ進む。
+    final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
+    messenger
+        .showSnackBar(
+          SnackBar(
+            duration: kOverlayUndoWindow,
+            // ⚠⚠ **`persist: false` を明示する。**Flutter の既定は
+            // `persist = persist ?? action != null` で、**アクション付きの
+            // SnackBar は時間で閉じない**。既定のままだと `duration` が効かず、
+            // 取り消し待ちのスタンプの原寸画像が**上限なしで**ネイティブ側に
+            // 残り続ける（画面を閉じるまで解放されない）。
+            persist: false,
+            content: Text('「${_shortLabel(removed)}」を削除しました'),
+            action: SnackBarAction(
+              label: '元に戻す',
+              onPressed: () => _restoreDeletion(pending),
+            ),
+          ),
+        )
+        .closed
+        .then((_) => _finalizeDeletion(pending));
+  }
+
+  /// 取り消しの期限切れ（または画面の終了）。⚠ **解放はここだけが行う。**
+  ///
+  /// 復帰済み・確定済みのものを二度解放しないよう、**一覧から取り除けたときだけ**
+  /// 進む（`closed` の解決と「元に戻す」の押下は順序が保証されない）。
+  void _finalizeDeletion(_PendingDeletion pending) {
+    if (!_pendingDeletions.remove(pending)) return;
+    final item = pending.item;
+    // 削除からここまでに最低でも SnackBar 1 本ぶんのフレームが流れているので、
+    // #953-4 のように次フレームまで待つ必要はない（まだ描いている RawImage は
+    // もう無い）。画面終了時はツリーごと外れた後なので同じ。
+    if (item is _ImageBackedOverlayItem) item.image.dispose();
+  }
+
+  void _restoreDeletion(_PendingDeletion pending) {
+    if (!mounted) return;
+    if (!_pendingDeletions.remove(pending)) return;
+    setState(() {
+      _items.insert(pending.index.clamp(0, _items.length), pending.item);
+      _selectedId = pending.item.id;
+    });
+  }
+
+  /// SnackBar に出す短い見出し。長い本文をそのまま出すと行が溢れる。
+  String _shortLabel(_OverlayItem item) {
+    final label = item.label.replaceAll('\n', ' ').trim();
+    if (label.isEmpty) return 'レイヤー';
+    return label.characters.length <= 12
+        ? label
+        : '${label.characters.take(12).toString()}…';
+  }
+
+  /// レイヤ一覧に並べる順。**最前面が先頭**（画像編集の慣習）。
+  ///
+  /// ⚠ [_items] は**末尾が最前面**（プレビューも書き出しも先頭から順に重ねて
+  /// いく）。一覧だけ逆順で見せるので、並べ替えは一覧の順で済ませてから
+  /// 逆にして戻す。添字の対応を手で書くより間違えにくい。
+  List<_OverlayItem> get _layersFrontFirst => _items.reversed.toList();
+
+  /// レイヤ一覧（最前面が先頭）の中での並べ替え (#1126)。
+  void _reorderLayers(int oldIndex, int newIndex) {
+    setState(() {
+      final reordered = reorderOverlayLayers(
+        _layersFrontFirst,
+        oldIndex,
+        newIndex,
       );
-    }
+      _items
+        ..clear()
+        ..addAll(reordered.reversed);
+    });
   }
 
   /// テキストの可読性のため、明度に応じて反対色の擬似アウトライン (4 方向の
@@ -287,12 +751,42 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
       canvas.drawImage(src, Offset.zero, Paint());
 
       for (final item in _items) {
+        // ⚠⚠ **ここを忘れると「隠したはずのレイヤが出力に出る」** (#1127)。
+        // プレビューでは消えているので、**書き出すまで気づかない**。
+        // 非表示の判定はプレビュー（`_buildCanvas`）・当たり判定・ここの 3 箇所に
+        // 要る。1 つでも抜けると層が割れる（#1113 と同型）。
+        if (!item.visible) continue;
+        // ⚠⚠ **プレビューの `Opacity` と同じ意味にする** (#1128)。`Opacity` は
+        // 子を 1 枚のレイヤに描いてから alpha を掛けるので、書き出しも
+        // `saveLayer` で囲う。色ごとに alpha を掛けると、文字の本体とアウトラインの
+        // 重なりが二重に合成されて**プレビューより濃く出る**。
+        // 換算は `ui.Color.getAlphaFromOpacity`（`Opacity` が内部で使うのと同じ式）。
+        final alpha = ui.Color.getAlphaFromOpacity(item.opacity);
+        // ⚠ 不透明なレイヤはレイヤを挟まない。既存の書き出しと 1px も変えないため
+        // （#1125 の指紋がそのまま保てる）。
+        final grouped = alpha != 255;
+        if (grouped) {
+          // ⚠⚠ **bounds を渡さない。**`Rect.fromLTWH(0, 0, w, h)`（画像全体）を
+          // 渡すと、レイヤの外周で描画が削られ、**文字の擬似アウトラインの外側
+          // 1 列 / 1 行が丸ごと落ちる**（`Shadow` は blurRadius 0 でも sigma 0.5 の
+          // ぼかしが掛かる。2026-09-23 実測で、被覆 42% の行まで消えた）。文字は
+          // 画像の中央にあり bounds に十分収まっているので、**「はみ出したから
+          // 切れた」ではない** —— 渡した矩形がそのままレイヤの寸法として使われる
+          // ことによる縁の欠けで、`null` を渡してエンジンに決めさせると起きない。
+          canvas.saveLayer(
+            null,
+            Paint()..color = Color.fromARGB(alpha, 0, 0, 0),
+          );
+        }
         switch (item) {
           case _TextOverlayItem():
             _paintText(canvas, item, w, h);
-          case _StickerOverlayItem():
-            _paintSticker(canvas, item, w, h);
+          // ⚠ スタンプと端末の画像は**同じ経路で描く** (#1178)。素材の出どころが
+          // 違うだけで、寸法・回転・不透明度の扱いは 1 ミリも変わらない。
+          case _ImageBackedOverlayItem():
+            _paintImageLayer(canvas, item, w, h);
         }
+        if (grouped) canvas.restore();
       }
 
       picture = recorder.endRecording();
@@ -303,7 +797,14 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
         throw StateError('Failed to encode composited PNG');
       }
       if (!mounted) return;
-      Navigator.of(context).pop(data.buffer.asUint8List());
+      // ⚠⚠ **焼き込み済みの PNG とレイヤ列を両方返す** (#1129)。PNG だけだと
+      // 閉じた瞬間にレイヤが消え、次に開いたときは「平らな画像」が元画像になる。
+      Navigator.of(context).pop(
+        ImageOverlayResult(
+          png: data.buffer.asUint8List(),
+          layers: _items.map(_specOf).toList(growable: false),
+        ),
+      );
     } catch (e, st) {
       await Sentry.captureException(scrubException(e), stackTrace: st);
       if (!mounted) return;
@@ -337,9 +838,13 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
     });
   }
 
-  void _paintSticker(
+  /// `ui.Image` を貼るレイヤの書き出し (#883 / #1178)。
+  ///
+  /// ⚠⚠ **スタンプと端末の画像で分けない。**分けると、片方にだけ効く修正が
+  /// 生まれてプレビューと書き出しが割れる（このファイルの他の警告と同じ型）。
+  void _paintImageLayer(
     Canvas canvas,
-    _StickerOverlayItem item,
+    _ImageBackedOverlayItem item,
     double w,
     double h,
   ) {
@@ -399,11 +904,37 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
   }
 
   Widget _buildScaffold(Uint8List? image, Size? size) {
+    // 一覧をキャンバスの横に置ける幅か。⚠ 分岐軸はプラットフォームではなく画面幅
+    // (docs/CLAUDE.md)。デスクトップでもウィンドウを狭めれば下置きになる。
+    final wide =
+        MediaQuery.of(context).size.width >= kOverlayLayerPanelMinWidth;
+    final layersOpen = _layersOpen;
+
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
-        title: Text(widget.title ?? '文字・スタンプを入れる'),
+        // ⚠ 1 行に固定する。狭幅では「戻る + タイトル + レイヤー + 完了」で
+        // AppBar の幅を使い切り、折り返すと固定高の中で overflow する (#1126)。
+        title: Text(
+          // ⚠ **入口（添付メニュー）と画面で役割を分ける** (#1178・2026-09-27 pooza)。
+          // 入口は「文字・スタンプ・画像を重ねる…」と何ができるかを書き、画面は
+          // 「レイヤー」——「文字・スタンプ」だけだとレイヤー機能だと分からず、
+          // 「レイヤー」だけだと入口として何ができるか分からない。
+          widget.title ?? 'レイヤー',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
         actions: [
+          if (image != null)
+            IconButton(
+              key: overlayLayerToggleKey,
+              icon: Icon(
+                layersOpen ? Icons.layers : Icons.layers_outlined,
+                color: Colors.white,
+              ),
+              tooltip: layersOpen ? 'レイヤー一覧を閉じる' : 'レイヤー一覧',
+              onPressed: () => setState(() => _layersOpen = !layersOpen),
+            ),
           if (_rendering)
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 20),
@@ -421,12 +952,43 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
       ),
       body: image == null || size == null
           ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
-                Expanded(child: _buildCanvas(image, size)),
-                _buildToolbar(),
-              ],
-            ),
+          : _buildBody(image, size, wide: wide, layersOpen: layersOpen),
+    );
+  }
+
+  /// 本文の組み立て (#1126)。
+  ///
+  /// 広い幅では一覧をキャンバスの**横**に常設し、狭い幅ではキャンバスの**下**へ
+  /// 畳んで開閉する。⚠ **どちらも同じ [_buildLayerList] を置くだけ**にしてある。
+  /// 狭幅側をモーダルシートにしないのは、削除の取り消し（SnackBar）が
+  /// モーダルルートの**下**に出て押せなくなるため。同じ Scaffold の中に置けば
+  /// 一覧を開いたまま取り消せる。
+  Widget _buildBody(
+    Uint8List image,
+    Size size, {
+    required bool wide,
+    required bool layersOpen,
+  }) {
+    final editor = Column(
+      children: [
+        Expanded(child: _buildCanvas(image, size)),
+        if (!wide && layersOpen)
+          SizedBox(
+            height: kOverlayLayerListCollapsedHeight,
+            child: _buildLayerList(image, size),
+          ),
+        _buildToolbar(),
+      ],
+    );
+    if (!wide || !layersOpen) return editor;
+    return Row(
+      children: [
+        Expanded(child: editor),
+        SizedBox(
+          width: kOverlayLayerPanelWidth,
+          child: _buildLayerList(image, size),
+        ),
+      ],
     );
   }
 
@@ -446,7 +1008,7 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
           // 画像の余白タップで選択解除。
-          onTap: () => setState(() => _selected = null),
+          onTap: () => setState(() => _selectedId = null),
           child: Stack(
             children: [
               // レイヤは画像と同じ矩形の中に置き、はみ出しは ClipRect で切る。
@@ -460,12 +1022,17 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
                 height: dispH,
                 child: ClipRect(
                   child: Stack(
+                    // ⚠ レイヤ一覧のサムネにも同じウィジェットが出る。「プレビューに
+                    // 何がどの順で載っているか」を見るときの絞り込み先 (#1126)。
+                    key: overlayCanvasKey,
                     children: [
                       Positioned.fill(
                         child: Image.memory(image, fit: BoxFit.fill),
                       ),
-                      for (var i = 0; i < _items.length; i++)
-                        _buildItemWidget(i, dispW, dispH),
+                      // 非表示のレイヤはツリーごと出さない (#1127)。widget を
+                      // 置かないので、当たり判定も自動的に消える。
+                      for (final item in _items)
+                        if (item.visible) _buildItemWidget(item, dispW, dispH),
                     ],
                   ),
                 ),
@@ -477,10 +1044,11 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
     );
   }
 
-  Widget _buildItemWidget(int index, double dispW, double dispH) {
-    final item = _items[index];
-    final selected = _selected == index;
+  Widget _buildItemWidget(_OverlayItem item, double dispW, double dispH) {
+    final selected = _selectedId == item.id;
     return Positioned(
+      // 並べ替えても同じレイヤの要素を使い回す (#1125)。
+      key: ValueKey(item.id),
       left: item.nx * dispW,
       top: item.ny * dispH,
       child: FractionalTranslation(
@@ -494,40 +1062,28 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
         // 受けず、下の pan 処理（画面座標で nx / ny を動かす）はそのままでよい。
         child: Transform.rotate(
           angle: item.angle,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => setState(() => _selected = index),
-            onPanUpdate: (details) {
-              setState(() {
-                item.nx = (item.nx + details.delta.dx / dispW).clamp(0.0, 1.0);
-                item.ny = (item.ny + details.delta.dy / dispH).clamp(0.0, 1.0);
-                _selected = index;
-              });
-            },
-            child: Container(
-              // 折り返し幅の上限は**文字レイヤ専用**。書き出し側の
-              // `painter.layout(maxWidth: w * kOverlayTextWrapFraction)` と
-              // 対になっている（同じ定数を使うのが対であることの担保）。スタンプに
-              // 掛けると RawImage が縮んでプレビューだけ小さくなり、書き出し
-              // (drawImageRect は制約を受けない) と食い違う。
-              constraints: item is _TextOverlayItem
-                  ? BoxConstraints(maxWidth: dispW * kOverlayTextWrapFraction)
-                  : null,
-              decoration: selected
-                  ? BoxDecoration(
-                      border: Border.all(color: Colors.white70),
-                      borderRadius: BorderRadius.circular(4),
-                    )
-                  : null,
-              padding: const EdgeInsets.all(2),
-              child: switch (item) {
-                _TextOverlayItem() => Text(
-                  item.text,
-                  textAlign: TextAlign.center,
-                  style: _textStyle(item.color, item.sizeFrac * dispH),
-                ),
-                _StickerOverlayItem() => _buildStickerPreview(item, dispH),
+          // ⚠ **ロック中はポインタを通さない** (#1127)。`onTap` / `onPanUpdate` を
+          // 個別に null にするより確実で、`behavior: opaque` のまま後ろのレイヤへ
+          // タップを渡せる（ロックしたレイヤが上にあっても下が掴める）。
+          child: IgnorePointer(
+            ignoring: item.locked,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => setState(() => _selectedId = item.id),
+              onPanUpdate: (details) {
+                setState(() {
+                  item.nx = (item.nx + details.delta.dx / dispW).clamp(
+                    0.0,
+                    1.0,
+                  );
+                  item.ny = (item.ny + details.delta.dy / dispH).clamp(
+                    0.0,
+                    1.0,
+                  );
+                  _selectedId = item.id;
+                });
               },
+              child: _buildItemContent(item, dispW, dispH, selected: selected),
             ),
           ),
         ),
@@ -535,7 +1091,63 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
     );
   }
 
-  Widget _buildStickerPreview(_StickerOverlayItem item, double dispH) {
+  /// レイヤ 1 枚の見た目。**編集キャンバスとレイヤ一覧のサムネが共有する** (#1126)。
+  ///
+  /// ⚠ [dispH] を基準高さとして受け取るのが肝。キャンバスなら画像の表示高さ、
+  /// サムネなら縮図の高さを渡せば、同じ式のまま縮尺だけ変わる。**サムネ用に
+  /// 別の描き方を足さない**——足した瞬間に「一覧で見た向き / 比率」と本番が割れる。
+  Widget _buildItemContent(
+    _OverlayItem item,
+    double dispW,
+    double dispH, {
+    required bool selected,
+    // ⚠ サムネでは切る。40px の縮図に tooltip は邪魔だし、**同じ文言の
+    // tooltip が 2 つ出ると `find.byTooltip` が一意に当たらなくなる** (#1126)。
+    bool tooltip = true,
+  }) {
+    return Container(
+      // 折り返し幅の上限は**文字レイヤ専用**。書き出し側の
+      // `painter.layout(maxWidth: w * kOverlayTextWrapFraction)` と
+      // 対になっている（同じ定数を使うのが対であることの担保）。スタンプに
+      // 掛けると RawImage が縮んでプレビューだけ小さくなり、書き出し
+      // (drawImageRect は制約を受けない) と食い違う。
+      constraints: item is _TextOverlayItem
+          ? BoxConstraints(maxWidth: dispW * kOverlayTextWrapFraction)
+          : null,
+      decoration: selected
+          ? BoxDecoration(
+              border: Border.all(color: Colors.white70),
+              borderRadius: BorderRadius.circular(4),
+            )
+          : null,
+      padding: const EdgeInsets.all(2),
+      // ⚠ **不透明度は選択枠の内側に掛ける** (#1128)。枠まで薄くすると、
+      // 透明に近いレイヤを選んだときに「どこを選んでいるのか」が見えなくなる。
+      // 書き出し側の `saveLayer` が囲うのもこの中身だけなので、意味も揃う。
+      child: Opacity(
+        opacity: item.opacity,
+        child: switch (item) {
+          _TextOverlayItem() => Text(
+            item.text,
+            textAlign: TextAlign.center,
+            style: _textStyle(item.color, item.sizeFrac * dispH),
+          ),
+          // ⚠ 素材の出どころが違うだけなので、**プレビューも 1 本**にする (#1178)。
+          _ImageBackedOverlayItem() => _buildImageLayerPreview(
+            item,
+            dispH,
+            tooltip: tooltip,
+          ),
+        },
+      ),
+    );
+  }
+
+  Widget _buildImageLayerPreview(
+    _ImageBackedOverlayItem item,
+    double dispH, {
+    bool tooltip = true,
+  }) {
     // 書き出しとまったく同じ式で寸法を出す。ここが割れると WYSIWYG が崩れる。
     final rect = stickerOverlayRect(
       center: Offset.zero,
@@ -543,21 +1155,203 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
       aspect: item.aspect,
       referenceHeight: dispH,
     );
-    return Tooltip(
-      message: ':${item.shortcode}:',
-      child: RawImage(
-        image: item.image,
-        width: rect.width,
-        height: rect.height,
-        fit: BoxFit.fill,
-        filterQuality: FilterQuality.high,
+    final image = RawImage(
+      image: item.image,
+      width: rect.width,
+      height: rect.height,
+      fit: BoxFit.fill,
+      filterQuality: FilterQuality.high,
+    );
+    // ⚠ tooltip は [_OverlayItem.label] をそのまま使う (#1178)。スタンプは
+    // `:shortcode:`、端末の画像はファイル名で、**一覧の見出しと同じ文字列**になる
+    // （別に組むと「一覧では A、拡大では B」と読める）。空のときは出さない
+    // —— 中身の無い tooltip は当たり判定だけが残って邪魔になる。
+    if (!tooltip || item.label.isEmpty) return image;
+    return Tooltip(message: item.label, child: image);
+  }
+
+  /// レイヤ一覧 (#1126)。**最前面が先頭**で、ドラッグで重ね順を変えられる。
+  ///
+  /// ⚠ **ポインタ 1 本で完結する形にする。**2 本指の回転ジェスチャを採らなかったのと
+  /// 同じ理由で（デスクトップ 3 OS に入力手段が無い）、掴み手は
+  /// [ReorderableDragStartListener] を明示的に置く。
+  Widget _buildLayerList(Uint8List image, Size size) {
+    final layers = _layersFrontFirst;
+    // ⚠ `Material` で敷く。`Container(color:)` だと `ListTile` の ink が塗れず、
+    // 「不透明な ColoredBox の上に ListTile を置くな」と落ちる (#1126)。
+    return Material(
+      color: const Color(0xFF1A1A1A),
+      child: layers.isEmpty
+          ? const Center(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Text(
+                  'テキスト・スタンプ・画像を追加すると、ここに重ね順が出ます',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white54, fontSize: 12),
+                ),
+              ),
+            )
+          : ListTileTheme(
+              textColor: Colors.white,
+              iconColor: Colors.white70,
+              selectedColor: Colors.lightBlueAccent,
+              selectedTileColor: Colors.white10,
+              child: ReorderableListView.builder(
+                key: overlayLayerListKey,
+                buildDefaultDragHandles: false,
+                padding: EdgeInsets.zero,
+                itemCount: layers.length,
+                onReorderItem: _reorderLayers,
+                itemBuilder: (context, index) {
+                  final item = layers[index];
+                  return ListTile(
+                    // 並べ替えても同じレイヤの行を使い回す (#1125)。
+                    key: ValueKey(item.id),
+                    dense: true,
+                    selected: _selectedId == item.id,
+                    contentPadding: const EdgeInsets.only(left: 4, right: 4),
+                    onTap: () => setState(() => _selectedId = item.id),
+                    leading: ReorderableDragStartListener(
+                      index: index,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.drag_handle, size: 18),
+                          const SizedBox(width: 4),
+                          _buildLayerThumb(item, image, size),
+                        ],
+                      ),
+                    ),
+                    title: Row(
+                      children: [
+                        Icon(item.icon, size: 14, color: Colors.white54),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            item.label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 13,
+                              // 非表示のレイヤは薄く、取り消し線で示す (#1127)。
+                              // 行ごと消すと「どこへ行ったか分からない」になる。
+                              color: item.visible ? null : Colors.white38,
+                              decoration: item.visible
+                                  ? null
+                                  : TextDecoration.lineThrough,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _layerToggle(
+                          icon: item.visible
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
+                          tooltip: item.visible ? 'このレイヤーを隠す' : 'このレイヤーを表示する',
+                          active: !item.visible,
+                          onPressed: () =>
+                              setState(() => item.visible = !item.visible),
+                        ),
+                        _layerToggle(
+                          icon: item.locked
+                              ? Icons.lock_outline
+                              : Icons.lock_open_outlined,
+                          tooltip: item.locked ? 'ロックを解除する' : 'このレイヤーをロックする',
+                          active: item.locked,
+                          onPressed: () =>
+                              setState(() => item.locked = !item.locked),
+                        ),
+                        _layerToggle(
+                          icon: Icons.delete_outline,
+                          tooltip: 'このレイヤーを削除',
+                          // ⚠ ロック中は消せない (#1127)。押せる見た目のまま
+                          // 無反応にすると「壊れている」と読まれる。
+                          onPressed: _canModify(item)
+                              ? () => _deleteLayer(item)
+                              : null,
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+    );
+  }
+
+  /// 一覧の行に並べる小さなトグル (#1127)。
+  ///
+  /// ⚠ **`IconButton` の既定の当たり判定は 48px 四方**で、3 つ並べると狭幅の行から
+  /// はみ出す。詰めたぶん [tooltip] で意味を補う。
+  Widget _layerToggle({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback? onPressed,
+    bool active = false,
+  }) {
+    return IconButton(
+      icon: Icon(icon, size: 18),
+      tooltip: tooltip,
+      color: active ? Colors.lightBlueAccent : null,
+      visualDensity: VisualDensity.compact,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+      onPressed: onPressed,
+    );
+  }
+
+  /// レイヤ一覧のサムネ。**画像ごと縮めた縮図**として描く (#1126)。
+  ///
+  /// 元画像を薄く敷いたうえに当該レイヤだけを載せるので、「どのレイヤが画像の
+  /// どこにいるか」が一覧で分かる。⚠ **寸法は [overlayThumbSize] →
+  /// [_buildItemContent] と、キャンバス / 書き出しと同じ経路を通す**（3 回目の描画）。
+  Widget _buildLayerThumb(_OverlayItem item, Uint8List image, Size size) {
+    final thumb = overlayThumbSize(size);
+    return SizedBox(
+      width: thumb.width,
+      height: thumb.height,
+      child: ClipRect(
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: Opacity(
+                opacity: 0.35,
+                child: Image.memory(image, fit: BoxFit.fill),
+              ),
+            ),
+            // 非表示のレイヤはサムネでも消す (#1127)。⚠ **行ごと消さない** ——
+            // 一覧から居なくなると戻し方が分からなくなる。枠と見出しは残す。
+            if (item.visible)
+              Positioned(
+                left: item.nx * thumb.width,
+                top: item.ny * thumb.height,
+                child: FractionalTranslation(
+                  translation: const Offset(-0.5, -0.5),
+                  child: Transform.rotate(
+                    angle: item.angle,
+                    child: _buildItemContent(
+                      item,
+                      thumb.width,
+                      thumb.height,
+                      selected: false,
+                      tooltip: false,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildToolbar() {
-    final index = _selected;
-    final item = index != null ? _items[index] : null;
+    final item = _selectedItem;
     return SafeArea(
       top: false,
       child: Padding(
@@ -572,6 +1366,9 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
               // 回転は文字とスタンプの両方に効く (#946)。片方だけに付けると、
               // 同じキャンバス上の 2 種類のレイヤで操作体系が食い違う。
               _buildAngleRow(item),
+              // ⚠ **行を足す**（サイズ・角度と同じ行に混ぜない）。あの行は 320px で
+              // 既にぎりぎりで、項目を足すと横に破綻する (#953-3 / #1128)。
+              _buildOpacityRow(item),
             ],
             _buildAddRow(),
           ],
@@ -587,7 +1384,9 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
           Padding(
             padding: const EdgeInsets.only(right: 8),
             child: GestureDetector(
-              onTap: () => setState(() => item.color = c),
+              onTap: _canModify(item)
+                  ? () => setState(() => item.color = c)
+                  : null,
               child: Container(
                 width: 28,
                 height: 28,
@@ -628,7 +1427,10 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
             min: kOverlayMinAngle,
             max: kOverlayMaxAngle,
             label: overlayAngleLabel(item.angle),
-            onChanged: (v) => setState(() => item.angle = v),
+            // ロック中は無効表示になる (#1127)。
+            onChanged: _canModify(item)
+                ? (v) => setState(() => item.angle = v)
+                : null,
           ),
         ),
         // 現在角度を数値でも出す。スライダの位置だけだと「ほぼ真っ直ぐ」なのか
@@ -644,9 +1446,45 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
         IconButton(
           icon: const Icon(Icons.restart_alt, color: Colors.white),
           tooltip: '角度をリセット',
-          onPressed: item.angle == 0
+          onPressed: item.angle == 0 || !_canModify(item)
               ? null
               : () => setState(() => item.angle = 0),
+        ),
+      ],
+    );
+  }
+
+  /// 不透明度の操作行 (#1128)。角度の行と同じ作り（アイコン + スライダ + 値 +
+  /// リセット）に揃える。⚠ **スライダだけだと 100% へ正確に戻せない**のは角度と同じ。
+  Widget _buildOpacityRow(_OverlayItem item) {
+    return Row(
+      children: [
+        const Icon(Icons.opacity, color: Colors.white, size: 20),
+        Expanded(
+          child: Slider(
+            key: overlayOpacitySliderKey,
+            value: item.opacity.clamp(kOverlayMinOpacity, 1),
+            min: kOverlayMinOpacity,
+            label: overlayOpacityLabel(item.opacity),
+            onChanged: _canModify(item)
+                ? (v) => setState(() => item.opacity = v)
+                : null,
+          ),
+        ),
+        SizedBox(
+          width: 48,
+          child: Text(
+            overlayOpacityLabel(item.opacity),
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.white, fontSize: 12),
+          ),
+        ),
+        IconButton(
+          icon: const Icon(Icons.restart_alt, color: Colors.white),
+          tooltip: '不透明度をリセット',
+          onPressed: item.opacity == kOverlayDefaultOpacity || !_canModify(item)
+              ? null
+              : () => setState(() => item.opacity = kOverlayDefaultOpacity),
         ),
       ],
     );
@@ -657,7 +1495,10 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
     return Row(
       children: [
         Icon(
-          isText ? Icons.text_fields : Icons.emoji_emotions_outlined,
+          // ⚠ **種別アイコンは [_OverlayItem.icon] から取る** (#1178)。ここで
+          // 三項演算子を重ねると、レイヤ種別が増えるたびに一覧（`icon`）と
+          // この行の 2 箇所を直すことになり、片方だけ忘れると絵が食い違う。
+          item.icon,
           color: Colors.white,
           size: 20,
         ),
@@ -665,22 +1506,30 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
           child: Slider(
             key: overlaySizeSliderKey,
             value: item.sizeFrac,
-            // スタンプは絵として見せるので、文字より大きく引き伸ばせる。
+            // 画像系（スタンプ・端末の画像）は絵として見せるので、文字より大きく
+            // 引き伸ばせる。⚠ **上限はレイヤ自身に持たせてある** (#1178) ——
+            // スタンプと端末の画像は同じ 0.8 でも根拠が別なので、片方を動かすとき
+            // もう片方を巻き込まないため。
             min: kOverlayMinSizeFrac,
-            max: isText ? kOverlayMaxTextSizeFrac : kOverlayMaxStickerSizeFrac,
-            onChanged: (v) => setState(() => item.sizeFrac = v),
+            max: switch (item) {
+              _TextOverlayItem() => kOverlayMaxTextSizeFrac,
+              _ImageBackedOverlayItem() => item.maxSizeFrac,
+            },
+            onChanged: _canModify(item)
+                ? (v) => setState(() => item.sizeFrac = v)
+                : null,
           ),
         ),
         if (isText)
           IconButton(
             icon: const Icon(Icons.edit, color: Colors.white),
             tooltip: 'テキストを編集',
-            onPressed: _editSelected,
+            onPressed: _canModify(item) ? _editSelected : null,
           ),
         IconButton(
           icon: const Icon(Icons.delete_outline, color: Colors.white),
           tooltip: '削除',
-          onPressed: _deleteSelected,
+          onPressed: _canModify(item) ? _deleteSelected : null,
         ),
       ],
     );
@@ -697,6 +1546,10 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
     // `Expanded` / `Flexible` ではなく `Wrap` を選んだのは、ラベルを省略記号で
     // 削るより 2 行に折り返す方がボタンの意味が残るため。入る幅では 1 行のまま
     // なので通常時の見た目は変わらない。
+    //
+    // ⚠⚠ **#1178 で 3 つ目（「画像を追加」）が並んだ。**`Wrap` なので折り返しは
+    // そのまま効くが、**同じ検査（320px / テキストスケール 1.3）を 3 つで通す**
+    // こと —— 2 つで足りていた余白は 3 つでは残っていない。
     return Wrap(
       children: [
         TextButton.icon(
@@ -714,6 +1567,17 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
                 )
               : const Icon(Icons.add_reaction_outlined),
           label: const Text('スタンプを追加'),
+        ),
+        TextButton.icon(
+          onPressed: _loadingPicture ? null : _addPictureItem,
+          icon: _loadingPicture
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.image_outlined),
+          label: const Text('画像を追加'),
         ),
       ],
     );
@@ -750,14 +1614,31 @@ class _TextPromptDialogState extends State<_TextPromptDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('テキスト / 絵文字'),
-      content: TextField(
-        controller: _controller,
-        autofocus: true,
-        maxLines: null,
-        decoration: const InputDecoration(
-          hintText: '重ねる文字や絵文字を入力',
-          border: OutlineInputBorder(),
+      // ⚠⚠ **「絵文字」を名乗らない** (#1178・2026-09-30 pooza)。この画面では
+      // 「絵文字」は**カスタム絵文字＝スタンプ**の意味で使っており、同じ語が
+      // 2 つのものを指していた。⚠ **Unicode 絵文字が打てることは説明しなくてよい**
+      // —— 文字として打てるのは当たり前で、書くと逆にスタンプと取り違えられる。
+      title: const Text('テキスト'),
+      // 字数も改行も制限していないが、1 行ぶんの欄だと「短い文字しか入らない」
+      // ように見える (#1126)。数行ぶんの高さと幅を最初から取っておく。
+      // ⚠ 幅は [double.maxFinite] で「ダイアログが許す最大」にし、上限だけ
+      // 絞る。固定幅にすると 320px の狭幅でダイアログからはみ出す。
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 480),
+        child: SizedBox(
+          width: double.maxFinite,
+          child: TextField(
+            controller: _controller,
+            autofocus: true,
+            minLines: 4,
+            maxLines: 10,
+            keyboardType: TextInputType.multiline,
+            decoration: const InputDecoration(
+              // ⚠ 見出しと同じ理由で「絵文字」を外す（片方だけ直すと食い違う）。
+              hintText: '重ねる文字を入力（改行もできます）',
+              border: OutlineInputBorder(),
+            ),
+          ),
         ),
       ),
       actions: [

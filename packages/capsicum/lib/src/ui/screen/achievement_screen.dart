@@ -11,17 +11,27 @@ class AchievementScreen extends ConsumerWidget {
   final String userId;
   final String? displayName;
 
-  const AchievementScreen({super.key, required this.userId, this.displayName});
+  /// デッキのカラムの中身として描く (#1150)。AppBar を出さない。
+  final bool embedded;
+
+  const AchievementScreen({
+    super.key,
+    required this.userId,
+    this.displayName,
+    this.embedded = false,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final achievements = ref.watch(achievementProvider(userId));
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(displayName != null ? '$displayName の実績' : '実績'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-      ),
+      appBar: embedded
+          ? null
+          : AppBar(
+              title: Text(displayName != null ? '$displayName の実績' : '実績'),
+              backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+            ),
       body: BottomSafeArea(
         child: achievements.when(
           data: (items) {

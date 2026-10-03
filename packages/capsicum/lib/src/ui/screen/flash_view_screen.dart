@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
@@ -17,6 +16,7 @@ import '../../util/oauth_scope_error.dart';
 import '../flash/flash_result_digest.dart';
 import '../flash/flash_runtime.dart';
 import '../flash/flash_view.dart';
+import '../util/deck_navigation.dart';
 import '../util/fediverse_link.dart';
 import '../util/flash_error.dart';
 import '../util/hashtag_actions.dart';
@@ -33,17 +33,24 @@ import '../widget/user_avatar.dart';
 /// ドロワーからの導線は「クイックチューザ（ボトムシート）で 1 本選び、
 /// 滞在する行き先はこの独立画面」という #805 の様式に従う。
 class FlashViewScreen extends ConsumerStatefulWidget {
-  const FlashViewScreen({super.key, this.initialFlash, this.flashId})
-    : assert(
-        initialFlash != null || flashId != null,
-        'either initialFlash or flashId must be provided',
-      );
+  const FlashViewScreen({
+    super.key,
+    this.initialFlash,
+    this.flashId,
+    this.embedded = false,
+  }) : assert(
+         initialFlash != null || flashId != null,
+         'either initialFlash or flashId must be provided',
+       );
 
   /// 一覧から遷移する経路（取得済みを渡す）。
   final Flash? initialFlash;
 
   /// id だけ分かっている経路。
   final String? flashId;
+
+  /// デッキのカラムの中身として描く (#1150)。AppBar を出さない。
+  final bool embedded;
 
   @override
   ConsumerState<FlashViewScreen> createState() => _FlashViewScreenState();
@@ -91,10 +98,12 @@ class _FlashViewScreenState extends ConsumerState<FlashViewScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Play'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-      ),
+      appBar: widget.embedded
+          ? null
+          : AppBar(
+              title: const Text('Play'),
+              backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+            ),
       body: BottomSafeArea(
         child: FutureBuilder<Flash>(
           future: _future,
@@ -187,7 +196,7 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
     try {
       final user = await adapter.getUser(username, host);
       if (user != null && mounted) {
-        context.push('/profile', extra: user);
+        openProfile(context, user);
       }
     } on Exception catch (e) {
       debugLogException('Failed to look up mention $mention', e);

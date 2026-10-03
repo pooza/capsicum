@@ -19,6 +19,53 @@ int? parseNextOffsetFromLink(String? link) {
   return match == null ? null : int.tryParse(match.group(1)!);
 }
 
+/// Web Push で購読する通知種別（`data[alerts][…]`・#1204）。
+///
+/// 正本は Mastodon の `Notification::PROPERTIES`（`TYPES = PROPERTIES.keys`）。
+/// **4.7.3 時点の全 17 種**で、`pooza/mastodon` の `app/models/notification.rb`
+/// から写した（2026-10-03 実測）。
+///
+/// ⚠⚠ **一部だけ立てると、その種別は画面には出るのにプッシュで届かない。**
+/// capsicum の `notification_type_display.dart` は 30 種に `case` を持つのに、
+/// 購読は 7 種しか立てていなかった（#1204）。⚠ 実害が出ていたのは
+/// `moderation_warning`（モデレーターの警告）/ `admin.report`（通報が来たこと）/
+/// `quote`（引用されたこと・`baseline: true` なので全利用者が対象）/
+/// `follow_request`（鍵アカウントへのフォロー申請）。
+///
+/// ⚠ **版で分岐しない。**サーバーが知らない種別を送っても
+/// `params.expect(data: [:policy, alerts: Notification::TYPES])` の strong
+/// parameters が**黙って落とす**だけで、エラーにはならない（コントローラを読んで
+/// 確認・2026-10-03）。つまり**新しい種別を先に送っておける**ので、サーバーの版を
+/// 見て出し分ける必要がない。
+///
+/// ⚠ `admin.sign_up` / `admin.report` は**権限を持つ利用者にしか発火しない**ので、
+/// 一般利用者に送っても無害。⚠⚠ **pooza はプリセット 5 台の運営者なので、ここが
+/// 抜けていると通報に気付けない。**
+///
+/// ⚠ **`data[policy]`（`all` / `followed` / `follower` / `none`）は送っていない。**
+/// 既定の `all` が効く。送る側の UI を持つかは #1204 の範囲外。
+const pushAlertTypes = <String>[
+  // 従来から立てていた 7 種
+  'mention',
+  'favourite',
+  'reblog',
+  'follow',
+  'poll',
+  'status',
+  'update',
+  // #1204 で足した 10 種
+  'follow_request',
+  'severed_relationships',
+  'moderation_warning',
+  'annual_report',
+  'admin.sign_up',
+  'admin.report',
+  'quote',
+  'quoted_update',
+  'added_to_collection',
+  'collection_update',
+];
+
 class MastodonClient {
   final Dio dio;
   final String host;
@@ -115,6 +162,42 @@ class MastodonClient {
       if (e.response?.statusCode == 404) return null;
       rethrow;
     }
+  }
+
+  /// GET /api/v1/accounts/:id/featured_tags（プロフィールの掲載タグ・#1075）
+  Future<List<MastodonFeaturedTag>> getFeaturedTags(String id) async {
+    final response = await dio.get('/api/v1/accounts/$id/featured_tags');
+    return (response.data as List)
+        .map((e) => MastodonFeaturedTag.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// POST /api/v1/featured_tags（自分のプロフィールにタグを掲載・#1075）
+  Future<MastodonFeaturedTag> createFeaturedTag(String name) async {
+    final response = await dio.post(
+      '/api/v1/featured_tags',
+      data: {'name': name},
+    );
+    return MastodonFeaturedTag.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// DELETE /api/v1/featured_tags/:id（掲載を外す・#1075）
+  Future<void> deleteFeaturedTag(String id) async {
+    await dio.delete('/api/v1/featured_tags/$id');
+  }
+
+  /// GET /api/v1/featured_tags/suggestions（最近使ったタグ・#1075）。
+  ///
+  /// 返るのは `REST::TagSerializer`（`name` / `featuring` 等）の配列。必要なのは
+  /// 名前と掲載済みかだけなので DTO を作らずに読む。
+  Future<List<({String name, bool featuring})>>
+  getFeaturedTagSuggestions() async {
+    final response = await dio.get('/api/v1/featured_tags/suggestions');
+    return [
+      for (final e in response.data as List)
+        if (e is Map && e['name'] is String)
+          (name: e['name'] as String, featuring: e['featuring'] == true),
+    ];
   }
 
   /// GET /api/v1/accounts/:id/statuses
@@ -566,10 +649,24 @@ class MastodonClient {
   }
 
   /// GET /api/v1/notifications
+  ///
+  /// [excludeTypes] は出さない種別のサーバー側名 (#1042)。⚠ **許可リスト
+  /// (`types[]`) ではなく拒否リストを使う**理由は [NotificationQuery.excludeTypes]
+  /// の doc が正本。
+  ///
+  /// [supportedTypes] は capsicum が名前を知っている種別 (#1042)。⚠⚠ **送らないと
+  /// `fallback` は永久に来ない**（`NotificationFallbackConcern#needs_fallback?` が
+  /// `supported_notification_types.nil?` で即 false を返す）。
+  ///
+  /// ⚠ **配列のキーには自分で `[]` を付ける。**dio の既定 `ListFormat.multi` は
+  /// キーを加工しないので、`'exclude_types': [...]` と書くと
+  /// `exclude_types=favourite` になって Rails が配列として読まない。
   Future<List<MastodonNotification>> getNotifications({
     String? maxId,
     String? sinceId,
     int? limit,
+    List<String> excludeTypes = const [],
+    List<String> supportedTypes = const [],
   }) async {
     final response = await dio.get(
       '/api/v1/notifications',
@@ -577,6 +674,8 @@ class MastodonClient {
         'max_id': ?maxId,
         'since_id': ?sinceId,
         'limit': ?limit,
+        if (excludeTypes.isNotEmpty) 'exclude_types[]': excludeTypes,
+        if (supportedTypes.isNotEmpty) 'supported_types[]': supportedTypes,
       },
     );
     // 1 件でも fromJson が throw するとページ全体が読めなくなるため、
@@ -602,6 +701,41 @@ class MastodonClient {
       }
     }
     return notifications;
+  }
+
+  /// GET /api/v2/notifications — 束ねられた通知 (#1048)。
+  ///
+  /// ⚠⚠ **v1 と違い 1 個の Map が返る。**アカウントと投稿は重複排除されて
+  /// トップレベルの配列に載り、グループは ID で参照する
+  /// （[MastodonGroupedNotifications] の doc が正本）。
+  ///
+  /// ⚠ **`expand_accounts` は送らない。**既定の `full` のままにする。
+  /// `partial_avatars` にすると代表アカウントの 2 人目以降が
+  /// `partial_accounts`（アバターだけ）へ移り、表示名も絵文字も引けなくなる。
+  ///
+  /// ⚠ **v2 を持たないサーバーがある。**Mastodon 4.3 未満と、v1 だけ実装した
+  /// 互換サーバー。ここでは判定せず [DioException] をそのまま投げるので、
+  /// 呼び出し側が v1 へ落とすこと。
+  Future<MastodonGroupedNotifications> getGroupedNotifications({
+    String? maxId,
+    String? sinceId,
+    int? limit,
+    List<String> excludeTypes = const [],
+    List<String> supportedTypes = const [],
+  }) async {
+    final response = await dio.get(
+      '/api/v2/notifications',
+      queryParameters: {
+        'max_id': ?maxId,
+        'since_id': ?sinceId,
+        'limit': ?limit,
+        if (excludeTypes.isNotEmpty) 'exclude_types[]': excludeTypes,
+        if (supportedTypes.isNotEmpty) 'supported_types[]': supportedTypes,
+      },
+    );
+    return MastodonGroupedNotifications.fromJson(
+      response.data as Map<String, dynamic>,
+    );
   }
 
   /// GET /api/v1/conversations
@@ -1254,13 +1388,7 @@ class MastodonClient {
         'subscription[standard]': 'true',
         'subscription[keys][p256dh]': p256dh,
         'subscription[keys][auth]': auth,
-        'data[alerts][mention]': 'true',
-        'data[alerts][favourite]': 'true',
-        'data[alerts][reblog]': 'true',
-        'data[alerts][follow]': 'true',
-        'data[alerts][poll]': 'true',
-        'data[alerts][status]': 'true',
-        'data[alerts][update]': 'true',
+        for (final type in pushAlertTypes) 'data[alerts][$type]': 'true',
       }),
     );
     return response.data as Map<String, dynamic>;

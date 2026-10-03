@@ -16,6 +16,7 @@ import '../util/sentry_tag_hash.dart';
 import 'announcement_subscription_service.dart';
 import 'apns_service.dart';
 import 'device_install_id.dart';
+import 'entitlement_token_store.dart';
 import 'fcm_service.dart';
 import 'push_device_type.dart';
 import 'push_key_store.dart';
@@ -43,6 +44,32 @@ class PushRegistrationService {
   /// eligible 判定（「連れて登録」判定）の中央集約。
   static bool hasPresetAmong(Iterable<Account> accounts) =>
       accounts.any((a) => isPresetServer(a.key.host));
+
+  /// このアカウントで relay への登録を試みてよいか (#597 / #1181)。
+  ///
+  /// - [eligible] = プリセットのアカウントを 1 つでも持っている（[hasPresetAmong]）
+  /// - [hasEntitlement] = 有償リレーの利用権トークンを保持している（#1121）
+  ///
+  /// ⚠⚠ **以前は `eligible` と [isPresetServer] しか見ていなかったので、
+  /// プリセットのアカウントを持たない購入者は `/register` に一度も到達せず、
+  /// 購入が丸ごと死んでいた (#1181)。**relay 側（capsicum-relay#58 / #59 / #60）は
+  /// 「来た要求をどう扱うか」の話なので、**要求が来ないことは向こうからは見えない。**
+  ///
+  /// ⚠ **クライアント側のゲートは緩くてよい。認可は relay の仕事**
+  /// （設計書 決定済み事項 2-C「止めるのは `/push`」）。
+  ///
+  /// ⚠⚠ **token が本物かをここで判定しない。**`POST /entitlements` の認証は
+  /// 共有シークレット 1 本で**バイナリから取り出せる**ので、**token は購入の
+  /// 証拠にならない**。持っているのは「買ったつもりがある」という意思表示までで、
+  /// 有効かどうかは relay がレシートで決める（capsicum-relay#61 / #62）。
+  ///
+  /// ⚠ **`status` も見ない。**`unverified` のまま登録を止めると、relay 側の
+  /// 検証が済む前に自分で締め出すことになる。
+  static bool shouldAttemptRegistration({
+    required String host,
+    required bool eligible,
+    required bool hasEntitlement,
+  }) => eligible || isPresetServer(host) || hasEntitlement;
 
   /// 現在のプラットフォームで push backend (APNs/FCM 経由 + capsicum-relay)
   /// が本配線済みか。macOS / Linux / Windows のうち未対応のものは false にし、
@@ -126,7 +153,15 @@ class PushRegistrationService {
         store.update(accountKey, PushRegistrationState.skipped);
         return;
       }
-      if (!eligible && !isPresetServer(account.key.host)) {
+      // 有償リレーの利用権 (#597 / #1121)。⚠ **プロセス内でキャッシュされる**
+      // ので、アカウントごとに呼んでも secure storage を開くのは 1 回。
+      // ⚠ 読めなくても null に倒れる（push 登録を道連れにしない）。
+      final entitlement = await EntitlementTokenStore.load();
+      if (!shouldAttemptRegistration(
+        host: account.key.host,
+        eligible: eligible,
+        hasEntitlement: entitlement != null,
+      )) {
         debugPrint(
           'capsicum: push.registration: skipped (not preset): ${account.key.host}',
         );
@@ -199,6 +234,9 @@ class PushRegistrationService {
         account: '${account.key.username}@${account.key.host}',
         server: account.key.host,
         deviceId: deviceId,
+        // 有償リレーの利用権 (#597 / #1121)。⚠ **無ければ載せないだけ**で、
+        // relay 側は観測のために記録するだけ（判定は `device_id` から引く）。
+        entitlementToken: entitlement?.token,
       );
 
       relayId = PushRelayClient.parseRelayId(sub['id']);
@@ -406,13 +444,23 @@ class PushRegistrationService {
               auth: keys.auth,
             );
           } else {
+            // ⚠⚠ **鍵が読めないので、Misskey 2026.10.0 以降では解除できない**
+            // (#1201)。`auth` / `publickey` が必須になった版は `endpoint` 単体を
+            // 400 で断る。⚠ **それでも呼ぶ** —— 旧版では従来どおり成功するし、
+            // 新版でも悪化はしない（この経路はもともと「鍵が無い」救済措置）。
             await (account.adapter as PushSubscriptionSupport).unsubscribePush(
               endpoint: endpoint,
             );
           }
         } else {
+          // ⚠ モロヘイヤ非経由の Misskey（本家・2026.10.0 以降）は、ここで
+          // `auth` / `publickey` を送らないと購読が消えない (#1201)。鍵は
+          // 読めれば渡す（Mastodon 側は受け取って捨てる）。
+          final keys = await PushKeyStore.read(accountKey);
           await (account.adapter as PushSubscriptionSupport).unsubscribePush(
             endpoint: endpoint,
+            p256dh: keys?.p256dh,
+            auth: keys?.auth,
           );
         }
       } catch (e, st) {

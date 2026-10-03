@@ -68,6 +68,26 @@ extension CapsicumMastodonAccountExtension on MastodonAccount {
       url: url,
       createdAt: createdAt,
       defaultScope: mastodonVisibilityRosetta[source?['privacy'] as String?],
+      // 投稿設定の既定 (#1194)。⚠⚠ **`privacy` と同じ画面で設定するのに、
+      // これらだけ取り残されていた。**`source` は 4 つとも返している
+      // （`REST::CredentialAccountSerializer#source`）。
+      //
+      // ⚠ **`/api/v1/accounts/:id` には `source` が無い**（`verify_credentials`
+      // だけ）。他人の User では null になるが、既定は自分のものしか使わない
+      // ので困らない。
+      // ⚠⚠ **「サイトの表示言語に合わせる」は null ではなく `''` で来る
+      // (#1194)。**WebUI の `<select>` は nil の選択肢を `value=""` で出し、
+      // `UserSettings#[]=` は `''` を String へ type_cast したうえで
+      // **nil でないので保存する**（nil のときだけ delete される）。`''` を
+      // そのまま渡すと呼ぶ側の `?? 端末ロケール` が効かず、**投稿フォームの
+      // 言語が空欄で開く**。
+      //
+      // ⚠ `quote_policy` / `privacy` は `setting ... in: %w(...)` の検証がある
+      // ので `''` を保存できない（ArgumentError になる）。**正規化が要るのは
+      // `in:` を持たない `language` だけ。**
+      defaultLanguage: _blankToNull(source?['language'] as String?),
+      defaultQuotePolicy: source?['quote_policy'] as String?,
+      defaultSensitive: source?['sensitive'] as bool?,
       showMedia: showMedia,
       showMediaReplies: showMediaReplies,
       showFeatured: showFeatured,
@@ -101,6 +121,13 @@ MovedTo? _movedTo(MastodonAccount? moved) {
   if (url == null || url.isEmpty) return null;
   return MovedTo(url: url, handle: '@${moved.acct}', userId: moved.id);
 }
+
+/// 空文字を「未設定」として扱う。
+///
+/// ⚠ Mastodon の `UserSettings` は `in:` の検証が無い設定で `''` をそのまま
+/// 保存するので、「未設定」が null と `''` の 2 通りで来る（#1194）。
+String? _blankToNull(String? value) =>
+    value == null || value.isEmpty ? null : value;
 
 FeatureApproval? _parseFeatureApproval(Map<String, dynamic>? raw) {
   if (raw == null) return null;
@@ -165,6 +192,7 @@ extension CapsicumMastodonStatusExtension on MastodonStatus {
       url: url,
       editedAt: editedAt,
       mentions: _parseMentions(mentions),
+      tags: _parseTags(tags),
     );
   }
 }
@@ -382,7 +410,60 @@ const mastodonNotificationTypeMap = <String, NotificationType>{
   // Mastodon 4.6 Collections (FEP-7aa9) の被フィーチャー通知 (#741)。
   'added_to_collection': NotificationType.addedToCollection,
   'collection_update': NotificationType.collectionUpdate,
+  // 関係の切断・モデレーション警告 (#1084)。
+  'severed_relationships': NotificationType.severedRelationships,
+  'moderation_warning': NotificationType.moderationWarning,
+  // #1177 で足した 6 種。⚠⚠ **この表は絞り込みに送る名前の正本でもある**
+  // （`mastodonNotificationWireNames` が導出・#1042）ので、足した種別は
+  // **自動的に種別フィルタの候補にも出る。**
+  // ⚠ `filterable: false` の種別も `types[]` では使える（`Notification.browserable`
+  // が `TYPES` と交差するだけ。`filterable` は通知ポリシー用・2026-09-28 実測）。
+  'status': NotificationType.newPost,
+  'quote': NotificationType.quote,
+  'quoted_update': NotificationType.quotedUpdate,
+  'annual_report': NotificationType.annualReport,
+  // ⚠⚠ **`admin.sign_up` / `admin.report` はここに入れない (#1177)。**
+  //
+  // この表は `supported_types[]` の正本でもある（#1042）。**載せると「capsicum が
+  // 描ける」と申告したことになり、サーバーが `fallback` を送らなくなる**
+  // （`NotificationFallbackConcern#needs_fallback?`・非 baseline の種別だけに付く）。
+  // ⚠ capsicum は通報や新規登録の中身を読まないので、**自前のラベルより
+  // サーバーの文言のほうが情報量が多い。**載せると今より悪くなる。
+  //
+  // ⚠ `severed_relationships` / `moderation_warning` が載っているのは、
+  // **あちらは中身（`event` / `moderation_warning`）を実際に読んでいる**から（#1084）。
 };
+
+/// 起点となる相手がいない通知 (#1084)。
+///
+/// ⚠ **サーバーは `account` に受信者本人を入れて返す**（`Notification#set_from_account`
+/// のコメント「originating account が無いが data model 上必須なので受信者を入れる」）。
+/// そのまま渡すと見出しに自分のアイコンと名前が出て、自分が何かしたように読める。
+const _mastodonNotificationTypesWithoutActor = {
+  'severed_relationships',
+  'moderation_warning',
+};
+
+/// [type] に対応するサーバー側の通知種別名 (#1042)。
+///
+/// ⚠⚠ **[mastodonNotificationTypeMap] から導出する。**送信用の表を別に書くと、
+/// 片方だけ増えたときに「チェックしても効かない絞り込み」や「絞り込んだ覚えの
+/// ない種別が消える」が出る。**1 つの capsicum 種別に複数の送信名が対応しうる**
+/// （将来 `quote` を [NotificationType.mention] へ寄せた場合など）ので Set。
+Set<String> mastodonNotificationWireNames(NotificationType type) => {
+  for (final entry in mastodonNotificationTypeMap.entries)
+    if (entry.value == type) entry.key,
+};
+
+/// capsicum が名前を知っている種別（`supported_types[]` に送る値・#1042）。
+List<String> get mastodonSupportedNotificationTypes =>
+    mastodonNotificationTypeMap.keys.toList();
+
+/// 絞り込みの候補に出せる種別 (#1042)。
+///
+/// ⚠ [NotificationType.other] は表の値に現れないので自動的に外れる。
+Set<NotificationType> get mastodonFilterableNotificationTypes =>
+    mastodonNotificationTypeMap.values.toSet();
 
 extension CapsicumMastodonNotificationExtension on MastodonNotification {
   Notification toCapsicum(
@@ -393,11 +474,123 @@ extension CapsicumMastodonNotificationExtension on MastodonNotification {
       id: id,
       type: mastodonNotificationTypeMap[type] ?? NotificationType.other,
       createdAt: createdAt,
-      user: account.toCapsicum(localHost, adminRoleIds: adminRoleIds),
+      user: _mastodonNotificationTypesWithoutActor.contains(type)
+          ? null
+          : account.toCapsicum(localHost, adminRoleIds: adminRoleIds),
       post: status?.toCapsicum(localHost, adminRoleIds: adminRoleIds),
       collection: collection?.toCapsicum(),
+      severance: event?.toCapsicum(),
+      moderationWarning: moderationWarning?.toCapsicum(),
+      fallbackTitle: fallback?.title,
+      fallbackBody: fallback?.summary,
     );
   }
+}
+
+extension CapsicumMastodonNotificationGroupExtension
+    on MastodonNotificationGroup {
+  /// 束ねられた通知 1 グループを capsicum の 1 件へ畳む (#1048)。
+  ///
+  /// [accounts] / [statuses] は [MastodonGroupedNotifications] のトップレベル
+  /// 配列を ID で引ける形にしたもの。⚠ **引けなかった参照は落とす**（サーバーが
+  /// 一貫していない場合に 1 グループで一覧全体を落とさない）。
+  Notification toCapsicum(
+    String localHost, {
+    required Map<String, MastodonAccount> accounts,
+    required Map<String, MastodonStatus> statuses,
+    Set<String> adminRoleIds = const {},
+  }) {
+    // ⚠⚠ **v2 のグループに `created_at` は無い。**時刻はこれだけなので、
+    // 無ければこのグループは並べ替えも相対時刻も出せない。`_safeConvert` に
+    // 拾わせて 1 グループだけ落とす（⚠ 例外に生の JSON を載せない・#1027-A5）。
+    final createdAt = latestPageNotificationAt;
+    if (createdAt == null) {
+      throw const FormatException(
+        'notification group without latest_page_notification_at',
+      );
+    }
+    // ⚠ **同じ相手が複数回並ぶことがある。**`sample_account_ids` は通知の
+    // `from_account_id` を新しい順に 8 件取ったもので、フォロー → 解除 →
+    // 再フォローのように同じ相手が複数の通知を作る種別では重複する。重ねて
+    // 並べると同じアイコンが 3 つ出るので、ここで畳む。
+    // ⚠ **`notificationsCount` は畳まない**（サーバーが数えた通知の件数で、
+    // 本家 WebUI の「X and N others」も同じ数え方）。
+    final seen = <String>{};
+    final samples = [
+      for (final id in sampleAccountIds)
+        if (seen.add(id) && accounts[id] != null)
+          accounts[id]!.toCapsicum(localHost, adminRoleIds: adminRoleIds),
+    ];
+    // ⚠ 起点となる相手がいない種別は v1 と同じ扱い（受信者本人が代表として
+    // 入ってくるので、そのまま出すと自分が何かしたように読める・#1084）。
+    final withoutActor = _mastodonNotificationTypesWithoutActor.contains(type);
+    return Notification(
+      // ⚠ **`group_key` ではなく通知 ID を `id` に置く。**既読マーカーと
+      // バックグラウンド取得の last-seen が通知 ID を前提にしている。
+      id: mostRecentNotificationId,
+      type: mastodonNotificationTypeMap[type] ?? NotificationType.other,
+      createdAt: createdAt,
+      user: withoutActor ? null : samples.firstOrNull,
+      post: statuses[statusId]?.toCapsicum(
+        localHost,
+        adminRoleIds: adminRoleIds,
+      ),
+      collection: collection?.toCapsicum(),
+      severance: event?.toCapsicum(),
+      moderationWarning: moderationWarning?.toCapsicum(),
+      groupKey: groupKey,
+      groupCount: notificationsCount,
+      sampleUsers: withoutActor ? const [] : samples,
+      fallbackTitle: fallback?.title,
+      fallbackBody: fallback?.summary,
+    );
+  }
+}
+
+extension CapsicumMastodonRelationshipSeveranceExtension
+    on MastodonRelationshipSeveranceEvent {
+  RelationshipSeverance toCapsicum() => RelationshipSeverance(
+    kind: switch (type) {
+      'domain_block' => RelationshipSeveranceKind.domainBlock,
+      'user_domain_block' => RelationshipSeveranceKind.userDomainBlock,
+      'account_suspension' => RelationshipSeveranceKind.accountSuspension,
+      _ => RelationshipSeveranceKind.unknown,
+    },
+    targetName: targetName,
+    followersCount: followersCount ?? 0,
+    followingCount: followingCount ?? 0,
+  );
+}
+
+extension CapsicumMastodonAccountWarningExtension on MastodonAccountWarning {
+  ModerationWarning toCapsicum() => ModerationWarning(
+    id: id,
+    action: switch (action) {
+      'none' => ModerationWarningAction.none,
+      'disable' => ModerationWarningAction.disable,
+      'mark_statuses_as_sensitive' =>
+        ModerationWarningAction.markStatusesAsSensitive,
+      'delete_statuses' => ModerationWarningAction.deleteStatuses,
+      'sensitive' => ModerationWarningAction.sensitive,
+      'silence' => ModerationWarningAction.silence,
+      'suspend' => ModerationWarningAction.suspend,
+      _ => ModerationWarningAction.unknown,
+    },
+    text: (text?.trim().isEmpty ?? true) ? null : text!.trim(),
+  );
+}
+
+extension CapsicumMastodonFeaturedTagExtension on MastodonFeaturedTag {
+  /// ⚠ 件数は文字列で来る・日付は日付だけ（#1075）。読めなければ 0 / null に倒し、
+  /// 掲載タグそのものは落とさない（表示の主役はタグ名）。
+  FeaturedTag toCapsicum() => FeaturedTag(
+    id: id,
+    name: name,
+    statusesCount: int.tryParse(statusesCount ?? '') ?? 0,
+    lastStatusAt: lastStatusAt == null
+        ? null
+        : DateTime.tryParse(lastStatusAt!),
+  );
 }
 
 extension CapsicumMastodonCollectionExtension on MastodonCollection {
@@ -456,3 +649,16 @@ extension CapsicumMastodonMediaAttachmentExtension on MastodonMediaAttachment {
     );
   }
 }
+
+/// サーバーが正規化して返したハッシュタグ (#1056)。`name` から `#` を除いた形。
+///
+/// ⚠ `name` は**小文字へ正規化済み**（索引のため）。表示には使わない
+/// （`Post.tags` の注記・`mergeHashtags`）。
+///
+/// ⚠ 先頭の `#` は付かないのが仕様だが、**念のため落としておく**（付いた形で
+/// 返すフォークがあっても `#` が二重にならない）。
+List<String> _parseTags(List<Map<String, dynamic>>? raw) => [
+  for (final t in raw ?? const <Map<String, dynamic>>[])
+    if (t['name'] case final String name when name.isNotEmpty)
+      name.startsWith('#') ? name.substring(1) : name,
+];

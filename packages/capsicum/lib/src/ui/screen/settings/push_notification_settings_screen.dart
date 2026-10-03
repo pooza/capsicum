@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../model/account.dart';
 import '../../../provider/account_manager_provider.dart';
+import '../../../provider/entitlement_status_provider.dart';
 import '../../../provider/push_registration_status_provider.dart';
 import '../../../service/announcement_subscription_service.dart';
 import '../../../service/push_registration_service.dart';
@@ -47,6 +48,7 @@ class PushNotificationSettingsScreen extends ConsumerWidget {
               style: const TextStyle(fontSize: 13),
             ),
           ),
+          ..._entitlementSection(ref, hasPreset: hasPreset),
           const SectionHeader('アカウント別の登録状況'),
           ...accounts.map(
             (account) => _AccountStatusTile(
@@ -59,6 +61,127 @@ class PushNotificationSettingsScreen extends ConsumerWidget {
       ),
     );
   }
+
+  /// 有償リレーの利用権の状態 (#597 / #1123)。
+  ///
+  /// ⚠⚠ **プリセットサーバーのアカウントがあるなら何も出さない。**無償のまま
+  /// 何も変わらない人に課金の状態を見せない —— ゲートが閉じるのは
+  /// **「非プリセット かつ 利用権なし」**のときだけで、⚠ **プリセットに 1 つでも
+  /// アカウントがあれば全アカウントが通る**（設計書の意図どおりの「迂回」）。
+  ///
+  /// ⚠ **未購入でも、非プリセットの人には出す。**「いつのまにか通知が来ない」を
+  /// 避けるのがこの Issue の出発点で、**買っていないこと自体が原因になりうる。**
+  List<Widget> _entitlementSection(WidgetRef ref, {required bool hasPreset}) {
+    // ⚠⚠ **`watch` より先に抜ける。**ここで provider を起動すると、プリセットの
+    // みの人でも**キーホルダの読み出しと relay への問い合わせが走る** ——
+    // 「何も表示が増えない」を見た目だけで満たしても、**通信は増えている。**
+    // ⚠ 下の [showEntitlementSection] も同じ判定を持つ（あちらは検査で固定した
+    // 判断そのもの、ここは**起動させないための門**）。
+    if (hasPreset) return const [];
+
+    final status = ref.watch(entitlementStatusProvider);
+    if (!showEntitlementSection(
+      hasPreset: hasPreset,
+      view: status.view,
+      isRefreshing: status.isRefreshing,
+    )) {
+      return const [];
+    }
+
+    // ⚠ 読めなければ null。文面から日付だけを落とす（[formatEntitlementExpiry]）。
+    final expiry = formatEntitlementExpiry(status.expiresAt);
+
+    final (title, body, icon) = switch (status.view) {
+      EntitlementView.active => (
+        '利用権は有効です',
+        'プリセット以外のサーバーでもプッシュ通知を受け取れます。',
+        Icons.check_circle_outline,
+      ),
+      // ⚠⚠ **届いている。**relay は返金済みでも**決済済みの期間までは通す**
+      // （relay#63「払った分の権利は否定しない」）。⚠ **失効と同じ文面にしない** ——
+      // 届いているのに「届かなくなります」と言うことになる。
+      // ⚠ **期限を併記する**のがこの状態の存在理由。
+      EntitlementView.refunded => (
+        '返金済みです',
+        expiry == null
+            ? '決済済みの期間が残っているあいだは、プリセット以外のサーバーでも'
+                  'プッシュ通知をお使いいただけます。'
+            : '$expiry までは、プリセット以外のサーバーでもプッシュ通知を'
+                  'お使いいただけます。期限を過ぎると届かなくなります。',
+        Icons.schedule,
+      ),
+      // ⚠⚠ **止まっている。**2026-10-03 に「未払いの間は通さない」と決まった
+      // （relay#63）ので、**「いまのところ届いています」とは言えない。**
+      // ⚠ **利用者が自分で直せる唯一の状態**なので、直し方まで書く。
+      EntitlementView.grace => (
+        'お支払いを確認できていません',
+        'プリセット以外のサーバーへのプッシュ通知が止まっています。'
+            'ストアでお支払い方法をご確認ください。'
+            'お支払いが確認できたあと、この画面から登録をやり直すと再び届きます。',
+        Icons.error_outline,
+      ),
+      EntitlementView.expired => (
+        '利用権が失効しています',
+        'プリセット以外のサーバーでは、プッシュ通知が届かなくなります。'
+            'もう一度ご購入いただくと、この画面から登録をやり直せます。',
+        Icons.cancel_outlined,
+      ),
+      EntitlementView.absent => (
+        '利用権がありません',
+        'プリセット以外のサーバーでプッシュ通知を受け取るには、'
+            'サポート画面から利用権をご購入ください。',
+        Icons.info_outline,
+      ),
+    };
+
+    return [
+      const SectionHeader('リレーの利用権'),
+      ListTile(leading: Icon(icon), title: Text(title), subtitle: Text(body)),
+      // ⚠⚠ **買い直したあとの再登録の導線**（完了条件の 2 つ目）。
+      // `/push` が 410 を返すと fedi サーバー側の購読が消えるので、⚠ **買い直す
+      // だけでは戻らない。**登録をやり直す必要がある。
+      // ⚠ **返金済みにも出す。**いまは届いているが期限で切れるので、買い直した
+      // ときにここから戻せる必要がある。
+      if (status.view != EntitlementView.active)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: OutlinedButton(
+            onPressed: () async {
+              await ref.read(entitlementStatusProvider.notifier).refresh();
+              final accounts = ref.read(accountManagerProvider).accounts;
+              if (accounts.isNotEmpty) {
+                await PushRegistrationService.registerAllAccounts(accounts);
+              }
+            },
+            child: const Text('購入を確認して登録し直す'),
+          ),
+        ),
+    ];
+  }
+}
+
+/// 利用権の節を出すか (#597 / #1123)。
+///
+/// 判断材料が真偽値と enum だけなので、画面から切り出してテスト可能にしてある
+/// （[resolveAnnouncementRow] と同じ流儀）。
+///
+/// ⚠⚠ **プリセットサーバーのアカウントがあるなら出さない**（完了条件の 3 つ目）。
+/// 無償のまま何も変わらない人に課金の状態を見せない —— ゲートが閉じるのは
+/// **「非プリセット かつ 利用権なし」**のときだけで、⚠ **プリセットに 1 つでも
+/// アカウントがあれば全アカウントが通る**（設計書の意図どおりの「迂回」）。
+///
+/// ⚠ **読み込み中に「未購入」と出さない。**一瞬でも「買ってください」と見せると、
+/// **買った人に二重購入をさせうる。**⚠ ただし**手元に状態がある**（`absent` 以外）
+/// なら、問い合わせ中でもその値を出してよい —— 圏外で画面が空になるほうが困る。
+@visibleForTesting
+bool showEntitlementSection({
+  required bool hasPreset,
+  required EntitlementView view,
+  required bool isRefreshing,
+}) {
+  if (hasPreset) return false;
+  if (isRefreshing && view == EntitlementView.absent) return false;
+  return true;
 }
 
 /// アカウント行の下に出すお知らせ通知 (#477) の UI 種別。

@@ -1,6 +1,6 @@
 # デスクトップ対応のプラグイン棚卸し
 
-capsicum が依存している Flutter プラグインの macOS / Linux / Windows 対応状況まとめ。デスクトップ対応（[CLAUDE.md の長期構想](CLAUDE.md#長期構想-デスクトップ対応) を参照）を段階的に進めるための見積もり資料として使う。
+capsicum が依存している Flutter プラグインの macOS / Linux / Windows 対応状況まとめ。デスクトップ対応（[CLAUDE.md の長期構想](CLAUDE.md#デスクトップ対応) を参照）を段階的に進めるための見積もり資料として使う。
 
 > macOS / Linux / Windows いずれも出荷済み（Windows は v1.25 で自己署名 MSIX 直配、v1.27 で Microsoft Store 公開 [#544](https://github.com/pooza/capsicum/issues/544)）。本書の Tier 区分・バンドル影響・MSIX 必須要件等は各 OS の現役運用情報として参照する。
 

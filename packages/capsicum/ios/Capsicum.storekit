@@ -1,0 +1,96 @@
+{
+  "identifier" : "capsicum-local-store",
+  "nonRenewingSubscriptions" : [
+  ],
+  "products" : [
+    {
+      "displayPrice" : "100",
+      "familyShareable" : false,
+      "internalID" : "1001",
+      "localizations" : [
+        {
+          "description" : "capsicum の開発と通知リレー運用へのささやかな応援です。",
+          "displayName" : "ちょこっとサポート",
+          "locale" : "ja"
+        }
+      ],
+      "productID" : "supporter.tip.small",
+      "referenceName" : "Tip small",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "500",
+      "familyShareable" : false,
+      "internalID" : "1002",
+      "localizations" : [
+        {
+          "description" : "capsicum の開発と通知リレー運用へのしっかりとした応援です。",
+          "displayName" : "しっかりサポート",
+          "locale" : "ja"
+        }
+      ],
+      "productID" : "supporter.tip.medium",
+      "referenceName" : "Tip medium",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "800",
+      "familyShareable" : false,
+      "internalID" : "1003",
+      "localizations" : [
+        {
+          "description" : "capsicum の開発と通知リレー運用への大きな応援です。",
+          "displayName" : "たっぷりサポート",
+          "locale" : "ja"
+        }
+      ],
+      "productID" : "supporter.tip.big",
+      "referenceName" : "Tip big",
+      "type" : "Consumable"
+    }
+  ],
+  "settings" : {
+    "_applicationInternalID" : "6760206608",
+    "_developerTeamID" : "",
+    "_lastSynchronizedDate" : 0,
+    "_locale" : "ja_JP",
+    "_storefront" : "JPN"
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "2001",
+      "localizations" : [
+      ],
+      "name" : "supporter",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [
+          ],
+          "codeOffers" : [
+          ],
+          "displayPrice" : "200",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "2002",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "プリセット以外のサーバーでもプッシュ通知が届きます。",
+              "displayName" : "プッシュ通知リレー",
+              "locale" : "ja"
+            }
+          ],
+          "productID" : "supporter.relay.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Relay monthly",
+          "subscriptionGroupID" : "2001",
+          "type" : "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 4,
+    "minor" : 0
+  }
+}

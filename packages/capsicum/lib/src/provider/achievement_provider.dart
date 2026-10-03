@@ -9,4 +9,4 @@ final achievementProvider = FutureProvider.autoDispose
       final adapter = ref.watch(currentAdapterProvider);
       if (adapter == null || adapter is! AchievementSupport) return [];
       return (adapter as AchievementSupport).getAchievements(userId);
-    });
+    }, dependencies: [currentAdapterProvider]);

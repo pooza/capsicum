@@ -5,6 +5,7 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
 import 'package:fediverse_objects/fediverse_objects.dart';
 import 'package:uuid/uuid.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'chat_room_streaming.dart';
 import 'chat_streaming.dart';
@@ -133,7 +134,15 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         TimelineCacheSupport,
         MulukhiyaRepostSupport,
         ChatSupport {
-  MisskeyStreaming? _streaming;
+  /// 本線 TL の購読。キーごとに 1 本ずつソケットを張る (#1089)。
+  ///
+  /// ⚠ 以前は単数で持っており、2 本目の購読が 1 本目を黙って止めていた（B-1）。
+  /// ルーム購読（[_chatRoomStreamings]）と同じ「キー付きレジストリ」の形。
+  final Map<String, MisskeyStreaming> _streamings = {};
+
+  /// 本線 TL の WebSocket を開く手段。**テスト用**（ローカルのサーバーへ向ける）。
+  /// null なら実際に [host] へ接続する。
+  WebSocketChannel Function(Uri uri)? timelineChannelFactory;
   MisskeyNotificationStreaming? _notificationStreaming;
   MisskeyChatStreaming? _chatStreaming;
   // ルーム毎に 1 本ずつ WebSocket を張る (chatRoom channel は roomId 必須で
@@ -1110,12 +1119,48 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   // NotificationSupport
 
   @override
-  Future<NotificationResponse> getNotifications({TimelineQuery? query}) async {
-    final notifications = await client.getNotifications(
-      sinceId: query?.sinceId,
-      untilId: query?.maxId,
-      limit: query?.limit,
-    );
+  Set<NotificationType> get filterableNotificationTypes =>
+      misskeyFilterableNotificationTypes;
+
+  /// このサーバーに `i/notifications-grouped` が無いと分かったか (#1048)。
+  /// 理由は Mastodon 側の同名フィールドの doc が正本。
+  bool _groupingUnsupported = false;
+
+  @override
+  Future<NotificationResponse> getNotifications({
+    TimelineQuery? query,
+    NotificationQuery? filter,
+  }) async {
+    final excludeTypes = <String>[
+      for (final type in filter?.excludeTypes ?? const <NotificationType>{})
+        ...misskeyNotificationWireNames(type),
+    ];
+    final grouped = (filter?.grouped ?? false) && !_groupingUnsupported;
+    List<MisskeyNotification> notifications;
+    try {
+      notifications = await client.getNotifications(
+        sinceId: query?.sinceId,
+        untilId: query?.maxId,
+        limit: query?.limit,
+        excludeTypes: excludeTypes,
+        grouped: grouped,
+      );
+    } on DioException catch (e) {
+      // ⚠ エンドポイントが無いサーバーでは通知が丸ごと出なくなるので、必ず
+      // 非グループへ落とす。⚠ Misskey は未知のエンドポイントに 404 を返す。
+      // 401 / 429 等は落とさない（Mastodon 側と同じ理由）。
+      final status = e.response?.statusCode;
+      if (!grouped || (status != 404 && status != 400 && status != 501)) {
+        rethrow;
+      }
+      _groupingUnsupported = true;
+      notifications = await client.getNotifications(
+        sinceId: query?.sinceId,
+        untilId: query?.maxId,
+        limit: query?.limit,
+        excludeTypes: excludeTypes,
+      );
+    }
     final converted = _safeConvert(
       notifications,
       (n) => n.toCapsicum(host, adminRoleIds: _adminRoleIds),
@@ -1126,6 +1171,11 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       rawCount: converted.rawCount,
       rawLastId: converted.rawLastId,
       skippedPosts: converted.skipped,
+      // ⚠⚠ **グループ化したページでは件数で最終ページを判定できない。**
+      // `i/notifications-grouped` は `limit` 件の通知を取ってから束ねるので、
+      // 「同じノートへの 20 件のリアクション」は limit 20 に対して 1 件で返る。
+      // `rawCount >= limit` で切ると**そこで読み止まる**。
+      hasMore: grouped ? notifications.isNotEmpty : null,
     );
   }
 
@@ -1274,6 +1324,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     final emojis = await client.getEmojis();
     return emojis
         .map(
+          // ⚠⚠ リアクションの受付条件に効く 3 つ（#1081）は、**false / 空のとき
+          // サーバーが値ごと省く**（`EmojiEntityService.packSimple`）。
+          // **欠落は「不明」ではなく「制限なし」**として読む。
           (e) => CustomEmoji(
             shortcode: e['name'] as String,
             url: (e['url'] as String?) ?? '',
@@ -1281,6 +1334,13 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
             aliases:
                 (e['aliases'] as List<dynamic>?)
                     ?.map((a) => a as String)
+                    .toList() ??
+                const [],
+            isSensitive: e['isSensitive'] == true,
+            localOnly: e['localOnly'] == true,
+            reactionRoleIds:
+                (e['roleIdsThatCanBeUsedThisEmojiAsReaction'] as List<dynamic>?)
+                    ?.map((r) => r as String)
                     .toList() ??
                 const [],
           ),
@@ -1575,6 +1635,10 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     return data.map(_mapGalleryPost).toList();
   }
 
+  @override
+  Future<GalleryPost> getGalleryPostById(String postId) async =>
+      _mapGalleryPost(await client.showGalleryPost(postId));
+
   // PagesSupport (#186)
 
   Page _mapPage(Map<String, dynamic> p) {
@@ -1722,6 +1786,12 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }
 
   @override
+  Future<Attachment?> getDriveFile(String fileId) async {
+    final file = await client.showDriveFile(fileId);
+    return file?.toCapsicum();
+  }
+
+  @override
   Future<void> deleteDriveFile(String fileId) async {
     await client.deleteDriveFile(fileId);
   }
@@ -1866,17 +1936,19 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
 
   @override
   Stream<Post> streamTimeline(
-    TimelineType type, {
+    String key,
+    TabType tab, {
     void Function(Object error, StackTrace stack)? onParseError,
     void Function(Object error, StackTrace stack)? onStreamError,
     void Function()? onReconnectExhausted,
     void Function(StreamConnectionState state)? onConnectionState,
     void Function(int? closeCode, String? closeReason)? onDisconnect,
   }) {
-    _streaming?.dispose();
+    // 同じキーの前の購読だけを閉じる。他のキーには触らない (#1089)。
+    _streamings.remove(key)?.dispose();
     final token = client.accessToken;
     if (token == null) return const Stream.empty();
-    _streaming = MisskeyStreaming(
+    final streaming = MisskeyStreaming(
       host: host,
       accessToken: token,
       adminRoleIds: _adminRoleIds,
@@ -1885,14 +1957,15 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       onReconnectExhausted: onReconnectExhausted,
       onConnectionState: onConnectionState,
       onDisconnect: onDisconnect,
+      channelFactory: timelineChannelFactory,
     );
-    return _streaming!.connect(type).map(_applyWordFilter);
+    _streamings[key] = streaming;
+    return streaming.connect(tab).map(_applyWordFilter);
   }
 
   @override
-  void disposeStream() {
-    _streaming?.dispose();
-    _streaming = null;
+  void disposeStream(String key) {
+    _streamings.remove(key)?.dispose();
   }
 
   // NotificationStreamSupport (#569)
@@ -2082,9 +2155,19 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<void> unsubscribePush({String? endpoint}) async {
+  Future<void> unsubscribePush({
+    String? endpoint,
+    String? p256dh,
+    String? auth,
+  }) async {
     if (endpoint == null) return;
-    await client.unsubscribePush(endpoint: endpoint);
+    // ⚠ 2026.10.0 以降は auth / publickey が必須 (#1201)。鍵が読めなければ
+    // null のまま渡す（送らない）—— 従来どおり endpoint だけで試す。
+    await client.unsubscribePush(
+      endpoint: endpoint,
+      publickey: p256dh,
+      auth: auth,
+    );
   }
 
   // -- ChatSupport --

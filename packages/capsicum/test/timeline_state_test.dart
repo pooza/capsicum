@@ -1,6 +1,7 @@
 import 'package:capsicum/src/model/account_key.dart';
 import 'package:capsicum/src/provider/timeline_provider.dart';
 import 'package:capsicum_backends/capsicum_backends.dart';
+import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -79,20 +80,23 @@ void main() {
 
     test('アカウントキー + 種別から安定したキーを組み立てる', () {
       expect(
-        timelineContextKey(key, 'tl:home'),
-        'mastodon://alice@mstdn.example|tl:home',
+        timelineContextKey(key, const TimelineTab(TimelineType.home)),
+        'mastodon://alice@mstdn.example|timeline:home',
       );
     });
 
     test('種別が違えばキーも変わる（同一アカウント内のタブ切替を区別）', () {
       expect(
-        timelineContextKey(key, 'tl:home'),
-        isNot(timelineContextKey(key, 'tl:local')),
+        timelineContextKey(key, const TimelineTab(TimelineType.home)),
+        isNot(timelineContextKey(key, const TimelineTab(TimelineType.local))),
       );
     });
 
     test('アカウントキーが null のときは null', () {
-      expect(timelineContextKey(null, 'tl:home'), isNull);
+      expect(
+        timelineContextKey(null, const TimelineTab(TimelineType.home)),
+        isNull,
+      );
     });
   });
 

@@ -2,6 +2,16 @@
 
 実装中に発見した Flutter / Dart / 各種 API の落とし穴と回避策。コードコメントに残すほどではないが、失うと同じ地雷を踏む知見を集約する。
 
+⚠⚠ **落とし穴集は 3 ファイルに分かれている**（#1184・2026-09-30）。**追記するときはこの表で行き先を選ぶ。**
+
+| ファイル | 置くもの |
+| --- | --- |
+| **このファイル** | Dart / Flutter の実装（State・描画・`go_router`・テスト）・体感速度・Sentry の読み方・デスクトップの drag & drop・認証フロー |
+| [tech-notes-native.md](tech-notes-native.md) | ネイティブプッシュ（APNs / WNS）と CI / ビルド（シェル・PowerShell・Windows ネイティブの検証手順） |
+| [tech-notes-api.md](tech-notes-api.md) | サーバー API の罠（NodeInfo / Probing・Mastodon・Misskey・モロヘイヤ） |
+
+⚠ **迷ったらこのファイルに置く。**あとで動かせる。⚠⚠ **1 ファイル 60,000 バイトが上限**（[doc-maintenance.md](doc-maintenance.md)「1 ファイルは 1 回で読める大きさに収める」）。分けたのは**この上限に貼り付いて追記がためらわれる状態をやめるため**で、3 つとも余白がある。
+
 ## Dart / Flutter 一般
 
 ### `firstWhere + orElse: () => null` は避ける
@@ -52,9 +62,9 @@
 
 `context.push<T>('/route')` + `context.pop(result)` を使う。`Navigator.pop(context, result)` では `go_router` が戻り値を握りつぶす。`showGeneralDialog` のコールバック方式もリビルドで消失するため不可。
 
-#### ⚠⚠ `extra` は refresh のたびに消える — 画面をまたぐ引数はクエリで運ぶ（#1057）
+#### `extra` は refresh のたびに消える — 画面をまたぐ引数はクエリで運ぶ（#1057）
 
-`refreshListenable` が鳴ると `RouteMatchList` が**シリアライズ経由で組み直される**。`extraCodec` を渡していないので `json.encoder.convert(extra)` に掛かり、**`BackendType`（enum）のような JSON にできない値が 1 つでも入っていると extra が丸ごと `null` に落ちる**（`RouteMatchListCodec._toPrimitives`）。⚠ **クエリパラメータは残る**ので、**画面の生存中ずっと要る引数はクエリで運ぶ**（`loginLocation()` / `resolveLoginArgs()` のように、組み立てと読み取りを 1 対で置いて両側を通す）。⚠ **refresh を跨いでも State は作り直されない**ので、クエリ化すれば画面の続行は保てる。
+⚠⚠ `refreshListenable` が鳴ると `RouteMatchList` が**シリアライズ経由で組み直される**。`extraCodec` を渡していないので `json.encoder.convert(extra)` に掛かり、**`BackendType`（enum）のような JSON にできない値が 1 つでも入っていると extra が丸ごと `null` に落ちる**（`RouteMatchListCodec._toPrimitives`）。⚠ **クエリパラメータは残る**ので、**画面の生存中ずっと要る引数はクエリで運ぶ**（`loginLocation()` / `resolveLoginArgs()` のように、組み立てと読み取りを 1 対で置いて両側を通す）。⚠ **refresh を跨いでも State は作り直されない**ので、クエリ化すれば画面の続行は保てる。
 
 ⚠⚠ **`push` で積んだぶんは top-level redirect の `matchedLocation` に出ない。**`RouteMatchList.push` は `copyWith(matches:)` だけで **`uri` を更新しない**。ホームから `/server` → `/login` と積んでも location は `/home` のままなので、**`matchedLocation` を見る分岐は「押し込み経路でだけ黙って成立しない」**。初回ログイン（`go('/server')`）では成立するため、**新規ユーザーでは動いて既存ユーザーで動かない**という割れ方をする。
 
@@ -130,6 +140,56 @@ SharedPreferences は **Android / iOS とも OS のバックアップ対象**で
 土台は [`test/support/image_editor_harness.dart`](../packages/capsicum/test/support/image_editor_harness.dart) に閉じ込めてあるので、利用側はこの作法を意識しなくてよい。ネットワークとアカウントを要求する経路（スタンプ素材の調達）は [`StickerSource`](../packages/capsicum/lib/src/service/sticker_source.dart) を override して切り離す。
 
 **ダイアログの `TextEditingController` は呼び出し側で dispose しない。** `showDialog` の future は `Navigator.pop` の時点で解決するが、そこはまだ**退場アニメーションの最中**で、`TextField` は再構築される。解決直後に dispose すると use-after-dispose の assertion になる（debug で落ち、release では黙って通る）。controller はダイアログ本体を `StatefulWidget` にして**そちらに所有させる**（State の dispose はルートが実際に外れてから呼ばれるので、リークもせず早すぎもしない）。
+
+### アクション付きの `SnackBar` は既定で**閉じない** — `duration` が効かない（#1126）
+
+`SnackBar` の `persist` は `persist ?? action != null` で解決される。つまり **`SnackBarAction` を付けた瞬間に「時間で消えない」が既定**になり、`duration` に何を書いても無視される（`ScaffoldMessenger` のタイマーは `snackBar.persist` なら何もせず戻る）。
+
+- **「元に戻す」系は `persist: false` を明示する。** さもないと利用者が触るまで画面の下に居座り、**その SnackBar が閉じるのを待って解放する資源があると、上限が消える**。#1126 の削除の取り消しは、取り消し待ちのスタンプの `ui.Image`（原寸・ネイティブ側）を SnackBar が閉じるまで掴む設計なので、ここを外すと画面を閉じるまで解放されない。
+- **ウィジェットテストでは「SnackBar が自分で閉じること」まで見る。** 閉じないと `ScaffoldFeatureController.closed` が解決せず、解放も走らない。`expect(find.text('元に戻す'), findsNothing)` を期限経過後に置くのが歯になる。
+- ⚠ **期限切れを待つには `pump` を 2 段に分ける。** 表示時間のタイマーは**登場アニメーションが完了した後の build** で仕掛けられるので、`pump(duration)` を 1 回打っても閉じない。`pump()` → `pumpAndSettle()`（登場を終わらせる）→ `pump(duration + α)`（タイマーを発火）→ `pumpAndSettle()`（退場）の順で進める。タイマーが走っている間はフレームが積まれないため、`pumpAndSettle` だけでは**待ったつもりで待てていない**。
+
+### レイヤの不透明度は「色の alpha」ではなく `saveLayer` で掛ける。⚠ **bounds は渡さない**（#1128）
+
+重なりを持つレイヤ（capsicum の文字レイヤは白い本体 + 黒い擬似アウトライン 4 枚）に色ごとの alpha を掛けると、**重なった画素だけ二重に合成されて濃く出る**。プレビューの `Opacity` は「1 枚に描いてから alpha を掛ける」ので、書き出し側も `canvas.saveLayer` で囲って同じ意味にしないと WYSIWYG が割れる。換算は `ui.Color.getAlphaFromOpacity`（`Opacity` が内部で使うのと同じ式）。
+
+⚠⚠ **`saveLayer` の第 1 引数に矩形を渡すと、レイヤの縁で描画が削られる。** `Rect.fromLTWH(0, 0, w, h)`（画像全体）を渡しただけで、**文字の擬似アウトラインの外側 1 列 / 1 行が丸ごと落ちた**（`Shadow` は `blurRadius: 0` でも `convertRadiusToSigma(0) = 0.5` のぼかしが掛かる。2026-09-23 実測で、**被覆 42% の行まで消えた**）。文字は画像の中央にあり矩形には十分収まっているので、「はみ出したから切れた」ではない。**`null` を渡してエンジンに決めさせると起きない。**
+
+- **完全に不透明なときはレイヤを挟まない**（`alpha != 255` のときだけ囲う）。挟むだけで上の欠けが起きるので、**既存の書き出しを 1px も変えないために必要**であって、最適化ではない。
+- **検査は「全画素で `o% の書き出し = o × 不透明の書き出し + (1-o) × 元画像` が成り立つ」で書く。** 1 画素の色を見るだけだと「たまたまそこだけ合っている」を排除できず、**上の縁の欠けも見逃す**（実際、この全画素検査だけが bounds の問題を捕まえた）。⚠ 回転を使わなければ中間色はグリフの縁だけなので、許容差 2 で通る。
+
+### 「できる / できない」の判定は 1 本にして、ボタンの活殺と実処理の両方から呼ぶ（#1127）
+
+`onPressed: locked ? null : _doIt` のようにボタン側だけで止めると、**`_doIt` の中のガードは一度も呼ばれない**。そのガードを消してもテストは緑のままで、**導線が 1 つ増えた瞬間に黙って通る**。逆に実処理側だけに置くと、押せる見た目のまま無反応になり「壊れている」と読まれる。
+
+- **述語を 1 つ定義し（例 `bool _canModify(item)`）、ボタンの活殺と実処理の入口の両方がそれを見る。** こうすると述語を骨抜きにしたときに **UI の検査が落ちる**ので、判定そのものに歯が立つ。
+- ⚠ **穴を開けて確かめるときは、述語だけでなく「1 つの導線だけ判定を外す」穴も開ける。** 導線ごとに別々の判定を書いていると、片方を壊しても緑になる。
+- これは「[ソース検査ガードの書き方](CLAUDE.md#ソース検査ガードの書き方)」と同じ型の failure —— **検査（ここでは実行時のガード）が動いていないのに緑**。
+
+### `ReorderableListView` は `onReorderItem` を使う — 旧 `onReorder` と `newIndex` の流儀が違う
+
+`onReorder` は非推奨で、`newIndex` を**取り除く前**の位置で渡す（後ろへ動かすとき `-1` の補正が要る）。後継の `onReorderItem` は Flutter 側が `if (newIndex > oldIndex) newIndex -= 1;` を済ませてから呼ぶので、**受け取った値をそのまま `insert` する**。
+
+補正を二重に掛けると「後ろへドラッグしても動かない / 1 つ手前に落ちる」になり、**前へ動かす操作では正しく動く**ぶん見つけにくい。実装は `tab_management_sheet.dart` の `_reorderEntries`（#836）と `reorderOverlayLayers`（#1126）が正本。
+
+### 書き出し画像の**全画素ハッシュはプラットフォームを跨げない**（#1125 / #1126）
+
+`Canvas` 合成の結果を FNV ハッシュで固定する検査は、**軸に平行な描画なら完全に決定的**（実測: 回転なしの書き出しは中間色 0 画素）だが、**レイヤを回した瞬間に縁へアンチエイリアスが乗り**（30° で 239 画素）、その被覆率が macOS と Linux で一致しない。同じコード・同じ Flutter でも指紋が変わる。
+
+- **回転・拡大縮小が絡む検査に指紋を使わない。** 軸に平行で整数の矩形になる場面（スタンプだけ等）に限れば中間色が 0 画素になり、**全プラットフォームで同じ値**になる。そのうえで**「中間色が 0 画素であること自体」も検査する** —— そうしないと、後からその場面に回転や文字を足したときに、固定値が静かに環境依存へ変わる。
+- ⚠⚠ **固定値の場面を「画面を操作して」作らない。**操作で作ると**編集画面のレイアウトに依存する**。#1128 でツールバーに行を 1 本足しただけでキャンバスが 756px → 708px に縮み、テスト中の「ドラッグで端へ寄せる」が別の位置に着地して、**描画を何も変えていないのに CI が落ちた**（実測: スタンプの中心が ny 0.229 → 0.212）。場面は**座標と大きさを直接与えて**組む（capsicum では #1129 の `initialLayers`）。
+- **「編集画面の大きさを変えても書き出しは 1px も変わらない」を検査に入れる。**書き出しは原寸の Canvas に対して行うので本来レイアウトに依存しない。依存していたら、ツールバーに行を足すだけで投稿される画が変わることになる。
+- **移植可能な歯は構造で取る。** 「どのレイヤに操作が当たったか」はウィジェットツリー（`Transform` の回転行列など）から直接読める。ラスタライザに依存しないので全 OS で走る。
+- 画素で見たいときは**軸に平行なまま**にして、「同じ座標に 2 枚重ねて出てきた色」のような 1 画素の判定に落とす。
+
+### ソース検査ガードで「名前の最初の出現」から本体を切り出さない（#1130）
+
+`_bodyAfter(masked, RegExp('$name\\s*\\('))` のように**名前で最初に当たった `{`** から本体を取る書き方は、**呼び出しのほうが宣言より先に現れるメソッドで別の本体を掴む**。#1130 で `_saveDraft` を見ようとして、`didChangeAppLifecycleState` の中の `_saveDraft();` に当たり、**ライフサイクル側の本体を検査していた**（`_addOverlay` はたまたま宣言が先だったので、同じヘルパーが今まで正しく動いていた）。
+
+⚠⚠ **失敗の出方が紛らわしい。**本体は切り出せている（null にならない）ので「切り出せていることの検査」は通り、**中身が違うだけ**なので「目印が無い」という一見もっともらしい赤になる。判定が壊れているのか実装が規約違反なのかを取り違える。
+
+- **宣言だけに当てる。**戻り値の型が前に付いていることを求める（`RegExp('\\w[\\w<>?, ]*\\s+$name\\s*\\(')`）。呼び出しは `;` / `(` / `)` / 行頭の空白が前に来るので当たらない。
+- ⚠ **本体を掴んだことの目印は「そのメソッドにしか無いもの」にする。**両方の候補に在る文字列を目印にすると、入れ違ったまま緑になる。
 
 ## 体感速度の改善（先出し・キャッシュ）
 
@@ -236,269 +296,10 @@ macOS / iOS 実装は `baseQuery` に **必ず `kSecAttrAccessible` を含める
 
 ⚠ **LXC は不要。**隔離が要る軸は 2 つだけで、`dbus-run-session`（私設セッションバス＝`org.freedesktop.secrets` の接続先）と `XDG_DATA_HOME` の差し替え（キーリングの実体ファイル）で足りる。⚠ **`XDG_RUNTIME_DIR` も差し替える** — さもないと `discover_other_daemon` が `/run/user/<uid>/keyring` の**本物を見つけて起動を譲る**。⚠ **D-Bus activation の前に `gnome-keyring-daemon --unlock --components=secrets` でキーリングを作っておく**（無いと解錠プロンプト待ちで固まる）。⚠ **`kill -STOP` の対象 PID には安全弁を付ける**（本物の PID / `control-directory=/run/user/<uid>` を弾く。実際に PID 取得に失敗して `/sbin/init` を指した）。
 
-## ネイティブプッシュ（APNs / WNS）
+## ネイティブプッシュ / CI・ビルド
 
-### macOS ネイティブ APNs 配線の 3 つの罠（#468）
+⚠ **別ファイルにある → [tech-notes-native.md](tech-notes-native.md)。**macOS ネイティブ APNs 配線の 3 つの罠 / Windows WNS の AppContainer と DPAPI 境界 / プッシュ重複は上流の孤児購読を先に疑う / `set -o pipefail` と早期終了するパイプ / 大きな入力を環境変数で渡すと Linux でだけ落ちる / Windows ネイティブを触ったときの検証手順 / `.ps1` に日本語を書くと無音で構文エラー。
 
-`FlutterAppDelegate`(FlutterMacOS) 上で APNs コールバックを実装する際、dart analyze も archive/署名も通るのに **実機起動でしか露見しない**罠が 3 つある（正本は [`AppDelegate.swift`](../packages/capsicum/macos/Runner/AppDelegate.swift) と [`Release.entitlements`](../packages/capsicum/macos/Runner/Release.entitlements) のコメント）:
+## サーバー API（NodeInfo / Mastodon / Misskey / モロヘイヤ）
 
-1. **`override` 必須**: `application(_:didRegisterForRemoteNotificationsWithDeviceToken:)` は基底が `@MainActor open func` なので `override` を付ける（ヘッダに見えないので付け忘れやすい）。
-2. **`super` を呼ばない**: しかし `super.application(...)` を呼ぶと基底がセレクタ未実装で `-[NSObject doesNotRecognizeSelector:]` → 起動時 SIGABRT クラッシュ。iOS は forwarding で救われるが macOS は override 側で完結させ super を呼ばない。
-3. **entitlement キーが違う**: macOS は `com.apple.developer.aps-environment`（iOS の `aps-environment` ではない）。iOS 流のキーだと archive/署名は通るが runtime で `NSOSStatusErrorDomain code=13` になりトークン取得に失敗する。
-
-クラッシュが TestFlight/debug いずれのビルドで起きたかは crash report の `procPath` で判別する。
-
-### Windows WNS のバックグラウンド受信は AppContainer で DPAPI 境界を越えられない（#474）
-
-WNS raw push のバックグラウンドタスクは FullTrust 本体とは別プロセスの **AppContainer サンドボックス**で走る。そのため roaming AppData の `flutter_secure_storage.dat`（DPAPI 暗号化）を復号できず、**登録も活性化も成功するのにプッシュ鍵が読めずトーストが出ない**。解法は push 鍵セットだけを平文 JSON 化して `ApplicationData.Current.LocalFolder`（パッケージ ACL 保護）へ同期し、bg task はそこから読む（macOS NSE の App Group 共有と同型。正本は [`local_state_files.h`](../packages/capsicum/windows/runner/local_state_files.h) / [`web_push_key_reader.h`](../packages/capsicum/windows/runner/web_push_key_reader.h)）。付随する汎用 Windows 罠: PowerShell の `[System.IO.File]::ReadAllText` は cwd 相対解決するので**絶対パス必須**、パッケージアプリは `%TEMP%` が `AC\Temp` にリダイレクトされる。
-
-**観測結果を読むときの罠**: bg task は Sentry SDK を持てないため、診断コードは LocalState の単一スロットに書かれ、**次回アプリ起動時**に [`_flushWnsPushDiagnostics`](../packages/capsicum/lib/main.dart) が回収して送る。したがって `push.wns_bgtask: bgtask.shown` が Sentry に出ていないことは「トーストが出ていない」を意味しない（アプリを起動していないだけ）。**お知らせ通知の `bgtask.announcement_shown` も同じスロット・同じ遅延**で、#981 の実機到達確認ではこれを「Sentry に無い＝届いていない」と誤読しかけた。**逆に `bgtask.shown` が出ていれば表示まで成功している**（#957 以降。それ以前は `ShowRawToast` の戻り値を捨てて無条件に記録していたため、「復号は通ったが表示だけ失敗」が `shown` に化け、relay / WNS 側の不達と誤診する方向に倒れていた）。表示だけ失敗した場合は `bgtask.show_failed`、**起動中**の in-process 受信で同じことが起きた場合は `wns.show_failed`（runner が同じスロットへ書く）が warning で上がる。同様に、リレー側の `WNS notification dropped` は**端末がオフライン / スリープだった**という正常系で、件数の多さは不達の証拠にならない。Windows push の健全性は Sentry でなく **リレーサーバーの journald で成功ログと突き合わせて**判定する（手順の正本は [capsicum-relay の開発ガイド «配信不達の切り分け»](https://github.com/pooza/capsicum-relay/blob/main/docs/CLAUDE.md#配信不達の切り分けjournald-を読む)。誤診の経緯は [#931](https://github.com/pooza/capsicum/issues/931)）。
-
-### プッシュ通知の重複は「上流の孤児購読」を先に疑う（#692）
-
-「同じ通知が 2〜4 通届く」報告は、**リレー（capsicum-relay）でも配信基盤（APNs / FCM）でもなく、上流サーバー側に Web Push 購読（`sw_subscription`）が孤児として溜まっているのが原因**であることが多い。#692（2026-06 の実報告）はこれで確定した。
-
-- **溜まり方はサーバー実装で違う**。ここが最重要で、**Mastodon と Misskey は非対称**（どちらも pooza フォークのソースで確認済み）:
-  - **Mastodon** は `POST /api/v1/push/subscription` の `create` 冒頭で `destroy_web_push_subscriptions!` を呼ぶ（`app/controllers/api/v1/push/subscriptions_controller.rb`）。**1 アクセストークン = 1 購読**で、endpoint が変わっても置換される。再ログインで**トークンごと**変わったときだけ古いものが残る。
-  - **Misskey** の `sw/register` は `(userId, endpoint, auth, publickey)` で探し（`findOneBy`・`packages/backend/src/server/api/endpoints/sw/register.ts`。**auth / publickey まで含めて一致**しないと別行）、無ければ **INSERT する**。**古い行は消えない**ので、endpoint が変わるたび（あるいは client が keyset を作り直すたび）に購読が 1 本増え続ける。
-  - → **「Misskey だけで重複する」報告はこの非対称そのもの**。Mastodon 側が静かなことは、client が無実である証拠にならない。
-- **relay は純粋な 1:1 フォワーダなので無実**。届いた購読ぶんだけ忠実に送る。relay のログで「複数回送信」が見えても、それは原因ではなく結果。
-- **切り分け順序**: ①上流の購読テーブルを見て同一 endpoint / 同一ユーザーの行数を数える → ②relay の `subscriptions` を `device_type` 別に「行数 / 実アカウント数」で割り、**プラットフォーム間で比を比べる**（突出しているものが endpoint を作り直している）→ ③孤児を整理して再現するか見る。iOS と Android で症状が違って見えても**同根**のことがある（#692 がそうだった）。
-
-**⚠ 「client 側の修正では直らない」と決めつけない（2026-08-05 に反例が出た）。**#692 の時点ではそう書いていたが、[#937](https://github.com/pooza/capsicum/issues/937) は **client が孤児を作っている側**だった —— push の endpoint は `${relayBaseUrl}/push/${push_token}` で、`push_token` は relay の行（`UNIQUE(token, account, server)`、`token` はデバイストークン）が新規作成されたときだけ発行される。**再起動をまたいでデバイストークンが変わると新しい endpoint になるが、起動経路は古い endpoint を unregister しない**（プロセス内のローテーションは `_runTokenRefresh` が正しく掃除するのに、再起動をまたぐ変化はその経路に乗らない）。Windows は WNS の channel URI が変わりやすく、relay 実測で **86 行 / 20 アカウント = 4.3** と他プラットフォーム（iOS 2.05 / Android 1.9 / macOS 1.6）から突出していた。
-
-**⚠ この 4.3 を endpoint churn だけに帰さないこと（[#950](https://github.com/pooza/capsicum/issues/950)）。** 掃除側も効いていなかった —— `_cleanupDeviceRegistration` は「全アカウントを `unregisterAccount` → 最後に `unregisterDevice`」の順で回すが、前段の `PushKeyStore.delete(accountKey)` が **`relayId` スロットごと消す**ため、後段は保存済み id を 1 つも見つけられず `DELETE /register/:id` を**一度も発行していなかった**。孤児が増える一方で、アプリから relay row を消す経路が実質存在しない状態。加えて doc / 実装が `UNIQUE(token)`（**旧**スキーマ）の「1 行消せばデバイス全体が消える」前提のままで、現行の `UNIQUE(token, account, server)` では **N アカウント中 1 行しか消えない**形でもあった。両方 v1.55 で是正済み。
-
-恒久対処は上流側（モロヘイヤ [#4408](https://github.com/pooza/mulukhiya-toot-proxy/issues/4408) が `sw/register` を `(userId, endpoint)` 単位で dedup）＋ relay 側の保険 dedup（[capsicum-relay#16](https://github.com/pooza/capsicum-relay/issues/16)）＋ **client 側の endpoint 安定化**（[#932](https://github.com/pooza/capsicum/issues/932) の device-id + [capsicum-relay#15](https://github.com/pooza/capsicum-relay/issues/15)）。
-
-## CI / ビルド
-
-### `set -o pipefail` + 早期終了するパイプは、判定を「合致したときだけ false」に反転させる
-
-シェルで書いた**判定**が、入力が大きいときだけ逆さまに壊れる罠。v1.61 のリリースで実踏し（#1036）、その後の掃き出しで `distribution/linux/install.sh` にも同型が残っていた。
-
-```sh
-set -euo pipefail
-if printf '%s' "$msgs" | grep -qiE 'chore\(deps\)'; then   # ⚠ 壊れる
-```
-
-`grep -q` は**マッチした時点で即座に終了する**。すると書き込み途中の `printf` が SIGPIPE で落ち、`pipefail` によってパイプライン全体の終了ステータスが非ゼロになる。`if` はパイプラインの終了ステータスを見るので、**マッチしたときに条件が false になる**。マッチしなければ grep は入力を最後まで読むので、`printf` は正常終了して判定も正しく false になる。つまり**「合致しない」だけが正しく動く**。
-
-⚠ **入力が小さいと再現しない。**パイプバッファ（64KB）に書き切れてしまうため。再現には「**マッチが先頭近く + 後ろに大量のデータ**」の両方が要る。`git log` は新しい順に出すので、「直前に印を付けたコミットを積んで、まとめて大きな push をする」形でだけ落ちる。
-
-⚠ **zsh では再現しない。**手元で試して再現しなかったことを「バグではない」と読み替えないこと。確認は bash で行う。
-
-```sh
-bash -c 'set -euo pipefail
-msgs="$(echo "chore(deps): bump"; head -c 300000 /dev/zero | tr "\0" "x")"
-if printf "%s" "$msgs" | grep -qiE "chore\(deps\)"; then echo OLD:matched; else echo "OLD:NOT matched (誤爆)"; fi
-if grep -qiE "chore\(deps\)" <<< "$msgs"; then echo NEW:matched; else echo "NEW:NOT matched"; fi'
-```
-
-**対処**: **grep にファイルを直接読ませる**のが一番強い。パイプを挟まない限りこの罠は構造的に踏めない。パイプが避けられない場所では herestring (`<<<`) を使う（**書き手が bash 自身になるので、読み手が早期終了しても「シェルが SIGPIPE で落ちる」形にならない**）。⚠ **「herestring は常に一時ファイル経由」という理解は bash 5.1 以降では正しくない** — 中身がパイプバッファに収まるならパイプを使い、収まらないときだけ一時ファイルに落ちる。どちらの経路でも上のコマンド置換 + パイプのような「上流のプロセスが SIGPIPE で殺されて `pipefail` が非ゼロを返す」形にはならないので、**結論は変わらないが根拠を版に依存させない**。同じことが `grep -m1` / `head -n` を**パイプの下流に置いた**場合にも起きる（下流が先に終了して上流を殺す）ので、件数の絞り込みは `grep -m1 <file>` のようにパイプを挟まない形へ寄せる。
-
-### 大きな入力を環境変数・引数で渡すと Linux でだけ落ちる
-
-上のガードを切り出したとき、判定への入力を環境変数（`MSGS="$msgs" bash guard.sh`）で渡して CI を赤くした。
-
-```
-lock_guard_selftest.sh: line 31: /usr/bin/bash: Argument list too long
-```
-
-Linux の `execve` は**引数・環境変数を 1 つあたり 128KB**（`MAX_ARG_STRLEN`）までしか通さず、超えるとプロセスの起動自体が失敗する。⚠ **macOS は上限が緩く、手元では最後まで再現しない。**上の SIGPIPE 罠と同じ「開発機では通って CI でだけ落ちる」形。
-
-厄介なのは、**これがまさにガードの想定場面で起きる**こと。`git log` の出力はコミット数の多い push で普通に 128KB を超える。「小さいときだけ動く」検査は、いちばん要るときに動かない。
-
-**対処**: 中身ではなく**ファイルのパス**を渡す（`MSGS_FILE="$work/msgs"`）。シェル変数への代入自体には上限が無いので、`printf '%s\n' "$msgs" > file` で落としてからパスを渡せばよい。grep もファイルを直接読める形になるので、上の SIGPIPE 罠も同時に消える。
-
-⚠ **`while IFS= read -r x` でファイルを読むときは `|| [ -n "$x" ]` を付ける。**`read` は EOF で非ゼロを返すため、**末尾に改行が無いファイルの最終行が丸ごと無視される**。1 行だけのファイルなら中身が全部消え、「対象なし・OK」と言って素通りする＝ fail-open になる。herestring で渡していた頃は bash が改行を足していたので表に出なかった。
-
-⚠ **`|| true` が付いていると無害に見えるが、依存していると気付かない。**`X=$(a | grep -m1 b || true)` は、grep が終了前に stdout を出しているので値は正しく、`|| true` が `set -e` を打ち消す。動くが、`|| true` が load-bearing であることが読み取れない。書き換えておく。
-
-⚠ **`#!/bin/sh` で `set` を書いていないスクリプトは影響を受けない**（pipefail が無いので `if` は末尾の grep だけを見る）。`.claude/hooks/deny-shell-loops.sh` がこれ。ただしここに pipefail を足すと、**ループを検出できたときに限って素通りする**ガードになる。dash 互換のため herestring へ寄せられないので、「足さない」ことで担保している。
-
-**ガードは自分自身を検査させる。**この種のバグは「ガードが間違った方向に壊れる」形で出るため、正しい手順を踏んだ人が「規約どおりにやったのに怒られる」状態になり、規約そのものへの信頼が落ちる。判定を `.github/scripts/lock_guard.sh` へ切り出し、`lock_guard_selftest.sh` が毎 push 回している。切り分けの基準は「環境が無いと再現できるか」で、**どの範囲を見るか**（GitHub のイベントが要る）は workflow に残し、**通すか落とすか**（純粋な判定）だけをスクリプトへ出す。検査は「落ちるべきときに落ちる」だけでなく「**通るべきときに通る**」も見ること。セルフテストは第 1 引数で対象を差し替えられるので、壊れた実装を食わせて**検査に歯があること**を確認できる。
-
-### Windows: mpv アーカイブの `Integrity check failed` は一過性（再実行で通る）
-
-`windows-release.yml` の msix ジョブが、Dart のコンパイルより手前の CMake 段階で落ちることがある。
-
-```
-CMake Error at flutter/ephemeral/.plugin_symlinks/media_kit_libs_windows_video/windows/CMakeLists.txt:43 (message):
-  .../build/windows/x64/mpv-dev-x86_64-20230924-git-652a1dd.7z
-  Integrity check failed, please try to re-build project again.
-```
-
-`media_kit_libs_windows_video` がビルド時に外部から取得する mpv の `.7z` が壊れていて、チェックサム検証に落ちた状態。**コード起因ではない。**`gh run rerun <id> --failed` で通る（2026-08-18 の v1.58 リリース PR で実測。1 回目 5m31s で失敗 → 再実行 17m23s で成功）。
-
-⚠ **切り分けの手がかり**: 失敗地点が **Dart のコンパイルより前**なら、その run のコード差分は無関係とみてよい。同じツリーの直前の run が通っていればほぼ確定。
-
-Linux 側は `libmpv-dev` を apt で入れるので、この経路は Windows 固有。**2 回続けて落ちたら一過性ではない**ので、media_kit の配布元（GitHub Releases）側か runner のネットワークを疑う。
-
-### Windows ネイティブを触ったときの検証手順（#995 / #997 で確立）
-
-⚠ **`develop` の CI では C++ が 1 行もコンパイルされない**（`analyze.yml` は Dart のみ）。`windows-release.yml` は native テスト **8 本すべて**をビルド・実行するが、**tag ビルドのときだけ**走る。そして **`wns_push.cpp` はどのテストにも含まれず、フルビルドでしか通らない**。つまり `windows/runner/**` を触った変更は、**実機で回すまで一度もコンパイルされないまま develop に入りうる**。
-
-Windows 実機（[プラットフォームゲート](CLAUDE.md)の x64 端末）では次を回す:
-
-1. **native テスト 8 本** — `vcvars64.bat` を call してから `cl /nologo /EHsc /std:c++17 <name>_test.cpp <name>.cpp`。⚠ **`notification_tag_test` だけ `/utf-8` が要る**。⚠ **cmd から exe を叩くときは `".\name.exe"` と書く**（cwd を PATH 探索しない）
-2. **`cd packages/capsicum && flutter build windows --debug`** — **`wns_push.cpp` に触ったらこれが唯一のゲート**（約 5 分）。`firebase_app` の `LNK4099` 警告は既存ノイズ
-3. `dart format --set-exit-if-changed .` / `dart analyze --fatal-infos` / `flutter test`。⚠ **`flutter build` 後の format は `packages/capsicum/build/` 配下の生成 Dart を拾うが gitignore 済みなので無視してよい**
-
-⚠ **単一スロットの push 観測にコードを足すときは 2 箇所を同時に直す。** `windows/runner/push_diagnostics.cpp` の `IsBenignCode` と `packages/capsicum/lib/main.dart` の `benign` 集合は必ず揃える。片方だけだと、正常系のはずのコードが平常時の端末から毎回 warning で上がる（#997 の `wns.announcement_deduped` がその形だった）。⚠ **この一致を守る自動テストは無い**（コメントで揃えろと書いてあるだけ・[#1012](https://github.com/pooza/capsicum/issues/1012) に起票済み）。
-
-### native テストの大半は macOS でも走る（`windows.h` の最小シム・#1014）
-
-上の「実機で回すまで一度もコンパイルされない」は **`wns_push.cpp` のような WinRT 依存のファイルに限った話**。`notification_dedup` のような**純粋なロジック**は Win32 API をほとんど使っておらず、`windows.h` を 1 ファイルで代替すれば macOS の clang でそのままビルド・実行できる。**Windows 端末が空くのを待たずにロジックの誤りを潰せる**ので、実機は「本当に WinRT が要る検証」だけに使う。
-
-```sh
-mkdir -p /tmp/winshim && cat > /tmp/winshim/windows.h <<'EOF'
-#pragma once
-#include <cstdio>
-inline void OutputDebugStringA(const char* s) { std::fputs(s, stderr); }
-EOF
-cd packages/capsicum/windows/runner
-clang++ -std=c++17 -I/tmp/winshim -o /tmp/dedup_test \
-  notification_dedup_test.cpp notification_dedup.cpp && /tmp/dedup_test
-```
-
-⚠ **シムで通ったことは「Windows でビルドできる」の保証にならない。** MSVC は clang より緩い / 厳しい箇所がそれぞれあり、`/utf-8` の要否（`notification_tag_test`）のような MSVC 固有の問題は素通りする。**実機の手順 1〜2 を省略してよいわけではなく、実機へ持ち込む前に落とせるものを落とすための手**。
-
-⚠ **シムに関数を足したくなったら、それはもう「純粋なロジック」ではない。** 対象ファイルが Win32 / WinRT へ依存し始めた合図なので、シムを厚くするのではなく実機ビルドへ回す。
-
-### `.ps1` に日本語を書くと無音で構文エラーになる（PowerShell 5.1）
-
-Windows 機で `.ps1` を書いて `powershell.exe -File` で実行するとき、**BOM 無し UTF-8 の日本語が含まれると PowerShell 5.1 が ANSI (CP932) として読み**、文字列リテラルが壊れて `The string is missing the terminator: ".` で落ちる。
-
-⚠ **失敗が無音になる。**`Start-Process -Verb RunAs -Wait` で昇格実行すると、パースエラーは昇格した子プロセス側で起きるため親からは成功に見える（`-WindowStyle Hidden` なら画面にも出ない）。ログの 1 行目すら書かれないので、**「UAC が承認されていない」と誤診しやすい**。
-
-⚠ **静的な検査は通ってしまう。**`[System.Management.Automation.PSParser]::Tokenize()` に `[IO.File]::ReadAllText()` の結果を渡す形だと、.NET が UTF-8 を自動判別するので再現しない。切り分けは**非昇格で 1 回 `powershell.exe -File` を走らせて exit code と stderr を見る**のが速い。
-
-回避は **スクリプト本体を ASCII のみで書く**（コメントも英語）。日本語が要るなら UTF-8 **BOM 付き**で保存する。1 行で済むならファイルを経由せず直接渡せば影響を受けない。
-
-## NodeInfo / Probing
-
-### rel URL の判定
-
-NodeInfo の rel URL は `http://nodeinfo.diaspora.software/ns/schema/2.0` 形式。判定は `contains('nodeinfo/2.')` ではなく `contains('/ns/schema/2.')` でマッチすること。前者は偽陽性を拾う。
-
-## Mastodon API
-
-### メディア ALT（description）は 2 ステップで送る
-
-`POST /api/v1/media` の multipart リクエストに `description` を同梱しても、サーバー実装によっては保存されないことがある（モロヘイヤ経由で発生を確認済み、原因未特定）。WebUI と同じく、アップロード後に `PUT /api/v1/media/:id` で別途 `description` を設定する 2 ステップ方式を採用している。
-
-### 投稿済み ALT の編集は美食丼ステージングの `~/alt_try.sh` で試す（#121）
-
-⚠ **Mastodon の Web UI からは試せない。**Web UI は `X-Mulukhiya-Purpose` を付けないため、nginx 前段の `$status_put_backend` map が **405** で弾く（mulukhiya#4474）。「Web で編集できるのに capsicum でできない」ではなく、**Web からは元々できない**。
-
-検証用の一式が**美食丼ステージング**（`st2.mstdn.b-shock.org`）の `mastodon` ホームに置いてある。**repo からは辿れないので、ここに場所を書いておく**（SSH の接続先ホスト名は chubo2 `docs/infra-servers.md` が正本）。
-
-- `~/alt_try.sh <新しい ALT>` — capsicum と同じ経路（PUT `/api/v1/statuses/:id` + `X-Mulukhiya-Purpose: media_update` + `media_attributes` だけの body）で投げ、応答から ALT / 添付数 / CW / 閲覧注意 / 本文を並べて出す
-- `~/.alt_try_token` — 実行用のアクセストークン
-- `~/.alt_try_ids` — 1 行目が status id、2 行目が media id
-
-⚠ **見るべきは HTTP 200 ではなく「送っていない項目が残ったか」。**この API は送らなかったパラメータを現状維持ではなく**空で更新**として扱うため、モロヘイヤの補完が効いていないと 200 のまま**添付が全部外れて CW と閲覧注意も消える**（mulukhiya#4589）。出力の「添付 = N 件 / CW / 閲覧注意」がその確認欄。
-
-### ALT 編集の導線が出る条件は版番号ではなく 2 つの and（#121）
-
-client 実装は v1.60 で出荷済みだが、導線は `GET /mulukhiya/api/about` の `config.features.media_update` が `true` のときだけ出る（fail-closed）。このフラグが立つには**両方**が要る:
-
-✅ **2026-08-25 時点では両方とも成立済み**で、Mastodon 3 台は `true` を返す（Misskey 2 台は設計どおり `false`）。以下は条件の説明であって「出ない」の記録ではない。
-
-1. モロヘイヤが刺している **`ginseng-fediverse` 1.8.30 以上**（mulukhiya#4621。モロヘイヤ 5.35.0 の主軸）
-2. **各サーバーの `local.yaml` に `/mastodon/capabilities/media_update: true`** を書く opt-in（既定 `false`）
-
-⚠ **5.35.0 の `/about` は同名フラグを 2 箇所に持つ。**`.config.features.media_update` と `.config.capabilities.media_update` の両方が返るが、**capsicum が読んでいるのは `features` の側**（`mulukhiya/service.dart` の `about()`）。切り分けで curl を叩くときにパスを取り違えない。
-
-⚠ **モロヘイヤの版が上がるだけでは復活しない。**2 が既定 false なのは、nginx の `$status_put_backend` map が 3 要素キーへ是正済みかをモロヘイヤ側から観測できないため。⚠ **`package.version` からは 1 を区別できない**ので、版番号で判定せず必ずフラグを見る（`attachment_description_edit.dart` の doc も同じことを書いている）。デプロイ時は Mastodon 3 台に 2 の追記が要る（Misskey は常に false）。
-
-### プロフィール編集の初期値
-
-`GET /api/v1/accounts/verify_credentials` のトップレベル `note` は HTML 化済み。編集画面の初期値に使うと編集時に HTML タグが丸見えになる。`source.note` / `source.fields` を参照すること（プレーンテキストで返る）。
-
-## Misskey API
-
-### ⚠⚠ サーバーの挙動を推測で語らない — フォークのソースを引く
-
-**`~/repos/mastodon` / `~/repos/misskey` は運用中のサーバーソフトそのもの。**「送っていないから効かないはず」「送れば通るはず」の類は、**必ず該当の service / controller を開いて確かめる**。
-
-v1.63 で実際に踏んだ（#1043）:
-
-- **誤った前提**: 「Misskey の指名投稿は `visibleUserIds` を送らないと誰にも届かない」→ 公開範囲を `followersOnly` へ丸める実装を入れた
-- **実際**: `NoteCreateService` は**返信のときだけ返信先の作者を `visibleUsers` へ自動補完する**ので、`visibleUserIds` を送らなくても**返信は正しく届いていた**
-- **被害 1**: `reply.visibility === 'specified' && data.visibility !== 'specified'` は **400 で拒否**される。丸めた結果、**動いていた返信を確実に壊した**
-- **被害 2**: redraft には返信関係が無いのでサーバーが弾かず、**DM がフォロワー全員へ出る**形になった（「見せたくないものが見えている」型）
-
-⚠ **コードの見た目からは自然な推測でも、サーバーを読めば 5 分で否定できた。**ソースが手元にあるのに引かなかったのが原因。
-
-同じ回で `notes/search` の `UNAVAILABLE` を「全文検索バックエンド未設定だから」と書いたのも誤り。実際は `RoleService` の **`canSearchNotes` が既定 false というロールポリシー**由来。⚠ **観測される挙動が同じでも、因果を推測で書かない。**
-
-⚠ 逆に、**カーソルの正体（関係レコードの内部 id か、投稿 / User の id か）はソースを引いて全件確認したぶんは 1 件も外していない**。引けば当たる。
-
-### MiAuth パーミッション
-
-新しい Misskey API エンドポイントを利用する際は `MisskeyAdapter._permissions` リストに該当パーミッションを追加すること。追加漏れは 403 `PERMISSION_DENIED` になる。既存トークンには効かないため、ユーザーは再ログインが必要。v1.2 で `read:channels` / `write:channels` / `write:report-abuse` を追加した経緯がある。
-
-エラー時は「権限がありません。再ログインが必要な場合があります」のようなメッセージを表示する。
-
-#### UI で作れない投稿を API で用意する（検証素材の作り方）
-
-指名投稿・特定の返信構造など、**クライアントの UI では作れない素材**は MiAuth でトークンを取って API で作る。⚠ **Misskey Web が未ログインでも、MiAuth の認可画面は保存済みアカウントを選べる**ので、ブラウザにセッションがあれば足りる。
-
-1. `https://<host>/miauth/<任意の UUID>?permission=write:notes` をブラウザで開いて承認
-2. `POST https://<host>/api/miauth/<同じ UUID>/check` でトークンが返る
-
-⚠ debug 版のサーバー選択にはステージングのプリセットが並ぶので、本番に素材を作らない。
-
-### `i/update` は空文字列禁止
-
-フィールドをクリアしたい場合、空文字列 `""` は 400 エラー。JSON で明示的に `null` を送ること。キー省略は「変更なし」の意味になる。
-
-### `sinceId` 単独指定は ASC（古い順）で返る — 下方向ページングが壊れる
-
-Misskey 本家 `QueryService.makePaginationQuery` は **`sinceId` のみ → ASC（古い順）／`sinceId`+`untilId` → DESC／`untilId` のみ → DESC** で並べる。Mastodon は `since_id` 指定でも常に DESC のため挙動が違う。「最古 id を次ページの `maxId` にして下方向へ辿る」DESC 前提のページングを Misskey で `sinceId` 単独で回すと、1 ページ目だけ ASC になって最古側しか拾えず、新しい側を取りこぼす（v1.42 の live 復帰 catch-up #784 でこのバグを踏んだ）。**ギャップを新しい順で全件辿りたいときは `sinceId` を渡さず `maxId`（untilId）のみで DESC 取得し、下端の判定はクライアント側で行う**（`collectCatchUpGap` がこの方式）。両 SNS で DESC に揃うので分岐も消える。
-
-### ピン留め投稿の取得
-
-`/api/users/notes` の `pinned` パラメータは機能しない。`/api/users/show` レスポンスの `pinnedNotes` フィールドから取得すること。
-
-### `users/report-abuse` の 500
-
-通報受理時にサーバーが管理者へメール通知を試みる。SMTP 未設定のサーバーでは 500 Internal Error が返るが、これはサーバー側の問題であり capsicum 側の不具合ではない。
-
-### `/api/sw/register` はサードパーティアプリから叩けない
-
-Misskey upstream は [GHSA-7pxq-6xx9-xpgm](https://github.com/misskey-dev/misskey/security/advisories/GHSA-7pxq-6xx9-xpgm)（2023-12）で `/api/sw/register` に `secure: true` を適用しており、MiAuth / OAuth 由来のアクセストークンから叩くと HTTP **400** + `{error: {code: 'ACCESS_DENIED'}}` を返す。`secure: true` は「ブラウザのセッション Cookie（user あり + token なし）のみ許可」の意。
-
-つまり capsicum に限らず **サードパーティアプリは Misskey の Web Push 登録を直接は行えない**。Misskey 純正アプリも `/api/sw/register` は使っておらず、Streaming API 経由の in-app 通知で代替している。
-
-[MisskeyAdapter.subscribePush](../packages/capsicum_backends/lib/src/misskey/adapter.dart) はこの 400 を [PushRegistrationNotSupportedException](../packages/capsicum_core/lib/src/social/interfaces/push_subscription_support.dart) に詰め替え、[PushRegistrationService](../packages/capsicum/lib/src/service/push_registration_service.dart) 側は Sentry への送信をスキップする（再試行しても成功しない仕様制約で、ノイズになるため）。リレー登録のロールバックは通常ルートで実施する。
-
-自前サーバー（ダイスキー等）向けの回避策としては、モロヘイヤにプロキシエンドポイントを生やす or フォークでガードを緩める等の選択肢がある（[#352](https://github.com/pooza/capsicum/issues/352) の follow-up 参照）。
-
-### Play（スロット系）の出目に関する 3 つの現象を混同しない（#896 / #898）
-
-「Play の出目がおかしい」の報告は**別物が 3 つ**あり、混ぜて再調査すると必ず迷子になる。⚠ **`String.hashCode` は JIT・AOT・別プロセスで不変**なので、「プロセスごとに乱数がランダム化される」という説明は**誤り**。ここは何度も疑われるが決着済み。
-
-| # | 現象 | 正体 | 扱い |
-| --- | --- | --- | --- |
-| 1 | **Web と出目が違う** | engine の忠実度。capsicum の `Math:gen_rng` は `dart:math` の `Random(seed.hashCode)`、Misskey 側は seedrandom（RC4 系） | [#896](https://github.com/pooza/capsicum/issues/896)・優先度低。**シードを固定しても一致しない**が、seedrandom 互換化なら原理的には一致可能 |
-| 2 | **同じ日でも朝と夕で変わる** | **絵文字インベントリ依存の仕様**（下記） | [#898](https://github.com/pooza/capsicum/issues/898) で決着。**再調査不要** |
-| 3 | **特定キャラが出やすい** | Play スクリプト（ユーザースクリプト）側の seed / 選択バイアス | **作者側の話で capsicum の対象外**。engine の初手分布は実測で有意な偏りなし |
-
-2 の機序: スロット系スクリプトのプール構築が `CUSTOM_EMOJIS.filter(cat).map(@(e){random(0 100000)})` の形をしており、**対象カテゴリの絵文字 1 個につきシード付き乱数を 1 回消費する**。したがって件数・順序が変われば PRNG の位置がズレて出目が全変化する（**±1 絵文字で別結果**を実測）。トリガーは**対象カテゴリの非 ignore 絵文字の add / remove / rename だけ**（他カテゴリの追加は `.filter` で落ちるので無影響）。
-
-Web で問題にならないのは、Misskey フロントが絵文字リストを IndexedDB に persist して `fetchCustomEmojis` を throttle しており**プールが凍結される**ため。capsicum は `/api/emojis` をコールドスタートごとに引き直すので、インベントリ変化を即拾う（モバイルは cold start が多く表面化しやすい）。⚠ **凍結すると Web と挙動が変わる**ので、同日変動は仕様として扱う。
-
-⚠ **1 で照合すべき Misskey 側の実装は 1.2.1 ではなく 0.19.0。**Misskey は Play の宣言バージョンで legacy 判定して `@syuilo/aiscript-0-19-0` を動的 import する。capsicum は `/// @1.0.0` 以上を実行せずブラウザへ逃がす（#881 の gate）ので、**capsicum が実行する Play の Web 側実行系は常に 0.19.0** になる。現行 1.2.1 の `CryptoGen` / chacha20 は capsicum が実行しない領域の話。
-
-## モロヘイヤ API
-
-### 機能フラグは `.config.features` 配下にある（top-level `.features` ではない）
-
-モロヘイヤ `GET /mulukhiya/api/about` の機能フラグ（`annict` / `word_suggest` / `media_catalog` / `program_editable` / `annict_linked` 等）は、**top-level の `features` ではなく `config.features` の下**にある。サーバー実装は `api_controller.rb` の `about[:config][:features] = about[:config][:features].merge(DynamicFeatures.new(sns).to_h)`。
-
-判定するときは必ず `.config.features.<flag>` を見ること。top-level `.features` を見ると常に空に見えて「フラグが返っていない」と誤判定する。
-
-動的フラグは `DynamicFeatures::REGISTRY` で導出される。例: `word_suggest => PronunciationDictionary.enabled?`（＝ `word_suggest/urls` 設定の有無）。capsicum 側はこのフラグで UI を出し分ける（モロヘイヤは外部 API の癖を吸収して正規化するプロキシで、capsicum は単純なフラグ判定だけを行う方針）。
+⚠ **別ファイルにある → [tech-notes-api.md](tech-notes-api.md)。**メディア ALT の 2 ステップ送信と編集の導線条件 / `GET /api/v2/notifications` の 4 つの罠 / Misskey は推測で語らずフォークのソースを引く / `sinceId` 単独指定は ASC で返る / `/api/sw/register` はサードパーティから叩けない / Play（スロット系）の 3 つの現象 / モロヘイヤの機能フラグは `.config.features` 配下。

@@ -5,11 +5,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
+import '../service/device_install_id.dart';
+import '../service/entitlement_token_store.dart';
+import '../service/push_registration_service.dart';
 import '../util/exception_scrub.dart';
+import 'account_manager_provider.dart';
 import 'supporter_purchase_backend.dart';
 import 'supporter_status_provider.dart';
 
-export 'supporter_purchase_backend.dart' show supporterTipProductIds;
+export 'supporter_purchase_backend.dart'
+    show supporterSubscriptionProductId, supporterTipProductIds;
 
 /// 購入導線を出すプラットフォーム (#428 D-1)。iOS / Android に加え、#598 で
 /// macOS (Mac App Store IAP) を解放。iOS / macOS は Universal Purchase
@@ -30,6 +35,21 @@ bool get supporterPurchaseSupported =>
 bool get supporterPurchaseHasBackend =>
     supporterPurchaseSupported || Platform.isWindows;
 
+/// 有償リレーの利用権サブスクを**買える**プラットフォーム (#1122)。
+///
+/// ⚠ **投げ銭（[supporterPurchaseSupported]）と同じではない。**
+///
+/// | | |
+/// | --- | --- |
+/// | iOS / macOS / Android | ✅ `in_app_purchase` がサブスクを扱える |
+/// | ⚠ **Windows** | **後回し**。Microsoft Store のサブスクは消耗型と別経路で、
+///   既存の自前 channel から作り直しになる（設計書 フェーズ 4 のストア順序） |
+/// | Linux | ⚠ **買える経路が無い**（AppImage 直配） |
+///
+/// ⚠⚠ **これが false の OS では入口を出さない。**出すと「押しても買えない」に
+/// なる —— 買えないことは**商品説明と案内で伝える**（#1124）。
+bool get subscriptionPurchaseSupported => supporterPurchaseSupported;
+
 enum SupporterPurchaseOutcomeKind { success, canceled, error }
 
 /// 直近の購入試行結果。UI（段 3）がスナックバー等で提示する。
@@ -39,12 +59,27 @@ class SupporterPurchaseOutcome {
   /// error 時のみ。スクラブ済みの短い説明（生レスポンスは載せない）。
   final String? message;
 
-  const SupporterPurchaseOutcome(this.kind, {this.message});
+  /// 利用権サブスクの結果か (#1122)。投げ銭なら false。
+  ///
+  /// ⚠⚠ **UI の文言が変わるので要る。**投げ銭の成功は「サポーターになりました」
+  /// だが、⚠ **サブスクでそれを出すと、買ったものを取り違えて伝える。**
+  final bool isSubscription;
+
+  const SupporterPurchaseOutcome(
+    this.kind, {
+    this.message,
+    this.isSubscription = false,
+  });
 }
 
 /// `lastOutcome` を「保持／クリア／差し替え」の三状態で扱う sentinel
 /// （[DriveState.loadMoreError] と同じ手法）。
 const Object _keepOutcome = Object();
+
+/// [SupporterPurchaseState.subscription] を「保持／クリア／差し替え」で扱う
+/// sentinel。⚠ **`??` で済ませない** —— それだと**一度見つけた商品を消せない**ので、
+/// ストアから消えた（審査で落ちた・配信を止めた）あとも**買えない入口が残る**。
+const Object _keepSubscription = Object();
 
 class SupporterPurchaseState {
   /// ストア課金が利用可能か（非対応 OS / ストア不通なら false）。
@@ -56,6 +91,16 @@ class SupporterPurchaseState {
   /// ストアから取得済みの商品（[supporterTipProductIds] 順）。
   final List<ProductDetails> products;
 
+  /// 有償リレーの利用権サブスク商品 (#1122)。⚠ 取得できなければ null
+  /// （ストア未登録・審査前・サブスク非対応 OS）。**null なら入口を出さない。**
+  final ProductDetails? subscription;
+
+  /// 手元に利用権トークンがあるか (#1121 / #1122)。
+  ///
+  /// ⚠ **「購入したか」ではなく「この端末が利用権を持っているか」。**
+  /// 購入はストアアカウントに属し、1 つの購入を複数端末で使える（設計書 2-A）。
+  final bool hasEntitlement;
+
   /// 購入処理中（ボタン二度押し抑止に使う）。
   final bool purchaseInProgress;
 
@@ -66,6 +111,8 @@ class SupporterPurchaseState {
     this.isAvailable = false,
     this.isLoadingProducts = false,
     this.products = const [],
+    this.subscription,
+    this.hasEntitlement = false,
     this.purchaseInProgress = false,
     this.lastOutcome,
   });
@@ -74,12 +121,18 @@ class SupporterPurchaseState {
     bool? isAvailable,
     bool? isLoadingProducts,
     List<ProductDetails>? products,
+    Object? subscription = _keepSubscription,
+    bool? hasEntitlement,
     bool? purchaseInProgress,
     Object? lastOutcome = _keepOutcome,
   }) => SupporterPurchaseState(
     isAvailable: isAvailable ?? this.isAvailable,
     isLoadingProducts: isLoadingProducts ?? this.isLoadingProducts,
     products: products ?? this.products,
+    subscription: identical(subscription, _keepSubscription)
+        ? this.subscription
+        : subscription as ProductDetails?,
+    hasEntitlement: hasEntitlement ?? this.hasEntitlement,
     purchaseInProgress: purchaseInProgress ?? this.purchaseInProgress,
     lastOutcome: identical(lastOutcome, _keepOutcome)
         ? this.lastOutcome
@@ -150,9 +203,12 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
         state = state.copyWith(isAvailable: false, isLoadingProducts: false);
         return;
       }
-      final products = await _backend.queryProducts(
-        supporterTipProductIds.toSet(),
-      );
+      // ⚠ **投げ銭とサブスクを 1 回の問い合わせで取る** (#1122)。分けると
+      // 往復が 2 倍になるうえ、⚠⚠ **片方だけ失敗した状態**を扱う分岐が増える。
+      final products = await _backend.queryProducts({
+        ...supporterTipProductIds,
+        if (subscriptionPurchaseSupported) supporterSubscriptionProductId,
+      });
       final byId = {for (final p in products) p.id: p};
       // 定義順（金額昇順）に整列。ストアに存在しない ID は黙って除外する。
       final ordered = [
@@ -163,6 +219,10 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
         isAvailable: true,
         isLoadingProducts: false,
         products: ordered,
+        // ⚠ **取れなければ null に戻す。**ストアから消えたあとも入口が残ると、
+        // 押しても買えないボタンになる（[_keepSubscription] の説明）。
+        subscription: byId[supporterSubscriptionProductId],
+        hasEntitlement: await _loadEntitlement(),
       );
     } catch (e, st) {
       Sentry.captureException(
@@ -177,6 +237,62 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
         },
       );
       state = state.copyWith(isAvailable: false, isLoadingProducts: false);
+    }
+  }
+
+  /// 手元の利用権トークンの有無を読む (#1121 / #1122)。
+  ///
+  /// ⚠ **失敗を握りつぶして false にしない。**キーホルダが読めない事故で
+  /// 「未購入」に見えると、**買った人にもう一度買わせる**ことになる。読めなければ
+  /// **直前の値を保つ**（呼び出し側が `hasEntitlement` を渡さない形になる）。
+  Future<bool> _loadEntitlement() async {
+    try {
+      return await EntitlementTokenStore.load() != null;
+    } catch (e, st) {
+      Sentry.captureException(
+        scrubException(e),
+        stackTrace: st,
+        withScope: (scope) {
+          scope.setTag('supporter.purchase', 'entitlement_load_failed');
+          scope.fingerprint = [
+            'supporter.purchase.entitlement_load',
+            e.runtimeType.toString(),
+          ];
+        },
+      );
+      return state.hasEntitlement;
+    }
+  }
+
+  /// 利用権サブスクを購入する (#1122)。
+  ///
+  /// ⚠ **結果はイベント経由**（[_onEvent]）。ここでは開始だけ。
+  Future<void> subscribe(ProductDetails product) async {
+    if (!_backend.isSupported || state.purchaseInProgress) return;
+    if (!subscriptionPurchaseSupported) return;
+
+    state = state.copyWith(purchaseInProgress: true, lastOutcome: null);
+    try {
+      await _backend.buySubscription(product);
+    } catch (e, st) {
+      Sentry.captureException(
+        scrubException(e),
+        stackTrace: st,
+        withScope: (scope) {
+          scope.setTag('supporter.purchase', 'subscribe_failed');
+          scope.fingerprint = [
+            'supporter.purchase.subscribe',
+            e.runtimeType.toString(),
+          ];
+        },
+      );
+      state = state.copyWith(
+        purchaseInProgress: false,
+        lastOutcome: const SupporterPurchaseOutcome(
+          SupporterPurchaseOutcomeKind.error,
+          isSubscription: true,
+        ),
+      );
     }
   }
 
@@ -255,6 +371,13 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
         );
         return;
       case SupporterPurchaseEventStatus.purchased:
+        // ⚠⚠ **商品で分ける (#1122)。**購入イベントの stream は投げ銭と共用
+        // （backend は 1 つ）なので、**ここで振り分けないと投げ銭の経路が
+        // サブスクの購入を「投げ銭」として記録する。**
+        if (event.productId == supporterSubscriptionProductId) {
+          await _onSubscriptionPurchased(event);
+          return;
+        }
         // 消耗型につきレシート検証は最小（ストアを信頼）。サーバー側
         // 保持に移行した時点で検証経路を抽象層内に追加する（B-4）。
         var persisted = true;
@@ -317,6 +440,132 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
         return;
     }
   }
+
+  /// サブスクが購入（または復元）された (#1122)。
+  ///
+  /// **購入 → relay が利用権トークンを発行 → 手元へ保存 → `/register` に
+  /// 載せ直す**、の 4 段。⚠⚠ **最後まで行かないと「買ったのに使えない」**になる
+  /// ——`/register` はトークンを**登録時に**読むので、載せ直さない限り relay 側の
+  /// 判定は購入前のままになる。
+  ///
+  /// ⚠ **ストアのトランザクションは、利用権の保存が成立してから確定させる**
+  /// （投げ銭と同じ考え方）。途中で失敗したら確定させず、⚠ **次回起動の再配信**で
+  /// 拾い直す —— 確定してしまうと、**購入は成立しているのに利用権が無い**状態が
+  /// 再試行の手掛かりごと消える。
+  Future<void> _onSubscriptionPurchased(SupporterPurchaseEvent event) async {
+    final store = _entitlementStoreName();
+    final purchaseId = event.purchaseId;
+    // ⚠ どちらも無ければ利用権を引けない。**成功に見せない。**
+    if (store == null || purchaseId == null || purchaseId.isEmpty) {
+      Sentry.captureException(
+        scrubException(Exception('subscription purchase without an id')),
+        withScope: (scope) {
+          scope.setTag('supporter.purchase', 'entitlement_missing_id');
+          scope.fingerprint = ['supporter.purchase.entitlement_missing_id'];
+        },
+      );
+      state = state.copyWith(
+        purchaseInProgress: false,
+        lastOutcome: const SupporterPurchaseOutcome(
+          SupporterPurchaseOutcomeKind.error,
+          isSubscription: true,
+        ),
+      );
+      return;
+    }
+
+    try {
+      final json = await ref
+          .read(supporterRelayClientProvider)
+          .issueEntitlementToken(
+            store: store,
+            purchaseId: purchaseId,
+            deviceId: await DeviceInstallId.get(),
+            productId: event.productId,
+          );
+      final token = EntitlementToken.fromRelay(json);
+      if (token == null) throw StateError('relay returned no entitlement');
+      await EntitlementTokenStore.save(token);
+    } catch (e, st) {
+      Sentry.captureException(
+        scrubException(e),
+        stackTrace: st,
+        withScope: (scope) {
+          scope.setTag('supporter.purchase', 'entitlement_issue_failed');
+          scope.fingerprint = [
+            'supporter.purchase.entitlement_issue',
+            e.runtimeType.toString(),
+          ];
+        },
+      );
+      state = state.copyWith(
+        purchaseInProgress: false,
+        lastOutcome: const SupporterPurchaseOutcome(
+          SupporterPurchaseOutcomeKind.error,
+          isSubscription: true,
+        ),
+      );
+      return; // ⚠ 確定させない（再配信で拾い直す）
+    }
+
+    state = state.copyWith(
+      purchaseInProgress: false,
+      hasEntitlement: true,
+      lastOutcome: const SupporterPurchaseOutcome(
+        SupporterPurchaseOutcomeKind.success,
+        isSubscription: true,
+      ),
+    );
+    await _completeAndReregister(event);
+  }
+
+  /// ストアのトランザクションを確定させ、`/register` を打ち直す (#1122)。
+  ///
+  /// ⚠ **どちらも失敗しても購入は成立している**ので、観測だけして本筋は止めない。
+  /// ⚠ 再登録が落ちても、**次回起動の登録でトークンは載る**（手元に保存済み）。
+  Future<void> _completeAndReregister(SupporterPurchaseEvent event) async {
+    if (event.needsCompletion) {
+      try {
+        await _backend.complete(event);
+      } catch (e, st) {
+        Sentry.captureException(
+          scrubException(e),
+          stackTrace: st,
+          withScope: (scope) {
+            scope.setTag('supporter.purchase', 'subscription_complete_failed');
+            scope.fingerprint = ['supporter.purchase.subscription_complete'];
+          },
+        );
+      }
+    }
+    try {
+      final accounts = ref.read(accountManagerProvider).accounts;
+      if (accounts.isNotEmpty) {
+        await PushRegistrationService.registerAllAccounts(accounts);
+      }
+    } catch (e, st) {
+      Sentry.captureException(
+        scrubException(e),
+        stackTrace: st,
+        withScope: (scope) {
+          scope.setTag('supporter.purchase', 'reregister_failed');
+          scope.fingerprint = ['supporter.purchase.reregister'];
+        },
+      );
+    }
+  }
+}
+
+/// どのストアの購入か (#1122)。relay の `POST /entitlements` が受ける値
+/// （`Relay::Database::ENTITLEMENT_STORES`）。
+///
+/// ⚠ **macOS は `apple`。**iOS と Universal Purchase で同じ App レコードを
+/// 共有するので、購入も同じストアに属する。
+String? _entitlementStoreName() {
+  if (Platform.isIOS || Platform.isMacOS) return 'apple';
+  if (Platform.isAndroid) return 'google';
+  if (Platform.isWindows) return 'microsoft';
+  return null;
 }
 
 final supporterPurchaseProvider =

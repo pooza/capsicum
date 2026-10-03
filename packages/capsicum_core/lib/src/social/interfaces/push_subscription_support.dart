@@ -45,5 +45,21 @@ abstract mixin class PushSubscriptionSupport {
   /// [endpoint] Misskey の `/api/sw/unregister` は endpoint 必須のため呼び出し
   /// 側が保存済みの URL を渡す。Mastodon は `DELETE` エンドポイントが現在の
   /// OAuth トークンのサブスクリプションを対象とするため無視してよい。
-  Future<void> unsubscribePush({String? endpoint});
+  ///
+  /// [p256dh] / [auth] は **Misskey 2026.10.0 以降で必須**（#1201）。⚠ 資格情報
+  /// ではなく購読の auth secret (RFC 8291) で所有を確認する作りに変わったため、
+  /// `endpoint` 単体では `INVALID_PARAM` の 400 になる。⚠⚠ **読めないことがある**
+  /// —— v1.20 で keyset blob 化する前のインストールでは `PushKeyStore.read` が
+  /// null を返すので、呼び出し側は null のまま渡してよい（その場合 2026.10.0 以降
+  /// では解除できないが、endpoint だけ送る従来の挙動と同じで悪化はしない）。
+  ///
+  /// ⚠ **鍵は常に渡してよい。**2026.10.0 より前の `paramDef` は `endpoint` のみを
+  /// 宣言しているが、`additionalProperties: false` を持たず、Misskey の Ajv も
+  /// `removeAdditional` 無しで構成されているので、**余分なキーは無視される**
+  /// （フォークの `endpoint-base.ts` で実測・2026-10-03）。版で分岐しない。
+  Future<void> unsubscribePush({
+    String? endpoint,
+    String? p256dh,
+    String? auth,
+  });
 }

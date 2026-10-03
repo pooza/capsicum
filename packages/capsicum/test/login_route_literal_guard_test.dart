@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/dart_source.dart';
+import 'support/source_files.dart';
 
 /// #1057: `/login` へは [loginLocation] 経由でしか遷移させない。
 ///
@@ -18,11 +19,7 @@ import 'support/dart_source.dart';
 /// 置いてあり、往復は `router_login_args_test` が固定している。
 void main() {
   final libDir = Directory('lib');
-  final sources = libDir
-      .listSync(recursive: true)
-      .whereType<File>()
-      .where((f) => f.path.endsWith('.dart'))
-      .toList();
+  final sources = sourceFiles(libDir.path);
 
   /// `/login` を文字列リテラルで書いている行を返す。
   ///

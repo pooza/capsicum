@@ -1,0 +1,163 @@
+# プロダクト方針（UI・対応バージョン・運営元）
+
+[CLAUDE.md](CLAUDE.md) から分けた 1 本（#1184・2026-09-30）。**画面と機能の作り方に関する方針**を置く。⚠ **CLAUDE.md は毎セッション全文読むファイル**なので、参照用の方針はここへ出した。**UI を触る回はこのファイルを読む。**
+
+⚠ **ここに置かないもの**: ブランチ戦略・Issue 管理・マイルストーン運用・リリース計画・ソース検査ガード・push 前の整形（[CLAUDE.md](CLAUDE.md)）/ 実装の落とし穴（[tech-notes.md](tech-notes.md)）/ 個別 Issue のステータス（GitHub が正本）。
+
+## 設計の出発点
+
+アーカイブされた [Kaiteki](https://github.com/Kaiteki-Fedi/Kaiteki) を参考にしている。
+（参照用にローカルクローンを併設している。配置先は開発者の手元で管理）
+
+### Kaiteki から継承する設計
+
+- **Adapter パターン**: `BackendAdapter` + Feature インターフェース（mix-in）による SNS 差異の吸収
+- **SharedMastodonAdapter**: Mastodon 派生（Pleroma、Glitch 等）の共通化
+- **モデル変換**: `toKaiteki()` extension method による統一ドメインモデルへの変換
+- **Probing**: NodeInfo → API endpoint 試行によるサーバー種別の自動検出
+- **テキストパーサー**: MFM / HTML / Markdown の Strategy パターン
+- **モノレポ構成**: core / backends / fediverse_objects / メインアプリの分離
+
+### Kaiteki から変更した点
+
+- Flutter SDK を stable channel に固定
+- ストレージ層: Hive → flutter_secure_storage + shared_preferences
+- HTTP クライアント: `http` → dio
+- 対象 SNS を Mastodon + Misskey に限定
+- L10n はサブモジュールでなく直接管理
+
+## UI 設計方針
+
+### 用語統一
+
+capsicum は「最新版を対象にする」方針で開発しており、UI 表示に用いる用語も最新の Mastodon / Misskey に追従する。古い Mastodon で使われていた用語は最新 Mastodon しか知らない新規ユーザーには通じないため、UI・エラーメッセージ・ダイアログ等ユーザー目に触れる文字列では使用しない。
+
+| 旧称 / 別称 | 現在の呼称 | 種別 | 備考 |
+|------|-----------|------|------|
+| トゥート | 投稿 | 廃止語 | 最新 Mastodon では使われていない |
+| 未収載 | ひかえめな公開 | 廃止語 | 最新 Mastodon では使われていない |
+| インスタンス | サーバー | 廃止語 | Mastodon / Misskey 共通で廃止 |
+| ノート | 投稿 | 統一 | Misskey では現役用語。capsicum では「投稿」に統一 |
+| チャット | メッセージ | 統一 | Misskey の `/api/chat/*` 由来。capsicum では UI 表記を「メッセージ」に統一（コード識別子は `Chat*` のまま API 命名に追従） |
+| リプライ | 返信 | 統一 | 両上流とも**操作名は「返信」**（Mastodon `status.reply` / Misskey `_actions.reply`）。⚠ **Misskey が「リプライ」を使うのは通知の種別ラベル**（`_notification._types.reply`）だけで、capsicum はその種別を `mention` に畳んでいるので出番が無い。アクションメニュー・投稿フォームの AppBar・タッチ操作の設定はすべて「返信」（#1117-E） |
+| Flash | Play | 統一 | Misskey は **UI 表記が「Play」**（`navbar.ts` / `_play:` ロケール）で、**エンティティ・API 名が `Flash`**（`/api/flash/*`）という食い違いがある。capsicum も同じ使い分けをする（UI は「Play」・コード識別子は `Flash*`） |
+
+「廃止語」は最新版で廃止された用語であり、capsicum でも一切使わない。「統一」は他方の SNS では現役だが、capsicum では UI 一貫性のためにどちらか片方に寄せている用語を指す。
+
+コード内部の識別子（`Instance`, `InstanceProbe` 等）は変更不要。UI に表示する文字列のみ統一する。文字列リテラルをコード全体に散らすと用語の取りこぼしが起きやすいため、[post_scope_display.dart](../packages/capsicum/lib/src/ui/util/post_scope_display.dart) のように中央集約した定数を参照する設計を優先する。
+
+### タグ管理の位置づけ
+
+文末ハッシュタグの管理（削除してタグづけ・お気に入りタグ・タグセット・予約投稿タグ編集等）は、capsicum の根幹にある基本機能であり、リプライ・ブースト・ブックマークと同等に扱う。アニメファンにとって用語管理（キャラ名・作品名のタグ付け）は本質的な活動であり、この日常的なタグ管理ニーズを満たすことは他のクライアントにない capsicum 独自の価値である。品質・信頼性に関する問題は最優先で対応すること。
+
+### アクションメニュー
+
+投稿に対するアクション（お気に入り・ブースト・ブックマーク等）は、タイムライン上にボタンを露出させず、長押しで表示する BottomSheet メニュー内に格納する。誤タップ防止のため。
+
+### ドロワー項目のナビゲーション様式（#805）
+
+左ドロワーから機能を選んだときの遷移様式は、次の基準で使い分ける（一貫性のため明文化）:
+
+- **ボトムシートのクイックチューザ** = 「自分の保存済みの◯◯（チャンネル / クリップ / アンテナ / Play / プロフィールタグ / リスト等）を 1 つ選んで、そのタイムラインへ飛ぶ」用途。頻繁操作を軽く済ませ、ホーム文脈から素早く飛べるようにする。全画面化すると日常操作が一段重くなるため採らない。
+- **独立画面（`context.push`）** = そこに滞在する / 管理する行き先（通知・ブックマーク・ドライブ・設定・各種管理 UI 等）。
+
+保存済みショートカットの「作成 / 編集 / メンバー管理」などの管理 UI は、クイックチューザの奥（シート内の導線）または対象画面内に温存する。ドロワー直下の一等地はクイックチューザに割り当てる。
+
+### Mastodon / Misskey 機能マッピング
+
+| 操作 | Mastodon | Misskey | 備考 |
+|------|----------|---------|------|
+| お気に入り | FavoriteSupport | ―（リアクションで代替） | Misskey は ReactionSupport で対応済み |
+| ブックマーク | BookmarkSupport | BookmarkSupport（内部は favorites API） | Misskey の「お気に入り」は意味的にブックマーク相当 |
+| ブースト / リノート | repeatPost() | repeatPost()（renote） | ラベルは ReactionSupport の有無で切替 |
+
+- Misskey adapter は `FavoriteSupport` mixin を持たない（リアクションで代替済み）
+- Misskey 判定は `adapter is ReactionSupport` で行う
+
+### DM / メッセージの方針
+
+- **Mastodon**（#179）: `GET /api/v1/conversations` で DM 専用タイムラインを実装
+- **Misskey**（#248）: DM タイムライン API がない。最近の Misskey では「メッセージ」機能（スレッド形式チャット）が DM の後継と位置づけられており、こちらに対応する。v1.22 で実装完了。追加のバグ修正・enhancement（#442 系列・#449 レンダリング要素反映・#440 push tap 動線・グループチャット #438 等）は v1.25 / v1.28 で消化済み（個別 Issue の対応状況は Milestones が正本）
+
+### タイムラインの読み込み挙動
+
+タイムラインをスクロール中に一旦読み込みが止まり、少し戻すと再読み込みされる挙動はページネーションの正常な動作であり、不具合ではない。ユーザー報告の表現に引きずられずに判断する。
+
+### 公開範囲とタイムラインの考え方
+
+**タイムラインの設計は読む側の責任**とする。「自分と無関係な投稿はノイズだ」という言説は capsicum は採らない。見たくないものを見ないようにする道具（ハッシュタグ TL・リスト・ミュート等）は**読む側に**提供するが、**投稿者を静かにさせる方向の機能・配慮は入れない**。
+
+この帰結として:
+
+- **「TL を汚さないよう投稿者が公開範囲を下げる」を前提にした設計をしない。** 公開範囲は「誰に見えるか」の設定であって、「誰向けの話題か」の表明ではない。**話題の対象を示すのはハッシュタグの仕事**（プリセットサーバーのデフォルトハッシュタグがそれを担っている）。
+- 定形投稿・周知系の機能に公開範囲を持たせない（[#767](https://github.com/pooza/capsicum/issues/767) の投稿テンプレートが実例。テンプレートは `id` / `name` / `body` / `cw` だけを持つ）。
+- **モロヘイヤがキーワードから多くのタグを自動付与するのは、フィルタのしやすさへの配慮**（デフォルトタグ・辞書タグ・グループタグ等のハンドラー）。タグが多いこと自体が目的ではなく、**読む側にフィルタの取っ手を渡している**。「タグの多い投稿はスパム」という言説はここでも採らない — むしろその立場の人にとってこそフィルタしやすい構造になっている。よって **capsicum 側で「タグが多いのは問題だ」という前提の機能（自動削減・既定での非表示化等）を提案しない**。タグ管理を厚くする方向（[タグ管理の位置づけ](#タグ管理の位置づけ)）が capsicum の役割。
+
+**技術的にも「ひかえめな公開で周知」は成立しない**（Mastodon 4.6 のフォークで実証済み）。`Status::Visibility` の enum は `suffix: :visibility` 付きで、`public_visibility` スコープが拾うのは `public` のみ。ハッシュタグ TL（`TagFeed#get` → `public_scope`）も同じスコープを使うため、**ひかえめな公開の投稿はハッシュタグ TL に出ない**。プリセットサーバーではローカル TL をデフォルトハッシュタグの TL に置換しているので、周知をひかえめな公開で出すと**届けたい相手（フォロワー外の同じサーバーの住人）にこそ届かなくなる**。
+
+「周知だから公開範囲を絞る」系の要望が来た場合、実装する前にこの非対称を説明する。
+
+### モロヘイヤ連携画面の導線
+
+エピソードブラウザはタグセット BottomSheet 内のメニュー項目として配置する（Mastodon 改造版 WebUI と同じ動線）。投稿画面のツールバーに独立したアイコンを置く方式は、ユーザーに発見されにくいため採用しない。
+
+### プッシュ通知
+
+プッシュ通知には、Mastodon の Web Push を APNs/FCM に変換する中継サーバーの運用が必要。capsicum は主に自前サーバー（プリセット登録済み）のユーザー向けに開発されており、プリセットサーバーのユーザーには [pooza/capsicum-relay](https://github.com/pooza/capsicum-relay) 経由で無償でリレーを提供している。外部ユーザー向けの有償提供（[#597](https://github.com/pooza/capsicum/issues/597)・未実装・v2.0）の設計書は [paid-relay-plan.md](paid-relay-plan.md) が正本（2026-09-06）。
+
+⚠ **「コスト補填」という当初の建付けは実測で組み直した。**開発工数を人件費換算すると回収に届かないため、**回収を KPI に置く限り永久に「やらない」が正解になる**。収益目標は **「relay のインフラを持ち出しにしないこと」**（2026-09-06 pooza 決定）。⚠ **プリセットのアカウントを 1 つも持たない利用者は現時点で 0 人**（本番 DB の実測）なので、**対象は「これから来る人」で需要は未証明**。⚠ **サーバー別に数えると外部が 36% に見えるが、マルチアカウント利用者の別アカウント宛であって「外部ユーザー」ではない**。
+
+v1.15 の観測性強化（#293）により、iOS のバックグラウンド通知は発火回数 0回で事実上機能していないことが確認された。v1.18 でプッシュ通知リレー（[#52](https://github.com/pooza/capsicum/issues/52)）を実装し、根本解決済み。リレーサーバー（Ruby、公開ドメイン `relay.capsicum.shrieker.net`）の実装は [pooza/capsicum-relay](https://github.com/pooza/capsicum-relay) リポジトリが正本（ホスト構成・デプロイ手順はインフラノートが正本）。初期設計判断の経緯は [archive/push-relay-plan.md](archive/push-relay-plan.md) に保存。具体的な課金設計（料金体系・ストア課金統合等）は [paid-relay-plan.md](paid-relay-plan.md) が正本（投げ銭本体は [#428](https://github.com/pooza/capsicum/issues/428) / [supporter-subscription-plan.md](supporter-subscription-plan.md)）。
+
+⚠ **配送の重さは device_type で大きく違う**（2026-09-06 実測・正本は [paid-relay-baseline.md](paid-relay-baseline.md) 1-5）。**Windows (WNS) が処理時間の 88% を占め、1 件あたり iOS の 16 倍**（2,056ms 対 126ms）。⚠ **APNs だけが永続 HTTP/2 接続を保持しており、WNS / FCM は 1 通ごとに TLS を張り直している**。改善は [relay#54](https://github.com/pooza/capsicum-relay/issues/54)（接続再利用・v1.65）/ [relay#55](https://github.com/pooza/capsicum-relay/issues/55)（非同期化・#597 と同じ回）/ [relay#56](https://github.com/pooza/capsicum-relay/issues/56)（バックオフ・on-hold）。⚠ **WNS の `dropped` は「端末が落ちている / スリープ」**であって dedup ではない。**raw notification は queue されない**ので、その間の通知は失われる。
+
+### サポート優先順位
+
+自前のサーバー（美食丼・デルムリン丼・キュアスタ！・ダイスキー）以外では、サーバーログの確認やサーバー側の操作（レートリミット解除等）ができないため、サポートの優先順位を下げる。自前サーバー以外での問題はクライアント側で対処可能な範囲に限定し、サーバー側の問題が疑われる場合は「サーバー管理者に問い合わせてください」等の案内に留める。
+
+## 対応バージョン方針
+
+### 基本戦略: 機能検出（Feature Probing）ベース
+
+バージョン番号による分岐は行わない。サーバーが提供する API エンドポイントを probing し、利用可能な機能に応じて UI を出し分ける。
+
+### フォークに対する方針
+
+capsicum は Mastodon 本家および Misskey 本家の API に対して実装する。フォークに対して個別の互換処理は行わない。本家 API との互換性を維持するのはフォーク側の責任であり、probing の結果として動作するならそのまま使えるが、動作しない場合も capsicum 側では対応しない。
+
+なお、Mastodon フォークが Misskey 互換の API を提供するケースもありうる。この場合も同様に probing の結果に従い、利用可能な機能があればそのまま使う。フォーク固有の対応は行わない。
+
+ただし、自前のサーバー（モロヘイヤ導入済み環境）が提供する独自機能には最大限対応する。capsicum の主目的は自前のインフラとの連携であり、フォーク互換とは別の話である。
+
+### 機能不足時の通知
+
+probing の結果、基本的な機能が欠けているサーバーに対しては「このサーバーは一部の機能に対応していません」旨の通知を表示する。バージョン番号には言及しない。接続自体は拒否せず、利用可能な範囲で動作させる。
+
+**「バージョン番号に言及しない」は機能ゲーティングの通知に限った話**である。これは probing ベースで機能を出し分ける（版番号で分岐しない）基本戦略に対応する。一方、**サーバー情報画面**では、サーバーの素性を事実として提示する目的で、nodeinfo の software 名（Mastodon / Misskey / Fedibird 等）と本家 latest リリースへの追従状況（例「Misskey v2025.4.1 · 最新は 2026.6.0」）を表示する（[#816](https://github.com/pooza/capsicum/issues/816)）。これは機能ゲートではなく情報表示で、capsicum が最新の Mastodon / Misskey を対象にする以上「本家名を名乗らない／latest に届かないサーバーは新機能が使えない」ことをユーザーに納得してもらうためのもの。追従判定は nodeinfo の software 名が `mastodon` / `misskey` に完全一致する場合のみ行い、fedibird 等の別ソフトには出さない。設立日表示（[#815](https://github.com/pooza/capsicum/issues/815)、`accounts/1` 近似・account id の snowflake 化 2021-03 に注意）も同じ「サーバーの素性を可視化する」系。
+
+### 開発上のターゲット
+
+主な動作確認対象は自前のサーバー（美食丼 / デルムリン丼 / キュアスタ！ / ダイスキー）であり、最新の Mastodon / Misskey に追従している前提で開発する。古いバージョン固有の互換処理やフォーク固有の互換処理は原則として書かない。
+
+## 運営元
+
+capsicum の運営元は有限会社ビーショック（<https://www.b-shock.co.jp>）。課金（投げ銭サブスクは v1.27 で実装済み・外部ユーザー向け通知リレーの有償提供は v2.0 で実装中・[#597](https://github.com/pooza/capsicum/issues/597)）を前提に、商品扱いとする方針。
+
+- サイト運営・問い合わせ窓口・特商法表示は法人名義（capsicum-site / Google Workspace アドレス経由）
+- 著作権表記は個人名義のままで問題なし
+- **ストア発行元（Apple / Google / Microsoft Store の Seller / Publisher Display Name）は当面個人（小石達也）で 3 ストア整合**。Apple は登録時の Team Prefix 固定の経緯で個人、Google も個人で運用、Microsoft Store も同方針で 2026-05-09 に個人開発者登録 + アプリ予約完了（identity_name=`9AFBB08E.capsicum`、publisher_display_name=`小石達也`）
+- 法人化（個人 → 有限会社ビーショックへの 3 ストア一括移行 + Apple は App Transfer 経由）は税務・ブランド要請が顕在化した時点で実施。**サポーターサブスク（[#428](https://github.com/pooza/capsicum/issues/428), v1.27）開始は移行の必須トリガーではない**（税務処理・プライバシー面の判断根拠は非公開メモリ `project_supporter_subscription_individual_entity` が正本）
+- 「個人開発のアプリ」「個人発行元のストア配布」と「法人運営のサービス」は法的に矛盾しない（開発 / 配布 / 運営は独立した役割）。ブランド一貫性のみ運用課題として残るが、無料アプリの間は実害なし
+
+### 課金の方向性
+
+⚠⚠ **不変条件: プリセットサーバーのユーザーには決して課金しない**（2026-10-03 pooza）。**例外は、本人が自分の意志で行う投げ銭だけ。**「プリセットに 1 アカウント持てば、外部サーバーのアカウントも含めて全部無償」もこの条件に含まれる（[paid-relay-plan.md](paid-relay-plan.md) 1-2）。⚠⚠ **これが破れるのは不具合ではなく障害として扱う。**機能を止める・課金を促す・課金の状態を見せる、のどれでも破れたことになる。リリース前レビューでは必ず確かめる（[release-review スキル](../.claude/skills/release-review/SKILL.md)）。⚠ 判定はクライアント（`hasPresetAmong`）と relay（`EntitlementGate`）の**両方**にあるので、**片方だけ見て「守られている」としない**（2026-10-03 に relay 側だけが購読 1 行の `server` で判定していた・[relay#82](https://github.com/pooza/capsicum-relay/issues/82)）。
+
+当初は「外部ユーザー向けプッシュ通知リレーのコスト補填」を想定していたが、プリセットサーバーの既存ユーザーから「機能差別化なしでよいので投げ銭させてほしい」という要望が先に顕在化したため、サポーターサブスク（[#428](https://github.com/pooza/capsicum/issues/428)）を主軸に設計検討する方針に変更（2026-04-30）。
+
+- 機能差別化なし、装飾レベルの視覚的フィードバック（サポーターバッジ等）にとどめる
+- 外部ユーザー向けプッシュ通知リレーの有償提供は、同一 SKU で吸収せず**既存の投げ銭（消耗型）を残したままサブスク SKU を追加する**形に決まった（[paid-relay-plan.md](paid-relay-plan.md)・[#1122](https://github.com/pooza/capsicum/issues/1122)）
+- ストア審査対策（"What does this app do?" で trivial 扱いを避ける）として複数階層・継続性のあるサブスクで構成
+
+v1.27 マイルストーンに単独配置し（大更新のため他項目と並走させず）、商品設計 + 課金経路 + 装飾範囲まで同マイルストーン内で実装・出荷した。並走した自動化系タスク [#544](https://github.com/pooza/capsicum/issues/544)（Microsoft Store Web UI 手動 publish ルート再開）も同マイルストーンで対応済み。Flathub 対応は 2026-05-29 に断念（提出 PR が AI Slop 判定、#604 / #470 とも close）。Linux 配布は AppImage 単独。
+

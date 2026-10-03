@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/dart_source.dart';
+import 'support/source_files.dart';
 
 /// #1083-E: `reportOpFailure` の `tagKey` の形を機械で守る。
 ///
@@ -84,11 +85,7 @@ void main() {
   /// `lib` 全体。パスつきで返す。
   List<(String path, String key, bool resolved)> tagKeys() {
     final out = <(String, String, bool)>[];
-    for (final file
-        in Directory('lib')
-            .listSync(recursive: true)
-            .whereType<File>()
-            .where((f) => f.path.endsWith('.dart'))) {
+    for (final file in sourceFiles('lib')) {
       for (final (key, resolved) in tagKeysIn(file.readAsStringSync())) {
         out.add((file.path, key, resolved));
       }

@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/source_files.dart';
+
 /// #1037: 「Scaffold の body 下端を誰も面倒を見ていない画面」を機械で止める検査。
 ///
 /// ## なぜ要るか
@@ -124,18 +126,13 @@ void main() {
   };
 
   /// `screen/` 配下の全 `.dart`（⚠ **サブディレクトリを含む** — #1061）。
-  List<File> screenFiles() =>
-      screenDir
-          .listSync(recursive: true)
-          .whereType<File>()
-          .where((f) => f.path.endsWith('.dart'))
-          .toList()
-        ..sort((a, b) => a.path.compareTo(b.path));
+  List<File> screenFiles() => sourceFiles(screenDir.path);
 
   /// 画面ファイルの識別子。サブディレクトリを含むので、ファイル名だけだと
   /// `settings/` 配下と衝突しうる。`screen/` からの相対パスで持つ。
-  String keyOf(File file) =>
-      file.path.substring(screenDir.path.length + 1).replaceAll(r'\', '/');
+  ///
+  /// ⚠ 区切りは [sourceFiles] が `/` へ正規化して返す (#1168)。
+  String keyOf(File file) => file.path.substring(screenDir.path.length + 1);
 
   test('サブディレクトリの画面も検査対象に入っている (#1061)', () {
     // ⚠ **この検査自身が空振りしていないことを確かめる。**`listSync()` が
@@ -404,11 +401,7 @@ void main() {
     };
 
     final offenders = <String>[];
-    for (final file
-        in Directory('lib')
-            .listSync(recursive: true)
-            .whereType<File>()
-            .where((f) => f.path.endsWith('.dart'))) {
+    for (final file in sourceFiles('lib')) {
       if (exempt.containsKey(file.path)) continue;
       final code = _structural(file.readAsStringSync());
       // 余白として使っている形だけを見る（真偽判定は `> 0` が続く）。
