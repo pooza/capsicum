@@ -105,11 +105,65 @@ void main() {
       );
     });
 
+    // 🔴 **relay は通すのに「失効」と出ていた形**（2026-10-03 に発見）。
+    // `revoked` は status 側では失効なので、補正しないと**届いているのに
+    // 「届かなくなります」と案内する**ことになる。
+    test('🔴 entitled_refunded は refunded（relay は通している）', () {
+      expect(
+        entitlementViewOfRelay(status: 'revoked', reason: 'entitled_refunded'),
+        EntitlementView.refunded,
+      );
+    });
+
+    // ⚠⚠ **`reason` が無い回に「まだ使えます」と言わない。**期間が残っているかを
+    // 知っているのは `expires_at` を見た relay だけなので、古い relay に対しては
+    // 失効側へ倒したままにする。
+    test('⚠ reason が無ければ revoked は失効のまま（refunded に倒さない）', () {
+      expect(
+        entitlementViewOfRelay(status: 'revoked', reason: null),
+        EntitlementView.expired,
+      );
+    });
+
     test('大文字小文字を問わない', () {
       expect(
         entitlementViewOfRelay(status: 'active', reason: 'UNPAID'),
         EntitlementView.grace,
       );
+      expect(
+        entitlementViewOfRelay(status: 'revoked', reason: 'Entitled_Refunded'),
+        EntitlementView.refunded,
+      );
+    });
+  });
+
+  // ⚠⚠ **relay は UTC を `2026-11-03 12:34:56` の形で返す**（印が無い）。
+  // ⚠ `DateTime.parse` はこれをローカル時刻として読むので、**JST では 9 時間
+  // ずれる** —— 日付だけ出す画面では、境目の時刻で 1 日ずれて見える。
+  group('formatEntitlementExpiry', () {
+    // ⚠⚠ **この検査の歯は「端末のオフセットが 0 でないとき」だけ効く。**
+    // UTC で走らせると、ローカル解釈と UTC 解釈の結果が一致してしまうので
+    // **ずれを検出できない**（CI は UTC の可能性がある）。⚠ 手元（JST）で
+    // 落ちることは確認済み。**「CI が緑だから正しい」と読まないこと。**
+    test('印の無い値を UTC として読み、ローカルの日付で出す', () {
+      final local = DateTime.utc(2026, 11, 3, 20).toLocal();
+      final expected =
+          '${local.year}-${local.month.toString().padLeft(2, '0')}-'
+          '${local.day.toString().padLeft(2, '0')}';
+      expect(formatEntitlementExpiry('2026-11-03 20:00:00'), expected);
+    });
+
+    test('印が付いている形はそのまま解釈する', () {
+      expect(formatEntitlementExpiry('2026-11-03T20:00:00Z'), isNotNull);
+      expect(formatEntitlementExpiry('2026-11-03T20:00:00+09:00'), isNotNull);
+    });
+
+    // ⚠ 生の文字列や null を画面に出さないための口。
+    test('読めない値は null（文面から日付を落とす）', () {
+      expect(formatEntitlementExpiry(null), isNull);
+      expect(formatEntitlementExpiry(''), isNull);
+      expect(formatEntitlementExpiry('   '), isNull);
+      expect(formatEntitlementExpiry('まだ有効'), isNull);
     });
   });
 
@@ -149,6 +203,15 @@ void main() {
         showEntitlementSection(
           hasPreset: false,
           view: EntitlementView.active,
+          isRefreshing: false,
+        ),
+        isTrue,
+      );
+      // ⚠ 返金済みも出す。**届いているが期限がある**ので、期限を見せる先が要る。
+      expect(
+        showEntitlementSection(
+          hasPreset: false,
+          view: EntitlementView.refunded,
           isRefreshing: false,
         ),
         isTrue,

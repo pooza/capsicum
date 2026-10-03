@@ -88,11 +88,27 @@ class PushNotificationSettingsScreen extends ConsumerWidget {
       return const [];
     }
 
+    // ⚠ 読めなければ null。文面から日付だけを落とす（[formatEntitlementExpiry]）。
+    final expiry = formatEntitlementExpiry(status.expiresAt);
+
     final (title, body, icon) = switch (status.view) {
       EntitlementView.active => (
         '利用権は有効です',
         'プリセット以外のサーバーでもプッシュ通知を受け取れます。',
         Icons.check_circle_outline,
+      ),
+      // ⚠⚠ **届いている。**relay は返金済みでも**決済済みの期間までは通す**
+      // （relay#63「払った分の権利は否定しない」）。⚠ **失効と同じ文面にしない** ——
+      // 届いているのに「届かなくなります」と言うことになる。
+      // ⚠ **期限を併記する**のがこの状態の存在理由。
+      EntitlementView.refunded => (
+        '返金済みです',
+        expiry == null
+            ? '決済済みの期間が残っているあいだは、プリセット以外のサーバーでも'
+                  'プッシュ通知をお使いいただけます。'
+            : '$expiry までは、プリセット以外のサーバーでもプッシュ通知を'
+                  'お使いいただけます。期限を過ぎると届かなくなります。',
+        Icons.schedule,
       ),
       // ⚠⚠ **止まっている。**2026-10-03 に「未払いの間は通さない」と決まった
       // （relay#63）ので、**「いまのところ届いています」とは言えない。**
@@ -124,6 +140,8 @@ class PushNotificationSettingsScreen extends ConsumerWidget {
       // ⚠⚠ **買い直したあとの再登録の導線**（完了条件の 2 つ目）。
       // `/push` が 410 を返すと fedi サーバー側の購読が消えるので、⚠ **買い直す
       // だけでは戻らない。**登録をやり直す必要がある。
+      // ⚠ **返金済みにも出す。**いまは届いているが期限で切れるので、買い直した
+      // ときにここから戻せる必要がある。
       if (status.view != EntitlementView.active)
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),

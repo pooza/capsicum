@@ -77,12 +77,13 @@ void main() {
   });
 
   // ⚠ 失効は本人が解約した結果であることが多い。毎回鳴らすと嫌がらせになる。
+  // ⚠⚠ **`values` から引く**（手で並べない）。状態は増えるので、列挙にすると
+  // **新しい状態が検査から黙って漏れる** —— `refunded` を足したときに実際に
+  // 漏れかけた。返金済みは**届いている**ので、鳴らす理由が無い。
   test('未払い以外では出さない', () async {
-    for (final view in [
-      EntitlementView.active,
-      EntitlementView.expired,
-      EntitlementView.absent,
-    ]) {
+    for (final view in EntitlementView.values.where(
+      (v) => v != EntitlementView.grace,
+    )) {
       expect(await run(view), isFalse, reason: '$view');
     }
     expect(notifications.shown, isEmpty);

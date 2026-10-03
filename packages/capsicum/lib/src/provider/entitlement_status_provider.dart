@@ -26,7 +26,16 @@ enum EntitlementView {
   /// **気づける形で出す**のがこの状態の存在理由。
   grace,
 
-  /// 失効した（解約・期限切れ・返金）。
+  /// ⚠ **返金済みだが、決済済みの期間が残っている**ので**まだ届く**
+  /// (#1123・relay#63 の `entitled_refunded`)。
+  ///
+  /// ⚠⚠ **[expired] に混ぜられない。**relay はこの行を**通す**ので、失効と
+  /// 同じ文面を出すと**届いているのに「届かなくなります」と言う**ことになる
+  /// （2026-10-03 に実際にそうなっていた）。⚠ **期限を併記する**のがこの状態の
+  /// 存在理由で、「返金したのにまだ使えるのはなぜ」という問いにも答えになる。
+  refunded,
+
+  /// 失効した（解約・期限切れ・返金後に期間も切れた）。
   expired,
 }
 
@@ -54,11 +63,17 @@ EntitlementView entitlementViewOf(String? status) {
 /// | --- | --- | --- |
 /// | 猶予（未払い） | 「まだ届いている」 | 🔴 **止まる** |
 /// | `active` のまま期限切れ | 「有効」 | 🔴 **拒否**（更新の通知を取りこぼした形） |
+/// | 返金済みで期間が残っている | 「失効」 | 🔴 **通す**（払った分の権利は否定しない） |
 ///
 /// ⚠ **`reason` は全部は使わない。**`no_entitlement` を「未購入」に倒すと、
 /// **relay がまだ検証できていない購入（`unverified`）を「買ってください」と
 /// 案内する** —— 二重購入は取り返しがつかないので、そこは従来どおり `status`
-/// 側の判断（知らない値は「有効」）に任せる。**補正するのは上の 2 つだけ。**
+/// 側の判断（知らない値は「有効」）に任せる。**補正するのは上の 3 つだけ。**
+///
+/// ⚠⚠ **`revoked` を `status` 側で [EntitlementView.refunded] に倒さない。**
+/// 期間が残っているかは `expires_at` を見た relay しか知らないので、`reason` が
+/// 無い回（古い relay）に「まだ使えます」と言うと**嘘になりうる**。⚠ 補正は
+/// `reason` が来たときだけ。
 ///
 /// ⚠ **古い relay は `reason` を返さない**（本番が追いつくまで）。その場合は
 /// null で渡ってくるので、従来の判定がそのまま効く。
@@ -66,8 +81,32 @@ EntitlementView entitlementViewOfRelay({String? status, String? reason}) {
   return switch (reason?.toLowerCase()) {
     'unpaid' => EntitlementView.grace,
     'expired' => EntitlementView.expired,
+    'entitled_refunded' => EntitlementView.refunded,
     _ => entitlementViewOf(status),
   };
+}
+
+/// relay の `expires_at` を画面に出せる形へ。読めなければ null (#1123)。
+///
+/// ⚠⚠ **relay は UTC を `2026-11-03 12:34:56` の形で返す**（タイムゾーンの印が
+/// 無い。⚠ relay 側のメソッド名は `iso8601_ms` だが、実際の書式は
+/// `strftime('%Y-%m-%d %H:%M:%S')` で Apple / Play 共通）。⚠⚠ **`DateTime.parse`
+/// はこれを端末のローカル時刻として読むので、JST では 9 時間ずれる。**`Z` を
+/// 補って UTC として読み、[DateTime.toLocal] でローカルへ直す。
+///
+/// ⚠ **読めなければ null を返して、文面から日付を落とす。**生の文字列や
+/// `null` をそのまま見せない。
+String? formatEntitlementExpiry(String? raw) {
+  final text = raw?.trim();
+  if (text == null || text.isEmpty) return null;
+  // ⚠ 既に印が付いている形（`...Z` / `+09:00`）はそのまま解釈させる。
+  final hasZone = RegExp(r'([Zz]|[+-]\d{2}:?\d{2})$').hasMatch(text);
+  final parsed = DateTime.tryParse(hasZone ? text : '${text}Z');
+  if (parsed == null) return null;
+  final local = parsed.toLocal();
+  final month = local.month.toString().padLeft(2, '0');
+  final day = local.day.toString().padLeft(2, '0');
+  return '${local.year}-$month-$day';
 }
 
 class EntitlementStatus {
