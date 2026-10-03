@@ -278,6 +278,23 @@ dart analyze --fatal-infos > /tmp/analyze.log 2>&1; echo "ANALYZE_EXIT=$?"
 
 ⚠ **これは毎コミットの話で、リリース手順の一部ではない**（#1114 の棚卸しで、`store-release-guide.md` §4.0 の中＝リリース時しか読まれない場所に置かれていたのを移した）。
 
+#### 振る舞いを変えた回は、テストを部分実行で済ませない
+
+⚠⚠ **`dart format` と `dart analyze` はテストを走らせない。**CI は `packages/*/` のうち `test/` を持つ 4 パッケージを**全量**流すので、**手元で関係しそうなファイルだけ選んで流すと、期待値を固定した別のテストを取りこぼす**。
+
+```bash
+(cd packages/capsicum && flutter test)           # ⚠ 約 4 分・2,300 件
+(cd packages/capsicum_core && flutter test)
+(cd packages/capsicum_backends && flutter test)
+(cd packages/fediverse_objects && flutter test)
+```
+
+🔴 **2026-10-03 に踏んだ。**[#1193](https://github.com/pooza/capsicum/issues/1193) で `insertAfter` の重複排除から `SearchTab` を外したとき、`deck_columns_test` ほか 7 本を選んで流して緑を確認し push したが、**`deck_appbar_test.dart` に正反対を固定したテスト**（「検索カラムは 1 本だけ。2 度押しても足さず、そこへ送る」）が残っていて CI が赤になった（`433d73dd`）。
+
+⚠⚠ **これは「歯があることを確かめた」では防げない。**[ソース検査ガードの書き方](#ソース検査ガードの書き方) の 3 点セットは**自分が足したテスト**に歯があるかを見るもので、**既にある別のテストが古い期待値を抱えているか**は見ない。⚠ **仕様を変える変更では、古い期待値の在り処を探すほうが本体**（`grep` で種別名・Issue 番号を当たる / 全量を流す）。
+
+⚠ **選んで流すのは、仕様を変えずに実装だけ直した回に限る。**⚠⚠ **決定済み事項を書き換えた回は必ず全量**（docs を直しているなら、どこかのテストがその決定を固定している）。
+
 ### クロスリファレンス
 
 - capsicum → モロヘイヤ: `pooza/mulukhiya-toot-proxy#XXXX`

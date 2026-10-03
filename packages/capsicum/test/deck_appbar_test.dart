@@ -158,16 +158,19 @@ void main() {
       expect(find.text('カラムがありません'), findsOneWidget);
     });
 
-    // ⚠⚠ #1173 では「列に 2 本置ける（別のことを探せる）」としていたが、#1182
-    // （2026-09-28 pooza 決定）で**操作から開くカラムは重複させない**に変わった。
-    // 検索も対象（決定済み事項 9-2 の表に明記）。⚠ `SearchTab` は検索語を
-    // 持たないので、**2 本目を開く手段は無くなる**。
-    testWidgets('⚠ 検索カラムは 1 本だけ。2 度押しても足さず、そこへ送る（#1182）', (tester) async {
+    // ⚠⚠ **この期待値は 2 回変わっている。**#1173 は「列に 2 本置ける（別のことを
+    // 探せる）」→ #1182（2026-09-28）で**操作から開くカラムは重複させない**に倒し、
+    // 検索もその対象にした → ⚠ #1193（2026-10-03 pooza 決定）で**検索だけ戻した**。
+    //
+    // 戻した理由は、#1182 の根拠（同じ中身が 2 本並んでも得るものは無い）が
+    // **開いた投稿・プロフィールへのナビゲーション**に当てた判断で、検索ボタンは
+    // 「検索の道具を 1 本ください」という操作だから（決定済み事項 9-2-1）。
+    testWidgets('⚠⚠ 検索カラムは 2 度押すと 2 本になる（#1193・9-2-1）', (tester) async {
       final container = await pumpDeck(tester, columnIds: const ['a']);
 
       await tester.tap(find.byIcon(Icons.search));
       await tester.pumpAndSettle();
-      final opened = container.read(deckColumnsProvider).last;
+      final first = container.read(deckColumnsProvider).last;
 
       await tester.tap(find.byIcon(Icons.search));
       await tester.pumpAndSettle();
@@ -176,9 +179,12 @@ void main() {
           .read(deckColumnsProvider)
           .where((c) => c.tab == const SearchTab())
           .toList();
-      expect(searches, hasLength(1));
-      expect(searches.single.id, opened.id);
-      expect(container.read(deckFocusProvider).columnId, opened.id);
+      // ⚠ 2 本目は新しいカラム。1 本目へ送り返さない。
+      expect(searches, hasLength(2));
+      expect(searches.first.id, first.id);
+      expect(searches.last.id, isNot(first.id));
+      // 開いた 2 本目がフォーカスになる（1 本目に戻らない）。
+      expect(container.read(deckFocusProvider).columnId, searches.last.id);
     });
   });
 
