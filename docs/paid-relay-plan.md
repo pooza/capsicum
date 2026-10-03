@@ -1,6 +1,6 @@
 # 外部ユーザー向け有償プッシュ通知リレー 設計書（#597）
 
-[#597](https://github.com/pooza/capsicum/issues/597) を Issue へ分解できる状態にするための設計書。[CLAUDE.md「大玉の進め方」](CLAUDE.md#大玉の進め方棚卸し--分類--設計書--起票) の 4 に従い、`## 決定済み事項` と `## 未決事項` を分ける。
+[#597](https://github.com/pooza/capsicum/issues/597) を Issue へ分解できる状態にするための設計書。[large-item-workflow.md「大玉の進め方」](large-item-workflow.md) の 4 に従い、`## 決定済み事項` と `## 未決事項` を分ける。
 
 - 作成日: **2026-09-06**（[deck-ui-plan.md](deck-ui-plan.md) に続く 2 本目。順序は [roadmap.md](roadmap.md)「未決事項 1」のとおり #720 → #597）
 - 実測はすべて capsicum `develop` の `5f07e38a` / capsicum-relay `main` の `b9ce14c` 時点

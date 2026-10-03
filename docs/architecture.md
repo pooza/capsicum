@@ -42,6 +42,7 @@ capsicum/
 | `mastodon-capsicum-api-watch.md` | Mastodon 新版の API 変更を client 影響でトリアージ（フォーク diff 手順つき） |
 | `misskey-capsicum-api-watch.md` | Misskey 新版の API 変更を client 影響でトリアージ（マイナー毎・daisskey SHA アンカー） |
 | `roadmap.md` | 枠の数・各枠の主題・1.x と 2.x の境界（⚠ 含有 Issue は Milestones が正本） |
+| `large-item-workflow.md` | 大玉の進め方（棚卸し → 分類 → 設計書 → 起票）。⚠ **次に大玉を回すときに読む**（2026-10-03 に CLAUDE.md から移した・#1139） |
 | `deck-ui-plan.md` | #720 デッキ表示の**入口**（結論 / 決定済み事項 1〜3 / 振り分け表 / 未決事項）。⚠ 詳細 UI 仕様ではない |
 | `deck-ui-decisions.md` | デッキの**決定済み事項 4〜12 の本文**（2026-10-03 に分けた・#1184）。⚠⚠ **新しい決定はここに足す**（入口は表に 1 行だけ） |
 | `paid-relay-plan.md` | #597 有償プッシュリレーの設計書（⚠ #596 は記録層で判定層ではない） |

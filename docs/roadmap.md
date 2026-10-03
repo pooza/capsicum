@@ -361,6 +361,6 @@
 ## 関連
 
 - [CLAUDE.md「マイルストーン運用」](CLAUDE.md#マイルストーン運用) — 判断規約の正本（大更新の単独配置・規模の測り方・ユーザー要望の振り分け）
-- [CLAUDE.md「大玉の進め方」](CLAUDE.md#大玉の進め方棚卸し--分類--設計書--起票) — 棚卸し → 分類 → 設計書 → 起票の型
+- [large-item-workflow.md「大玉の進め方」](large-item-workflow.md) — 棚卸し → 分類 → 設計書 → 起票の型
 - [milestone-transition.md](milestone-transition.md) — 枠の移行手順（スコープ確定・relay 同名枠・サイト更新・バンプ・ログトリム）
 - 棚卸しの成果物: [api-gap-inventory.md](api-gap-inventory.md) / [webui-gap-inventory.md](webui-gap-inventory.md) / [server-settings-gap-inventory.md](server-settings-gap-inventory.md)
