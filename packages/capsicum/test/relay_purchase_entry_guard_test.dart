@@ -19,6 +19,11 @@ void main() {
   const sectionPath =
       'lib/src/ui/widget/relay_entitlement_purchase_section.dart';
 
+  /// サーバー情報 / プロフィール画面が使う登録状態の共有ウィジェット。
+  /// ⚠ **判定を 3 箇所目に書かないため、ここも同時に見る (#1218)。**
+  const statusSectionPath =
+      'lib/src/ui/widget/push_registration_status_section.dart';
+
   /// この回より前の綴り（歯の確認に使う）。⚠ **`HEAD` と書かない** —— この回を
   /// コミットすると `HEAD` が新しい綴りに変わり、**穴が開かないので検査が
   /// 自明に通る**ようになる。
@@ -26,12 +31,12 @@ void main() {
 
   String read(String path) => File(path).readAsStringSync();
 
-  /// `final showPurchase = ...;` の式だけを切り出す。
+  /// `final <name> = ...;` の式だけを切り出す。
   ///
   /// ⚠⚠ **見つからなければ落とす。**名前を変えたならこの検査も直す —— 黙って
   /// 空文字を返すと「門がある」の判定が**何も見ずに通る**。
-  String showPurchaseExpr(String source) {
-    const head = 'final showPurchase =';
+  String localExpr(String source, String name) {
+    final head = 'final $name =';
     final start = source.indexOf(head);
     expect(start, greaterThanOrEqualTo(0), reason: '$head が無い。変えたならこの検査も直す');
     final end = source.indexOf(';', start);
@@ -68,6 +73,26 @@ void main() {
     fail('_entitlementSection の終端が見つからない');
   }
 
+  /// 購入結果を待ち受けている `ref.listen` の本体を切り出す。
+  ///
+  /// ⚠⚠ **ファイル全体で `registerAllAccounts` の不在を見てはいけない。**手押し
+  /// のボタン（`_reconcileAfterPurchase`）は**残す**ので、全体で見ると必ず当たる。
+  /// **二重登録になるのは listener の中から打った場合だけ。**
+  String purchaseListenerBody(String source) {
+    const head = 'ref.listen<SupporterPurchaseState>';
+    final start = source.indexOf(head);
+    expect(start, greaterThanOrEqualTo(0), reason: '$head が無い。変えたならこの検査も直す');
+    var paren = 0;
+    for (var i = source.indexOf('(', start); i < source.length; i++) {
+      if (source[i] == '(') paren++;
+      if (source[i] == ')') {
+        paren--;
+        if (paren == 0) return source.substring(start, i);
+      }
+    }
+    fail('$head の終端が見つからない');
+  }
+
   // ---- 判定ロジック（合成ソースを食わせられる形に切り出す） ----
 
   /// 利用権 provider の `watch` が、プリセット判定より後ろにあるか。
@@ -76,11 +101,27 @@ void main() {
   /// **商品の問い合わせとキーホルダの読み出しが走る**ので、「表示しない」だけでは
   /// 足りない。
   bool watchGatedByPreset(String expr) {
-    final gate = expr.indexOf('!hasPreset &&');
+    // ⚠ 門の綴りは 2 通り認める: `!hasPreset &&`（短絡）と `hasPreset ?`（三項）。
+    // **どちらも `ref.watch` へ到達させない**ので目的は同じ。
+    //
+    // ⚠⚠ **改行をまたぐので固定文字列で探さない。**`dart format` が
+    // `hasPreset\n    ? EntitlementView.absent` と割るため、`'hasPreset ?'` では
+    // **当たらない**（2026-10-04 に実際に空振りした）。
+    final gates = [
+      RegExp(r'!\s*hasPreset\s*&&').firstMatch(expr)?.start ?? -1,
+      RegExp(r'\bhasPreset\s*\?').firstMatch(expr)?.start ?? -1,
+    ].where((i) => i >= 0);
     final watch = expr.indexOf('ref.watch(entitlementStatusProvider)');
-    if (gate < 0 || watch < 0) return false;
-    return gate < watch;
+    if (gates.isEmpty || watch < 0) return false;
+    return gates.reduce((a, b) => a < b ? a : b) < watch;
   }
+
+  /// 画面が `eligible` を自前で組み立てていないか (#1218)。
+  ///
+  /// ⚠⚠ **これが再発の形。**サービス側に経路が増えても、この綴りが残っていると
+  /// 画面だけ古い判定で動き続ける（買った人に「登録対象外」と出す）。
+  bool handRollsEligible(String source) =>
+      source.contains('hasPreset || PushRegistrationService.isPresetServer(');
 
   /// `_entitlementSection` が `watch` の前に早期 return で抜けているか。
   bool sectionReturnsBeforeWatch(String body) {
@@ -221,13 +262,28 @@ void main() {
 
     test('前提: 切り出した式が式であって、ファイル全体ではない', () {
       final source = maskComments(read(pushPath));
-      final expr = showPurchaseExpr(source);
+      final expr = localExpr(source, 'showPurchase');
 
       expect(expr, contains('showRelayPurchaseEntry('));
       // ⚠⚠ **括弧の取り違えでファイルを丸ごと掴んでいないこと。**丸ごとだと
       // 「門がある」は常に真になり、検査が何も見ていない状態になる。
       expect(expr.length, lessThan(source.length ~/ 4));
       expect(expr, isNot(contains('Widget build(')));
+    });
+
+    test('前提: 購入の listener を切り出せていて、ファイル全体ではない', () {
+      final source = maskComments(read(pushPath));
+      final listener = purchaseListenerBody(source);
+
+      expect(listener, contains('supporterPurchaseProvider'));
+      expect(listener, contains('showSnackBar'));
+      // ⚠⚠ 丸ごと掴むと「listener から登録していない」が偽になって**落ち続ける**
+      // か、逆の綴りでは**常に通る**。どちらでも検査の意味が失われる。
+      expect(listener.length, lessThan(source.length ~/ 4));
+      expect(listener, isNot(contains('Widget build(')));
+      // ⚠ 手押しのボタンは listener の外にあること（内側だと二重登録の検査が
+      // 自明に落ちる）。
+      expect(listener, isNot(contains('購入を確認して登録し直す')));
     });
 
     test('前提: _entitlementSection の本体を切り出せていて、watch が実在する', () {
@@ -312,8 +368,36 @@ void main() {
     test('⚠⚠ 利用権 provider の watch はプリセット判定より後ろ', () {
       final source = maskComments(read(pushPath));
 
-      expect(watchGatedByPreset(showPurchaseExpr(source)), isTrue);
+      expect(watchGatedByPreset(localExpr(source, 'entitlementView')), isTrue);
       expect(sectionReturnsBeforeWatch(entitlementSectionBody(source)), isTrue);
+      // 共有ウィジェット側（サーバー情報 / プロフィール）も同じ門を持つ。
+      expect(
+        watchGatedByPreset(
+          localExpr(maskComments(read(statusSectionPath)), 'hasEntitlement'),
+        ),
+        isTrue,
+      );
+    });
+
+    test('⚠⚠ `eligible` を画面で組み立てていない（サービス側の 1 本を呼ぶ）', () {
+      for (final path in [pushPath, statusSectionPath]) {
+        final source = maskComments(read(path));
+        expect(handRollsEligible(source), isFalse, reason: path);
+        expect(
+          source,
+          contains('PushRegistrationService.shouldAttemptRegistration('),
+          reason: path,
+        );
+        // ⚠ 利用権を材料に渡していること（渡さないと呼んでも同じ穴になる）。
+        expect(source, contains('hasEntitlement:'), reason: path);
+      }
+    });
+
+    test('⚠ 画面冒頭の説明が「プリセットが要る」で終わっていない', () {
+      final source = maskComments(read(pushPath));
+
+      expect(source, contains('リレーの利用権があるため'));
+      expect(source, contains('リレーの利用権がある場合に利用できます'));
     });
 
     test('⚠⚠ 法定表記はプッシュ通知画面にだけ同梱し、サポーター画面では二重にしない', () {
@@ -338,16 +422,28 @@ void main() {
       expect(maskComments(read(pushPath)), isNot(contains('サポート画面')));
     });
 
-    test('⚠ 買った直後に登録まで通す（手押しのボタンと同じ処理を共有）', () {
+    test('⚠⚠ 購入成功から再登録を打たない（二重登録の防止）', () {
+      // 🔴 2026-10-04 の実機確認で実測した退行。購入の成立時点で
+      // `SupporterPurchaseNotifier._completeAndReregister` が
+      // `registerAllAccounts` を打っているので、画面からも打つと
+      // relay へ `register.created` が 2 本飛ぶ。
+      final source = maskComments(read(pushPath));
+      final listener = purchaseListenerBody(source);
+
+      expect(listener, isNot(contains('registerAllAccounts')));
+      expect(listener, isNot(contains('_reconcileAfterPurchase')));
+      // ⚠ 足りないのは利用権の引き直しだけ（これが無いと買っても
+      // 「利用権がありません」のまま残る）。
+      expect(listener, contains('entitlementStatusProvider.notifier'));
+      expect(listener, contains('refresh()'));
+    });
+
+    test('⚠ 手押しの「購入を確認して登録し直す」は残っている', () {
       final source = maskComments(read(pushPath));
 
       expect(source, contains('_reconcileAfterPurchase'));
-      // 手押しのボタンと購入成功の両方から呼ばれていること（定義 1 + 呼び出し 2）。
-      expect(
-        RegExp('_reconcileAfterPurchase').allMatches(source).length,
-        greaterThanOrEqualTo(3),
-      );
       expect(source, contains('registerAllAccounts'));
+      expect(source, contains("const Text('購入を確認して登録し直す')"));
     });
   });
 
@@ -393,6 +489,30 @@ void main() {
 
     test('⚠ 買った直後の登録は前には無かった', () {
       expect(before(pushPath), isNot(contains('_reconcileAfterPurchase')));
+    });
+
+    test('⚠⚠ #1218 の前は 2 画面とも `eligible` を自前で組み立てていた', () {
+      // 🔴 これが「買った人に登録対象外と出す」の正体。両方で検出されること。
+      for (final path in [pushPath, statusSectionPath]) {
+        expect(
+          handRollsEligible(maskComments(before(path))),
+          isTrue,
+          reason: path,
+        );
+        expect(
+          maskComments(before(path)),
+          isNot(contains('shouldAttemptRegistration(')),
+          reason: path,
+        );
+      }
+    });
+
+    test('⚠ 前の文面は利用権という経路を書いていなかった', () {
+      expect(before(pushPath), isNot(contains('リレーの利用権がある')));
+      expect(
+        before(statusSectionPath),
+        contains("'登録対象外（プリセットサーバーのアカウントが未登録）'"),
+      );
     });
   });
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../../provider/entitlement_status_provider.dart';
 import '../../provider/push_registration_status_provider.dart';
 import '../../service/push_registration_service.dart';
 import '../../service/push_registration_status.dart';
@@ -18,7 +19,10 @@ import 'section_header.dart';
 ) {
   if (!eligible) {
     return (
-      '登録対象外（プリセットサーバーのアカウントが未登録）',
+      // ⚠ **買えば使えることが分かる文面にする (#1218)。**以前は
+      // 「プリセットサーバーのアカウントが未登録」だけで、**利用権という
+      // もう 1 本の経路が存在しないように読めた**。
+      '登録対象外（プリセットサーバーのアカウントか、リレーの利用権が必要）',
       theme.colorScheme.outline,
       Icons.remove_circle_outline,
     );
@@ -98,8 +102,18 @@ class PushRegistrationStatusSection extends ConsumerWidget {
     }
     final accounts = ref.watch(accountManagerProvider).accounts;
     final hasPreset = PushRegistrationService.hasPresetAmong(accounts);
-    final eligible =
-        hasPreset || PushRegistrationService.isPresetServer(account.key.host);
+    // ⚠⚠ **`watch` より先に `hasPreset` で抜ける**（#1123 の完了条件 3）。
+    // プリセットのみの人に利用権の問い合わせを走らせない。
+    final hasEntitlement =
+        !hasPreset &&
+        ref.watch(entitlementStatusProvider).view != EntitlementView.absent;
+    // ⚠⚠ **判定はサービス側の 1 本を呼ぶ (#1218)。**書き写すと経路が増えた
+    // ときに取り残される（買った人に「登録対象外」と出していた）。
+    final eligible = PushRegistrationService.shouldAttemptRegistration(
+      host: account.key.host,
+      eligible: hasPreset,
+      hasEntitlement: hasEntitlement,
+    );
     final statusMap =
         ref.watch(pushRegistrationStatusProvider).valueOrNull ??
         const <String, PushRegistrationSnapshot>{};
