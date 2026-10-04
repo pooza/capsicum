@@ -5,10 +5,12 @@ import '../../../model/account.dart';
 import '../../../provider/account_manager_provider.dart';
 import '../../../provider/entitlement_status_provider.dart';
 import '../../../provider/push_registration_status_provider.dart';
+import '../../../provider/supporter_purchase_provider.dart';
 import '../../../service/announcement_subscription_service.dart';
 import '../../../service/push_registration_service.dart';
 import '../../../service/push_registration_status.dart';
 import '../../widget/push_registration_status_section.dart';
+import '../../widget/relay_entitlement_purchase_section.dart';
 import '../../widget/section_header.dart';
 
 /// プッシュ通知の登録状態をアカウント別に一覧表示し、失敗していれば
@@ -29,6 +31,51 @@ class PushNotificationSettingsScreen extends ConsumerWidget {
         const <String, PushRegistrationSnapshot>{};
     final hasPreset = PushRegistrationService.hasPresetAmong(accounts);
 
+    // 購入の入口を出すか (#1217)。
+    //
+    // ⚠⚠ **`watch` より先に `hasPreset` で抜ける。**プリセットのみの人に対して
+    // は利用権の provider も購入の provider も起動させない（#1123 の完了条件 3・
+    // ⚠ **見た目だけ満たしても通信は増える**）。
+    final showPurchase =
+        !hasPreset &&
+        showRelayPurchaseEntry(
+          hasPreset: hasPreset,
+          view: ref.watch(entitlementStatusProvider).view,
+        );
+
+    // 利用権の購入結果を知らせ、購入できたら登録まで通す (#1217)。
+    //
+    // ⚠⚠ **画面側で待ち受ける。**[RelayEntitlementPurchaseSection] は購入が
+    // 成立すると消える側なので、ウィジェットに置くと**結果を出す前に unmount
+    // されうる。**
+    //
+    // ⚠⚠ **成功しても自動では届くようにならない。**[supporterPurchaseProvider]
+    // は利用権トークンを置くだけで [entitlementStatusProvider] を更新しないし、
+    // `/push` が 410 を返していた間に fedi サーバー側の購読は消えている。
+    // **買った直後に「購入を確認して登録し直す」を押させるのは #1217 が無くす
+    // はずの手間そのもの**なので、ここで同じことをやる。
+    //
+    // ⚠ **投げ銭の結果は拾わない。**この画面に投げ銭の入口は無いので、
+    // サポーター画面で買ったものの結果をここで出すと文脈が合わない。
+    if (showPurchase) {
+      ref.listen<SupporterPurchaseState>(supporterPurchaseProvider, (
+        prev,
+        next,
+      ) {
+        final outcome = next.lastOutcome;
+        if (outcome == null || outcome == prev?.lastOutcome) return;
+        if (!outcome.isSubscription) return;
+        final messenger = ScaffoldMessenger.of(context);
+        messenger.hideCurrentSnackBar();
+        messenger.showSnackBar(
+          SnackBar(content: Text(supporterPurchaseOutcomeMessage(outcome))),
+        );
+        if (outcome.kind == SupporterPurchaseOutcomeKind.success) {
+          _reconcileAfterPurchase(ref);
+        }
+      });
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('プッシュ通知'),
@@ -48,7 +95,11 @@ class PushNotificationSettingsScreen extends ConsumerWidget {
               style: const TextStyle(fontSize: 13),
             ),
           ),
-          ..._entitlementSection(ref, hasPreset: hasPreset),
+          ..._entitlementSection(
+            ref,
+            hasPreset: hasPreset,
+            showPurchase: showPurchase,
+          ),
           const SectionHeader('アカウント別の登録状況'),
           ...accounts.map(
             (account) => _AccountStatusTile(
@@ -71,7 +122,11 @@ class PushNotificationSettingsScreen extends ConsumerWidget {
   ///
   /// ⚠ **未購入でも、非プリセットの人には出す。**「いつのまにか通知が来ない」を
   /// 避けるのがこの Issue の出発点で、**買っていないこと自体が原因になりうる。**
-  List<Widget> _entitlementSection(WidgetRef ref, {required bool hasPreset}) {
+  List<Widget> _entitlementSection(
+    WidgetRef ref, {
+    required bool hasPreset,
+    required bool showPurchase,
+  }) {
     // ⚠⚠ **`watch` より先に抜ける。**ここで provider を起動すると、プリセットの
     // みの人でも**キーホルダの読み出しと relay への問い合わせが走る** ——
     // 「何も表示が増えない」を見た目だけで満たしても、**通信は増えている。**
@@ -126,10 +181,14 @@ class PushNotificationSettingsScreen extends ConsumerWidget {
             'もう一度ご購入いただくと、この画面から登録をやり直せます。',
         Icons.cancel_outlined,
       ),
+      // ⚠⚠ **「サポート画面から」と書かない (#1217)。**購入の入口が同じ画面の
+      // すぐ下に出るので、**辿り直させる案内が残ると誤導になる。**⚠ 商品が
+      // 取れない OS（Windows / Linux）では入口が出ないが、そこへ送っても
+      // 同じ商品が取れないので**案内先として役に立たない。**
       EntitlementView.absent => (
         '利用権がありません',
         'プリセット以外のサーバーでプッシュ通知を受け取るには、'
-            'サポート画面から利用権をご購入ください。',
+            '利用権のご購入が必要です。',
         Icons.info_outline,
       ),
     };
@@ -137,6 +196,17 @@ class PushNotificationSettingsScreen extends ConsumerWidget {
     return [
       const SectionHeader('リレーの利用権'),
       ListTile(leading: Icon(icon), title: Text(title), subtitle: Text(body)),
+      // 購入の入口 (#1217)。⚠ **状態の説明の直後に置く** —— 「原因は未購入
+      // だった」と分かった流れのまま買えるようにするのがこの Issue の出発点。
+      // ⚠⚠ **出す / 出さないの判定は [showRelayPurchaseEntry]**（呼び出し側が
+      // 済ませている）。商品が取れなければウィジェット側が空を返す。
+      if (showPurchase)
+        const RelayEntitlementPurchaseSection(
+          // ⚠ 便益は上の状態別の文面が言っているので重ねない。
+          showBenefit: false,
+          // ⚠⚠ **購入ボタンのある画面に法定表記が要る**（C-3）。
+          showLegalNotice: true,
+        ),
       // ⚠⚠ **買い直したあとの再登録の導線**（完了条件の 2 つ目）。
       // `/push` が 410 を返すと fedi サーバー側の購読が消えるので、⚠ **買い直す
       // だけでは戻らない。**登録をやり直す必要がある。
@@ -146,17 +216,28 @@ class PushNotificationSettingsScreen extends ConsumerWidget {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
           child: OutlinedButton(
-            onPressed: () async {
-              await ref.read(entitlementStatusProvider.notifier).refresh();
-              final accounts = ref.read(accountManagerProvider).accounts;
-              if (accounts.isNotEmpty) {
-                await PushRegistrationService.registerAllAccounts(accounts);
-              }
-            },
+            onPressed: () => _reconcileAfterPurchase(ref),
             child: const Text('購入を確認して登録し直す'),
           ),
         ),
     ];
+  }
+
+  /// 利用権を引き直して、全アカウントの購読を登録し直す (#1123 / #1217)。
+  ///
+  /// ⚠⚠ **買っただけでは戻らない。**`/push` が 410 を返していた間に fedi
+  /// サーバー側の購読が destroy されているので（relay#63 の決着どおり）、
+  /// **登録をやり直すまで通知は届かない。**
+  ///
+  /// ⚠ **手押しのボタンと、購入成功の直後の両方から呼ぶ。**#1217 で入口を
+  /// 増やしたのに「買ったあとボタンを押す」が残っていると、**手間を減らした
+  /// ことにならない。**
+  Future<void> _reconcileAfterPurchase(WidgetRef ref) async {
+    await ref.read(entitlementStatusProvider.notifier).refresh();
+    final accounts = ref.read(accountManagerProvider).accounts;
+    if (accounts.isNotEmpty) {
+      await PushRegistrationService.registerAllAccounts(accounts);
+    }
   }
 }
 

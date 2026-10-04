@@ -5,6 +5,7 @@ import '../../../constants.dart';
 import '../../../provider/supporter_purchase_provider.dart';
 import '../../../provider/supporter_status_provider.dart';
 import '../../util/launch_url_toast.dart';
+import '../../widget/relay_entitlement_purchase_section.dart';
 
 /// capsicum サポーター（投げ銭）画面 (#428 段 3)。
 ///
@@ -31,21 +32,12 @@ class SupporterScreen extends ConsumerWidget {
       final messenger = ScaffoldMessenger.of(context);
       messenger.hideCurrentSnackBar();
       // ⚠⚠ **投げ銭とサブスクで文言を分ける (#1122)。**成功の意味が違うので、
-      // 同じ文面だと**買ったものを取り違えて伝える**。
-      final text = switch ((outcome.kind, outcome.isSubscription)) {
-        (SupporterPurchaseOutcomeKind.success, true) =>
-          'ありがとうございます！リレーの利用権が有効になりました。',
-        (SupporterPurchaseOutcomeKind.success, false) =>
-          'ありがとうございます！サポーターになりました。',
-        (SupporterPurchaseOutcomeKind.canceled, _) => '購入をキャンセルしました。',
-        // ⚠ サブスクは購入が成立していても利用権の発行で落ちることがある
-        // （relay へ届かない等）。⚠⚠ **「購入できなかった」と言い切らない。**
-        (SupporterPurchaseOutcomeKind.error, true) =>
-          '利用権を有効にできませんでした。時間をおいてアプリを開き直してください。',
-        (SupporterPurchaseOutcomeKind.error, false) =>
-          '購入を完了できませんでした。時間をおいて再度お試しください。',
-      };
-      messenger.showSnackBar(SnackBar(content: Text(text)));
+      // 同じ文面だと**買ったものを取り違えて伝える**。⚠ **文面は
+      // [supporterPurchaseOutcomeMessage] が正本** —— プッシュ通知設定画面にも
+      // 購入の入口が増えたので (#1217)、分岐を写さない。
+      messenger.showSnackBar(
+        SnackBar(content: Text(supporterPurchaseOutcomeMessage(outcome))),
+      );
     });
 
     return Scaffold(
@@ -176,7 +168,7 @@ class SupporterScreen extends ConsumerWidget {
     }
 
     return [
-      ..._subscriptionSection(ref, state),
+      ..._subscriptionSection(state),
       for (final product in state.products)
         ListTile(
           leading: Image.asset(
@@ -211,14 +203,17 @@ class SupporterScreen extends ConsumerWidget {
   /// 残したまま、サブスクを**追加**する」。並べる順は**利用権が先**（機能に対する
   /// 対価なので、任意の応援より先に説明が要る）。
   ///
-  /// ⚠ **商品が取れなければ丸ごと出さない** —— ストア未登録・審査前・
-  /// サブスクを扱えない OS。**押しても買えない入口を作らない。**
-  List<Widget> _subscriptionSection(
-    WidgetRef ref,
-    SupporterPurchaseState state,
-  ) {
-    final product = state.subscription;
-    if (product == null) return const [];
+  /// ⚠⚠ **中身は [RelayEntitlementPurchaseSection] に移した (#1217)。**プッシュ
+  /// 通知設定画面にも同じ入口を出すので、**購入の実装・「利用中」表示・商品が
+  /// 取れないときの取り扱いを 1 本に保つ**ため。ここに残るのは見出しと区切り。
+  ///
+  /// ⚠ **法定表記は節へ寄せない**（`showLegalNotice: false`）。この画面のものは
+  /// **投げ銭と共通の画面レベル表記**で、節へ移すと**サブスク商品が取れない回に
+  /// 投げ銭の法定表記ごと消える。**
+  List<Widget> _subscriptionSection(SupporterPurchaseState state) {
+    // ⚠ 商品が無ければ見出しも区切りも出さない（ウィジェット側は空を返すが、
+    // それだけだと**見出しと Divider だけが残る**）。
+    if (state.subscription == null) return const [];
 
     return [
       const Padding(
@@ -228,43 +223,9 @@ class SupporterScreen extends ConsumerWidget {
           style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
         ),
       ),
-      const Padding(
-        padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
-        child: Text(
-          // ⚠ **便益を正確に書く。**プリセットサーバーの利用者は元から無償で
-          // 使えるので、「これを買わないと通知が来ない」ではない。
-          'capsicum の運営元が用意したサーバー以外でも、プッシュ通知を'
-          '受け取れるようになります。運営元のサーバーをお使いの方は、'
-          '購入しなくてもこれまでどおり通知を受け取れます。',
-          style: TextStyle(fontSize: 13),
-        ),
-      ),
-      ListTile(
-        leading: const Icon(Icons.notifications_active_outlined),
-        title: Text(product.title),
-        subtitle: Text(product.description),
-        trailing: state.hasEntitlement
-            // ⚠ **持っている人にボタンを出さない。**1 つの購入を複数端末で
-            // 使えるので、押させると二重購入になる。
-            ? const Text('利用中')
-            : FilledButton(
-                onPressed: state.purchaseInProgress
-                    ? null
-                    : () => ref
-                          .read(supporterPurchaseProvider.notifier)
-                          .subscribe(product),
-                child: Text(product.price),
-              ),
-      ),
-      const Padding(
-        padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
-        child: Text(
-          // ⚠ 解約の窓口はストア。⚠⚠ **アプリ内に解約導線を作らない**
-          // （ストアの規約上、アプリから直接は解約できない）。
-          '毎月の自動更新です。解約はご利用のストア（App Store / Google Play）から'
-          '行えます。',
-          style: TextStyle(fontSize: 12, color: Colors.grey),
-        ),
+      const RelayEntitlementPurchaseSection(
+        showBenefit: true,
+        showLegalNotice: false,
       ),
       const Divider(height: 1),
     ];
