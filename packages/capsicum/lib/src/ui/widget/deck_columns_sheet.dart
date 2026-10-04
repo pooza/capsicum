@@ -358,6 +358,13 @@ class _DeckColumnCandidatesState extends ConsumerState<_DeckColumnCandidates> {
   /// ⚠⚠ **リストとチャンネルはここに混ぜない。**取得を伴うので、読み込み中 /
   /// 失敗 / 0 件を出し分ける必要がある (#1155)。混ぜると `valueOrNull ?? []` で
   /// 3 つとも「行が無い」に潰れ、**入口が無いように見える**。
+  ///
+  /// ⚠⚠ **`DeckOnlyTab` のうち「荷物を持たないもの」は全部ここに出す**
+  /// （`docs/deck-ui-plan.md` 決定済み事項 9-2-2・#1216）。⚠ **種別の表で
+  /// 選ばない** —— 荷物を持つ種別（投稿・プロフィール・ユーザー一覧など）は
+  /// **対象の ID が決まって初めて成立する**ので候補にならない、という構造が
+  /// そのまま線になる。**検査で固定してある**
+  /// （`test/deck_sheet_candidates_guard_test.dart`）。
   List<TabType> _localCandidates() {
     final adapter = ref.watch(currentAdapterProvider);
     final storageKey = ref.watch(currentAccountKeyProvider)?.toStorageKey();
@@ -379,6 +386,11 @@ class _DeckColumnCandidatesState extends ConsumerState<_DeckColumnCandidates> {
       if (ref.watch(accountManagerProvider).accounts.length > 1)
         const AllNotificationsTab(),
       const AnnouncementsTab(),
+      // 検索 (#1216・決定済み事項 9-2-2)。⚠ **荷物を持たないので候補に出せる** ——
+      // 語は実行時に入力する道具で、`AllNotificationsTab` と同じ性質。
+      // ⚠⚠ **ここから足すと重複できる**（`add` は 6-2 のまま重複を許す）ので、
+      // 同じアカウントで 2 本目を置く逃げ道がこれで通る（9-2-1 と対）。
+      const SearchTab(),
       ...pinnedHashtags,
     ];
   }
