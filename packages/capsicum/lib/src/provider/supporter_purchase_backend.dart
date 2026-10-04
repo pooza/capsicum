@@ -166,6 +166,21 @@ abstract class SupporterPurchaseBackend {
   /// ため**後回し**（設計書 フェーズ 4 のストア順序）。
   Future<void> buySubscription(ProductDetails product);
 
+  /// ストアへ**過去の購入を流し直してもらう** (#1219)。結果は
+  /// [purchaseEvents] に `restored` として届く。
+  ///
+  /// ⚠⚠ **これが無いと利用権から抜けられない。**`POST /entitlements` は購入
+  /// イベントが流れたときだけ走るので、**起動し直しても再検証は起きない**。
+  /// 🔴 2026-10-04 に実機で固着した —— #1220 の前に買った購読が `unverified`
+  /// のまま残り、ゲートに拒否され続け、**アプリ内に抜け道が無かった**
+  /// （`hasEntitlement` が true なので購入ボタンも出ない）。
+  ///
+  /// ⚠ **機種変更・再インストールの復元もこれ。**利用権トークンは
+  /// `ThisDeviceOnly` の secure storage にあり**バックアップに含まれない**ので、
+  /// 新しい端末はストアから引き直すしか手段が無い（App Store のガイドライン
+  /// 3.1.1 が自動更新サブスクに求めているものでもある）。
+  Future<void> restore();
+
   /// ローカル永続化の成立後にストアトランザクションを確定させる
   /// （in_app_purchase は `completePurchase`、Windows は消費報告）。
   /// 永続化に失敗した購入では呼ばず、次回起動の再配信に委ねる。
@@ -269,6 +284,11 @@ class InAppPurchaseBackend implements SupporterPurchaseBackend {
   }
 
   @override
+  // ⚠ 結果は `purchaseEvents` に `restored` として届く（`_eventFrom` が
+  // `PurchaseStatus.restored` を `purchased` と同じ扱いで流す）。
+  Future<void> restore() => InAppPurchase.instance.restorePurchases();
+
+  @override
   Future<void> complete(SupporterPurchaseEvent event) async {
     final token = event.completionToken;
     if (token is PurchaseDetails && token.pendingCompletePurchase) {
@@ -301,6 +321,9 @@ class _UnsupportedPurchaseBackend implements SupporterPurchaseBackend {
 
   @override
   Future<void> buySubscription(ProductDetails product) async {}
+
+  @override
+  Future<void> restore() async {}
 
   @override
   Future<void> complete(SupporterPurchaseEvent event) async {}

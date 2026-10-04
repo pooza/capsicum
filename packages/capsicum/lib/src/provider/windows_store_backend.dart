@@ -108,6 +108,14 @@ class WindowsStoreBackend implements SupporterPurchaseBackend {
   }
 
   @override
+  Future<void> restore() async {
+    // ⚠ **投げ銭は消耗型なので復元の対象外**（設計書 D「復元 UI は消耗型につき
+    // 不要」）。サブスクが未配線（上の [buySubscription]）なので、復元すべき
+    // ものがそもそも無い。⚠⚠ **no-op にしてよいのはそのため**で、サブスクを
+    // 配線する回にここも埋める (#1219)。
+  }
+
+  @override
   Future<void> buy(ProductDetails product) async {
     final storeId = _storeIds[product.id];
     if (storeId == null) {

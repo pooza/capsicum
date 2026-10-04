@@ -52,6 +52,22 @@ class FcmService {
         );
       } else {
         debugPrint('capsicum: push.fcm: getToken returned null');
+        // 🔴 **無音にしない (#1223)。**ここが null だと `/register` に一度も
+        // 到達せず、**プッシュが丸ごと届かない**。⚠⚠ 2026-10-04 に実機で
+        // 踏んだとき、`debugPrint` しか無かったので**理由を推定で終わらせる
+        // しかなかった**（例外は投げていないので `fcm_init` にも出ない）。
+        // ⚠ 権限の状態を添える —— Android 13+ は通知権限が絡むため、
+        // 「拒否されている」と「FCM 側の都合」を分けられるようにする。
+        Sentry.captureException(
+          scrubException(StateError('push.fcm: getToken returned null')),
+          withScope: (scope) {
+            scope.level = SentryLevel.error;
+            scope.setTag('service', 'fcm_init');
+            scope.setTag('fcm.error', 'token_null');
+            scope.setTag('fcm.permission', '${settings.authorizationStatus}');
+            scope.fingerprint = ['push.fcm.token_null'];
+          },
+        );
       }
 
       // トークン更新の監視

@@ -296,6 +296,55 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
     }
   }
 
+  /// ストアから利用権を取り直す (#1219)。
+  ///
+  /// ⚠⚠ **「買い直す」ではない。**ストアに `restorePurchases` を投げ、過去の購入を
+  /// `restored` として流し直してもらう。既存の経路（[_handleSubscription]）が
+  /// `POST /entitlements` をやり直すので、**relay 側の判定が最新になる。**
+  ///
+  /// 使う場面は 2 つ:
+  ///
+  /// - **機種変更・再インストール**。利用権トークンは `ThisDeviceOnly` の secure
+  ///   storage にあり**バックアップに含まれない**ので、ストアから引き直すしかない
+  /// - 🔴 **`unverified` で固着したとき。**`POST /entitlements` は購入イベントが
+  ///   流れたときだけ走るので、**起動し直しても再検証は起きない**
+  ///   （2026-10-04 に実機で踏んだ・#1220）
+  ///
+  /// ⚠ **投げ銭（消耗型）は復元の対象外。**文面も「利用権」に限ること ——
+  /// サポーターバッジが戻ると読めてはいけない。
+  Future<void> restoreEntitlement() async {
+    if (!_backend.isSupported || state.purchaseInProgress) return;
+    if (!subscriptionPurchaseSupported) return;
+
+    state = state.copyWith(purchaseInProgress: true, lastOutcome: null);
+    try {
+      await _backend.restore();
+      // ⚠ **ここで成功を宣言しない。**復元すべき購入が無ければイベントは
+      // 1 つも流れてこないので、`lastOutcome` は `_onEvent` 側に委ねる。
+      // ⚠⚠ **代わりにフラグだけ戻す** —— 戻さないとボタンが固着する。
+      state = state.copyWith(purchaseInProgress: false);
+    } catch (e, st) {
+      Sentry.captureException(
+        scrubException(e),
+        stackTrace: st,
+        withScope: (scope) {
+          scope.setTag('supporter.purchase', 'restore_failed');
+          scope.fingerprint = [
+            'supporter.purchase.restore',
+            e.runtimeType.toString(),
+          ];
+        },
+      );
+      state = state.copyWith(
+        purchaseInProgress: false,
+        lastOutcome: const SupporterPurchaseOutcome(
+          SupporterPurchaseOutcomeKind.error,
+          isSubscription: true,
+        ),
+      );
+    }
+  }
+
   /// 指定 SKU を消耗型として購入する。結果は購入イベント経由で
   /// [state] / [SupporterStatusNotifier] に反映される。
   Future<void> buy(ProductDetails product) async {

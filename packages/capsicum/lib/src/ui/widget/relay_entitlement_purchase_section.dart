@@ -68,9 +68,18 @@ class RelayEntitlementPurchaseSection extends ConsumerWidget {
           title: Text(product.title),
           subtitle: Text(product.description),
           trailing: state.hasEntitlement
-              // ⚠ **持っている人にボタンを出さない。**1 つの購入を複数端末で
-              // 使えるので、押させると二重購入になる。
-              ? const Text('利用中')
+              // ⚠ **持っている人に購入ボタンを出さない。**1 つの購入を複数端末で
+              // 使えるので、押させると二重購入になる。⚠⚠ **代わりに「取り直す」**
+              // を出す (#1219) —— `unverified` で固着したときに**アプリ内から
+              // 抜ける唯一の口**で、機種変更の復元もこれ。
+              ? TextButton(
+                  onPressed: state.purchaseInProgress
+                      ? null
+                      : () => ref
+                            .read(supporterPurchaseProvider.notifier)
+                            .restoreEntitlement(),
+                  child: const Text('取り直す'),
+                )
               : FilledButton(
                   onPressed: state.purchaseInProgress
                       ? null

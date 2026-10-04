@@ -171,7 +171,12 @@ class PushRegistrationService {
 
       store.update(accountKey, PushRegistrationState.registering);
 
-      final deviceToken = _getDeviceToken();
+      // ⚠⚠ **到着を待つ (#1223)。**`registerAllAccounts`（起動時の経路）は待つのに
+      // ここは待っていなかったので、**トークンが遅れているだけの回に再試行が
+      // 構造的に無意味**だった。🔴 2026-10-04 の実機で踏んだ —— 再インストール
+      // 直後の端末で、再試行を何度押しても「取得できませんでした」から動かない。
+      // ⚠ キャッシュがあれば即返るので、通常の回に遅延は増えない。
+      final deviceToken = _getDeviceToken() ?? await _waitForDeviceToken();
       if (deviceToken == null) {
         debugPrint('capsicum: push.registration: no device token available');
         final isPermissionDenied = _isNotificationPermissionDenied();
