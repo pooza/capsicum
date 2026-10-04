@@ -453,7 +453,7 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
   /// 拾い直す —— 確定してしまうと、**購入は成立しているのに利用権が無い**状態が
   /// 再試行の手掛かりごと消える。
   Future<void> _onSubscriptionPurchased(SupporterPurchaseEvent event) async {
-    final store = _entitlementStoreName();
+    final store = entitlementStoreName();
     final purchaseId = event.purchaseId;
     // ⚠ どちらも無ければ利用権を引けない。**成功に見せない。**
     if (store == null || purchaseId == null || purchaseId.isEmpty) {
@@ -556,17 +556,10 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
   }
 }
 
-/// どのストアの購入か (#1122)。relay の `POST /entitlements` が受ける値
-/// （`Relay::Database::ENTITLEMENT_STORES`）。
-///
-/// ⚠ **macOS は `apple`。**iOS と Universal Purchase で同じ App レコードを
-/// 共有するので、購入も同じストアに属する。
-String? _entitlementStoreName() {
-  if (Platform.isIOS || Platform.isMacOS) return 'apple';
-  if (Platform.isAndroid) return 'google';
-  if (Platform.isWindows) return 'microsoft';
-  return null;
-}
+// ⚠⚠ **ストアの判定は `supporter_purchase_backend.dart` の
+// [entitlementStoreName] に移した (#1220)。**`purchase_id` に何を送るかと同じ軸
+// なので、別々に持つと「store は google なのに Apple の値を送る」形になり、
+// **Play のレシート検証と RTDN が黙って外れる**（2026-10-04 に本番で踏んだ）。
 
 final supporterPurchaseProvider =
     NotifierProvider<SupporterPurchaseNotifier, SupporterPurchaseState>(
