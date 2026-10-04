@@ -150,53 +150,32 @@ void main() {
 
   // ---- 1. 判定そのもの（ソース検査ではない純粋な関数） ----
 
-  group('showRelayPurchaseEntry', () {
-    test('⚠⚠ プリセットがあれば、どの状態でも出さない', () {
-      for (final view in EntitlementView.values) {
-        expect(
-          showRelayPurchaseEntry(hasPreset: true, view: view),
-          isFalse,
-          reason: '$view',
-        );
-      }
-    });
-
+  group('showRelayPurchaseButton', () {
+    // ⚠⚠ **`hasPreset` は材料から外れた (#1224)。**節そのものを出すかの門は
+    // 呼び出し側（画面）へ移したので、ここは「買える状態か」だけを見る。
+    // ⚠ プリセット利用者に節が出ないことは、下の「配線」の
+    // `watchGatedByPreset` / `sectionReturnsBeforeWatch` が見ている。
     test('未購入と失効では出す（買えば直る）', () {
-      expect(
-        showRelayPurchaseEntry(hasPreset: false, view: EntitlementView.absent),
-        isTrue,
-      );
-      expect(
-        showRelayPurchaseEntry(hasPreset: false, view: EntitlementView.expired),
-        isTrue,
-      );
+      expect(showRelayPurchaseButton(view: EntitlementView.absent), isTrue);
+      // ⚠⚠ **失効で出すのが #1219 の修正点。**以前は手元のトークンの有無
+      // （`state.hasEntitlement`）でボタンを切り替えていたので、🔴 **失効しても
+      // トークンは残るため「取り直す」しか出ず、買い直せなかった。**
+      expect(showRelayPurchaseButton(view: EntitlementView.expired), isTrue);
     });
 
     // ⚠⚠ **ここが二重購入の防止。**持っている人に押せるボタンを出さない。
     test('有効・猶予・返金済みでは出さない', () {
-      expect(
-        showRelayPurchaseEntry(hasPreset: false, view: EntitlementView.active),
-        isFalse,
-      );
+      expect(showRelayPurchaseButton(view: EntitlementView.active), isFalse);
       // ⚠ 猶予は購読が生きている。直し方は支払い方法の更新で、買い直しではない。
-      expect(
-        showRelayPurchaseEntry(hasPreset: false, view: EntitlementView.grace),
-        isFalse,
-      );
+      expect(showRelayPurchaseButton(view: EntitlementView.grace), isFalse);
       // ⚠ 返金済みは決済済みの期間が残っていて、まだ届いている（relay#63）。
-      expect(
-        showRelayPurchaseEntry(
-          hasPreset: false,
-          view: EntitlementView.refunded,
-        ),
-        isFalse,
-      );
+      expect(showRelayPurchaseButton(view: EntitlementView.refunded), isFalse);
     });
 
     test('⚠ 状態が増えたら既定は「出さない」側', () {
       // enum を足したときに absent / expired 以外が勝手に入口を増やさないこと。
       final shown = EntitlementView.values
-          .where((v) => showRelayPurchaseEntry(hasPreset: false, view: v))
+          .where((v) => showRelayPurchaseButton(view: v))
           .toSet();
       expect(shown, {EntitlementView.absent, EntitlementView.expired});
     });
@@ -262,9 +241,11 @@ void main() {
 
     test('前提: 切り出した式が式であって、ファイル全体ではない', () {
       final source = maskComments(read(pushPath));
-      final expr = localExpr(source, 'showPurchase');
+      // ⚠ #1224 で `showPurchase` は消えた（購入ボタンの判定はウィジェット側）。
+      // 切り出しの前提は、いまも画面に残る `entitlementView` で見る。
+      final expr = localExpr(source, 'entitlementView');
 
-      expect(expr, contains('showRelayPurchaseEntry('));
+      expect(expr, contains('ref.watch(entitlementStatusProvider)'));
       // ⚠⚠ **括弧の取り違えでファイルを丸ごと掴んでいないこと。**丸ごとだと
       // 「門がある」は常に真になり、検査が何も見ていない状態になる。
       expect(expr.length, lessThan(source.length ~/ 4));
@@ -422,8 +403,82 @@ void main() {
     });
 
     test('⚠⚠ 未購入の文面が「サポート画面」へ送り直していない', () {
-      // 入口が同じ画面に出るので、辿り直させる案内が残ると誤導になる。
-      expect(maskComments(read(pushPath)), isNot(contains('サポート画面')));
+      // 入口が同じ節に出るので、辿り直させる案内が残ると誤導になる。
+      // ⚠ 文面は #1224 で共有ウィジェットへ移ったので、両方を見る。
+      for (final path in [pushPath, sectionPath]) {
+        expect(
+          maskComments(read(path)),
+          isNot(contains('サポート画面')),
+          reason: path,
+        );
+      }
+    });
+
+    // ---- #1224: できることを 2 画面で完全に同じにする ----
+
+    test('⚠⚠ 5 つの口はすべて共有ウィジェットにある', () {
+      final section = maskComments(read(sectionPath));
+
+      // 状態表示 / 購入 / 取り直す / 登録し直す / 記録を消す。
+      expect(section, contains('relayEntitlementStatusCopy('));
+      expect(section, contains('showRelayPurchaseButton('));
+      expect(section, contains("const Text('利用権を取り直す')"));
+      expect(section, contains("const Text('購入を確認して登録し直す')"));
+      expect(section, contains("const Text('利用権の記録を消す')"));
+      // 再登録の実体（買い直すだけでは戻らないので）。
+      expect(section, contains('registerAllAccounts'));
+    });
+
+    test('⚠⚠ どちらの画面も自前では持たない（集約が「使わなくなる」形で崩れない）', () {
+      // ⚠⚠ **集約系の再発は「壊れること」ではなく「使わなくなること」として
+      // 現れる**（docs/CLAUDE.md・#1083-A）。画面側に綴りが戻ってきたら落とす。
+      const owned = [
+        '利用権を取り直す',
+        '購入を確認して登録し直す',
+        '利用権の記録を消す',
+        'registerAllAccounts',
+        // 状態別の文面（以前はプッシュ通知画面が自前で持っていた）。
+        'EntitlementView.refunded =>',
+      ];
+      for (final path in [pushPath, supporterPath]) {
+        final source = maskComments(read(path));
+        for (final spell in owned) {
+          expect(source, isNot(contains(spell)), reason: '$path / $spell');
+        }
+      }
+    });
+
+    test('⚠ 画面に残るのは見出しと門だけ', () {
+      final body = entitlementSectionBody(maskComments(read(pushPath)));
+
+      expect(body, contains("SectionHeader('プッシュ通知リレーの利用権')"));
+      expect(body, contains('RelayEntitlementPurchaseSection('));
+      // ⚠ 状態の組み立てが残っていないこと（移設したので switch は無い）。
+      expect(body, isNot(contains('switch (status.view)')));
+    });
+
+    // ---- #1219: 固着から抜ける口 ----
+
+    test('⚠⚠ 手元のトークンを捨てる口が配線されている', () {
+      final provider = maskComments(
+        read('lib/src/provider/supporter_purchase_provider.dart'),
+      );
+
+      expect(provider, contains('Future<void> forgetEntitlement()'));
+      expect(provider, contains('EntitlementTokenStore.clear()'));
+      // ⚠ 捨てたら `hasEntitlement` も落とす（残すとボタンが消えない）。
+      expect(provider, contains('hasEntitlement: false'));
+    });
+
+    test('⚠⚠ 記録を消すのは確認してから（自動では捨てない）', () {
+      final section = maskComments(read(sectionPath));
+
+      expect(section, contains('showDialog<bool>'));
+      // ⚠ 何が消えないかを文面で言うこと（購入そのものは消えない）。
+      expect(section, contains('ストアの購読は解約されません'));
+      // ⚠⚠ **ウィジェットが自分から `clear` を呼んでいない**（必ず provider 経由
+      // で、ダイアログの後ろ）。
+      expect(section, isNot(contains('EntitlementTokenStore')));
     });
 
     test('⚠⚠ 購入成功から再登録を打たない（二重登録の防止）', () {
@@ -443,9 +498,12 @@ void main() {
     });
 
     test('⚠ 手押しの「購入を確認して登録し直す」は残っている', () {
-      final source = maskComments(read(pushPath));
+      // ⚠ #1224 で共有ウィジェットへ移した。**消えていないこと**を見るのが
+      // この検査の目的なので、見る先を付け替える（画面側は上の検査で不在を
+      // 固定している）。
+      final source = maskComments(read(sectionPath));
 
-      expect(source, contains('_reconcileAfterPurchase'));
+      expect(source, contains('_reconcile('));
       expect(source, contains('registerAllAccounts'));
       expect(source, contains("const Text('購入を確認して登録し直す')"));
     });
@@ -517,6 +575,55 @@ void main() {
         before(statusSectionPath),
         contains("'登録対象外（プリセットサーバーのアカウントが未登録）'"),
       );
+    });
+
+    // ---- #1224 / #1219 の直前（`2e397a92`）で穴を開ける ----
+
+    /// #1224 / #1219 を入れる直前の develop の tip。
+    ///
+    /// ⚠⚠ **[beforeRev] と分ける。**あちらは #1217 / #1218 の前（`0fb0bae3`）で、
+    /// **この回の非対称はまだ入っていない**。歯を確かめるには「非対称が在った
+    /// 最後の状態」が要る。
+    const asymmetricRev = '2e397a92';
+
+    String beforeAsymmetric(String path) {
+      final r = Process.runSync('git', [
+        'show',
+        '$asymmetricRev:packages/capsicum/$path',
+      ], workingDirectory: '../..');
+      expect(r.exitCode, 0, reason: (r.stderr as String));
+      return r.stdout as String;
+    }
+
+    test('⚠⚠ 前は購入ボタンを手元のトークンで切り替えていた（#1219 の穴）', () {
+      final section = maskComments(beforeAsymmetric(sectionPath));
+
+      // 🔴 これが「失効しても買い直せない」の正体。
+      expect(section, contains('trailing: state.hasEntitlement'));
+      // 当時は view を材料にしていなかった。
+      expect(section, isNot(contains('showRelayPurchaseButton(')));
+    });
+
+    test('⚠⚠ 前は状態表示と「登録し直す」がプッシュ通知画面だけにあった（#1224 の穴）', () {
+      final push = maskComments(beforeAsymmetric(pushPath));
+      final supporter = maskComments(beforeAsymmetric(supporterPath));
+
+      // プッシュ通知画面が自前で持っていた ＝ いまの「画面は持たない」検査に当たる。
+      expect(push, contains('EntitlementView.refunded =>'));
+      expect(push, contains("const Text('購入を確認して登録し直す')"));
+      // サポーター画面にはどちらも無かった（＝ できることが少なかった側）。
+      expect(supporter, isNot(contains('EntitlementView.refunded =>')));
+      expect(supporter, isNot(contains('購入を確認して登録し直す')));
+    });
+
+    test('⚠⚠ 前は手元のトークンを捨てる口が無かった（#1219 後半）', () {
+      final provider = maskComments(
+        beforeAsymmetric('lib/src/provider/supporter_purchase_provider.dart'),
+      );
+
+      expect(provider, isNot(contains('forgetEntitlement')));
+      // 🔴 `clear()` は実装されていたのに、呼び出しが 1 件も無かった。
+      expect(provider, isNot(contains('EntitlementTokenStore.clear()')));
     });
   });
 }

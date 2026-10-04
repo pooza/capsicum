@@ -312,6 +312,37 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
   ///
   /// ⚠ **投げ銭（消耗型）は復元の対象外。**文面も「利用権」に限ること ——
   /// サポーターバッジが戻ると読めてはいけない。
+  /// 手元の利用権トークンを捨てる (#1219)。
+  ///
+  /// ⚠⚠ **購入そのものは消えない。**ストアの購読は解約されず、
+  /// [restoreEntitlement] で引き直せる。消えるのは**この端末の保存**だけ。
+  ///
+  /// ## なぜ要るか
+  ///
+  /// 🔴 **取り直しが空振りすると抜けられない状態が残る。**relay が認めない
+  /// トークン（返金済み・別のストアアカウントで買った・保存が壊れた）を持って
+  /// いると:
+  ///
+  /// 1. `status` が読めない値なので [EntitlementView] は**「有効」側へ倒れる**
+  ///    （買った人に「買ってください」と出さないための判断・#1123）
+  /// 2. そのため**購入ボタンが出ない**
+  /// 3. [restoreEntitlement] は復元すべき購入が無ければ**イベントが 1 つも
+  ///    流れてこない**ので、何も起きず**トークンも残る**
+  ///
+  /// → これを捨てると `absent` に戻り、買い直せるようになる。
+  ///
+  /// ⚠⚠ **自動では捨てない。**`EntitlementStatusNotifier.refresh` が 404 で
+  /// 「勝手に消さない」としているのと同じ理由で、**通信の失敗やストア側の一過性
+  /// の不調で有効な利用権を捨てると、再登録の手掛かりごと失う**。⚠ **利用者が
+  /// 確認してから**押す口にしてある（画面側がダイアログを出す）。
+  Future<void> forgetEntitlement() async {
+    if (state.purchaseInProgress) return;
+    await EntitlementTokenStore.clear();
+    // ⚠ 画面の「取り直す / 記録を消す」の出し分けはこの値を見るので、
+    // **保存を消したらここも落とす**（残すとボタンが消えない）。
+    state = state.copyWith(hasEntitlement: false);
+  }
+
   Future<void> restoreEntitlement() async {
     if (!_backend.isSupported || state.purchaseInProgress) return;
     if (!subscriptionPurchaseSupported) return;

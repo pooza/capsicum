@@ -207,23 +207,35 @@ void main() {
       expect(read(backendPath), contains('Future<void> restore()'));
       expect(read(providerPath), contains('Future<void> restoreEntitlement()'));
       expect(read(sectionPath), contains('restoreEntitlement()'));
-      expect(read(sectionPath), contains("const Text('取り直す')"));
+      // ⚠ 文言は #1226 で「プッシュ通知リレー」へ揃えた回に合わせて伸びた。
+      expect(read(sectionPath), contains("const Text('利用権を取り直す')"));
     });
 
     test('⚠⚠ 持っている人に購入ボタンを出さない（二重購入の防止は維持）', () {
       final source = read(sectionPath);
-      final at = source.indexOf('state.hasEntitlement');
-      expect(at, greaterThanOrEqualTo(0));
 
-      // ⚠ 三項の**真の枝が先**に来るので、`取り直す` が `FilledButton`（価格の
-      // ボタン＝偽の枝）より前に在ることで「持っている人には出さない」が立つ。
-      // ⚠⚠ **固定幅の窓で切らない** —— コメントを伏せた空白が窓を食い潰して
-      // 空振りした（この検査を書いたときに実際に踏んだ）。
-      final restore = source.indexOf('取り直す', at);
-      final buy = source.indexOf('FilledButton', at);
-      expect(restore, greaterThanOrEqualTo(0));
-      expect(buy, greaterThanOrEqualTo(0));
-      expect(restore, lessThan(buy));
+      // ⚠⚠ **#1224 / #1219 で判定が変わった。**以前は三項の
+      // `state.hasEntitlement`（**手元のトークン**）で「取り直す」と価格ボタンを
+      // 入れ替えていたが、🔴 **失効してもトークンは残るので買い直せなかった。**
+      // いまは **relay の見立て**（[showRelayPurchaseButton]）で切る。
+      expect(source, contains('trailing: showRelayPurchaseButton(view: view)'));
+      // 🔴 **古い形が戻ってきたら落とす。**
+      expect(source, isNot(contains('trailing: state.hasEntitlement')));
+
+      // ⚠ 「どの状態で出るか」そのものは
+      // `relay_purchase_entry_guard_test` の純粋関数の検査が固定している
+      // （active / grace / refunded では false）。ここは**配線**だけを見る。
+      expect(source, contains('FilledButton'));
+    });
+
+    test('⚠⚠ 取り直しが空振りしたときの出口がある (#1219 後半)', () {
+      // 🔴 `restoreEntitlement` は復元すべき購入が無ければイベントが流れて
+      // こないので、**何も起きずトークンも残る** —— 手元の保存を捨てる口が
+      // 無いと、そこから抜けられない。
+      expect(read(providerPath), contains('Future<void> forgetEntitlement()'));
+      expect(read(providerPath), contains('EntitlementTokenStore.clear()'));
+      expect(read(sectionPath), contains('forgetEntitlement()'));
+      expect(read(sectionPath), contains("const Text('利用権の記録を消す')"));
     });
   });
 

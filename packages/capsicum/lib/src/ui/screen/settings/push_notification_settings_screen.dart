@@ -45,12 +45,6 @@ class PushNotificationSettingsScreen extends ConsumerWidget {
     // （`expired` でも登録は試みて、止めるのは relay の仕事）。
     final hasEntitlement = entitlementView != EntitlementView.absent;
 
-    // 購入の入口を出すか (#1217)。
-    final showPurchase = showRelayPurchaseEntry(
-      hasPreset: hasPreset,
-      view: entitlementView,
-    );
-
     // 利用権の購入結果を知らせ、この画面の表示を購入後の状態へ追いつかせる
     // (#1217)。
     //
@@ -68,7 +62,11 @@ class PushNotificationSettingsScreen extends ConsumerWidget {
     //
     // ⚠ **投げ銭の結果は拾わない。**この画面に投げ銭の入口は無いので、
     // サポーター画面で買ったものの結果をここで出すと文脈が合わない。
-    if (showPurchase) {
+    // ⚠⚠ **門は `hasPreset` だけにした (#1224)。**以前は「購入の入口が出る
+    // とき」(`absent` / `expired`) に限っていたが、節のできることを 2 画面で
+    // 揃えたので、**`unverified` で「取り直す」を押した結果もここで出す**
+    // 必要がある。⚠ プリセットのみの人には節が出ないので待ち受けない。
+    if (!hasPreset) {
       ref.listen<SupporterPurchaseState>(supporterPurchaseProvider, (
         prev,
         next,
@@ -116,11 +114,7 @@ class PushNotificationSettingsScreen extends ConsumerWidget {
               style: const TextStyle(fontSize: 13),
             ),
           ),
-          ..._entitlementSection(
-            ref,
-            hasPreset: hasPreset,
-            showPurchase: showPurchase,
-          ),
+          ..._entitlementSection(ref, hasPreset: hasPreset),
           const SectionHeader('アカウント別の登録状況'),
           ...accounts.map(
             (account) => _AccountStatusTile(
@@ -145,11 +139,12 @@ class PushNotificationSettingsScreen extends ConsumerWidget {
   ///
   /// ⚠ **未購入でも、非プリセットの人には出す。**「いつのまにか通知が来ない」を
   /// 避けるのがこの Issue の出発点で、**買っていないこと自体が原因になりうる。**
-  List<Widget> _entitlementSection(
-    WidgetRef ref, {
-    required bool hasPreset,
-    required bool showPurchase,
-  }) {
+  ///
+  /// ⚠⚠ **中身は [RelayEntitlementPurchaseSection] に全部移した (#1224)。**
+  /// ここに残るのは**見出しと「出すかどうか」の門だけ** —— サポーター画面と
+  /// できることを完全に同じにするため。以前はこちらだけが状態表示と
+  /// 「登録し直す」を持ち、あちらだけが「取り直す」を持っていた。
+  List<Widget> _entitlementSection(WidgetRef ref, {required bool hasPreset}) {
     // ⚠⚠ **`watch` より先に抜ける。**ここで provider を起動すると、プリセットの
     // みの人でも**キーホルダの読み出しと relay への問い合わせが走る** ——
     // 「何も表示が増えない」を見た目だけで満たしても、**通信は増えている。**
@@ -166,105 +161,23 @@ class PushNotificationSettingsScreen extends ConsumerWidget {
       return const [];
     }
 
-    // ⚠ 読めなければ null。文面から日付だけを落とす（[formatEntitlementExpiry]）。
-    final expiry = formatEntitlementExpiry(status.expiresAt);
-
-    final (title, body, icon) = switch (status.view) {
-      EntitlementView.active => (
-        '利用権は有効です',
-        'プリセット以外のサーバーでもプッシュ通知を受け取れます。',
-        Icons.check_circle_outline,
-      ),
-      // ⚠⚠ **届いている。**relay は返金済みでも**決済済みの期間までは通す**
-      // （relay#63「払った分の権利は否定しない」）。⚠ **失効と同じ文面にしない** ——
-      // 届いているのに「届かなくなります」と言うことになる。
-      // ⚠ **期限を併記する**のがこの状態の存在理由。
-      EntitlementView.refunded => (
-        '返金済みです',
-        expiry == null
-            ? '決済済みの期間が残っているあいだは、プリセット以外のサーバーでも'
-                  'プッシュ通知をお使いいただけます。'
-            : '$expiry までは、プリセット以外のサーバーでもプッシュ通知を'
-                  'お使いいただけます。期限を過ぎると届かなくなります。',
-        Icons.schedule,
-      ),
-      // ⚠⚠ **止まっている。**2026-10-03 に「未払いの間は通さない」と決まった
-      // （relay#63）ので、**「いまのところ届いています」とは言えない。**
-      // ⚠ **利用者が自分で直せる唯一の状態**なので、直し方まで書く。
-      EntitlementView.grace => (
-        'お支払いを確認できていません',
-        'プリセット以外のサーバーへのプッシュ通知が止まっています。'
-            'ストアでお支払い方法をご確認ください。'
-            'お支払いが確認できたあと、この画面から登録をやり直すと再び届きます。',
-        Icons.error_outline,
-      ),
-      EntitlementView.expired => (
-        '利用権が失効しています',
-        'プリセット以外のサーバーでは、プッシュ通知が届かなくなります。'
-            'もう一度ご購入いただくと、この画面から登録をやり直せます。',
-        Icons.cancel_outlined,
-      ),
-      // ⚠⚠ **「サポート画面から」と書かない (#1217)。**購入の入口が同じ画面の
-      // すぐ下に出るので、**辿り直させる案内が残ると誤導になる。**⚠ 商品が
-      // 取れない OS（Windows / Linux）では入口が出ないが、そこへ送っても
-      // 同じ商品が取れないので**案内先として役に立たない。**
-      EntitlementView.absent => (
-        '利用権がありません',
-        'プリセット以外のサーバーでプッシュ通知を受け取るには、'
-            '利用権のご購入が必要です。',
-        Icons.info_outline,
-      ),
-    };
-
     return [
       // ⚠⚠ **画面名と重複するが「プッシュ通知リレーの利用権」で統一する**
       // (#1226 案 A・2026-10-04 pooza)。購入ボタンが並ぶ面では商品名が曖昧で
       // ないほうがよく、**capsicum-site の特商法表記の商品名と完全一致する**。
       // ⚠ 「この見出しだけ短く」は検討の上で採らなかった（再提案しない）。
       const SectionHeader('プッシュ通知リレーの利用権'),
-      ListTile(leading: Icon(icon), title: Text(title), subtitle: Text(body)),
-      // 購入の入口 (#1217)。⚠ **状態の説明の直後に置く** —— 「原因は未購入
-      // だった」と分かった流れのまま買えるようにするのがこの Issue の出発点。
-      // ⚠⚠ **出す / 出さないの判定は [showRelayPurchaseEntry]**（呼び出し側が
-      // 済ませている）。商品が取れなければウィジェット側が空を返す。
-      if (showPurchase)
-        const RelayEntitlementPurchaseSection(
-          // ⚠ 便益は上の状態別の文面が言っているので重ねない。
-          showBenefit: false,
-          // ⚠⚠ **購入ボタンのある画面に法定表記が要る**（C-3）。
-          showLegalNotice: true,
-        ),
-      // ⚠⚠ **買い直したあとの再登録の導線**（完了条件の 2 つ目）。
-      // `/push` が 410 を返すと fedi サーバー側の購読が消えるので、⚠ **買い直す
-      // だけでは戻らない。**登録をやり直す必要がある。
-      // ⚠ **返金済みにも出す。**いまは届いているが期限で切れるので、買い直した
-      // ときにここから戻せる必要がある。
-      if (status.view != EntitlementView.active)
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-          child: OutlinedButton(
-            onPressed: () => _reconcileAfterPurchase(ref),
-            child: const Text('購入を確認して登録し直す'),
-          ),
-        ),
+      // ⚠⚠ **中身は共有ウィジェット 1 本 (#1224)。**状態表示・購入・取り直す・
+      // 登録し直す・記録を消すが、**サポーター画面と完全に同じ**出方になる。
+      // ⚠ **ここで組み立て直さない** —— 以前はこちらだけが状態表示と
+      // 「登録し直す」を持ち、あちらだけが「取り直す」を持っていた。
+      const RelayEntitlementPurchaseSection(
+        // ⚠ 便益は状態別の文面が言っているので重ねない。
+        showBenefit: false,
+        // ⚠⚠ **購入ボタンのある画面に法定表記が要る**（C-3）。
+        showLegalNotice: true,
+      ),
     ];
-  }
-
-  /// 利用権を引き直して、全アカウントの購読を登録し直す (#1123 / #1217)。
-  ///
-  /// ⚠⚠ **買っただけでは戻らない。**`/push` が 410 を返していた間に fedi
-  /// サーバー側の購読が destroy されているので（relay#63 の決着どおり）、
-  /// **登録をやり直すまで通知は届かない。**
-  ///
-  /// ⚠ **手押しのボタンと、購入成功の直後の両方から呼ぶ。**#1217 で入口を
-  /// 増やしたのに「買ったあとボタンを押す」が残っていると、**手間を減らした
-  /// ことにならない。**
-  Future<void> _reconcileAfterPurchase(WidgetRef ref) async {
-    await ref.read(entitlementStatusProvider.notifier).refresh();
-    final accounts = ref.read(accountManagerProvider).accounts;
-    if (accounts.isNotEmpty) {
-      await PushRegistrationService.registerAllAccounts(accounts);
-    }
   }
 }
 
