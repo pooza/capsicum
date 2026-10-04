@@ -140,7 +140,18 @@ capsicum-relay の Issue・マイルストーンは、**capsicum 本体と同じ
 .claude/scripts/sentry-api.sh get /issues/{issue_id}/ | jq -r '"count=\(.count) users=\(.userCount) firstSeen=\(.firstSeen[0:16]) lastSeen=\(.lastSeen[0:16])"'
 ```
 
-⚠ **判定時の件数より一桁増えていたら、判定ごと作り直す**（コメントに当時の件数が残っているので比べられる）。⚠⚠ **`contexts` は `events/latest/` か `events/?full=true` でしか取れない**（`events/` の一覧には入らない）ので、実害の大きさを測るときはこちらを使う:
+⚠ **判定時の件数より一桁増えていたら、判定ごと作り直す**（コメントに当時の件数が残っているので比べられる）。
+
+⚠⚠ **ただし作り直した判定を「累積の件数」で書かない。**`count` は**時間が経てば増える**ので、一桁増えたことは**増勢の証拠にならない**。⚠ **作り直すときは日次の推移を引いて、レートが変わったのかを見る**:
+
+```sh
+# 直近 14 日の日次件数（stats は 24h と 30d の 2 つだけ持つ）
+.claude/scripts/sentry-api.sh get /issues/{issue_id}/ | jq -r '.stats["30d"][-14:][] | "\(.[0] | strftime("%m-%d")) \(.[1])"'
+```
+
+⚠ **2026-10-04 に実際に紛れかけた。**`CAPSICUM-RELAY-3`（APNs のアイドル接続切断）は判定時 `count=3` → 252 件で **84 倍**だったが、日次は 1〜4 件で平らで、4 か月の平均（約 2 件/日）と一致していた ＝ **レートは判定時から変わっていない**。⚠⚠ **格上げ条件は「累積で N 件」ではなく「日次が N 件/日を超える」で書く** —— 累積で書くと、何もしなくても必ず到達する。
+
+⚠⚠ **`contexts` は `events/latest/` か `events/?full=true` でしか取れない**（`events/` の一覧には入らない）ので、実害の大きさを測るときはこちらを使う:
 
 ```sh
 .claude/scripts/sentry-api.sh get '/issues/{issue_id}/events/?full=true' \
