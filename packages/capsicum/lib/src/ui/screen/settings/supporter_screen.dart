@@ -219,7 +219,7 @@ class SupporterScreen extends ConsumerWidget {
       const Padding(
         padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
         child: Text(
-          'リレーの利用権',
+          'プッシュ通知リレーの利用権',
           style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
         ),
       ),

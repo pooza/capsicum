@@ -124,7 +124,7 @@ class RelayEntitlementPurchaseSection extends ConsumerWidget {
 String supporterPurchaseOutcomeMessage(SupporterPurchaseOutcome outcome) =>
     switch ((outcome.kind, outcome.isSubscription)) {
       (SupporterPurchaseOutcomeKind.success, true) =>
-        'ありがとうございます！リレーの利用権が有効になりました。',
+        'ありがとうございます！プッシュ通知リレーの利用権が有効になりました。',
       (SupporterPurchaseOutcomeKind.success, false) =>
         'ありがとうございます！サポーターになりました。',
       (SupporterPurchaseOutcomeKind.canceled, _) => '購入をキャンセルしました。',

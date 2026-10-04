@@ -264,7 +264,8 @@ class PushRegistrationService {
           accountKey,
           PushRegistrationState.failed,
           reason: PushRegistrationFailureReason.relayFailed,
-          errorMessage: 'リレーサーバー応答に id / push_token が含まれていません',
+          // ⚠ `errorMessage` は登録状況の行に出る（利用者が読む・#1226）。
+          errorMessage: 'プッシュ通知リレーサーバーの応答に id / push_token が含まれていません',
         );
         return;
       }

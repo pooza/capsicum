@@ -105,12 +105,13 @@ class PushNotificationSettingsScreen extends ConsumerWidget {
                       'すべてのアカウントでプッシュ通知が利用できます。'
                       '登録に失敗した場合は、各アカウントの行から再試行できます。',
                 (false, true) =>
-                  'リレーの利用権があるため、すべてのアカウントでプッシュ通知が'
-                      '利用できます。'
+                  'プッシュ通知リレーの利用権があるため、すべてのアカウントで'
+                      'プッシュ通知が利用できます。'
                       '登録に失敗した場合は、各アカウントの行から再試行できます。',
                 (false, false) =>
                   'プッシュ通知は、プリセットサーバーのアカウントが 1 つ以上'
-                      '登録されているか、リレーの利用権がある場合に利用できます。',
+                      '登録されているか、プッシュ通知リレーの利用権がある場合に'
+                      '利用できます。',
               },
               style: const TextStyle(fontSize: 13),
             ),
@@ -216,7 +217,11 @@ class PushNotificationSettingsScreen extends ConsumerWidget {
     };
 
     return [
-      const SectionHeader('リレーの利用権'),
+      // ⚠⚠ **画面名と重複するが「プッシュ通知リレーの利用権」で統一する**
+      // (#1226 案 A・2026-10-04 pooza)。購入ボタンが並ぶ面では商品名が曖昧で
+      // ないほうがよく、**capsicum-site の特商法表記の商品名と完全一致する**。
+      // ⚠ 「この見出しだけ短く」は検討の上で採らなかった（再提案しない）。
+      const SectionHeader('プッシュ通知リレーの利用権'),
       ListTile(leading: Icon(icon), title: Text(title), subtitle: Text(body)),
       // 購入の入口 (#1217)。⚠ **状態の説明の直後に置く** —— 「原因は未購入
       // だった」と分かった流れのまま買えるようにするのがこの Issue の出発点。
