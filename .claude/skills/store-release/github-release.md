@@ -41,21 +41,30 @@ curl -sA "Mozilla/5.0" "https://itunes.apple.com/lookup?bundleId=jp.co.b-shock.c
 
 iOS と macOS の審査状態を**別々に正確に**取得するには App Store Connect API を使う（lookup では Universal Purchase の同一レコードを拾うため不可）。`appStoreVersions` を `platform`（`IOS` / `MAC_OS`）でフィルタすると各版に `appStoreState`（`READY_FOR_SALE` = 公開済み / `WAITING_FOR_REVIEW` = 審査待ち / `IN_REVIEW` = 審査中 / `PENDING_DEVELOPER_RELEASE` 等）が付く。**今後 iOS / macOS の公開状況確認はこの方法を第一とする**（lookup は補助）。
 
-認証は fastlane と同じ ASC API Key（`~/.config/capsicum/AuthKey_<KEY_ID>.p8`）を流用し、ES256 JWT を生成して叩く（Ruby の `jwt` gem 利用）。`<KEY_ID>` / `<ISSUER_ID>` の実値は public リポジトリには書かず、各マシンの `~/.config/capsicum/` 配下と private な端末固有値リファレンスで管理する（このファイル冒頭 §1.3 と同じ方針）。実行前に環境変数へ入れておく:
+⚠⚠ **スクリプトは [`.claude/scripts/asc-status.rb`](../../scripts/asc-status.rb)。**リポジトリ root から相対パスで呼ぶ（`permissions.allow` の `Bash(.claude/scripts/asc-status.rb *)` に当てるため）。
 
-```bash
-# 実値は private リファレンス参照。例: export ASC_KEY_ID=XXXXXXXXXX ASC_ISSUER_ID=........-....-....-....-............
-ruby -e '
-require "jwt"; require "net/http"; require "json"; require "uri"
-KEY_ID=ENV.fetch("ASC_KEY_ID"); ISSUER=ENV.fetch("ASC_ISSUER_ID")
-key=OpenSSL::PKey::EC.new(File.read(File.expand_path("~/.config/capsicum/AuthKey_#{KEY_ID}.p8")))
-now=Time.now.to_i
-tok=JWT.encode({iss:ISSUER,iat:now,exp:now+600,aud:"appstoreconnect-v1"},key,"ES256",{kid:KEY_ID,typ:"JWT"})
-get=->(p){u=URI("https://api.appstoreconnect.apple.com/v1/#{p}");r=Net::HTTP::Get.new(u);r["Authorization"]="Bearer #{tok}";JSON.parse(Net::HTTP.start(u.host,u.port,use_ssl:true){|h|h.request(r)}.body)}
-app=get.call("apps?filter[bundleId]=jp.co.b-shock.capsicum")["data"].first["id"]
-%w[IOS MAC_OS].each{|pl|puts "== #{pl} ==";get.call("apps/#{app}/appStoreVersions?filter[platform]=#{pl}&limit=3")["data"].each{|v|a=v["attributes"];puts "  #{a["versionString"]}  #{a["appStoreState"]}"}}
-'
+```sh
+.claude/scripts/asc-status.rb versions   # iOS / macOS の審査状態
+.claude/scripts/asc-status.rb products   # 課金商品の状態と日本の価格
+.claude/scripts/asc-status.rb            # 両方
 ```
+
+認証は fastlane と同じ ASC API Key（`~/.config/capsicum/AuthKey_<KEY_ID>.p8`）を流用し、ES256 JWT を生成して叩く（Ruby の `jwt` gem 利用）。⚠ `<KEY_ID>` は**鍵のファイル名から**、`<ISSUER_ID>` は **`ios/fastlane/Fastfile` から**取るので、通常は環境変数を置かなくてよい（`ASC_KEY_ID` / `ASC_ISSUER_ID` で上書きできる）。⚠⚠ **スクリプトに識別子を書き写さない** —— 複写すると、片方だけ差し替えられたときに気付けない。
+
+⚠⚠ **以前はここに `ruby -e` のワンライナーが載っていたが、`deny-interpreter-inline` のフックが拒否するため実行できなくなっていた**（`docs/dev-environment.md`「コマンドの書き方」）。⚠ **インラインへ戻さない。**
+
+#### 課金商品（サブスク・消耗型）の状態確認
+
+⚠ **アプリの版が `READY_FOR_SALE` でも、課金商品は別に審査される。**`asc-status.rb products` で `state` を見る。
+
+| `state` | 意味 |
+| --- | --- |
+| `MISSING_METADATA` | 必須項目が埋まっていない（審査に出せない） |
+| `READY_TO_SUBMIT` | ⚠ **埋まったが審査に出していない。**まだ買えない |
+| `WAITING_FOR_REVIEW` / `IN_REVIEW` | 審査中 |
+| `APPROVED` | 承認済み（⚠ サブスクは価格の開始日も要る） |
+
+⚠⚠ **新規 IAP は単独で審査提出しない**（§4.2 の審査ノート）。アプリのバージョン提出に紐付けて同時に出す。
 
 #### Microsoft Store の公開確認（displaycatalog、認証不要）
 

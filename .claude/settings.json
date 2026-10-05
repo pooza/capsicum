@@ -30,6 +30,8 @@
   },
   "permissions": {
     "allow": [
+      "Bash(.claude/scripts/asc-status.rb)",
+      "Bash(.claude/scripts/asc-status.rb *)",
       "Bash(.claude/scripts/sentry-api.sh *)",
       "Bash(adb devices *)",
       "Bash(appimagetool *)",
