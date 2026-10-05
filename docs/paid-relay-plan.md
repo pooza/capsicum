@@ -107,7 +107,7 @@
 
 #### ✅ 2026-10-04: 本番でゲートを立てた（pooza 承認）
 
-**`RELAY_ENTITLEMENT_ENFORCE=true`** を flauros の drop-in（`/etc/systemd/system/capsicum-relay.service.d/entitlement.conf`）で投入。⚠ **コードは変えていない**（revision は `e1d6920` のまま）。これでフェーズ 2 の「判定を常に許可に固定」が解け、**非プリセットかつ利用権なしは `/register` 403・`/push` 410** になる。
+**`RELAY_ENTITLEMENT_ENFORCE=true`** を本番 relay のサービス設定で投入（投入先と手順は chubo2 `docs/infra-servers.md` の capsicum-relay 本番の節が正本・private）。⚠ **コードは変えていない**（revision は `e1d6920` のまま）。これでフェーズ 2 の「判定を常に許可に固定」が解け、**非プリセットかつ利用権なしは `/register` 403・`/push` 410** になる。
 
 ⚠⚠ **立てる前に母数を実測した**（4-2 の「閉じる前に測り直すこと」）:
 
@@ -353,6 +353,8 @@
 - **本番 relay でもサンドボックスの購入を有効な利用権として扱う。**TestFlight 版は本番 relay を向き、その購入はサンドボックス（無料）になるため。`entitlements.environment` に印を付けて保存する（[relay#61](https://github.com/pooza/capsicum-relay/issues/61)）
 - ⚠⚠ **その代わり、TestFlight のテスターは身内だけにする。**テスターを外へ広げると無料で使える人が増える
 - ⚠ **外部テスター（公開リンク）を開くときはこの前提が崩れる。**そのときは本番 relay で `environment=Sandbox` の利用権を拒否する側へ切り替える
+- ⚠⚠ **実購入の確認にサンドボックステスター ID は要らない。**TestFlight 経由なら普段の Apple ID のままで課金は発生しない。ID が要るのはシミュレータ / 開発ビルドで試す場合だけ（2026-10-04 に取り違えて、App Store Connect のテスター 0 件を「唯一の入口が無い」と読んだ）
+- **失効は待つだけで踏める**（2026-10-04 実測）: TestFlight のサンドボックス購読は **24 時間で期限が来る**（`entitlements.expires_at` が `created_at` の +24h）。Play のライセンステストは **約 5 分周期で更新し、6 回で CANCELED → EXPIRED** になる
 
 ### 8. 特商法・規約の更新
 

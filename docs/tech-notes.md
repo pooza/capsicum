@@ -191,6 +191,22 @@ SharedPreferences は **Android / iOS とも OS のバックアップ対象**で
 - **宣言だけに当てる。**戻り値の型が前に付いていることを求める（`RegExp('\\w[\\w<>?, ]*\\s+$name\\s*\\(')`）。呼び出しは `;` / `(` / `)` / 行頭の空白が前に来るので当たらない。
 - ⚠ **本体を掴んだことの目印は「そのメソッドにしか無いもの」にする。**両方の候補に在る文字列を目印にすると、入れ違ったまま緑になる。
 
+### `DropdownButton` は最長の選択肢ぶんの幅を取る — 表示文字を詰めても幅は詰まらない（#1167）
+
+`DropdownButton` は選択肢を `IndexedStack` に積む（`dropdown.dart` の `innerItemsWidget`）ので、**現在値が短くても最長の選択肢ぶんの幅を取る**。投稿画面のアイコン列が狭幅で溢れたとき、現在値の表示を短くしても幅が変わらなかった原因がこれ。
+
+- **幅を詰めたい側は `PopupMenuButton` にする**（現在値の見た目を自前で組めるので、幅は現在値で決まる）
+
+### 横スクロールはマウスのドラッグでは動かない — `ScrollBehavior` の既定が `dragDevices` から mouse を外している（#1167）
+
+デスクトップで横スクロールの列を作ると、**ホイールは縦にしか回らず、ドラッグも効かない**ので「スクロールできない」になる。`ScrollBehavior` の既定の `dragDevices` に mouse が入っていないため。その列だけ `ScrollConfiguration` で `dragDevices` に mouse を足す。
+
+⚠⚠ **検査は `controller.jumpTo` で満足しない。**機構が動くことは指（やマウス）で動くことを意味しない。#1167 の初版は**ドラッグそのものを試す検査が 1 つも無く**、緑のまま実機で動かなかった。`tester.drag` を `kind: PointerDeviceKind.mouse` で通す。
+
+### `IconButton.tooltip` は外側の長押しを奪う — 両立させるなら `Tooltip` を外に巻く（#1196）
+
+`IconButton.tooltip` は **`IconButton` の内側に `Tooltip` を作る**ので、外側の `GestureDetector.onLongPress` より先に長押しを取る。ツールチップと長押しメニューを両方出したいボタンでは、**`tooltip` 引数を使わず `Tooltip` を `GestureDetector` の外側に巻く**。実例は `notification_bell_button.dart`。
+
 ## 体感速度の改善（先出し・キャッシュ）
 
 ### 先出しキャッシュは「同じ状態への経路」を 2 本にする — 欠陥はほぼ全部その分岐から出る
