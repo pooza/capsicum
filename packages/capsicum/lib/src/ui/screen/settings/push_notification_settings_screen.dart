@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../constants.dart';
 import '../../../model/account.dart';
 import '../../../provider/account_manager_provider.dart';
 import '../../../provider/entitlement_status_provider.dart';
@@ -12,6 +13,7 @@ import '../../../service/push_registration_status.dart';
 import '../../widget/push_registration_status_section.dart';
 import '../../widget/relay_entitlement_purchase_section.dart';
 import '../../widget/section_header.dart';
+import '../../widget/term_link_text.dart';
 
 /// プッシュ通知の登録状態をアカウント別に一覧表示し、失敗していれば
 /// 再試行できる設定画面（#340）。
@@ -94,23 +96,30 @@ class PushNotificationSettingsScreen extends ConsumerWidget {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Text(
-              // ⚠⚠ **利用権がある場合を書き分ける (#1218)。**買った人に
-              // 「プリセットのアカウントが要ります」と出していた。
-              switch ((hasPreset, hasEntitlement)) {
-                (true, _) =>
-                  'プリセットサーバーのアカウントが登録されているため、'
-                      'すべてのアカウントでプッシュ通知が利用できます。'
-                      '登録に失敗した場合は、各アカウントの行から再試行できます。',
-                (false, true) =>
-                  'プッシュ通知リレーの利用権があるため、すべてのアカウントで'
-                      'プッシュ通知が利用できます。'
-                      '登録に失敗した場合は、各アカウントの行から再試行できます。',
-                (false, false) =>
-                  'プッシュ通知は、プリセットサーバーのアカウントが 1 つ以上'
-                      '登録されているか、プッシュ通知リレーの利用権がある場合に'
-                      '利用できます。',
-              },
+            // ⚠⚠ **用語からサイトの説明へ辿れるようにする (#1221)。**有償リレー
+            // で「プリセットサーバー」が**課金の線引きそのもの**になったため、
+            // 初めて見る人がここで詰まる。⚠ **光らせるのはこの画面で 1 箇所だけ**
+            // （利用権の節には張らない・2026-10-05 pooza 決定）。
+            child: TermLinkText(
+              term: 'プリセットサーバー',
+              url: AppConstants.presetServersUrl,
+              text:
+                  // ⚠⚠ **利用権がある場合を書き分ける (#1218)。**買った人に
+                  // 「プリセットのアカウントが要ります」と出していた。
+                  switch ((hasPreset, hasEntitlement)) {
+                    (true, _) =>
+                      'プリセットサーバーのアカウントが登録されているため、'
+                          'すべてのアカウントでプッシュ通知が利用できます。'
+                          '登録に失敗した場合は、各アカウントの行から再試行できます。',
+                    (false, true) =>
+                      'プッシュ通知リレーの利用権があるため、すべてのアカウントで'
+                          'プッシュ通知が利用できます。'
+                          '登録に失敗した場合は、各アカウントの行から再試行できます。',
+                    (false, false) =>
+                      'プッシュ通知は、プリセットサーバーのアカウントが 1 つ以上'
+                          '登録されているか、プッシュ通知リレーの利用権がある場合に'
+                          '利用できます。',
+                  },
               style: const TextStyle(fontSize: 13),
             ),
           ),

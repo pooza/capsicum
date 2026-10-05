@@ -15,6 +15,7 @@ import '../../service/sentry_op_failure.dart';
 import '../../service/settings_backup.dart';
 import '../../url_helper.dart';
 import '../../util/exception_scrub.dart';
+import '../util/launch_url_toast.dart';
 import '../util/settings_backup_apply.dart';
 import '../util/settings_backup_file_type.dart';
 import '../widget/bottom_safe_area.dart';
@@ -231,7 +232,11 @@ class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
                     child: TextButton.icon(
                       icon: const Icon(Icons.open_in_new, size: 16),
                       label: const Text('プリセットサーバーについて'),
-                      onPressed: () => launchUrlSafely(
+                      // ⚠ **開けなければ SnackBar で知らせる** —— ここだけ
+                      // [launchUrlSafely] の裸呼び出しで、**失敗しても何も
+                      // 起きなかった**（#976 で揃えたはずの経路・#1221 で発見）。
+                      onPressed: () => launchUrlOrToast(
+                        context,
                         AppConstants.presetServersUrl,
                         mode: LaunchMode.externalApplication,
                       ),

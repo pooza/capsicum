@@ -42,6 +42,7 @@ capsicum は「最新版を対象にする」方針で開発しており、UI �
 | リプライ | 返信 | 統一 | 両上流とも**操作名は「返信」**（Mastodon `status.reply` / Misskey `_actions.reply`）。⚠ **Misskey が「リプライ」を使うのは通知の種別ラベル**（`_notification._types.reply`）だけで、capsicum はその種別を `mention` に畳んでいるので出番が無い。アクションメニュー・投稿フォームの AppBar・タッチ操作の設定はすべて「返信」（#1117-E） |
 | Flash | Play | 統一 | Misskey は **UI 表記が「Play」**（`navbar.ts` / `_play:` ロケール）で、**エンティティ・API 名が `Flash`**（`/api/flash/*`）という食い違いがある。capsicum も同じ使い分けをする（UI は「Play」・コード識別子は `Flash*`） |
 | リレー | プッシュ通知リレー | 混同回避 | ⚠⚠ **Fedi で「リレー」は ActivityPub のリレー**（サーバー間で投稿を中継するもの）**を指す。**プッシュ通知の中継サーバーは別物なので、**裸の「リレー」を UI に出さない**（#1226）。⚠ **機械で見ている**（[`relay_wording_guard_test.dart`](../packages/capsicum/test/relay_wording_guard_test.dart)・判定は「『リレー』の直前 2 文字が『通知』」） |
+| capsicum の運営元が用意したサーバー | プリセットサーバー | 統一 | ⚠ #1217 で**審査する人に便益を説明するため**に言い換えていたが、**サポーター画面だけ用語が違う**状態になっていた。用語の説明へのリンク（下の節・#1221）が言い換えの役目を担うので、**全画面で「プリセットサーバー」に揃える**（2026-10-05 pooza 判断） |
 
 「廃止語」は最新版で廃止された用語であり、capsicum でも一切使わない。「統一」は他方の SNS では現役だが、capsicum では UI 一貫性のためにどちらか片方に寄せている用語を指す。「混同回避」は語そのものは正しいが、**Fedi の別概念と取り違えられる**ため複合語でしか使わない用語を指す。
 
@@ -54,6 +55,15 @@ capsicum は「最新版を対象にする」方針で開発しており、UI �
 - ⚠⚠ **「通知サーバー」は採らなかった。**上の表のとおり capsicum の UI では「サーバー」が**接続先の Mastodon / Misskey サーバー**を指すので、同じ画面に 2 つ目の意味を持ち込むことになる
 
 コード内部の識別子（`Instance`, `InstanceProbe` 等）は変更不要。UI に表示する文字列のみ統一する。文字列リテラルをコード全体に散らすと用語の取りこぼしが起きやすいため、[post_scope_display.dart](../packages/capsicum/lib/src/ui/util/post_scope_display.dart) のように中央集約した定数を参照する設計を優先する。
+
+#### 用語からサイトの説明へ辿れるようにする
+
+⚠⚠ **「プリセットサーバー」は有償リレーで課金の線引きそのものになった**（プリセットのアカウントが 1 つでもあれば無償）。初めて見る人には**何を指す語なのか分からない**ので、[capsicum-site の説明ページ](https://capsicum.shrieker.net/preset-servers/)へ辿れるようにする（#1221）。
+
+- **導線は画面ごとに 1 箇所だけ**（2026-10-05 pooza 決定）。⚠ 利用権の節は**状態で 6 通りに文面が変わる**ので張らない —— どの文が出るかで光る場所が動く
+- ⚠⚠ **同じ段落で光るのは 1 箇所。**全部光ると読めない。[`TermLinkText`](../packages/capsicum/lib/src/ui/widget/term_link_text.dart) が**最初の出現だけ**をリンクにする（[`term_link_text_test.dart`](../packages/capsicum/test/term_link_text_test.dart) で固定）
+- ⚠ **文字列ごと画面へ写さない。**同じ導線を画面ごとに書くと、「リレー」の裸の用法と同じ形で**片方だけ直った状態**になる
+- ⚠ **開けなければ SnackBar で知らせる**（`launchUrlOrToast`・#976）。⚠ ログイン画面は `launchUrlSafely` の裸呼び出しのままで、**失敗しても何も起きなかった**（#1221 で発見して揃えた）
 
 ### タグ管理の位置づけ
 

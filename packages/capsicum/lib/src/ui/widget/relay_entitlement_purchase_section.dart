@@ -7,6 +7,7 @@ import '../../provider/entitlement_status_provider.dart';
 import '../../provider/supporter_purchase_provider.dart';
 import '../../service/push_registration_service.dart';
 import '../util/launch_url_toast.dart';
+import 'term_link_text.dart';
 
 /// プッシュ通知リレーの利用権の節 (#597 / #1122 / #1217 / #1224)。
 ///
@@ -70,15 +71,24 @@ class RelayEntitlementPurchaseSection extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (showBenefit)
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
-            child: Text(
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+            // ⚠⚠ **用語を「プリセットサーバー」へ揃え、説明へリンクした**
+            // (#1221・2026-10-05 pooza 決定)。⚠ 以前は「capsicum の運営元が
+            // 用意したサーバー」と**別の言い方**で書いていた —— 審査する人に
+            // 便益を伝えるための言い換えだったが、**この画面だけ用語が違う**
+            // 状態になっていた。⚠ リンクが説明を担うので、言い換えは要らない。
+            child: TermLinkText(
+              term: 'プリセットサーバー',
+              url: AppConstants.presetServersUrl,
               // ⚠ **便益を正確に書く。**プリセットサーバーの利用者は元から無償で
               // 使えるので、「これを買わないと通知が来ない」ではない。
-              'capsicum の運営元が用意したサーバー以外でも、プッシュ通知を'
-              '受け取れるようになります。運営元のサーバーをお使いの方は、'
-              '購入しなくてもこれまでどおり通知を受け取れます。',
-              style: TextStyle(fontSize: 13),
+              // ⚠ 語は 2 回出るが、光るのは最初の 1 回だけ（[TermLinkText]）。
+              text:
+                  'プリセットサーバー以外でも、プッシュ通知を'
+                  '受け取れるようになります。プリセットサーバーをお使いの方は、'
+                  '購入しなくてもこれまでどおり通知を受け取れます。',
+              style: const TextStyle(fontSize: 13),
             ),
           ),
         // ⚠⚠ **状態表示は商品が取れなくても出す。**サブスクを扱えない OS や
