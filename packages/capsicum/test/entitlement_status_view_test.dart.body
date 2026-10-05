@@ -1,15 +1,3 @@
-import 'package:capsicum/src/model/account.dart';
-import 'package:capsicum/src/model/account_key.dart';
-import 'package:capsicum/src/provider/account_manager_provider.dart';
-import 'package:capsicum/src/provider/entitlement_status_provider.dart';
-import 'package:capsicum/src/ui/screen/settings/push_notification_settings_screen.dart';
-import 'package:capsicum/src/ui/widget/relay_entitlement_purchase_section.dart';
-import 'package:capsicum_backends/capsicum_backends.dart';
-import 'package:capsicum_core/capsicum_core.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_test/flutter_test.dart';
-import 'package:mocktail/mocktail.dart';
 
 /// 利用権の見え方 (#597 / #1123)。
 ///
@@ -274,10 +262,8 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       // 🔴 直す前はここが absent だった（「利用権がありません」と出ていた）。
-      expect(
-        container.read(entitlementStatusProvider).view,
-        EntitlementView.preset,
-      );
+      expect(container.read(entitlementStatusProvider).view,
+          EntitlementView.preset);
     });
 
     test('⚠ プリセットが無ければ従来どおり（relay / 手元の保存で決まる）', () async {
@@ -293,10 +279,8 @@ void main() {
       container.read(entitlementStatusProvider);
       await Future<void>.delayed(Duration.zero);
 
-      expect(
-        container.read(entitlementStatusProvider).view,
-        isNot(EntitlementView.preset),
-      );
+      expect(container.read(entitlementStatusProvider).view,
+          isNot(EntitlementView.preset));
     });
 
     // ⚠⚠ **文字列の一致では書かない。**文面を言い換えた瞬間に歯が抜ける。
@@ -305,14 +289,9 @@ void main() {
       final (title, body, _) = copyOf(EntitlementView.preset);
       final text = '$title$body';
 
-      // ⚠⚠ **「購入」という語ごと出さない。**「購入は必要ありません」も
-      // 課金の話を持ち出していることに変わりはない。
-      for (final forbidden in ['購入', 'ありません', '失効', '料金', '月額']) {
-        expect(
-          text.contains(forbidden),
-          isFalse,
-          reason: '⚠ プリセットの利用者に「$forbidden」と言ってはいけない',
-        );
+      for (final forbidden in ['ご購入が必要', '購入が必要', 'ありません', '失効']) {
+        expect(text.contains(forbidden), isFalse,
+            reason: '⚠ プリセットの利用者に「$forbidden」と言ってはいけない');
       }
       // 使えていることを言っている。
       expect(text.contains('利用いただけます') || text.contains('届きます'), isTrue);

@@ -4,7 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../service/entitlement_token_store.dart';
+import '../service/push_registration_service.dart';
 import '../util/exception_scrub.dart';
+import 'account_manager_provider.dart';
 import 'supporter_status_provider.dart';
 
 /// 利用権の見え方 (#597 / #1123)。
@@ -37,6 +39,22 @@ enum EntitlementView {
 
   /// 失効した（解約・期限切れ・返金後に期間も切れた）。
   expired,
+
+  /// ⚠⚠ **プリセットサーバーのアカウントを持っているので、無条件に使える**
+  /// (#1232・2026-10-05 pooza)。
+  ///
+  /// 🔴 **以前は [absent] に落ちていた。**`EntitlementView` が**買ったかどうか**
+  /// しか見ておらず、プリセット利用者に「利用権がありません／ご購入が必要です」
+  /// と出していた。⚠⚠ **`docs/product-policy.md` の不変条件（プリセットの
+  /// 利用者には決して課金しない・課金の状態を見せるだけでも破れる）に違反
+  /// しており、障害として扱う水準**だった。
+  ///
+  /// ⚠⚠ **「利用権 ＝ 購入したもの」ではない。**利用権は**リレーを使える状態**で、
+  /// プリセットにログイン済みなら無条件に満たされる。⚠ **「プリセット以外でも
+  /// 使えるようになる権利」という区分は存在しない** —— プリセットを 1 つでも
+  /// 持てば、非プリセットのアカウントも含めて全部無償（relay のゲートの
+  /// `preset` 判定）。
+  preset,
 }
 
 /// relay の `status` を [EntitlementView] へ畳む。
@@ -153,6 +171,18 @@ class EntitlementStatusNotifier extends Notifier<EntitlementStatus> {
 
   /// 手元 → relay の順で読み直す。
   Future<void> refresh() async {
+    // ⚠⚠ **プリセットを最初に見る (#1232)。**プリセットのアカウントがあれば
+    // 利用権は**無条件にある**ので、手元の保存も relay の状態も関係ない。
+    // ⚠ **relay へ問い合わせない** —— 判定に要らないうえ、プリセットのみの
+    // 利用者に利用権の通信を走らせない方針（`push_notification_settings_screen`
+    // の門と同じ理由）。
+    if (PushRegistrationService.hasPresetAmong(
+      ref.read(accountManagerProvider).accounts,
+    )) {
+      state = const EntitlementStatus(view: EntitlementView.preset);
+      return;
+    }
+
     final local = await _loadLocal();
     if (local == null) {
       state = const EntitlementStatus(view: EntitlementView.absent);
