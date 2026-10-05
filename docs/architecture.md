@@ -374,7 +374,8 @@ GoRouter による宣言的ルーティング。認証状態に応じたリダ�
 - **判定するのは relay で、クライアントは判定しない。**購入すると `POST /entitlements` で利用権トークンを受け取り（`service/entitlement_token_store.dart`・OS のセキュアストレージ）、`/register` に載せる。relay はストアのレシートを自分で検証し、利用権の無い非プリセットの登録を `/register` で断り、配送を `/push` で止める
 - **クライアントが持つのは「見え方」だけ。**`provider/entitlement_status_provider.dart` が relay の `status` を `EntitlementView`（未購入 / 有効 / 猶予 / 返金済み / 失効 / プリセット）へ畳む。⚠ **知らない値は「有効」側へ倒す**（買った人に買わせるほうが重い誤案内なので）
 - ⚠⚠ **プリセット利用者には課金の話を出さない。**`EntitlementView.preset` は relay へ問い合わせずに決まり、購入ボタンを出さない（不変条件は [product-policy.md](product-policy.md)）
-- 購入・状態表示・取り直しの UI は共有ウィジェット `ui/widget/relay_entitlement_purchase_section.dart` 1 本で、設定の「サポート」と「プッシュ通知」の両方から使う
+- 状態表示・購入・復元（登録のやり直しを含む）・記録の削除の UI は共有ウィジェット `ui/widget/relay_entitlement_purchase_section.dart` 1 本で、「capsicum をサポート」と設定の「プッシュ通知」の両方から使う
+- ⚠ **買っても届かないアカウント（モロヘイヤの中継が無い Misskey）は、買う前にその節で知らせる**（経緯は [paid-relay-baseline.md](paid-relay-baseline.md)「買う前に知らせる」）
 
 ### 登録フロー
 
