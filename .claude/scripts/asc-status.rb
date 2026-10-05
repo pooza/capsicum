@@ -13,7 +13,8 @@
 #
 #   .claude/scripts/asc-status.rb versions   # iOS / macOS の審査状態
 #   .claude/scripts/asc-status.rb products   # サブスク・消耗型の状態と価格
-#   .claude/scripts/asc-status.rb            # 両方
+#   .claude/scripts/asc-status.rb builds     # TestFlight のビルドと審査の状態
+#   .claude/scripts/asc-status.rb            # versions と products
 #
 # 認証は fastlane と同じ ASC API Key（`~/.config/capsicum/AuthKey_<KEY_ID>.p8`）。
 # ⚠ **秘密鍵は読むだけで、中身は表示しない。**
@@ -137,9 +138,36 @@ def print_subscription(sub)
     "全 #{(prices['data'] || []).size} 地域"
 end
 
+# TestFlight のビルドごとの状態。⚠ 外部テスター向けは「ベータ版 App Review」が
+# 入るので、アップロードの処理が終わっても配られない。内部と外部は別に出る。
+def print_builds
+  puts '== TestFlight のビルド（新しい順） =='
+  builds = get(
+    "/v1/builds?filter[app]=#{app_id}&sort=-uploadedDate&limit=5" \
+    '&include=buildBetaDetail,betaAppReviewSubmission,preReleaseVersion',
+  )
+  included = {}
+  (builds['included'] || []).each {|inc| included[[inc['type'], inc['id']]] = inc}
+  builds['data'].each do |build|
+    rel = build['relationships'] || {}
+    lookup = lambda do |name|
+      ref = rel.dig(name, 'data')
+      ref && included[[ref['type'], ref['id']]]&.dig('attributes')
+    end
+    detail = lookup.call('buildBetaDetail') || {}
+    review = lookup.call('betaAppReviewSubmission') || {}
+    version = lookup.call('preReleaseVersion') || {}
+    attrs = build['attributes']
+    puts "  #{version['version']} (#{attrs['version']})  #{version['platform']}  " \
+      "処理=#{attrs['processingState']}  内部=#{detail['internalBuildState']}  " \
+      "外部=#{detail['externalBuildState']}  審査=#{review['betaReviewState'] || '未提出'}"
+  end
+end
+
 case ARGV[0]
 when 'versions' then print_versions
 when 'products' then print_products
+when 'builds' then print_builds
 when nil then (print_versions; print_products)
-else abort "使い方: #{File.basename($PROGRAM_NAME)} [versions|products]"
+else abort "使い方: #{File.basename($PROGRAM_NAME)} [versions|products|builds]"
 end
