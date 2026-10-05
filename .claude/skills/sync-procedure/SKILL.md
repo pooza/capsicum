@@ -69,6 +69,12 @@ disable-model-invocation: true
 
   出たら報告に件数と最大のファイルを載せる。⚠ **その場で削らない**（同期は定形作業で、節の取捨は判断が要る）。削るのは **`/doc-maintenance` の step 6**。
 
+  ⚠ **capsicum-relay も同じ閾値で数える**（2026-10-06〜）。relay にはガードも CI も無く、開発ガイドが 72.7KB まで育っても誰も合図を出さなかった:
+
+  ```sh
+  find ~/repos/capsicum-relay/docs -maxdepth 1 -name '*.md' -exec wc -c {} + | awk '$1 > 60000 && $2 != "total"' | sort -rn
+  ```
+
   ⚠⚠ **2026-09-30 に 0 件になった**（4 件を閾値以下へ落とし、ガードの `_budgets` も空になった）。**0 件なら報告では省いてよい**が、⚠ **この項目自体は畳まない** —— **超過は docs を書くたびに戻りうる**し、budget を持たせたファイルは緑のまま残るので、**減らす圧力はここにしか無い**という構図は変わっていない
 - **Flutter のバージョンが基準と合っているかを確認する**（[#836](https://github.com/pooza/capsicum/issues/836)）。端末が 3 つ以上あり、ズレたまま `flutter pub get` すると `pubspec.lock` が端末間で ping-pong するため、**着いた端末で最初に気付けるようにする**のが目的。正本は CI の pin:
 
