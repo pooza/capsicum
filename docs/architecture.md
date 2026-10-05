@@ -16,7 +16,7 @@ capsicum/
       release-review/     # リリース前レビュー（5 観点・赤黄緑の送り分け）
       store-release/      # 毎回のリリース手順（⚠ 工程ごとの補助ファイルつき）
     hooks/                # 守らせたいものの機械化（4 本。⚠ 規約は docs/dev-environment.md が正本）
-    scripts/              # 許可確認を出さずに回すための道具（sentry-api.sh: トークンを画面に出さず Sentry を叩く）
+    scripts/              # 許可確認を出さずに回すための道具（sentry-api.sh: トークンを画面に出さず Sentry を叩く / asc-status.rb: App Store Connect の審査・課金商品・TestFlight の状態を読む）
   docs/                   # 開発ドキュメント（下の表）
   packages/               # モノレポ構成（Melos。⚠ 中身は下の「パッケージ構成」）
 ```
@@ -289,25 +289,63 @@ adapterProvider                 // 現在のアカウントの BackendAdapter
 // モロヘイヤ
 mulukhiyaServiceProvider        // MulukhiyaService? （オプショナル）
 
-// UI 状態
-// タイムライン、通知等のプロバイダーは画面実装時に追加
+// タイムライン（⚠ family キーにアカウントを含む。デッキで 2 アカウントの
+// 同じタグを並べても混ざらないようにするため）
+timelineProvider / hashtagTimelineProvider / listTimelineProvider / channelTimelineProvider
+
+// デッキ（v2.0）
+deckColumnsProvider             // カラム列（永続化される構成）
+deckFocusProvider               // フォーカス中のカラム（⌘N・簡易投稿バーの宛先）
+
+// 利用権（v2.0）
+entitlementStatusProvider       // リレーを使える状態の見え方（EntitlementView）
 ```
+
+⚠ **「現在のアカウント」は単数の状態だが、デッキのカラムの中ではスコープで上書きされる**（下の「デッキ」節）。`currentAccountProvider` を読むコードは、どのスコープで読まれているかで別のアカウントを指す。
 
 ## ルーティング
 
-GoRouter による宣言的ルーティング。認証状態に応じたリダイレクト。
+GoRouter による宣言的ルーティング。認証状態に応じたリダイレクト。⚠ **パスにアカウントを持たない** —— どのアカウントの画面かは `currentAccountProvider`（とデッキのスコープ上書き）で決まる。
 
 ```text
-/                          → スプラッシュ / オンボーディング
-/login                     → ログイン画面
-/@:user@:host/             → 認証済みシェル
-  ├── home                 → ホーム（タイムライン）
-  ├── notifications        → 通知
-  ├── search               → 検索
-  ├── settings             → 設定
-  ├── posts/:id            → 投稿詳細
-  └── users/:id            → ユーザープロフィール
+/splash                    → スプラッシュ
+/server /login /eula       → サーバー選択・ログイン・利用規約
+（認証済みシェル）
+  ├── /home                → ホーム（タブ UI のタイムライン）
+  ├── /deck                → デッキ（マルチカラム）
+  ├── /compose             → 投稿
+  ├── /notifications       → 通知（/notifications/all は全アカウント）
+  ├── /search              → 検索
+  ├── /post /profile       → 投稿詳細・プロフィール
+  ├── /hashtag/:tag /list/:id /channel/:id /clip/:id /antenna/:id
+  └── /settings/…          → 設定（push / supporter / backup ほか）
 ```
+
+全量は `packages/capsicum/lib/src/router.dart`。
+
+## デッキ（v2.0・#720）
+
+タイムライン・スレッド・プロフィールなどを横に並べるマルチカラム表示。**カラムごとにアカウントを違えられる。**設計の正本は [deck-ui-plan.md](deck-ui-plan.md)（入口）と [deck-ui-decisions.md](deck-ui-decisions.md)（決定済み事項の本文）。ここには構造だけを書く。
+
+| もの | 置き場 |
+| --- | --- |
+| カラム 1 本のモデル | `model/deck_column.dart`（`DeckColumn`） |
+| カラム列・フォーカス | `provider/deck_provider.dart` |
+| 画面とスコープの組み立て | `ui/screen/deck_screen.dart` |
+| カラムのヘッダーと中身 | `ui/widget/deck_column_view.dart` |
+
+- **カラムは 2 つの方法で識別する。**列の要素（並べ替え・削除・Widget の key）は追加時に採番する `id`、中身（provider の family キー）は `account + tab`。同じ中身のカラムを 2 本置けるので、中身だけでは並べ替えの対象を指せない
+- **アカウントの解決はスコープの上書きで行う。**`DeckScreen` は、現在のアカウント以外のカラムにルートを親とする `ProviderContainer` を作り、`currentAccountProvider` を上書きする。これで `currentAdapterProvider` などを読む既存の画面・ウィジェットを書き換えずに、カラムのアカウントとして動かせる
+- ⚠ **現在のアカウントのカラムはルートのコンテナをそのまま使う**（別コンテナにするとタブ UI と同じ購読キーでぶつかる）
+- ⚠ **カラムから開くシート・ダイアログにもスコープを持ち越す**（`carryProviderScope`）。持ち越さないと、アカウント B のカラムの投稿をアカウント A として操作してしまう
+- **カラムの TL provider が生きているのはデッキが開いている間だけ**（`mountedDeckCountProvider`）。カラム列そのものは永続化された構成なので、閉じても残る
+
+## 添付画像のレイヤ編集（v2.0・#884）
+
+投稿する画像に文字・カスタム絵文字のスタンプ・端末の画像を重ねる。画面は `ui/screen/image_overlay_screen.dart`、レイヤの記述は `model/image_overlay_layer.dart`（`OverlayLayerSpec`）。
+
+- **投稿に使うのは焼き込み済みの PNG。**レイヤの記述は「もう一度編集できるようにするための控え」で、投稿経路には出てこない
+- ⚠ **記述は `ui.Image` を持たない。**スタンプはショートコードと URL で覚え、再編集のときに取り直す。原寸画像を添付ごとに抱えないためで、同じ理由で下書きへそのまま書き出せる
 
 ## テキストパース
 
@@ -329,9 +367,18 @@ GoRouter による宣言的ルーティング。認証状態に応じたリダ�
 - **APNs / FCM**: Apple / Google のプッシュ配信
 - **Fedi**: Mastodon / Misskey サーバー（本家 API）
 
+### 誰がリレーを使えるか（v2.0・#597）
+
+**プリセットサーバーのアカウントを 1 つでも持つ端末は、非プリセットのアカウントも含めて全部無償。**それ以外の端末は、アプリ内で購入する利用権（月額のサブスクリプション）が要る。設計の正本は [paid-relay-plan.md](paid-relay-plan.md)。
+
+- **判定するのは relay で、クライアントは判定しない。**購入すると `POST /entitlements` で利用権トークンを受け取り（`service/entitlement_token_store.dart`・OS のセキュアストレージ）、`/register` に載せる。relay はストアのレシートを自分で検証し、利用権の無い非プリセットの登録を `/register` で断り、配送を `/push` で止める
+- **クライアントが持つのは「見え方」だけ。**`provider/entitlement_status_provider.dart` が relay の `status` を `EntitlementView`（未購入 / 有効 / 猶予 / 返金済み / 失効 / プリセット）へ畳む。⚠ **知らない値は「有効」側へ倒す**（買った人に買わせるほうが重い誤案内なので）
+- ⚠⚠ **プリセット利用者には課金の話を出さない。**`EntitlementView.preset` は relay へ問い合わせずに決まり、購入ボタンを出さない（不変条件は [product-policy.md](product-policy.md)）
+- 購入・状態表示・取り直しの UI は共有ウィジェット `ui/widget/relay_entitlement_purchase_section.dart` 1 本で、設定の「サポート」と「プッシュ通知」の両方から使う
+
 ### 登録フロー
 
-アプリ起動時、プリセットサーバーのアカウントが 1 つでもあれば全アカウントを登録対象にする。
+アプリ起動時、プリセットサーバーのアカウントが 1 つでもあるか、利用権を持っていれば、全アカウントを登録対象にする。
 
 ```mermaid
 sequenceDiagram

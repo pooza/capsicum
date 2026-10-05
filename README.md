@@ -94,8 +94,13 @@ tool/dev-run.sh -d macos     # Windows は tool\dev-run.ps1
 
 ## ドキュメント
 
-- [開発ガイド](docs/CLAUDE.md) — 設計方針・実装ステータス・リリース計画
-- [ストアリリース手順書](docs/store-release-guide.md) — 署名・Fastlane・ビルド・アップロード手順
+- [開発ガイド](docs/CLAUDE.md) — プロジェクトのルール・ブランチ戦略・Issue とマイルストーンの運用
+- [アーキテクチャ](docs/architecture.md) — パッケージ構成・Adapter パターン・デッキ・プッシュ通知の流れ。docs 全体の案内もここにあります
+- [プロダクト方針](docs/product-policy.md) — UI の設計方針・対応バージョンの考え方・運営元と課金の方向性
+- [ロードマップ](docs/roadmap.md) — マイルストーンの枠と主題（個別の Issue は [GitHub Milestones](https://github.com/pooza/capsicum/milestones) が正本）
+- [開発環境](docs/dev-environment.md) — セットアップと `flutter run` の手順
+- [落とし穴集](docs/tech-notes.md) — 実装中に踏んだ Flutter / 各種 API の罠
+- [ストアリリース](docs/store-release-guide.md) — 署名・fastlane の初回セットアップと配布方針
 
 詳しくは [capsicum.shrieker.net](https://capsicum.shrieker.net) をご覧ください。
 

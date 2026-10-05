@@ -10,6 +10,18 @@ Flutter ベースの Mastodon / Misskey クライアント。
 - **配布**: Google Play / App Store / Mac App Store / Microsoft Store / Linux AppImage（直配）
 - **利用者**: サーバーの一般ユーザー
 
+### v2.0 で加わった 3 本
+
+v2.0 はメジャーリリースで、次の 3 本を束ねている。**構造は [architecture.md](architecture.md)、判断の経緯は各設計書が正本。**
+
+| | 何か | 設計書 |
+| --- | --- | --- |
+| **デッキ表示**（[#720](https://github.com/pooza/capsicum/issues/720)） | タイムラインなどを横に並べるマルチカラム。カラムごとにアカウントを違えられる | [deck-ui-plan.md](deck-ui-plan.md)（入口）/ [deck-ui-decisions.md](deck-ui-decisions.md)（決定の本文） |
+| **有償プッシュ通知リレー**（[#597](https://github.com/pooza/capsicum/issues/597)） | プリセットサーバーの利用者は無償のまま、それ以外の利用者へアプリ内課金で開放する | [paid-relay-plan.md](paid-relay-plan.md) |
+| **添付画像のレイヤ編集**（[#884](https://github.com/pooza/capsicum/issues/884)） | 投稿する画像に文字・スタンプ・画像を重ね、後から編集し直せる | 設計書なし（Issue とコードが正本） |
+
+⚠⚠ **デッキを触る回は deck-ui-decisions.md を、課金・利用権を触る回は paid-relay-plan.md と [product-policy.md](product-policy.md) の「課金の方向性」を先に読む。**どちらも「再判定しない」と明記した決定を持っており、コードのコメントが節番号で参照している。
+
 ## モロヘイヤ連携
 
 ### 基本方針
@@ -155,7 +167,7 @@ claude plugin install ginseng@ginseng-style
 ## Issue 管理
 
 - GitHub Issues + Milestones で管理（モロヘイヤと同じ体系）
-- 優先度ラベル: P1 〜 P4
+- **優先度のラベルは無い。**P1〜P3 はリリース前レビューと Codex の指摘に付ける分類で、Issue の優先度はマイルストーン（どの枠に入れるか）で表す。ラベルは種別（`bug` / `enhancement` / `documentation`）・対象（`Mastodon` / `Misskey` / `モロヘイヤ` / `desktop` / `flutter`）・状態（`on-hold` / `reproduction-needed` / `verification-pending`）・端末（`Windows` / `Linux`）の 4 系統
 - 1 マイルストーンの規模は「大更新の数」で測る（件数ではなく）。詳細は[マイルストーン運用](#マイルストーン運用)節を参照
 
 ### 正本ルール
@@ -309,7 +321,7 @@ dart analyze --fatal-infos > /tmp/analyze.log 2>&1; echo "ANALYZE_EXIT=$?"
 | [mastodon](https://github.com/pooza/mastodon) | Mastodon フォーク（美食丼 / デルムリン丼 / キュアスタ！） |
 | [misskey](https://github.com/pooza/misskey) | Misskey フォーク（ダイスキー） |
 | [Kaiteki](https://github.com/Kaiteki-Fedi/Kaiteki) | 設計の参考元（アーカイブ済み） |
-| [capsicum-relay](https://github.com/pooza/capsicum-relay) | プッシュ通知リレーサーバー（Web Push → APNs / FCM）。Ruby + Sinatra |
+| [capsicum-relay](https://github.com/pooza/capsicum-relay) | プッシュ通知リレーサーバー（Web Push → APNs / FCM / WNS）。Ruby + Sinatra。⚠ **ブランチは 2 本立てで、`develop` がステージング・`main` が本番に対応する**（`main` へは PR 経由。デプロイは必ずステージングを先に通す）。Issue とマイルストーンは capsicum 本体と同じ工程で扱う |
 | [capsicum-site](https://github.com/pooza/capsicum-site) | プロジェクトサイト（`capsicum.shrieker.net`）。GitHub Pages で配信。プライバシーポリシー・子どもの安全基準等 |
 
 ## リリース計画

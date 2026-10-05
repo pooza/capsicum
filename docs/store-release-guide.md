@@ -212,6 +212,7 @@ end
 
 ## 5. 配布方針
 
+- ⚠⚠ **ベータ版のテスターは、プリセットサーバーの利用者に限る**（TestFlight の外部テスターも Google Play のクローズドテストも同じ範囲）。ベータ版の購入はサンドボックス扱いで本番のリレーでも有効になるが、プリセットの利用者はもともと無償なので、無料で使える人は増えない（[paid-relay-plan.md](paid-relay-plan.md) 7-2）
 - **iOS**: TestFlight 外部テスター経由（内部テスターは本名相互公開の問題があるため不使用）
 - **Android**: Google Play で直接配布（GitHub Releases への APK 添付は v1.5.1 で廃止）
 - **macOS**: Mac App Store 一本（.dmg / Developer ID 配布は採用しない）。「App Store からのアプリのみ許可」設定のユーザーに届かない問題と、署名・公証・更新通知の二重メンテを避けるため。詳細は [release-pipeline.md](archive/release-pipeline.md) 参照
