@@ -97,7 +97,12 @@ class _DeckColumnsSheetState extends ConsumerState<DeckColumnsSheet> {
               child: ListView(
                 shrinkWrap: true,
                 children: [
-                  _sectionHeader(theme, 'カラム'),
+                  // ⚠ 押せることを見出しで言う (#1229)。⚠⚠ **1 本しか無い
+                  // ときは言わない** —— 送り先が自分しかないので嘘になる。
+                  _sectionHeader(
+                    theme,
+                    columns.length > 1 ? 'カラム（押すと移動）' : 'カラム',
+                  ),
                   if (columns.isEmpty)
                     const Padding(
                       padding: EdgeInsets.all(16),
@@ -117,6 +122,14 @@ class _DeckColumnsSheetState extends ConsumerState<DeckColumnsSheet> {
                       return ListTile(
                         // ⚠ 列内の id をキーにする。重複カラムは中身が同じ。
                         key: ValueKey(column.id),
+                        // ⚠⚠ **押したらそのカラムへ送る** (#1229)。狭幅では
+                        // 1 本ずつしか見えないので、**N 本目へ行くのに N-1 回
+                        // スワイプする**しかなかった。⚠ 送る実装
+                        // （`_reveal`）はデッキ画面に既にあるので、**ここは
+                        // id を返すだけ**。
+                        // ⚠ ドラッグは [ReorderableDragStartListener]（左の
+                        // ハンドル）だけが拾うので、並べ替えと競合しない。
+                        onTap: () => Navigator.pop(context, column.id),
                         leading: ReorderableDragStartListener(
                           index: index,
                           child: const Icon(Icons.drag_handle),
@@ -531,8 +544,14 @@ class _DeckColumnCandidatesState extends ConsumerState<_DeckColumnCandidates> {
 }
 
 /// カラム編集シートを開く。
-Future<void> showDeckColumnsSheet(BuildContext context) =>
-    showModalBottomSheet<void>(
+/// カラム編集のシートを開く。
+///
+/// ⚠⚠ **戻り値は「そのカラムへ送れ」という指示**（[#1229](https://github.com/pooza/capsicum/issues/1229)）。
+/// 一覧を押して閉じたときだけ列内の id が返り、それ以外は null。⚠ **呼び出し側
+/// （デッキ画面）が横に送る** —— スクロールを持っているのはあちらなので、
+/// シートから直接は動かせない。
+Future<String?> showDeckColumnsSheet(BuildContext context) =>
+    showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
       builder: (_) => const DeckColumnsSheet(),

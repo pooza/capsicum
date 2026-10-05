@@ -123,7 +123,12 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
       _menuActions.state = DeckMenuActions(
         revealAndFocus: _revealAndFocus,
         openCompose: _openComposeForFocused,
-        openColumnsSheet: () => showDeckColumnsSheet(context),
+        // ⚠ AppBar のボタンと同じ経路にする (#1229)。メニューから開いた
+        // シートでも、一覧を押せばそのカラムへ送る。
+        openColumnsSheet: () async {
+          final id = await showDeckColumnsSheet(context);
+          if (id != null) _revealAndFocus(id);
+        },
       );
     });
   }
@@ -493,7 +498,21 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
                 IconButton(
                   icon: const Icon(Icons.view_column_outlined),
                   tooltip: 'カラム編集',
-                  onPressed: () => showDeckColumnsSheet(context),
+                  // ⚠⚠ **一覧から選んだカラムへ送る** (#1229)。狭幅では 1 本
+                  // ずつしか見えないので、**N 本目へ行くのに N-1 回スワイプ**
+                  // するしかなかった。⚠ シートは id を返すだけで、**動かすのは
+                  // ここ**（スクロールを持っているのがこちらのため）。
+                  // ⚠⚠ **送り先は [_revealAndFocus]**（[_reveal] 単体ではない）。
+                  // フォーカスが移らないと検索・通知・⌘N の宛先が変わらず、
+                  // **広幅で既に見えているカラムを選んだときに何も起きていない
+                  // ように見える**（点滅がそのためにある）。デスクトップの
+                  // 「表示 > カラム」と同じ経路。
+                  onPressed: () async {
+                    final id = await showDeckColumnsSheet(context);
+                    // ⚠ `context` は await のあとに触らない。送り先は自分で
+                    // `mounted` と `hasClients` を見る。
+                    if (id != null) _revealAndFocus(id);
+                  },
                 ),
                 // タブ表示への切り替え (#1153)。タブ UI の AppBar の「デッキ表示に
                 // 切り替え」と対になる。⚠ **`go('/home')` は下に残っている

@@ -2,10 +2,12 @@ import 'package:capsicum/src/model/account.dart';
 import 'package:capsicum/src/model/account_key.dart';
 import 'package:capsicum/src/model/deck_column.dart';
 import 'package:capsicum/src/provider/account_manager_provider.dart';
+import 'package:capsicum/src/provider/deck_provider.dart';
 import 'package:capsicum/src/provider/preferences_provider.dart';
 import 'package:capsicum/src/ui/screen/deck_screen.dart';
 import 'package:capsicum/src/ui/util/deck_layout.dart';
 import 'package:capsicum/src/ui/util/deck_navigation.dart';
+import 'package:capsicum/src/ui/widget/deck_columns_sheet.dart';
 import 'package:capsicum/src/util/shared_preferences_cache.dart';
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
@@ -19,7 +21,21 @@ import 'package:shared_preferences/shared_preferences.dart';
 ///
 /// カラムの中身は差し替え口（`columnBuilder`）で軽いものにして、**コンテナの
 /// 振る舞いだけ**を見る（`PostTile` の依存一式を用意しないため）。
-class _Adapter extends Mock implements DecentralizedBackendAdapter {}
+class _Adapter extends Mock implements DecentralizedBackendAdapter {
+  /// ⚠ カラム編集のシートはカラムのラベルを解決するのに `capabilities` を読む
+  /// （`_labelInScope`・#1229 の検査で必要になった）。⚠ 画面側の検査は
+  /// 中身を見ないので、**通るだけの最小**でよい。
+  @override
+  AdapterCapabilities get capabilities => _Capabilities();
+}
+
+class _Capabilities extends Mock implements AdapterCapabilities {
+  @override
+  Set<TimelineType> get supportedTimelines => {
+    TimelineType.home,
+    TimelineType.local,
+  };
+}
 
 Account _account(String username) => Account(
   key: AccountKey(
@@ -437,6 +453,76 @@ void main() {
 
       expect(columnsOf(tester).map((c) => c.id), ['b']);
       expect(find.byType(DeckScreen), findsOneWidget, reason: 'pop していない');
+    });
+  });
+
+  group('カラム編集の一覧から、そのカラムへ送る (#1229)', () {
+    /// ⚠ **シートの中に絞る。**カラムの id はデッキ本体のカラム（`SizedBox`）
+    /// にも付いているので、`byKey` だけだと 2 件見つかって `tap` が落ちる。
+    Finder sheetRow(String id) => find.descendant(
+      of: find.byType(DeckColumnsSheet),
+      matching: find.byKey(ValueKey(id)),
+    );
+
+    testWidgets('⚠⚠ 狭幅で 3 本目を選ぶと、そこまで横に送る', (tester) async {
+      // 390px = 1 本全幅。⚠ **これまでは 3 本目へ行くのに 2 回スワイプが要った。**
+      await pumpDeck(
+        tester,
+        size: const Size(390, 700),
+        columnIds: const ['a', 'b', 'c'],
+      );
+      expect(horizontalOffset(tester), 0);
+
+      await tester.tap(find.byTooltip('カラム編集'));
+      await tester.pumpAndSettle();
+      await tester.tap(sheetRow('c'));
+      await tester.pumpAndSettle();
+
+      expect(horizontalOffset(tester), 780, reason: 'カラム 2 本ぶん送る');
+      expect(find.byType(DeckColumnsSheet), findsNothing, reason: 'シートは閉じる');
+    });
+
+    testWidgets('⚠ 既に見えているカラムを選んでも壊れない（送らないが、選べてはいる）', (tester) async {
+      await pumpDeck(
+        tester,
+        size: const Size(1600, 600),
+        columnIds: const ['a', 'b', 'c'],
+      );
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(DeckScreen)),
+      );
+
+      await tester.tap(find.byTooltip('カラム編集'));
+      await tester.pumpAndSettle();
+      await tester.tap(sheetRow('c'));
+      await tester.pumpAndSettle();
+
+      // 1600px なら 3 本とも入っているので送る必要が無い。
+      expect(horizontalOffset(tester), 0);
+      // ⚠⚠ **ここまでだと、何も起きていなくても通る。**選べたことは
+      // フォーカスで見る（押しても無反応に見えるのを防ぐのが点滅の役目）。
+      expect(container.read(deckFocusProvider).columnId, 'c');
+    });
+
+    testWidgets('⚠⚠ 選んだカラムにフォーカスが移る（検索・通知・投稿の宛先）', (tester) async {
+      await pumpDeckLines(
+        tester,
+        size: const Size(1600, 600),
+        lines: const ['a|me|timeline:home', 'b|other|timeline:home'],
+        accounts: [_account('me'), _account('other')],
+      );
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(DeckScreen)),
+      );
+
+      await tester.tap(find.byTooltip('カラム編集'));
+      await tester.pumpAndSettle();
+      await tester.tap(sheetRow('b'));
+      await tester.pumpAndSettle();
+
+      // 🔴 `_reveal` だけを呼ぶと、広幅ではフォーカスが動かず
+      // 「押したのに何も起きない」になる（横送りも不要なため）。
+      expect(container.read(deckFocusProvider).columnId, 'b');
     });
   });
 }
