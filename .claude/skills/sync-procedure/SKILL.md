@@ -18,10 +18,30 @@ disable-model-invocation: true
 
 ⚠ 端末側の設定（`auto` モード・`autoMode` の書き分け）は同ファイルの「Claude Code の権限設定」が正本。**書き方を守っても設定が無ければ確認は消えない**ので、新しい端末では設定を先に済ませる。
 
+## 0-2. 進捗の出し方（無言にしない・#1228）
+
+⚠⚠ **数分に 1 回は何か文字が出ている状態を保つ。**2026-10-05 の同期で、約 30 分のあいだツール呼び出しが 35 回あったのに、出したテキストは 2 回だけだった。⚠ **並列でツールを投げるのは続けてよい** —— 切るのは無言の連鎖だけ。
+
+- **各ステップの区切りで 1 行出す。**「§2 の git / CI は緑。次は Issue を見ます」程度でよい
+- ⚠⚠ **手順から外れたことを始めるときは、始める前に必ず 1 行出す。**「Sentry に判定を作り直すべき山が 1 件あるので、母数を詰めます（数分かかります）」の形。**イレギュラーほど先に言う** —— 待っている側には、定形の 1 件と調査の 12 件が区別できない
+- **進捗が 0 件の回ほど効く。**何に時間を使ったかは step 10 で書くが、**待っている間は分からない**ので、最後の報告だけでは「30 分かけて変化なし」に見える
+
+⚠ これは新しい規約ではない（2026-08-10 指摘・メモリ `feedback_progress_updates_while_working`）。読んで守る側に置いたまま同期の場で破ったので、手順書へ移した。⚠⚠ **それでも破るなら、次は報告を step として番号で切る** —— 無言の長さは機械で測れないため、フック化では止まらない。
+
 ## 1. プロジェクトガイドの読み込み
 
 - `docs/CLAUDE.md` を読む（プロジェクトのルール・構造・履歴の正本）
 - インフラノート `/Volumes/extdata/repos/chubo2/docs/infra-note.md` を読む（サーバー構成・デプロイ手順）
+
+  ⚠⚠ **全文を読むのは chubo2 に差分があるときだけ**（#1227）。36KB あり、**変わっていない回も毎日読み直していた**。⚠ ステップ 8 の chubo2 の差分確認を、ここで先に済ませる:
+
+  ```sh
+  git -C ~/repos/chubo2 fetch origin && git -C ~/repos/chubo2 log HEAD..origin/main --oneline
+  ```
+
+  - **差分あり** → 全文を読む
+  - **差分なし** → 冒頭のドキュメント索引（表）と運用方針の節だけでよい
+  - ⚠⚠ **「読まない」にはしない。**インフラの前提を知らずに同期を回すと、relay のデプロイ判定を誤る。狙いは「変わっていないものを毎日読み直さない」ことだけ
 - `MEMORY.md` は自動ロードされるので、両者の整合性を意識する
 
 ## 2. リモートとの同期・状態確認
@@ -111,6 +131,14 @@ capsicum-relay の Issue・マイルストーンは、**capsicum 本体と同じ
 ## 6. Codex レビューコメントの確認
 
 - 最近マージされた PR（`gh pr list --state merged --limit 5`）を取得。**直近リリース PR（`develop` → `main` の merge）も merged にカウントされる**ため、リリース直後の同期では明示的にリリース PR が含まれていることを確認する（過去に #529 を見落としかけた経緯あり）
+- ⚠⚠ **対象は「前回同期以降にマージされた PR」だけ**（#1227）。`--limit 5` をそのまま引くと、**マージが止まっている時期は毎回同じ PR を読み直す**。2026-10-05 の同期では capsicum 2 本 + relay 4 本を読み直し、**うち 5 本は前回以前の同期で返信 + 👍 まで済んでいた**（残り 1 本はコメント 17 本の長文で、その回いちばん出力量が大きかった）。`mergedAt` で切る:
+
+  ```sh
+  gh pr list --state merged --limit 10 --json number,mergedAt,title \
+    --jq '.[] | select(.mergedAt > "<前回同期の日付>") | "#\(.number) \(.mergedAt[0:16]) \(.title)"'
+  ```
+
+  ⚠ **リリース PR の line comment を明示的に数える規約（この節の末尾）は残す。**あちらは「別系統だから取りこぼす」話で、ここで切るのは「同じものを 2 回読む」側。
 - 各 PR に対して `gh api repos/pooza/capsicum/pulls/{number}/comments`（line comments）+ `gh api repos/pooza/capsicum/pulls/{number}/reviews`（review 本体）の両方で Codex（`chatgpt-codex-connector[bot]`）のコメントを確認。**line comments と review comments は別 API** で、片方だけ見ると review 本体に書かれた指摘 (P2 レベル等) を取りこぼす
 - 各コメントについて以下を判定する:
   1. **未返信** → 指摘内容を確認し、対応が必要か判断。必要なら Issue 起票
@@ -164,6 +192,8 @@ capsicum-relay の Issue・マイルストーンは、**capsicum 本体と同じ
 
 - **mulukhiya-toot-proxy**: `git -C ~/repos/mulukhiya-toot-proxy fetch origin` + `git -C ~/repos/mulukhiya-toot-proxy log HEAD..origin/develop --oneline` でリモートとの差分を確認（`cd` しない理由は [dev-environment.md](../../../docs/dev-environment.md) の「コマンドの書き方」）。`docs/capsicum-requirements.md` や `docs/api.md` に変更があれば capsicum 側への影響を判断
 - **chubo2**: `git -C ~/repos/chubo2 fetch origin` + `git -C ~/repos/chubo2 log HEAD..origin/main --oneline` で差分を確認。`docs/infra-note.md` に変更があれば MEMORY.md のインフラセクションに反映が必要か判断
+
+  ⚠ **chubo2 の差分確認はステップ 1 で先に済ませている**（#1227・infra-note を全文読むかの判定に要るため）。ここでは結果を使うだけでよい。
 - **capsicum-relay**: `git -C ~/repos/capsicum-relay fetch origin` + `git -C ~/repos/capsicum-relay log HEAD..origin/main --oneline` で差分を確認。Issue / PR は `gh issue list --repo pooza/capsicum-relay --state open --limit 30` / `gh pr list --repo pooza/capsicum-relay --state open` で確認（dependabot PR + security alert もここで拾う、`gh api repos/pooza/capsicum-relay/dependabot/alerts --jq '.[] | select(.state == "open") | "\(.security_advisory.severity) \(.dependency.package.name) fix=\(.security_vulnerability.first_patched_version.identifier)"'`）。リレーサーバーのデプロイ管理は Claude 担当（**接続先ホスト・SSH ユーザー・逐語のコマンド列は chubo2 `docs/infra-servers.md` の capsicum-relay 本番 / ステージングの節が正本**・private。委任の範囲と作業上の注意はメモリ `feedback_capsicum_relay_deploy_delegation`。⚠ 公開リポジトリなのでここには書かない）、main 進行がありサーバー側の HEAD が遅れていたら SSH デプロイ（pull → 依存更新 → サービス再起動 → `/health` 確認）まで一連で実行。**稼働中の SHA は SSH せずに `/health` で分かる**（relay#37、v1.57 で出荷）ので、デプロイ要否の判定はこれ 1 回で済ませる:
 
   ```sh
@@ -189,6 +219,16 @@ capsicum-relay の Issue・マイルストーンは、**capsicum 本体と同じ
 ## 9. MEMORY.md の更新
 
 - 上記で検出した差分（Issue 状態、マイルストーン件数のズレ、リリース情報等）を反映
+- **メモリのサイズを数える**（#1227）。⚠⚠ **1 回で読める上限は約 63.7KB。**2026-10-05 の同期は `project_v20_progress.md` が 63,472 バイトまで来ていたため、**同期分を書いた時点で超過し、その場で畳む判断作業が発生した**。⚠ 末尾のスラッシュを省くと symlink を辿らない（メモリディレクトリは symlink）:
+
+  ```sh
+  find ~/.claude/projects/-Volumes-extdata-repos-capsicum/memory/ -maxdepth 1 -name '*.md' \
+    -exec wc -c {} + | awk '$1 > 55000 && $2 != "total"' | sort -rn
+  ```
+
+  - 出たらファイル名とバイト数を報告に載せる
+  - ⚠ **その場で畳まない**（docs と同じ線。削るのは `/doc-maintenance` 側）
+  - ⚠⚠ **ただし同期分を書き足して超過するなら、超過させない範囲で削るのは可。**読めなくなると次のセッションが始まらない
 
 ⚠⚠ **docs を書き換えたら push 前にガードのテストを通す**（`docs/CLAUDE.md`「docs / skills を触った回は、ガードのテストも通す」）。同期は **docs を触る定形作業**なので、ここで踏みやすい:
 
@@ -212,3 +252,4 @@ capsicum-relay の Issue・マイルストーンは、**capsicum 本体と同じ
 
   ⚠ **端末ラベル（`Windows` / `Linux`）の有無で並べ替えて出す** —— 付いていなければ**手元の Mac で見られる**、付いていればその実機が要る。⚠ **0 件でもその旨を 1 行書く**（「数え忘れ」と「本当に 0」を区別するため）。
 - ⚠⚠ **実装済みなのに `verification-pending` が付いていない Issue を見つけたら、その場で付ける。**同期は Issue の状態を実測する唯一の定期作業なので、**ここで拾わないと札が腐る**。判定は「末尾のコメントが実装完了を報告していて、close されていない」。⚠ **検証困難なもの（race / fork 依存 / 再現条件が薄い）には付けない**（`docs/CLAUDE.md` の基準）。
+- ⚠ **今回の所要の内訳を書く**（#1228）。**定形ぶんと、今回だけの作業を分けて書く**（「定形 + Sentry の母数の作り直し 1 件 + メモリの畳み 1 件」の形）。⚠ 進捗が 0 件の回は、これが無いと「時間をかけて変化なし」に見える。
