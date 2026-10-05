@@ -160,6 +160,14 @@ capsicum-relay の Issue・マイルストーンは、**capsicum 本体と同じ
 - 調査用トークンが別枠なのは、capsicum ではリポジトリ root の `.sentryclirc` がデプロイ用トークンで占有されているため。スクリプトの `cli` は `SENTRY_AUTH_TOKEN` で調査用を明示するので、cwd に関係なく 403 にならない
 - ⚠ Windows（`sh` 不在）ではスクリプトが使えない。`sentry-cli` を `--org` 明示で叩く従来の形のまま
 - resolved 済みのイシューは報告不要
+- ⚠⚠ **pooza の普段遣いがプレリリース版のときは、その release で 1 回引く**（2026-10-05〜・メモリ `project_pooza_daily_driver_on_v20_beta`）。**回帰は新規イシューにならず既存へ積まれる**ことがあり、その場合**新着にも既知 warning の推移にも掛からない**。⚠ **クエリ 1 本で済む**（所要時間を増やさない・#1227）:
+
+  ```sh
+  .claude/scripts/sentry-api.sh cli issues list -p capsicum \
+    --query 'is:unresolved release:net.shrieker.capsicum@<版>+<ビルド>'
+  ```
+
+  ⚠ 見るのは **「基準の一覧に無いものが出ていないか」**と**日次の水準**（基準値はメモリ側）。⚠⚠ **累積の件数では判断しない。**⚠ 内部ベータを配っていない時期はこの項目を飛ばす。
 
 ⚠⚠ **「新着」だけ見ると、縮退して成功している記録を永久に見落とす**（2026-10-03 に実際に取りこぼした）。`Push degraded` のように**処理は成功しているが品質が落ちている**記録は level が `warning` で止まり、**件数がどれだけ増えても新着にも error にも出てこない**。そして「意図どおりの degrade」という過去の判定が残っているので、毎回それを読んで通してしまう。**既知の `warning` は件数の推移で見る**:
 
