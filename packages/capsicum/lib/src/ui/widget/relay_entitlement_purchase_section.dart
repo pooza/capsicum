@@ -124,45 +124,50 @@ class RelayEntitlementPurchaseSection extends ConsumerWidget {
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            // ⚠ 狭幅で溢れさせない（デスクトップは狭幅運用が前提）。
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 4,
-              children: [
-                // ⚠⚠ **どの状態でも出す (#1219)。**機種変更・再インストールの
-                // 復元（トークンは `ThisDeviceOnly` でバックアップに入らない）と、
-                // `unverified` で固着したときに**アプリ内から抜ける唯一の口**を
-                // 兼ねる。⚠ App Store のガイドライン 3.1.1 でも要る。
-                OutlinedButton(
-                  onPressed: busy
-                      ? null
-                      : () => ref
-                            .read(supporterPurchaseProvider.notifier)
-                            .restoreEntitlement(),
-                  child: const Text('利用権を取り直す'),
-                ),
-                // ⚠⚠ **買い直したあとの再登録の導線。**`/push` が 410 を返すと
-                // fedi サーバー側の購読が消えるので、⚠ **買い直すだけでは
-                // 戻らない。**⚠ 返金済みにも出す（いまは届いているが期限で
-                // 切れるので、買い直したときにここから戻せる必要がある）。
-                if (view != EntitlementView.active)
+          // ⚠⚠ **プリセットの利用者には、購入にまつわる操作を出さない**
+          // （[showRelayEntitlementActions]・#1232 の続き）。
+          if (showRelayEntitlementActions(view: view))
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              // ⚠ 狭幅で溢れさせない（デスクトップは狭幅運用が前提）。
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  // ⚠⚠ **どの状態でも出す (#1219)。**機種変更・再インストールの
+                  // 復元（トークンは `ThisDeviceOnly` でバックアップに入らない）と、
+                  // `unverified` で固着したときに**アプリ内から抜ける唯一の口**を
+                  // 兼ねる。⚠ App Store のガイドライン 3.1.1 でも要る。
                   OutlinedButton(
-                    onPressed: busy ? null : () => _reconcile(ref),
-                    child: const Text('購入を確認して登録し直す'),
+                    onPressed: busy
+                        ? null
+                        : () => ref
+                              .read(supporterPurchaseProvider.notifier)
+                              .restoreEntitlement(),
+                    child: const Text('利用権を取り直す'),
                   ),
-                // 🔴 **取り直しが空振りしたときの出口 (#1219)。**relay が認めない
-                // トークンを持っていると「有効」側へ倒れて購入ボタンが出ず、
-                // 取り直しても何も起きない。⚠ **手元の保存がある人にだけ出す。**
-                if (state.hasEntitlement)
-                  TextButton(
-                    onPressed: busy ? null : () => _confirmForget(context, ref),
-                    child: const Text('利用権の記録を消す'),
-                  ),
-              ],
+                  // ⚠⚠ **買い直したあとの再登録の導線。**`/push` が 410 を返すと
+                  // fedi サーバー側の購読が消えるので、⚠ **買い直すだけでは
+                  // 戻らない。**⚠ 返金済みにも出す（いまは届いているが期限で
+                  // 切れるので、買い直したときにここから戻せる必要がある）。
+                  if (view != EntitlementView.active)
+                    OutlinedButton(
+                      onPressed: busy ? null : () => _reconcile(ref),
+                      child: const Text('購入を確認して登録し直す'),
+                    ),
+                  // 🔴 **取り直しが空振りしたときの出口 (#1219)。**relay が認めない
+                  // トークンを持っていると「有効」側へ倒れて購入ボタンが出ず、
+                  // 取り直しても何も起きない。⚠ **手元の保存がある人にだけ出す。**
+                  if (state.hasEntitlement)
+                    TextButton(
+                      onPressed: busy
+                          ? null
+                          : () => _confirmForget(context, ref),
+                      child: const Text('利用権の記録を消す'),
+                    ),
+                ],
+              ),
             ),
-          ),
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
             child: Text(
@@ -358,3 +363,21 @@ String supporterPurchaseOutcomeMessage(SupporterPurchaseOutcome outcome) =>
 /// 投げ銭はこの画面の本来の目的として従来どおり出る。
 bool showRelayPurchaseButton({required EntitlementView view}) =>
     view == EntitlementView.absent || view == EntitlementView.expired;
+
+/// 「利用権を取り直す」「購入を確認して登録し直す」「利用権の記録を消す」を
+/// 出すか (#1232 の続き・2026-10-06 pooza)。
+///
+/// ⚠⚠ **[EntitlementView.preset] では出さない。**#1232 は購入ボタンしか
+/// 消しておらず、プリセットの利用者に**買っていないものを「取り直す」「購入を
+/// 確認する」と勧めていた**。購入ボタンと同じく、これも課金の話を持ち出して
+/// いる（`docs/product-policy.md` の不変条件）。
+///
+/// ⚠ **プリセットの人が実際に購入していても出さない。**`EntitlementStatusNotifier`
+/// が「プリセットなら購入の状態を出さない」としているのと同じ線で、解約は
+/// もともとストア側でしかできないので、アプリから消えても失われる導線は無い。
+/// プリセットのアカウントがある限り、3 つとも**押しても届き方が変わらない**。
+///
+/// ⚠ **それ以外の状態では従来どおり全部の判定を通す**（「取り直す」は機種変更・
+/// 再インストールからの復元の口なので、`absent` でも出す・#1219）。
+bool showRelayEntitlementActions({required EntitlementView view}) =>
+    view != EntitlementView.preset;

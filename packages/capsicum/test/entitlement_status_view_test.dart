@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:capsicum/src/model/account.dart';
 import 'package:capsicum/src/model/account_key.dart';
 import 'package:capsicum/src/provider/account_manager_provider.dart';
@@ -324,6 +326,50 @@ void main() {
       // 対照群: 未購入・失効の人には出る（買えなくしたわけではない）。
       expect(showRelayPurchaseButton(view: EntitlementView.absent), isTrue);
       expect(showRelayPurchaseButton(view: EntitlementView.expired), isTrue);
+    });
+
+    // 🔴 #1232 は購入ボタンしか消しておらず、「取り直す」「購入を確認して
+    // 登録し直す」がプリセットの利用者に出ていた（2026-10-06 に 194 で発見）。
+    test('⚠⚠ プリセットの利用者に、取り直す・登録し直す・記録を消すを出さない', () {
+      expect(
+        showRelayEntitlementActions(view: EntitlementView.preset),
+        isFalse,
+      );
+      // 対照群: ほかの状態では全部出す。⚠ `absent` でも出すのは、機種変更・
+      // 再インストールからの復元の口だから (#1219)。
+      for (final view in EntitlementView.values) {
+        if (view == EntitlementView.preset) continue;
+        expect(
+          showRelayEntitlementActions(view: view),
+          isTrue,
+          reason: '⚠ $view で操作を隠すと、復元・再登録の口が無くなる',
+        );
+      }
+    });
+
+    // ⚠⚠ **判定を足しただけでは効かない。**ウィジェットが呼んでいることを見る
+    // （呼ばなくなっても上のテストは緑のまま）。
+    test('⚠⚠ 3 つの操作は、判定を通ってから並ぶ（配線）', () {
+      final src = File(
+        'lib/src/ui/widget/relay_entitlement_purchase_section.dart',
+      ).readAsStringSync();
+      final gate = src.indexOf('if (showRelayEntitlementActions(view: view))');
+      final restore = src.indexOf("Text('利用権を取り直す')");
+      final reconcile = src.indexOf("Text('購入を確認して登録し直す')");
+      final forget = src.indexOf("Text('利用権の記録を消す')");
+      // 空振りしていないこと。
+      expect(restore, greaterThan(0));
+      expect(reconcile, greaterThan(0));
+      expect(forget, greaterThan(0));
+      expect(gate, greaterThan(0), reason: '⚠ 判定がウィジェットに配線されていない');
+      // 3 つとも判定の後ろにあること。
+      expect(gate, lessThan(restore));
+      expect(gate, lessThan(reconcile));
+      expect(gate, lessThan(forget));
+      // ⚠ 判定の内側であること: 判定からいちばん遠いボタンまでの間に、
+      // 次の兄弟（解約の案内）が挟まっていない。
+      final note = src.indexOf('毎月の自動更新です');
+      expect(note, greaterThan(forget));
     });
 
     // ⚠⚠ **存在しない権限の区分を前提にした説明を消す (#1232)。**
