@@ -106,6 +106,10 @@ class RelayEntitlementPurchaseSection extends ConsumerWidget {
             // ⚠⚠ **持っている人に購入ボタンを出さない**（二重購入の防止）。
             // 1 つの購入を複数端末で使えるので、押させると二重に払わせる。
             // ⚠ 判定は [showRelayPurchaseButton]（relay の見立てで切る）。
+            // ⚠⚠ **ボタンを出さないときも価格は残す (#1232・2026-10-05 pooza)。**
+            // 🔴 価格は**ボタンの文字にしか無かった**ので、ボタンを消すと
+            // 「有料である」という情報ごと消えていた。⚠ **外部の利用者には
+            // 有料だという情報は、プリセットの利用者にとっても無価値ではない。**
             trailing: showRelayPurchaseButton(view: view)
                 ? FilledButton(
                     onPressed: busy
@@ -115,7 +119,10 @@ class RelayEntitlementPurchaseSection extends ConsumerWidget {
                               .subscribe(product),
                     child: Text(product.price),
                   )
-                : null,
+                : Text(
+                    product.price,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),

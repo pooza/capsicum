@@ -183,7 +183,11 @@ class EntitlementStatusNotifier extends Notifier<EntitlementStatus> {
       return;
     }
 
+    // ⚠ **プリセットの人が購入済みでも、購入の状態は出さない**（2026-10-05
+    // pooza 判断）。⚠⚠ **解約はもともとストア側でしかできない**（`capsicum-site`
+    // の特定商取引法に基づく表記）ので、アプリから消えても失われる導線は無い。
     final local = await _loadLocal();
+
     if (local == null) {
       state = const EntitlementStatus(view: EntitlementView.absent);
       return;
