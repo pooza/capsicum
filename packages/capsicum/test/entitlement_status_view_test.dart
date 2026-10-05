@@ -4,6 +4,7 @@ import 'package:capsicum/src/model/account.dart';
 import 'package:capsicum/src/model/account_key.dart';
 import 'package:capsicum/src/provider/account_manager_provider.dart';
 import 'package:capsicum/src/provider/entitlement_status_provider.dart';
+import 'package:capsicum/src/service/push_registration_service.dart';
 import 'package:capsicum/src/ui/screen/settings/push_notification_settings_screen.dart';
 import 'package:capsicum/src/ui/widget/relay_entitlement_purchase_section.dart';
 import 'package:capsicum_backends/capsicum_backends.dart';
@@ -330,7 +331,7 @@ void main() {
 
     // 🔴 #1232 は購入ボタンしか消しておらず、「取り直す」「購入を確認して
     // 登録し直す」がプリセットの利用者に出ていた（2026-10-06 に 194 で発見）。
-    test('⚠⚠ プリセットの利用者に、取り直す・登録し直す・記録を消すを出さない', () {
+    test('⚠⚠ プリセットの利用者に、復元・記録を消すを出さない', () {
       expect(
         showRelayEntitlementActions(view: EntitlementView.preset),
         isFalse,
@@ -349,27 +350,149 @@ void main() {
 
     // ⚠⚠ **判定を足しただけでは効かない。**ウィジェットが呼んでいることを見る
     // （呼ばなくなっても上のテストは緑のまま）。
-    test('⚠⚠ 3 つの操作は、判定を通ってから並ぶ（配線）', () {
+    test('⚠⚠ 操作と添え書きは、判定を通ってから並ぶ（配線）', () {
       final src = File(
         'lib/src/ui/widget/relay_entitlement_purchase_section.dart',
       ).readAsStringSync();
       final gate = src.indexOf('if (showRelayEntitlementActions(view: view))');
-      final restore = src.indexOf("Text('利用権を取り直す')");
-      final reconcile = src.indexOf("Text('購入を確認して登録し直す')");
+      final restore = src.indexOf("Text('購入を復元する')");
       final forget = src.indexOf("Text('利用権の記録を消す')");
+      // ⚠ 添え書きも課金の話なので、プリセットの利用者には出さない。
+      final hint = src.indexOf("'お支払いは発生しません。");
       // 空振りしていないこと。
       expect(restore, greaterThan(0));
-      expect(reconcile, greaterThan(0));
       expect(forget, greaterThan(0));
+      expect(hint, greaterThan(0));
       expect(gate, greaterThan(0), reason: '⚠ 判定がウィジェットに配線されていない');
-      // 3 つとも判定の後ろにあること。
+      // どれも判定の後ろにあること。
       expect(gate, lessThan(restore));
-      expect(gate, lessThan(reconcile));
       expect(gate, lessThan(forget));
-      // ⚠ 判定の内側であること: 判定からいちばん遠いボタンまでの間に、
+      expect(gate, lessThan(hint));
+      // ⚠ 判定の内側であること: 判定からいちばん遠いものまでの間に、
       // 次の兄弟（解約の案内）が挟まっていない。
-      final note = src.indexOf('毎月の自動更新です');
+      final note = src.indexOf('relayCancellationNote(store:');
       expect(note, greaterThan(forget));
+      expect(note, greaterThan(hint));
+    });
+
+    // 🔴 以前は全プラットフォームで「ご利用のストア（App Store / Google Play）」と
+    // 並べていた。iOS 版に「Google Play」と出すのは App Store の審査指針
+    // （ほかのモバイルプラットフォームの名前を出さない）に当たりうる。
+    test('⚠⚠ 解約の案内に、ほかのストアの名前を出さない', () {
+      final apple = relayCancellationNote(store: 'apple');
+      final google = relayCancellationNote(store: 'google');
+      final other = relayCancellationNote(store: null);
+
+      expect(apple, contains('App Store'));
+      expect(apple, isNot(contains('Google')));
+      expect(google, contains('Google Play'));
+      expect(google, isNot(contains('App Store')));
+      // ⚠ 知らないストアでは、どちらの名前も出さない。
+      for (final text in [other, relayCancellationNote(store: 'microsoft')]) {
+        expect(text, isNot(contains('App Store')));
+        expect(text, isNot(contains('Google')));
+      }
+      // どの版でも、自動更新であることと解約できることは言う。
+      for (final text in [apple, google, other]) {
+        expect(text, contains('自動更新'));
+        expect(text, contains('解約'));
+      }
+    });
+
+    test('⚠⚠ 解約の案内は出し分けの関数を通っている（配線）', () {
+      final src = File(
+        'lib/src/ui/widget/relay_entitlement_purchase_section.dart',
+      ).readAsStringSync();
+
+      expect(
+        src,
+        contains('relayCancellationNote(store: entitlementStoreName())'),
+      );
+      // 🔴 両方を並べた古い綴りが戻ってきたら落とす。
+      expect(src, isNot(contains('App Store / Google Play')));
+    });
+
+    // ---- 買っても届かないアカウントを、買う前に知らせる (2026-10-06) ----
+    //
+    // 🔴 モロヘイヤの中継が無い Misskey は、サーバーソフトウェアの仕様で購読を
+    // 登録できない。未購入の人は登録を試みないので、**何も言わないと月額を
+    // 払ってから「対応していません」と知る**ことになる。
+
+    test('⚠⚠ モロヘイヤの中継が無い Misskey は「届かない」と判定する', () {
+      bool unavailable(BackendType type, {String? controller, String? v}) =>
+          PushRegistrationService.pushUnavailableByServerSpec(
+            type: type,
+            mulukhiyaControllerType: controller,
+            mulukhiyaVersion: v,
+          );
+
+      // モロヘイヤが無い Misskey。
+      expect(unavailable(BackendType.misskey), isTrue);
+      // モロヘイヤはあるが、中継（5.19.0〜）より古い。
+      expect(
+        unavailable(BackendType.misskey, controller: 'misskey', v: '5.18.9'),
+        isTrue,
+      );
+      // 版が読めないときは届かない側（登録処理と同じ倒し方）。
+      expect(
+        unavailable(BackendType.misskey, controller: 'misskey', v: 'x'),
+        isTrue,
+      );
+
+      // 対照群: 届くもの。
+      expect(
+        unavailable(BackendType.misskey, controller: 'misskey', v: '5.19.0'),
+        isFalse,
+      );
+      expect(
+        unavailable(BackendType.misskey, controller: 'misskey', v: '6.0.0'),
+        isFalse,
+      );
+      // ⚠⚠ **Mastodon には決して出さない**（モロヘイヤの有無に関係なく届く）。
+      expect(unavailable(BackendType.mastodon), isFalse);
+      expect(
+        unavailable(BackendType.mastodon, controller: 'mastodon', v: '5.0.0'),
+        isFalse,
+      );
+    });
+
+    test('⚠⚠ 届かないアカウントの文面は、名指しして言い切る', () {
+      // 該当が無ければ何も出さない。
+      expect(relayUnsupportedAccountNote(const []), isNull);
+
+      final one = relayUnsupportedAccountNote(const ['@a@example.test'])!;
+      expect(one, contains('@a@example.test'));
+      // ⚠ ぼかさない（「場合があります」では、自分が当たるのか分からない）。
+      expect(one, contains('届きません'));
+      expect(one, isNot(contains('場合があります')));
+      expect(one, contains('購入しても'));
+
+      final two = relayUnsupportedAccountNote(const [
+        '@a@example.test',
+        '@b@example.test',
+      ])!;
+      expect(two, contains('@a@example.test'));
+      expect(two, contains('@b@example.test'));
+      expect(two, contains('届きません'));
+    });
+
+    test('⚠⚠ 届かないアカウントの注意は節に配線されていて、プリセットには出さない', () {
+      final src = File(
+        'lib/src/ui/widget/relay_entitlement_purchase_section.dart',
+      ).readAsStringSync();
+
+      expect(
+        src,
+        contains('PushRegistrationService.accountsWithoutPushSupport('),
+      );
+      expect(src, contains('if (unsupportedNote != null)'));
+      // ⚠ プリセットの利用者には購入の話をしない (#1232)。
+      final decl = src.indexOf('final unsupportedNote =');
+      expect(decl, greaterThan(0));
+      expect(
+        src.substring(decl, decl + 120),
+        contains('view == EntitlementView.preset'),
+      );
     });
 
     // ⚠⚠ **存在しない権限の区分を前提にした説明を消す (#1232)。**

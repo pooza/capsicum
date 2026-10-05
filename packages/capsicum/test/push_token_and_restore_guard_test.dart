@@ -206,9 +206,16 @@ void main() {
       // backend → provider → UI の 3 層が揃っていること。
       expect(read(backendPath), contains('Future<void> restore()'));
       expect(read(providerPath), contains('Future<void> restoreEntitlement()'));
-      expect(read(sectionPath), contains('restoreEntitlement()'));
-      // ⚠ 文言は #1226 で「プッシュ通知リレー」へ揃えた回に合わせて伸びた。
-      expect(read(sectionPath), contains("const Text('利用権を取り直す')"));
+      // ⚠ #1234 で「登録のやり直し」とまとめた。UI が呼ぶのは 1 本になり、
+      // その 1 本が従来の `restoreEntitlement()` を呼ぶ。
+      expect(read(sectionPath), contains('restoreAndReregister()'));
+      expect(
+        read(providerPath),
+        contains('Future<bool> restoreAndReregister()'),
+      );
+      // ⚠⚠ **名前を「復元」から離さない**（App Store のガイドライン 3.1.1 が
+      // 求める「購入を復元する手段」として、審査する人が探す語）。
+      expect(read(sectionPath), contains("const Text('購入を復元する')"));
     });
 
     test('⚠⚠ 持っている人に購入ボタンを出さない（二重購入の防止は維持）', () {

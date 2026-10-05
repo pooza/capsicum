@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../constants.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/entitlement_status_provider.dart';
+import '../../provider/supporter_purchase_backend.dart';
 import '../../provider/supporter_purchase_provider.dart';
 import '../../service/push_registration_service.dart';
 import '../util/launch_url_toast.dart';
@@ -12,8 +13,9 @@ import 'term_link_text.dart';
 /// プッシュ通知リレーの利用権の節 (#597 / #1122 / #1217 / #1224)。
 ///
 /// ⚠⚠ **プッシュ通知設定画面とサポーター画面で、できることを完全に同じにする**
-/// (#1224・2026-10-04 pooza)。節の中身はこの 1 本で、**状態表示・購入・取り直す・
-/// 登録し直す・記録を消すの 5 つが両画面に揃う。**
+/// (#1224・2026-10-04 pooza)。節の中身はこの 1 本で、**状態表示・購入・復元
+/// （登録のやり直しを含む）・記録を消すの 4 つが両画面に揃う。**⚠ #1234 までは
+/// 復元が「取り直す」と「登録し直す」の 2 つに分かれていて、5 つだった。
 ///
 /// > じぶんとしては、どちらかというと「プッシュ通知」だと思っていますが、
 /// > 「投げ銭」側のほうが出来ることが多いです。この優先順位を逆にするか、
@@ -66,6 +68,32 @@ class RelayEntitlementPurchaseSection extends ConsumerWidget {
       expiresAt: status.expiresAt,
     );
     final busy = state.purchaseInProgress;
+    // ⚠ プリセットの利用者には出さない（購入の話をしない・#1232）。届かない
+    // アカウントがあること自体は、プッシュ通知設定のアカウント行が伝える。
+    final unsupportedNote = view == EntitlementView.preset
+        ? null
+        : relayUnsupportedAccountNote([
+            for (final account
+                in PushRegistrationService.accountsWithoutPushSupport(
+                  ref.watch(accountManagerProvider).accounts,
+                ))
+              '@${account.key.username}@${account.key.host}',
+          ]);
+
+    // ⚠⚠ **購入・復元が成立したら、利用権の状態を引き直す (#1234)。**
+    //
+    // 🔴 **以前はプッシュ通知設定画面にしか無かった。**購入ボタンを出すかは
+    // relay の見立て（[showRelayPurchaseButton]）で決めているのに、サポーター
+    // 画面は成立後も引き直さなかったので、**買った直後も「利用権がありません」と
+    // 購入ボタンが残り、二重購入を誘っていた**（#1224 で判定を手元のトークンから
+    // 見立てへ変えたときに取り残された）。⚠ **節の中へ置けば、2 画面とも揃う。**
+    ref.listen<SupporterPurchaseState>(supporterPurchaseProvider, (prev, next) {
+      final outcome = next.lastOutcome;
+      if (outcome == null || outcome == prev?.lastOutcome) return;
+      if (!outcome.isSubscription) return;
+      if (outcome.kind != SupporterPurchaseOutcomeKind.success) return;
+      ref.read(entitlementStatusProvider.notifier).refresh();
+    });
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -95,6 +123,18 @@ class RelayEntitlementPurchaseSection extends ConsumerWidget {
         // ストアに繋がらない回でも、**「なぜ届かないのか」は言えなければ
         // ならない**（これが #1123 の出発点）。
         ListTile(leading: Icon(icon), title: Text(title), subtitle: Text(body)),
+        // ⚠⚠ **買っても届かないアカウントを、買う前に知らせる (2026-10-06
+        // pooza)。**モロヘイヤの中継が無い Misskey は、サーバーソフトウェアの仕様で
+        // 購読を登録できない。🔴 黙っていると**月額を払ってから「対応して
+        // いません」と知る**ことになる。⚠ 当たるアカウントを持つ人にしか出ない。
+        if (unsupportedNote != null)
+          ListTile(
+            leading: Icon(
+              Icons.warning_amber_outlined,
+              color: Theme.of(context).colorScheme.error,
+            ),
+            subtitle: Text(unsupportedNote),
+          ),
         // ⚠ **商品が取れなければ、買う / 取り直す側は丸ごと出さない** ——
         // ストア未登録・審査前・サブスクを扱えない OS。**押しても買えない入口を
         // 作らない。**
@@ -129,53 +169,64 @@ class RelayEntitlementPurchaseSection extends ConsumerWidget {
           if (showRelayEntitlementActions(view: view))
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              // ⚠ 狭幅で溢れさせない（デスクトップは狭幅運用が前提）。
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 4,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // ⚠⚠ **どの状態でも出す (#1219)。**機種変更・再インストールの
-                  // 復元（トークンは `ThisDeviceOnly` でバックアップに入らない）と、
-                  // `unverified` で固着したときに**アプリ内から抜ける唯一の口**を
-                  // 兼ねる。⚠ App Store のガイドライン 3.1.1 でも要る。
-                  OutlinedButton(
-                    onPressed: busy
-                        ? null
-                        : () => ref
-                              .read(supporterPurchaseProvider.notifier)
-                              .restoreEntitlement(),
-                    child: const Text('利用権を取り直す'),
+                  // ⚠ 狭幅で溢れさせない（デスクトップは狭幅運用が前提）。
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      // ⚠⚠ **復元と登録のやり直しは 1 つのボタン (#1234・2026-10-06
+                      // pooza)。**以前は「利用権を取り直す」と「購入を確認して
+                      // 登録し直す」に分かれていたが、**名前から違いが読めなかった**
+                      // （前者は「買い直す」に、後者は「ストアに問い合わせる」に
+                      // 読めて、実際は逆）。
+                      //
+                      // ⚠⚠ **どの状態でも出す (#1219)。**機種変更・再インストールの
+                      // 復元（トークンは `ThisDeviceOnly` でバックアップに入らない）、
+                      // `unverified` で固着したときに**アプリ内から抜ける唯一の口**、
+                      // 支払いを直したあとの再登録（`/push` が 410 を返すと fedi
+                      // サーバー側の購読が消えるので、**直すだけでは戻らない**）を
+                      // 兼ねる。⚠ App Store のガイドライン 3.1.1 が求める
+                      // 「購入を復元する手段」でもあるので、**名前を「復元」から
+                      // 離さない**。
+                      OutlinedButton(
+                        onPressed: busy ? null : () => _restore(ref),
+                        child: const Text('購入を復元する'),
+                      ),
+                      // 🔴 **復元が空振りしたときの出口 (#1219)。**relay が認めない
+                      // トークンを持っていると「有効」側へ倒れて購入ボタンが出ず、
+                      // 復元しても何も起きない。⚠ **手元の保存がある人にだけ出す。**
+                      if (state.hasEntitlement)
+                        TextButton(
+                          onPressed: busy
+                              ? null
+                              : () => _confirmForget(context, ref),
+                          child: const Text('利用権の記録を消す'),
+                        ),
+                    ],
                   ),
-                  // ⚠⚠ **買い直したあとの再登録の導線。**`/push` が 410 を返すと
-                  // fedi サーバー側の購読が消えるので、⚠ **買い直すだけでは
-                  // 戻らない。**⚠ 返金済みにも出す（いまは届いているが期限で
-                  // 切れるので、買い直したときにここから戻せる必要がある）。
-                  if (view != EntitlementView.active)
-                    OutlinedButton(
-                      onPressed: busy ? null : () => _reconcile(ref),
-                      child: const Text('購入を確認して登録し直す'),
-                    ),
-                  // 🔴 **取り直しが空振りしたときの出口 (#1219)。**relay が認めない
-                  // トークンを持っていると「有効」側へ倒れて購入ボタンが出ず、
-                  // 取り直しても何も起きない。⚠ **手元の保存がある人にだけ出す。**
-                  if (state.hasEntitlement)
-                    TextButton(
-                      onPressed: busy
-                          ? null
-                          : () => _confirmForget(context, ref),
-                      child: const Text('利用権の記録を消す'),
-                    ),
+                  const SizedBox(height: 4),
+                  // ⚠⚠ **「お支払いは発生しません」を必ず言う (#1234)。**「復元」は
+                  // 買い直しと取り違えられやすく、押すのをためらわせる。
+                  const Text(
+                    'お支払いは発生しません。機種変更のあとや、通知が届かないときに'
+                    'お試しください。',
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
                 ],
               ),
             ),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             child: Text(
               // ⚠ 解約の窓口はストア。⚠⚠ **アプリ内に解約導線を作らない**
               // （ストアの規約上、アプリから直接は解約できない）。
-              '毎月の自動更新です。解約はご利用のストア（App Store / Google Play）から'
-              '行えます。',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
+              // ⚠⚠ **ストアの名前は、そのストアの版にだけ出す**
+              // （[relayCancellationNote]）。
+              relayCancellationNote(store: entitlementStoreName()),
+              style: const TextStyle(fontSize: 12, color: Colors.grey),
             ),
           ),
           if (showLegalNotice)
@@ -191,17 +242,21 @@ class RelayEntitlementPurchaseSection extends ConsumerWidget {
     );
   }
 
-  /// 利用権を引き直して、全アカウントの購読を登録し直す (#1123 / #1217)。
+  /// 購入を復元し、登録をやり直して、状態を引き直す (#1234)。
   ///
-  /// ⚠⚠ **買っただけでは戻らない。**`/push` が 410 を返していた間に fedi
-  /// サーバー側の購読が destroy されているので（relay#63 の決着どおり）、
-  /// **登録をやり直すまで通知は届かない。**
-  Future<void> _reconcile(WidgetRef ref) async {
+  /// ⚠⚠ **登録の実体は provider 側に 1 本**（`restoreAndReregister`）。ここで
+  /// `registerAllAccounts` を打たない —— 復元で購入が返った回は既存の経路が
+  /// 登録をやり直すので、**ここでも打つと二重になる**（#1217）。
+  ///
+  /// ⚠ **購入が返った回の引き直しは [build] の listener が担う。**その回は
+  /// relay からの発行と保存が**まだ終わっていない**ので、ここで引き直しても
+  /// 古い値を読む。返らなかった回だけ、ここで引き直す。
+  Future<void> _restore(WidgetRef ref) async {
+    final restored = await ref
+        .read(supporterPurchaseProvider.notifier)
+        .restoreAndReregister();
+    if (restored) return;
     await ref.read(entitlementStatusProvider.notifier).refresh();
-    final accounts = ref.read(accountManagerProvider).accounts;
-    if (accounts.isNotEmpty) {
-      await PushRegistrationService.registerAllAccounts(accounts);
-    }
   }
 
   /// 「記録を消す」を確認してから実行する (#1219)。
@@ -217,9 +272,9 @@ class RelayEntitlementPurchaseSection extends ConsumerWidget {
         content: const Text(
           'この端末に保存した利用権の記録を消します。\n\n'
           '・ご購入そのものは消えません。ストアの購読は解約されません\n'
-          '・「利用権を取り直す」で引き直せます\n'
+          '・「購入を復元する」で元に戻せます\n'
           '・消すと、買い直しのボタンが出るようになります\n\n'
-          '取り直しても直らないときにお使いください。',
+          '復元しても直らないときにお使いください。',
         ),
         actions: [
           TextButton(
@@ -364,20 +419,59 @@ String supporterPurchaseOutcomeMessage(SupporterPurchaseOutcome outcome) =>
 bool showRelayPurchaseButton({required EntitlementView view}) =>
     view == EntitlementView.absent || view == EntitlementView.expired;
 
-/// 「利用権を取り直す」「購入を確認して登録し直す」「利用権の記録を消す」を
-/// 出すか (#1232 の続き・2026-10-06 pooza)。
+/// 利用権を買っても届かないアカウントがあることを伝える文面 (2026-10-06 pooza)。
+/// 該当が無ければ null。
+///
+/// [labels] は `@ユーザー名@ホスト` の列
+/// （`PushRegistrationService.accountsWithoutPushSupport` に当たったもの）。
+///
+/// ⚠⚠ **「買っても届かない」を言い切る。**「届かない場合があります」とぼかすと、
+/// 読んだ人は自分が当たるのか分からない。⚠ **理由は一言だけ**（サーバー
+/// ソフトウェアの仕様）—— 仕組みの説明は capsicum-site のプッシュ通知ページに
+/// ある。⚠ 特定のサーバーを責める書き方にしない。
+String? relayUnsupportedAccountNote(List<String> labels) {
+  if (labels.isEmpty) return null;
+  if (labels.length == 1) {
+    return '${labels.single} のサーバーは、サーバーソフトウェアの仕様により'
+        'プッシュ通知に対応していません。利用権を購入しても、このアカウントには'
+        '届きません。';
+  }
+  return '次のアカウントのサーバーは、サーバーソフトウェアの仕様により'
+      'プッシュ通知に対応していません。利用権を購入しても、これらのアカウントには'
+      '届きません。\n${labels.join('\n')}';
+}
+
+/// 自動更新と解約の窓口を伝える文面 (2026-10-06 pooza)。
+///
+/// ⚠⚠ **ほかのストアの名前を出さない。**以前は全プラットフォームで
+/// 「ご利用のストア」に続けて Apple と Google の両方のストア名を並べていたが、
+/// **iOS 版に「Google Play」と書くのは App Store Review Guideline 2.3.10**
+/// （ほかのモバイルプラットフォームの名前をアプリ内に出さない）に当たりうる。
+/// 利用者にとっても、自分に関係のないストアの名前は余計。
+///
+/// [store] は `entitlementStoreName()` の値（`apple` / `google` / `microsoft` /
+/// null）。⚠ **`Platform` をここで見ない** —— 引数で受ければ、どの端末の上でも
+/// 全部の分岐を検査できる。⚠ 知らない値はストア名を出さない側へ倒す。
+String relayCancellationNote({required String? store}) => switch (store) {
+  'apple' => '毎月の自動更新です。解約は App Store のサブスクリプションの設定から行えます。',
+  'google' => '毎月の自動更新です。解約は Google Play の定期購入から行えます。',
+  _ => '毎月の自動更新です。解約はご利用のストアから行えます。',
+};
+
+/// 「購入を復元する」「利用権の記録を消す」（と添え書き）を出すか
+/// (#1232 の続き・2026-10-06 pooza)。
 ///
 /// ⚠⚠ **[EntitlementView.preset] では出さない。**#1232 は購入ボタンしか
-/// 消しておらず、プリセットの利用者に**買っていないものを「取り直す」「購入を
-/// 確認する」と勧めていた**。購入ボタンと同じく、これも課金の話を持ち出して
+/// 消しておらず、プリセットの利用者に**買っていないものを「復元する」と
+/// 勧めていた**。購入ボタンと同じく、これも課金の話を持ち出して
 /// いる（`docs/product-policy.md` の不変条件）。
 ///
 /// ⚠ **プリセットの人が実際に購入していても出さない。**`EntitlementStatusNotifier`
 /// が「プリセットなら購入の状態を出さない」としているのと同じ線で、解約は
 /// もともとストア側でしかできないので、アプリから消えても失われる導線は無い。
-/// プリセットのアカウントがある限り、3 つとも**押しても届き方が変わらない**。
+/// プリセットのアカウントがある限り、どれも**押しても届き方が変わらない**。
 ///
-/// ⚠ **それ以外の状態では従来どおり全部の判定を通す**（「取り直す」は機種変更・
-/// 再インストールからの復元の口なので、`absent` でも出す・#1219）。
+/// ⚠ **それ以外の状態では従来どおり全部の判定を通す**（復元は機種変更・
+/// 再インストールから戻る口なので、`absent` でも出す・#1219）。
 bool showRelayEntitlementActions({required EntitlementView view}) =>
     view != EntitlementView.preset;

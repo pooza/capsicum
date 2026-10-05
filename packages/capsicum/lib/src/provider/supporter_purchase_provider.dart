@@ -165,6 +165,13 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
   late final SupporterPurchaseBackend _backend;
   StreamSubscription<SupporterPurchaseEvent>? _sub;
 
+  /// サブスクの購入イベントを受け取った回数 (#1234)。
+  ///
+  /// [restoreAndReregister] が「復元で購入が返ったか」を知るためだけに使う。
+  /// ⚠ **処理の完了ではなく到着で数える**（[_onSubscriptionPurchased] の先頭）——
+  /// 完了を待つと relay への通信ぶん遅れ、その間に二重に登録してしまう。
+  int _subscriptionEventCount = 0;
+
   @override
   SupporterPurchaseState build() {
     // 課金経路を OS ごとの backend に閉じる (#599 §E-3)。iOS / Android / macOS は
@@ -408,6 +415,57 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
     }
   }
 
+  /// 購入を復元し、通知の登録をやり直す (#1234)。画面の「購入を復元する」の実体。
+  ///
+  /// ⚠⚠ **以前は 2 つのボタンに分かれていた**（「利用権を取り直す」＝ストアへの
+  /// 復元 /「購入を確認して登録し直す」＝登録のやり直し）。名前から違いが読めず、
+  /// しかも**復元は成功すると登録のやり直しまで行う**ので、違いが出るのは
+  /// **ストアが購入を返さなかったとき**だけだった。1 つにまとめ、
+  /// **復元の結果にかかわらず登録はやり直される**ようにした。
+  ///
+  /// | 復元の結果 | 登録をやり直すのは |
+  /// | --- | --- |
+  /// | 購入が返った | 既存の経路（[_onSubscriptionPurchased] → [_completeAndReregister]） |
+  /// | 返らなかった・失敗した | ここ |
+  ///
+  /// ⚠⚠ **両方で打たない。**購入が返った回にここでも打つと、relay へ登録が
+  /// 2 本飛ぶ（#1217 で `register.created` が 0.6 秒差で 2 本出た形）。
+  /// ⚠ 購入イベントが復元の完了より**遅れて**届いた場合は 2 本になりうるが、
+  /// 登録は上書きなので害は無い（順序はストアの実装次第で保証が無い）。
+  ///
+  /// ⚠ **課金は発生しない。**ストアへ頼むのは過去の購入の流し直しだけ。
+  ///
+  /// 戻り値は「復元で購入が返ったか」。
+  Future<bool> restoreAndReregister() async {
+    if (state.purchaseInProgress) return false;
+
+    final before = _subscriptionEventCount;
+    await restoreEntitlement();
+    if (_subscriptionEventCount != before) return true;
+
+    // ⚠ 登録は端末のトークンを待つことがある（最大 10 秒）。その間に押し直せない
+    // ようにする。
+    state = state.copyWith(purchaseInProgress: true);
+    try {
+      final accounts = ref.read(accountManagerProvider).accounts;
+      if (accounts.isNotEmpty) {
+        await PushRegistrationService.registerAllAccounts(accounts);
+      }
+    } catch (e, st) {
+      Sentry.captureException(
+        scrubException(e),
+        stackTrace: st,
+        withScope: (scope) {
+          scope.setTag('supporter.purchase', 'restore_reregister_failed');
+          scope.fingerprint = ['supporter.purchase.restore_reregister'];
+        },
+      );
+    } finally {
+      state = state.copyWith(purchaseInProgress: false);
+    }
+    return false;
+  }
+
   /// 指定 SKU を消耗型として購入する。結果は購入イベント経由で
   /// [state] / [SupporterStatusNotifier] に反映される。
   Future<void> buy(ProductDetails product) async {
@@ -565,6 +623,7 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
   /// 拾い直す —— 確定してしまうと、**購入は成立しているのに利用権が無い**状態が
   /// 再試行の手掛かりごと消える。
   Future<void> _onSubscriptionPurchased(SupporterPurchaseEvent event) async {
+    _subscriptionEventCount++;
     final store = entitlementStoreName();
     final purchaseId = event.purchaseId;
     // ⚠ どちらも無ければ利用権を引けない。**成功に見せない。**

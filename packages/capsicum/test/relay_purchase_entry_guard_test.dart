@@ -416,23 +416,86 @@ void main() {
 
     // ---- #1224: できることを 2 画面で完全に同じにする ----
 
-    test('⚠⚠ 5 つの口はすべて共有ウィジェットにある', () {
+    test('⚠⚠ 4 つの口はすべて共有ウィジェットにある', () {
       final section = maskComments(read(sectionPath));
 
-      // 状態表示 / 購入 / 取り直す / 登録し直す / 記録を消す。
+      // 状態表示 / 購入 / 復元（登録のやり直しを含む）/ 記録を消す。
+      // ⚠ #1234 までは復元が「取り直す」と「登録し直す」に分かれていて 5 つだった。
       expect(section, contains('relayEntitlementStatusCopy('));
       expect(section, contains('showRelayPurchaseButton('));
-      expect(section, contains("const Text('利用権を取り直す')"));
-      expect(section, contains("const Text('購入を確認して登録し直す')"));
+      expect(section, contains("const Text('購入を復元する')"));
       expect(section, contains("const Text('利用権の記録を消す')"));
-      // 再登録の実体（買い直すだけでは戻らないので）。
-      expect(section, contains('registerAllAccounts'));
+    });
+
+    // ---- #1234: 復元と登録のやり直しを 1 つにまとめる ----
+
+    test('⚠⚠ 分かれていた 2 つのボタンが戻ってきていない', () {
+      // 🔴 名前から違いが読めなかった（「取り直す」は買い直しに、「購入を確認して」は
+      // ストアへの問い合わせに読めて、実際は逆）。
+      final section = maskComments(read(sectionPath));
+
+      expect(section, isNot(contains('利用権を取り直す')));
+      expect(section, isNot(contains('購入を確認して登録し直す')));
+    });
+
+    test('⚠⚠ 「お支払いは発生しません」を添えている', () {
+      // 「復元」は買い直しと取り違えられやすい。
+      expect(maskComments(read(sectionPath)), contains('お支払いは発生しません'));
+    });
+
+    test('⚠⚠ 復元のボタンは、登録のやり直しまで行う 1 本を呼ぶ', () {
+      final section = maskComments(read(sectionPath));
+      final provider = maskComments(
+        read('lib/src/provider/supporter_purchase_provider.dart'),
+      );
+
+      expect(section, contains('restoreAndReregister()'));
+      expect(provider, contains('Future<bool> restoreAndReregister()'));
+      // 🔴 **ウィジェットから登録を打たない。**復元で購入が返った回は既存の経路
+      // （`_completeAndReregister`）が登録をやり直すので、ここでも打つと relay へ
+      // 2 本飛ぶ（#1217 の退行と同じ形）。実体は provider の 1 本に寄せてある。
+      expect(section, isNot(contains('registerAllAccounts')));
+    });
+
+    test('⚠⚠ 復元で購入が返った回は、まとめた側から登録を打たない', () {
+      final provider = maskComments(
+        read('lib/src/provider/supporter_purchase_provider.dart'),
+      );
+      final start = provider.indexOf('Future<bool> restoreAndReregister()');
+      expect(start, greaterThan(0));
+      final end = provider.indexOf('Future<void> buy(', start);
+      expect(end, greaterThan(start), reason: '本体を切り出せていない');
+      final body = provider.substring(start, end);
+
+      // 空振りしていないこと（本体に登録の実体がある）。
+      expect(body, contains('registerAllAccounts'));
+      // ⚠⚠ **購入イベントが届いていたら、登録より前に抜ける。**
+      final guard = body.indexOf('if (_subscriptionEventCount != before)');
+      expect(guard, greaterThan(0), reason: '⚠ 二重登録を避ける判定が無い');
+      expect(guard, lessThan(body.indexOf('registerAllAccounts')));
+      // ⚠ 数えているのは到着（処理の完了ではない）。
+      expect(provider, contains('_subscriptionEventCount++;'));
+    });
+
+    test('⚠⚠ 購入・復元が成立したら、節が自分で状態を引き直す', () {
+      // 🔴 以前はプッシュ通知設定画面にしか無く、サポーター画面では買った直後も
+      // 「利用権がありません」と購入ボタンが残っていた（二重購入を誘う）。
+      final section = maskComments(read(sectionPath));
+      final listen = section.indexOf('ref.listen<SupporterPurchaseState>(');
+      expect(listen, greaterThan(0), reason: '⚠ 節が購入結果を聞いていない');
+      final tail = section.substring(listen, listen + 600);
+
+      expect(tail, contains('SupporterPurchaseOutcomeKind.success'));
+      expect(tail, contains('entitlementStatusProvider.notifier'));
+      expect(tail, contains('refresh()'));
     });
 
     test('⚠⚠ どちらの画面も自前では持たない（集約が「使わなくなる」形で崩れない）', () {
       // ⚠⚠ **集約系の再発は「壊れること」ではなく「使わなくなること」として
       // 現れる**（docs/CLAUDE.md・#1083-A）。画面側に綴りが戻ってきたら落とす。
       const owned = [
+        '購入を復元する',
+        // ⚠ #1234 でまとめる前の 2 つ。画面側へ戻ってきても落とす。
         '利用権を取り直す',
         '購入を確認して登録し直す',
         '利用権の記録を消す',
@@ -497,15 +560,18 @@ void main() {
       expect(listener, contains('refresh()'));
     });
 
-    test('⚠ 手押しの「購入を確認して登録し直す」は残っている', () {
-      // ⚠ #1224 で共有ウィジェットへ移した。**消えていないこと**を見るのが
-      // この検査の目的なので、見る先を付け替える（画面側は上の検査で不在を
-      // 固定している）。
-      final source = maskComments(read(sectionPath));
+    test('⚠ 手押しで登録をやり直す口は残っている', () {
+      // ⚠ #1224 で共有ウィジェットへ移し、#1234 で復元のボタンにまとめた。
+      // **消えていないこと**を見るのがこの検査の目的なので、見る先を付け替える
+      // （ボタンは節に、登録の実体は provider にある）。
+      final section = maskComments(read(sectionPath));
+      final provider = maskComments(
+        read('lib/src/provider/supporter_purchase_provider.dart'),
+      );
 
-      expect(source, contains('_reconcile('));
-      expect(source, contains('registerAllAccounts'));
-      expect(source, contains("const Text('購入を確認して登録し直す')"));
+      expect(section, contains('_restore(ref)'));
+      expect(section, contains("const Text('購入を復元する')"));
+      expect(provider, contains('registerAllAccounts'));
     });
   });
 

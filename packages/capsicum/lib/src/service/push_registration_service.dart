@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -70,6 +71,50 @@ class PushRegistrationService {
     required bool eligible,
     required bool hasEntitlement,
   }) => eligible || isPresetServer(host) || hasEntitlement;
+
+  /// サーバーソフトウェアの仕様で、このアカウントへのプッシュ通知が成立しないか
+  /// (2026-10-06 pooza)。
+  ///
+  /// **モロヘイヤの通知の中継が無い Misskey** がこれに当たる。Misskey 本家は
+  /// `/api/sw/register` を外部アプリのトークンから呼べないので
+  /// （GHSA-7pxq-6xx9-xpgm の対策）、capsicum からは購読を登録できない。
+  ///
+  /// ⚠⚠ **用途は「買う前に知らせる」こと。**利用権を持たない非プリセットの
+  /// アカウントは登録そのものを試みない（[shouldAttemptRegistration]）ので、
+  /// 登録の結果（`notSupported`）からは**購入したあとにしか分からない**。
+  /// 🔴 何も言わないと、**月額を払ってから「対応していません」と知る**ことになる。
+  /// 1.x では「身内が承知のうえで使っている」立場だったが、有償で外へ出すと
+  /// **知らずに買う人**が出るので、立場が変わった。
+  ///
+  /// ⚠ **購入を止める判定ではない。**同じ端末に届くアカウントが別にあれば
+  /// 利用権には意味があるし、Misskey 側が開放したらそのまま対象に入る方針
+  /// （`docs/paid-relay-plan.md` 1-6）。⚠⚠ **開放されたら、この判定と文面を外す。**
+  ///
+  /// ⚠ 登録処理（[_registerAccountImpl]）の分岐と**同じ条件**で書くこと。
+  /// 引数を素の値で受けるのは、`Account` を組まずに全部の分岐を検査するため。
+  static bool pushUnavailableByServerSpec({
+    required BackendType type,
+    required String? mulukhiyaControllerType,
+    required String? mulukhiyaVersion,
+  }) {
+    if (type != BackendType.misskey) return false;
+    final viaProxy =
+        mulukhiyaControllerType == 'misskey' &&
+        mulukhiyaVersion != null &&
+        _mulukhiyaSupportsPushProxy(mulukhiyaVersion);
+    return !viaProxy;
+  }
+
+  /// [accounts] のうち、[pushUnavailableByServerSpec] に当たるもの。
+  static List<Account> accountsWithoutPushSupport(List<Account> accounts) => [
+    for (final account in accounts)
+      if (pushUnavailableByServerSpec(
+        type: account.key.type,
+        mulukhiyaControllerType: account.mulukhiya?.controllerType,
+        mulukhiyaVersion: account.mulukhiya?.version,
+      ))
+        account,
+  ];
 
   /// 現在のプラットフォームで push backend (APNs/FCM 経由 + capsicum-relay)
   /// が本配線済みか。macOS / Linux / Windows のうち未対応のものは false にし、
