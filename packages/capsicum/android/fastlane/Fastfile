@@ -13,6 +13,22 @@ platform :android do
     )
   end
 
+  # ⚠⚠ Play の API 名は直感と逆で、`alpha` がクローズドテスト・`beta` が
+  # オープンテスト。取り違えると未出荷の版が誰でも入れられる状態になる (#1230)。
+  #
+  # ⚠ **招いた人に触ってもらう枠はこちら。**内部テスト (`internal`) は下の
+  # `release` が製品版へ昇格する元なので、外の人を入れると出荷直前の全ビルド
+  # （差し替えて捨てたものを含む）が流れる。
+  desc "Deploy to Google Play closed testing (alpha)"
+  lane :alpha do
+    upload_to_play_store(
+      package_name: 'net.shrieker.capsicum',
+      track: 'alpha',
+      aab: '../build/app/outputs/bundle/release/app-release.aab',
+      json_key: json_key_path,
+    )
+  end
+
   desc "Promote internal to production"
   lane :release do
     upload_to_play_store(
