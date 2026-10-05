@@ -147,7 +147,21 @@ class SupporterPurchaseState {
 /// [isSupporterProvider] で見るので、購入手段の詳細を知らない。
 /// 購入は画面を閉じた後に確定し得るためアプリ寿命で購読する
 /// （autoDispose しない）。
+/// 課金 backend の差し替え口 (#1231)。⚠ 既定は OS ごとの実装。
+/// **検査から「返ってこないストア」を食わせる**ために provider にした。
+final supporterPurchaseBackendProvider = Provider<SupporterPurchaseBackend>(
+  (ref) => createSupporterPurchaseBackend(),
+);
+
 class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
+  /// ⚠⚠ **ストアの往復が返ってこないときに画面を固着させない** (#1231)。
+  /// 実測の往復は Play が 311〜345ms・Apple が約 1,084ms（[#1122](https://github.com/pooza/capsicum/issues/1122)）
+  /// なので、遅い回線を見込んでも十分に長い。
+  static const storeTimeout = Duration(seconds: 15);
+
+  /// 手元のキーホルダ読み出し。⚠ 本来は即座に返る。
+  static const localTimeout = Duration(seconds: 5);
+
   late final SupporterPurchaseBackend _backend;
   StreamSubscription<SupporterPurchaseEvent>? _sub;
 
@@ -155,7 +169,7 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
   SupporterPurchaseState build() {
     // 課金経路を OS ごとの backend に閉じる (#599 §E-3)。iOS / Android / macOS は
     // in_app_purchase、Windows は Windows.Services.Store の自前 channel。
-    _backend = createSupporterPurchaseBackend();
+    _backend = ref.read(supporterPurchaseBackendProvider);
     if (!_backend.isSupported) {
       return const SupporterPurchaseState();
     }
@@ -198,23 +212,30 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
     if (!_backend.isSupported) return;
     state = state.copyWith(isLoadingProducts: true);
     try {
-      final available = await _backend.isAvailable();
+      final available = await _backend.isAvailable().timeout(storeTimeout);
       if (!available) {
         state = state.copyWith(isAvailable: false, isLoadingProducts: false);
         return;
       }
       // ⚠ **投げ銭とサブスクを 1 回の問い合わせで取る** (#1122)。分けると
       // 往復が 2 倍になるうえ、⚠⚠ **片方だけ失敗した状態**を扱う分岐が増える。
-      final products = await _backend.queryProducts({
-        ...supporterTipProductIds,
-        if (subscriptionPurchaseSupported) supporterSubscriptionProductId,
-      });
+      final products = await _backend
+          .queryProducts({
+            ...supporterTipProductIds,
+            if (subscriptionPurchaseSupported) supporterSubscriptionProductId,
+          })
+          .timeout(storeTimeout);
       final byId = {for (final p in products) p.id: p};
       // 定義順（金額昇順）に整列。ストアに存在しない ID は黙って除外する。
       final ordered = [
         for (final id in supporterTipProductIds)
           if (byId[id] != null) byId[id]!,
       ];
+      // ⚠⚠ **商品が取れた時点で先に画面へ出す (#1231)。**🔴 以前は
+      // `hasEntitlement: await _loadEntitlement()` と**`copyWith` の引数の中で
+      // 待って**いたため、**キーホルダの読み出しが返らないだけで、取れている
+      // 商品もホイールの裏に隠れたまま**になった。⚠ ストアの往復と手元の
+      // 読み出しは**本来無関係**。
       state = state.copyWith(
         isAvailable: true,
         isLoadingProducts: false,
@@ -222,14 +243,23 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
         // ⚠ **取れなければ null に戻す。**ストアから消えたあとも入口が残ると、
         // 押しても買えないボタンになる（[_keepSubscription] の説明）。
         subscription: byId[supporterSubscriptionProductId],
-        hasEntitlement: await _loadEntitlement(),
       );
+      // ⚠ 利用権は後から反映する（これが遅くても画面は出ている）。
+      state = state.copyWith(hasEntitlement: await _loadEntitlement());
     } catch (e, st) {
       Sentry.captureException(
         scrubException(e),
         stackTrace: st,
         withScope: (scope) {
-          scope.setTag('supporter.purchase', 'load_products_failed');
+          // ⚠⚠ **タイムアウトを「失敗」に混ぜない (#1231)。**ストアが
+          // 返ってこない事象は**無言で画面が固着する**という別の壊れ方で、
+          // 件数の推移も原因も違う。⚠ 分けておかないと、**誰も気づけない**。
+          scope.setTag(
+            'supporter.purchase',
+            e is TimeoutException
+                ? 'load_products_timeout'
+                : 'load_products_failed',
+          );
           scope.fingerprint = [
             'supporter.purchase.load_products',
             e.runtimeType.toString(),
@@ -247,7 +277,9 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
   /// **直前の値を保つ**（呼び出し側が `hasEntitlement` を渡さない形になる）。
   Future<bool> _loadEntitlement() async {
     try {
-      return await EntitlementTokenStore.load() != null;
+      // ⚠ **ここにも上限を置く (#1231)。**キーホルダは本来すぐ返るが、
+      // **返らない事故が起きたときに利用権の表示が永久に古いまま**になる。
+      return await EntitlementTokenStore.load().timeout(localTimeout) != null;
     } catch (e, st) {
       Sentry.captureException(
         scrubException(e),
