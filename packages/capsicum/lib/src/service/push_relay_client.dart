@@ -289,7 +289,7 @@ class PushRelayClient {
         return response.data!;
       } on DioException catch (e) {
         lastError = e;
-        if (!_isTransientNetwork(e) || attempt >= _registerRetryDelays.length) {
+        if (!_isTransient(e) || attempt >= _registerRetryDelays.length) {
           rethrow;
         }
         final delay = _registerRetryDelays[attempt];
@@ -319,6 +319,24 @@ class PushRelayClient {
           type: DioExceptionType.unknown,
           message: '$operation exhausted retries with no error captured',
         );
+  }
+
+  /// 送り直せば通る見込みのある失敗か。接続段階の失敗（[_isTransientNetwork]）
+  /// と、relay が「いまは手が塞がっている」と断った回（[_isRelayBusy]）。
+  static bool _isTransient(DioException e) =>
+      _isTransientNetwork(e) || _isRelayBusy(e);
+
+  /// relay が利用権の確認の枠が埋まっていて断った回（capsicum-relay#89）。
+  ///
+  /// ⚠⚠ **503 を一律に送り直さない。**`reason` が `verification_busy` の回だけ。
+  /// 設定の欠落（`Relay is not configured`）のような 503 は、待っても直らない。
+  ///
+  /// ⚠ relay はこの回に**何も保存していない**ので、送り直さずに諦めると購入が
+  /// relay に載らないまま残る（利用者は「購入を復元する」を押すことになる）。
+  static bool _isRelayBusy(DioException e) {
+    if (e.response?.statusCode != 503) return false;
+    final data = e.response?.data;
+    return data is Map && data['reason'] == 'verification_busy';
   }
 
   /// 接続段階の transient エラーか判定する。`badResponse` (4xx/5xx) は

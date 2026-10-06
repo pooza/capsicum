@@ -6,6 +6,7 @@ import 'package:capsicum/src/service/entitlement_token_store.dart';
 import 'package:capsicum/src/service/push_relay_client.dart';
 import 'package:capsicum/src/util/sensitive_fields.dart';
 import 'package:dio/dio.dart';
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// 有償リレーの利用権トークン (#597 / #1121)。
@@ -96,6 +97,65 @@ void main() {
       expect(adapter.lastJson['purchase_id'], 'tx-1');
       expect(adapter.lastJson['device_id'], 'install-1');
       expect(json['token'], 'et-abc');
+    });
+  });
+
+  // capsicum-relay#89: relay は利用権の確認の枠が埋まっていると、**何も保存せずに**
+  // 503（reason: verification_busy）で断る。送り直さないと購入が relay に載らない。
+  group('PushRelayClient.issueEntitlementToken — relay が塞がっていた回', () {
+    const busy = (
+      503,
+      '{"error":"Verification busy","reason":"verification_busy"}',
+    );
+    const issued = (
+      201,
+      '{"token":"et-abc","store":"apple","status":"active"}',
+    );
+
+    test('verification_busy の 503 は、間を置いて送り直す', () {
+      fakeAsync((async) {
+        final adapter = _ScriptedAdapter([busy, issued]);
+        final client = PushRelayClient()..httpClientAdapterForTesting = adapter;
+        Map<String, dynamic>? json;
+        client
+            .issueEntitlementToken(
+              store: 'apple',
+              purchaseId: 'tx-1',
+              deviceId: 'install-1',
+            )
+            .then((value) => json = value);
+
+        async.elapse(const Duration(milliseconds: 100));
+        expect(adapter.calls, 1);
+        expect(json, isNull, reason: '間を置かずに送り直している');
+
+        async.elapse(const Duration(seconds: 3));
+        expect(adapter.calls, 2);
+        expect(json?['token'], 'et-abc');
+      });
+    });
+
+    // ⚠⚠ 503 を一律に送り直さない。設定の欠落のような 503 は、待っても直らない。
+    test('reason の無い 503 は送り直さない', () {
+      fakeAsync((async) {
+        final adapter = _ScriptedAdapter([
+          (503, '{"error":"Relay is not configured"}'),
+          issued,
+        ]);
+        final client = PushRelayClient()..httpClientAdapterForTesting = adapter;
+        Object? error;
+        client
+            .issueEntitlementToken(
+              store: 'apple',
+              purchaseId: 'tx-1',
+              deviceId: 'install-1',
+            )
+            .then<void>((_) {}, onError: (Object e) => error = e);
+
+        async.elapse(const Duration(seconds: 30));
+        expect(adapter.calls, 1);
+        expect(error, isA<DioException>());
+      });
     });
   });
 
@@ -225,6 +285,35 @@ class _CapturingAdapter implements HttpClientAdapter {
     return ResponseBody.fromString(
       body,
       201,
+      headers: {
+        Headers.contentTypeHeader: [Headers.jsonContentType],
+      },
+    );
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
+
+/// 決めておいた応答を順に返す。尽きたら最後の応答を返し続ける。
+class _ScriptedAdapter implements HttpClientAdapter {
+  _ScriptedAdapter(this.responses);
+
+  final List<(int, String)> responses;
+  int calls = 0;
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    final (status, body) =
+        responses[calls < responses.length ? calls : responses.length - 1];
+    calls++;
+    return ResponseBody.fromString(
+      body,
+      status,
       headers: {
         Headers.contentTypeHeader: [Headers.jsonContentType],
       },
