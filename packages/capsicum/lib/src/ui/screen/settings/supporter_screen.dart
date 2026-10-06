@@ -53,7 +53,7 @@ class SupporterScreen extends ConsumerWidget {
             child: Text(
               'capsicum は投げ銭で開発と通知リレーの運用を支援できます。'
               'これは任意の応援です。投げ銭をしてもしなくても、'
-              'すべての機能はこれまでどおり誰でも利用できます。',
+              'アプリの機能に違いはありません。',
               style: TextStyle(fontSize: 13),
             ),
           ),
