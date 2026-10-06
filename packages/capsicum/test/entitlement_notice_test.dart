@@ -54,6 +54,23 @@ void main() {
     expect(notifications.shown.single.body, contains('止まっています'));
   });
 
+  // 2 回目の差分レビュー（2026-10-06）: 端末の保存を読めなかった回（unknown）が
+  // 「未払い以外に落ち着いた」として記録を消していたので、次の起動で同じ
+  // 未払いがもう一度鳴った。
+  test('⚠⚠ 読めなかった回をはさんでも、同じ未払いを 2 度鳴らさない', () async {
+    expect(await run(EntitlementView.grace), isTrue);
+    expect(await run(EntitlementView.unknown), isFalse);
+    expect(await run(EntitlementView.grace), isFalse);
+    expect(notifications.shown, hasLength(1));
+  });
+
+  test('対照群: 直ったあとで再び未払いになったら、もう一度鳴らす', () async {
+    expect(await run(EntitlementView.grace), isTrue);
+    expect(await run(EntitlementView.active), isFalse);
+    expect(await run(EntitlementView.grace), isTrue);
+    expect(notifications.shown, hasLength(2));
+  });
+
   // ⚠⚠ **起動のたびに鳴らさない。**同じ状態では 1 回だけ。
   test('同じ状態では 2 回目を出さない', () async {
     expect(await run(EntitlementView.grace), isTrue);

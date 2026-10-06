@@ -497,6 +497,36 @@ void main() {
       }
     });
 
+    // 2 回目の差分レビュー（2026-10-06）。
+    test('⚠ unknown の文面が、効かない操作を指していない', () {
+      final (_, body, _) = relayEntitlementStatusCopy(
+        view: EntitlementView.unknown,
+        expiresAt: null,
+      );
+      // 画面を開き直しても読み直さない（読み直すのは起動時と、購入・復元のあと）。
+      expect(body, isNot(contains('この画面を開いて')));
+      expect(body, contains('アプリを開き直す'));
+    });
+
+    test('⚠ 設定画面は、unknown のときに「利用権があるため」と言い切らない（配線）', () {
+      final source = maskComments(
+        read(
+          'lib/src/ui/screen/settings/push_notification_settings_screen.dart',
+        ),
+      );
+      final at = source.indexOf('switch ((');
+      expect(at, greaterThan(0));
+      final head = source.substring(at, at + 200);
+      expect(head, contains('entitlementView != EntitlementView.unknown'));
+      // ⚠ 登録を試みる側の判定は変えていない（分からない回も試みる）。
+      expect(
+        source,
+        contains(
+          'final hasEntitlement = entitlementView != EntitlementView.absent;',
+        ),
+      );
+    });
+
     test('読めなければ load は null、loadOrThrow は例外（区別できる）', () async {
       expect(await EntitlementTokenStore.load(), isNull);
       await expectLater(EntitlementTokenStore.loadOrThrow(), throwsA(anything));

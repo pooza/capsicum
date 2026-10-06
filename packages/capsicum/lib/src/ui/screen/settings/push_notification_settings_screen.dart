@@ -45,7 +45,8 @@ class PushNotificationSettingsScreen extends ConsumerWidget {
         ? EntitlementView.absent
         : ref.watch(entitlementStatusProvider).view;
 
-    // ⚠⚠ **手元に利用権があるか** —— `absent` 以外＝トークンを持っている。
+    // ⚠⚠ **手元に利用権があるか** —— `absent` 以外＝トークンを持っている、
+    // **または読めなくて分からない**（`unknown`）。分からない回も登録は試みる。
     // **登録を試みる側の判定に使う** (#1218)。⚠ **`status` では切らない**
     // （`expired` でも登録は試みて、止めるのは relay の仕事）。
     final hasEntitlement = entitlementView != EntitlementView.absent;
@@ -109,7 +110,14 @@ class PushNotificationSettingsScreen extends ConsumerWidget {
               text:
                   // ⚠⚠ **利用権がある場合を書き分ける (#1218)。**買った人に
                   // 「プリセットのアカウントが要ります」と出していた。
-                  switch ((hasPreset, hasEntitlement)) {
+                  // ⚠ **分からない回は「ある」と言い切らない**（2 回目の差分
+                  // レビュー・2026-10-06）。すぐ下の節が「確認できませんでした」と
+                  // 出すので、ここで「利用権があるため」と言うと食い違う。
+                  switch ((
+                    hasPreset,
+                    hasEntitlement &&
+                        entitlementView != EntitlementView.unknown,
+                  )) {
                     (true, _) =>
                       'プリセットサーバーのアカウントが登録されているため、'
                           'すべてのアカウントでプッシュ通知が利用できます。'

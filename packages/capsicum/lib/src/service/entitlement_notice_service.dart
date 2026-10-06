@@ -45,6 +45,10 @@ class EntitlementNoticeService {
     required SharedPreferences prefs,
   }) async {
     if (hasPreset) return false;
+    // ⚠⚠ **「分からない」は、落ち着いた状態ではない**（2 回目の差分レビュー・
+    // 2026-10-06）。端末の保存を読めなかっただけの回に記録を消すと、次に読めて
+    // 未払いのままだったとき、**同じ未払いをもう一度鳴らす**。何もせず抜ける。
+    if (view == EntitlementView.unknown) return false;
     if (view != EntitlementView.grace) {
       // ⚠ 未払い以外に落ち着いたら、次の未払いで鳴らせるように忘れる。
       await prefs.remove(lastNoticeKey);
