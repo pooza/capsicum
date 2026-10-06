@@ -216,6 +216,8 @@ end
 - **iOS**: TestFlight 外部テスター経由（内部テスターは本名相互公開の問題があるため不使用）
   - ⚠ **外部テスター向けにはベータ版の審査が入る。**アップロードの処理が終わっても、審査を通るまで外部テスターには配られない。状態は `.claude/scripts/asc-status.rb builds`（内部 / 外部 / 審査を分けて出す）
   - ⚠⚠ **審査は 2 本を並行できない。**前のビルドが審査待ちの間に新しいビルドを出すには、**前のビルドの審査を止めてから、新しいビルドを出し直す**（App Store Connect での手作業・2026-10-06 に 194 → 195 で踏んだ）。⚠ **自動では移らない**ので、短い間隔でビルドを重ねると、そのたびに待ち行列へ並び直すことになる
+  - **審査が動かないときの催促（優先審査の依頼）は Apple Developer のサイトにある。**App Store Connect の中ではない → <https://developer.apple.com/contact/app-store/?topic=expedite>（アプリとプラットフォームを選んで送るだけ）。⚠ **フォームに理由を書く欄は無い**（公式ヘルプ [Request an expedited review](https://developer.apple.com/help/app-review/after-submitting-for-review/request-expedited-review) は、理由を提出時の「メモ」欄に書くよう案内している）。⚠ 公式ヘルプが説明しているのは App Store の審査だけで、**ベータ審査に効くかは書かれていない**（2026-10-07 に 196 で出し、受理はされた）
+  - ⚠ **催促するかどうかは、待ち時間を測ってから決める。**上のコマンドが各ビルドのアップロード時刻と審査待ちの時間を出す。⚠ **取り下げたビルドの提出時刻は API から消える**ので、出し直しをまたいだ積算はアップロードの時刻で数える
 - **Android**: Google Play で直接配布（GitHub Releases への APK 添付は v1.5.1 で廃止）
 - **macOS**: Mac App Store 一本（.dmg / Developer ID 配布は採用しない）。「App Store からのアプリのみ許可」設定のユーザーに届かない問題と、署名・公証・更新通知の二重メンテを避けるため。詳細は [release-pipeline.md](archive/release-pipeline.md) 参照
 - **Linux**: AppImage 単独（Flathub は [#604](https://github.com/pooza/capsicum/issues/604) で 2026-05-29 に断念、Snap は不採用）。GitHub Releases に添付して即座に配布。手順は [store-release スキルの linux.md](../.claude/skills/store-release/linux.md)（§4.5）

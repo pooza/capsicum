@@ -336,7 +336,7 @@ dart analyze --fatal-infos > /tmp/analyze.log 2>&1; echo "ANALYZE_EXIT=$?"
 
 ⚠ **v1.66.1 は Windows 専用の点リリース**（relay#65）。relay が WNS raw の上限 5000B を超えた通知から暗号化本文を落として `degraded:"1"` で送り、Windows 側は iOS と同じ汎用文面（「capsicum」/「<account> に通知があります」）で出す。**起動中は 8 秒待って、同じアカウント宛を WebSocket 経路が出していなければ出す**（ID が無く dedup できないため・Codex P1 / P2 で詰めた）。実機で「終了中 / 起動中で WebSocket 無し / 8 秒以内に終了」の 3 ケースを本番 relay で確認済み。
 
-過去リリースの詳細ログは [archive/release-log.md](archive/release-log.md) に退避した（正本は [GitHub Releases](https://github.com/pooza/capsicum/releases) / Milestones）。マイルストーン移行時のログトリム手順は [milestone-transition.md](milestone-transition.md) を参照。
+過去リリースの詳細ログは [archive/release-log.md](archive/release-log.md) に退避した（正本は [GitHub Releases](https://github.com/pooza/capsicum/releases) / Milestones）。マイルストーン移行時のログトリム手順は [milestone-transition スキル](../.claude/skills/milestone-transition/SKILL.md) の step 7。
 
 ### デスクトップ対応
 
@@ -356,8 +356,6 @@ dart analyze --fatal-infos > /tmp/analyze.log 2>&1; echo "ANALYZE_EXIT=$?"
 ⚠ **プラグインのデスクトップ対応状況は [desktop-plugin-compatibility.md](desktop-plugin-compatibility.md)、端末のセットアップは [dev-environment-desktop.md](dev-environment-desktop.md)。**
 
 ### 運用ルール
-
-運用ルール:
 
 - リリース前レビューは各マイルストーンの Issue をすべて消化した後、リリース直前に毎度実施する。[#27](https://github.com/pooza/capsicum/issues/27) の「セキュリティレビュー」だけでは実害バグを取りこぼすため、以下 5 観点をサブエージェントで並列に走らせる（手順の正本は **`/release-review`** スキル: [SKILL.md](../.claude/skills/release-review/SKILL.md)）:
   - セキュリティ（`/security-review` スキル）
