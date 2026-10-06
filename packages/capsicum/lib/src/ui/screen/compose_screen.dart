@@ -1597,8 +1597,18 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     }
     // 復元経路の解決をもって、以降の離脱時保存 (#966) を解禁する (#969)。
     // 保存済みが無い（saved == null）場合も基準世代は確定しているので解禁する。
-    _draftRestored = true;
-    if (!mounted || saved == null) return;
+    //
+    // 🔴 **保存済みがある回は、添付を戻し終えるまで解禁しない**（リリース前
+    // レビューの Codex P1・2026-10-06）。以前はここで解禁してから、添付の
+    // 実在確認（非同期）へ進んでいた。その間に画面を離れる / アプリが裏へ回ると、
+    // `_saveDraft` が**まだ空の `_attachments`** を控えて保存し、**下書きの添付の
+    // パスとレイヤの控えを消した**（ストアは空なら添付の欄ごと消す）。
+    // ⚠ 解禁を遅らせても失うものは無い —— その間に保存が走らなければ、
+    // **元の下書きがそのまま残る**。
+    if (!mounted || saved == null) {
+      _draftRestored = true;
+      return;
+    }
 
     // 「取消」で戻せるよう、書き戻す前の状態を控える (#964)。復元は新規 compose
     // のたびに黙って走るので、意図しない復元を 1 タップで捨てられるようにする。
@@ -1654,14 +1664,27 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     });
     // ローカル添付を戻す (#1130)。⚠ **実在を確かめてから**（一時領域が消えて
     // いれば落とす）。ドライブ添付はそもそも保存対象外なので、ここには来ない。
-    final resolved = await resolveComposeDraftAttachments(saved.attachments);
-    if (!mounted) return;
+    final ComposeDraftAttachmentRestore resolved;
+    try {
+      resolved = await resolveComposeDraftAttachments(saved.attachments);
+    } catch (_) {
+      // ⚠ 落ちても離脱時保存は解禁する（上の `restore()` の失敗と同じ理由。
+      // false のままだと `_saveDraft` が永久に no-op になる）。
+      _draftRestored = true;
+      rethrow;
+    }
+    if (!mounted) {
+      _draftRestored = true;
+      return;
+    }
     if (resolved.restorable.isNotEmpty) {
       setState(
         () =>
             _attachments.addAll(resolved.restorable.map(_MediaEntry.restored)),
       );
     }
+    // 🔴 **添付を戻し終えてから解禁する**（上の説明）。
+    _draftRestored = true;
 
     // 添付の行方を明示する (#966 → #1130)。黙って戻すと下書きと無関係の添付に
     // 見え、黙って落とすと「保存された」と思って失う。文面の分岐は
