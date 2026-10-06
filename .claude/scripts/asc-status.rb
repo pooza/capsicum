@@ -159,7 +159,8 @@ def print_builds
     review = lookup.call('betaAppReviewSubmission') || {}
     version = lookup.call('preReleaseVersion') || {}
     attrs = build['attributes']
-    puts "  #{version['version']} (#{attrs['version']})  #{version['platform']}  " \
+    uploaded = Time.parse(attrs['uploadedDate']).getlocal.strftime('%m-%d %H:%M')
+    puts "  #{version['version']} (#{attrs['version']})  #{version['platform']}  上=#{uploaded}  " \
       "処理=#{attrs['processingState']}  内部=#{detail['internalBuildState']}  " \
       "外部=#{detail['externalBuildState']}  審査=#{review['betaReviewState'] || '未提出'}"
     # ⚠ **審査待ちは「いつから待っているか」を出す。**状態だけだと、数時間なのか
@@ -169,7 +170,6 @@ def print_builds
 
     hours = ((Time.now - Time.parse(submitted)) / 3600).round(1)
     puts "      提出=#{Time.parse(submitted).getlocal.strftime('%m-%d %H:%M')}  " \
-      "アップロード=#{Time.parse(attrs['uploadedDate']).getlocal.strftime('%m-%d %H:%M')}  " \
       "待ち=#{hours} 時間"
   end
 end
