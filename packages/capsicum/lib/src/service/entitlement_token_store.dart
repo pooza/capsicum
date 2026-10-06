@@ -141,21 +141,48 @@ class EntitlementTokenStore {
     return _cached;
   }
 
-  static Future<void> save(EntitlementToken token) async {
-    await _gate.write(key: _key, value: jsonEncode(token.toJson()));
-    _cached = token;
-    _loaded = true;
+  static Future<void> save(EntitlementToken token) {
+    return _serialized(() async {
+      await _gate.write(key: _key, value: jsonEncode(token.toJson()));
+      _cached = token;
+      _loaded = true;
+    });
   }
 
+  /// 書き換え（[save] / [clear]）の待ち行列の末尾。
+  ///
+  /// 🔴 **書き換えは、呼ばれた順に 1 本ずつ実行する**（リリース PR の Codex P1・
+  /// 締めの回・2026-10-06）。読み直し・購入・記録の消去が別々にここを呼ぶので、
+  /// 並べて走らせると**完了の順が呼んだ順と入れ替わりうる** —— 先に呼ばれた
+  /// 古い値の保存が、あとから呼ばれた消去や新しい token の保存より遅れて終わると、
+  /// **消した記録が戻る / 新しい token が古い値で上書きされる**。
+  /// ⚠ 呼ぶ側の世代の検査（`EntitlementStatusNotifier`）は「これから書くか」を
+  /// 止めるだけで、**もう書きはじめた 1 本は止められない**。順序はここで守る。
+  static Future<void> _writes = Future<void>.value();
+
+  static Future<T> _serialized<T>(Future<T> Function() body) {
+    final run = _writes.then((_) => body());
+    // ⚠ 失敗しても行列は止めない（次の書き換えを巻き込まない）。
+    _writes = run.then<void>((_) {}, onError: (Object _) {});
+    return run;
+  }
+
+  /// テストが待ち行列の順序を確かめるための口。
+  @visibleForTesting
+  static Future<T> serializedForTesting<T>(Future<T> Function() body) =>
+      _serialized(body);
+
   /// ⚠ 購入が無くなったときに消す。**消せなくても例外にしない**（load と同じ理由）。
-  static Future<void> clear() async {
-    try {
-      await _gate.delete(key: _key);
-    } catch (e) {
-      debugPrint('capsicum: entitlement: clear failed (${e.runtimeType})');
-    }
-    _cached = null;
-    _loaded = true;
+  static Future<void> clear() {
+    return _serialized(() async {
+      try {
+        await _gate.delete(key: _key);
+      } catch (e) {
+        debugPrint('capsicum: entitlement: clear failed (${e.runtimeType})');
+      }
+      _cached = null;
+      _loaded = true;
+    });
   }
 
   /// テストがプロセス内キャッシュを捨てるための口。

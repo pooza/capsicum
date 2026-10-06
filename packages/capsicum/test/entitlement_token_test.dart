@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:capsicum/src/constants.dart';
@@ -158,6 +159,56 @@ void main() {
         expect(adapter.calls, 1);
         expect(error, isA<DioException>());
       });
+    });
+  });
+
+  // リリース PR の Codex P1（締めの回・2026-10-06）。
+  group('EntitlementTokenStore — 書き換えの順序', () {
+    test('⚠⚠ 書き換えは、呼ばれた順に 1 本ずつ実行する（遅い 1 本を追い越さない）', () async {
+      final order = <String>[];
+      // 先に呼ばれた遅い書き換え（＝ 古い値の保存）と、あとから呼ばれた速い
+      // 書き換え（＝ 消去）。並べて走らせると、速いほうが先に終わる。
+      final slow = EntitlementTokenStore.serializedForTesting(() async {
+        order.add('slow:start');
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+        order.add('slow:end');
+      });
+      final fast = EntitlementTokenStore.serializedForTesting(() async {
+        order.add('fast:start');
+        order.add('fast:end');
+      });
+      await Future.wait([slow, fast]);
+
+      expect(order, ['slow:start', 'slow:end', 'fast:start', 'fast:end']);
+    });
+
+    test('⚠ 1 本が失敗しても、次の書き換えは実行される', () async {
+      final failed = EntitlementTokenStore.serializedForTesting<void>(
+        () async => throw StateError('boom'),
+      );
+      await expectLater(failed, throwsStateError);
+
+      var ran = false;
+      await EntitlementTokenStore.serializedForTesting(() async => ran = true);
+      expect(ran, isTrue);
+    });
+
+    test('⚠⚠ 保存と消去が、どちらも待ち行列を通っている（配線）', () {
+      final source = File(
+        'lib/src/service/entitlement_token_store.dart',
+      ).readAsStringSync();
+      for (final head in [
+        'static Future<void> save(EntitlementToken token) {',
+        'static Future<void> clear() {',
+      ]) {
+        final at = source.indexOf(head);
+        expect(at, greaterThan(0), reason: '$head が見つからない');
+        expect(
+          source.substring(at, at + head.length + 40),
+          contains('return _serialized('),
+          reason: '$head が待ち行列を通っていない',
+        );
+      }
     });
   });
 
