@@ -170,7 +170,7 @@ capsicum の運営元は有限会社ビーショック（<https://www.b-shock.co
 
 ### 課金の方向性
 
-⚠⚠ **不変条件: プリセットサーバーのユーザーには決して課金しない**（2026-10-03 pooza）。**例外は、本人が自分の意志で行う投げ銭だけ。**「プリセットに 1 アカウント持てば、外部サーバーのアカウントも含めて全部無償」もこの条件に含まれる（[paid-relay-plan.md](paid-relay-plan.md) 1-2）。⚠⚠ **これが破れるのは不具合ではなく障害として扱う。**機能を止める・課金を促す・課金の状態を見せる、のどれでも破れたことになる。リリース前レビューでは必ず確かめる（[release-review スキル](../.claude/skills/release-review/SKILL.md)）。⚠ 判定はクライアント（`hasPresetAmong`）と relay（`EntitlementGate`）の**両方**にあるので、**片方だけ見て「守られている」としない**（2026-10-03 に relay 側だけが購読 1 行の `server` で判定していた・[relay#82](https://github.com/pooza/capsicum-relay/issues/82)）。
+⚠⚠ **不変条件: プリセットサーバーのユーザーには決して課金しない**（2026-10-03 pooza）。**例外は、本人が自分の意志で行う投げ銭だけ。**「プリセットに 1 アカウント持てば、外部サーバーのアカウントも含めて全部無償」もこの条件に含まれる（[paid-relay-plan.md](paid-relay-plan.md) 1-2）。⚠⚠ **これが破れるのは不具合ではなく障害として扱う。**機能を止める・課金を促す・課金の状態を見せる、のどれでも破れたことになる。リリース前レビューでは必ず確かめる（[release-review スキル](../.claude/skills/release-review/SKILL.md)）。⚠ 判定はクライアント（`hasPresetAccountProvider`・⚠ **接続できていないアカウントも数える**。画面だけでなく登録の経路もこれに従う）と relay（`EntitlementGate`）の**両方**にあるので、**片方だけ見て「守られている」としない**（2026-10-03 に relay 側だけが購読 1 行の `server` で判定していた・[relay#82](https://github.com/pooza/capsicum-relay/issues/82)）。
 
 当初は「外部ユーザー向けプッシュ通知リレーのコスト補填」を想定していたが、プリセットサーバーの既存ユーザーから「機能差別化なしでよいので投げ銭させてほしい」という要望が先に顕在化したため、サポーターサブスク（[#428](https://github.com/pooza/capsicum/issues/428)）を主軸に設計検討する方針に変更（2026-04-30）。
 

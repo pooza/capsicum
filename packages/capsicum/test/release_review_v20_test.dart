@@ -119,6 +119,122 @@ void main() {
       }
     });
 
+    // 2 回目の差分レビュー（2026-10-06）: 上の 4 箇所（画面）は直っていたが、
+    // **登録の経路**が接続できたアカウントだけで数えたままだった。プリセットの
+    // サーバーに届かない間にトークンが変わると、併用している外部サーバーの
+    // 登録を畳んだまま登録し直さず、通知が止まる。
+    group('登録の経路も、接続できたアカウントだけで判定していない（配線）', () {
+      List<File> libFiles() => Directory('lib')
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where((f) => f.path.endsWith('.dart'))
+          .toList();
+
+      /// `registerAllAccounts(` の呼び出しのうち、`hasPreset:` を渡していない
+      /// ものの位置。宣言（`static Future<void> registerAllAccounts(`）は除く。
+      List<int> callsWithoutHasPreset(String source) {
+        final offenders = <int>[];
+        for (final m in RegExp(r'registerAllAccounts\(').allMatches(source)) {
+          final head = source.substring(
+            m.start < 24 ? 0 : m.start - 24,
+            m.start,
+          );
+          if (head.contains('Future<void> ')) continue;
+          // 呼び出しの閉じ括弧までを見る（入れ子の括弧を数える）。
+          var depth = 0;
+          var end = m.end;
+          for (var i = m.end - 1; i < source.length; i++) {
+            final c = source[i];
+            if (c == '(') depth++;
+            if (c == ')') depth--;
+            if (depth == 0) {
+              end = i;
+              break;
+            }
+          }
+          if (!source.substring(m.start, end).contains('hasPreset:')) {
+            offenders.add(m.start);
+          }
+        }
+        return offenders;
+      }
+
+      test('走査が空振りしていない', () {
+        final files = libFiles();
+        expect(files.length, greaterThan(100));
+        final callers = files
+            .where(
+              (f) => callsWithoutHasPreset(
+                maskComments(f.readAsStringSync()).replaceAll('hasPreset:', ''),
+              ).isNotEmpty,
+            )
+            .map((f) => f.path)
+            .toList();
+        // ⚠ `hasPreset:` を消した版で数えると、呼び出しのあるファイルが出る。
+        expect(
+          callers,
+          containsAll([
+            'lib/src/ui/screen/splash_screen.dart',
+            'lib/src/provider/supporter_purchase_provider.dart',
+            'lib/src/service/push_registration_service.dart',
+          ]),
+        );
+      });
+
+      test('判定が、渡していない呼び出しだけを拾う（合成）', () {
+        expect(
+          callsWithoutHasPreset('await X.registerAllAccounts(accounts);'),
+          hasLength(1),
+        );
+        expect(
+          callsWithoutHasPreset(
+            'await X.registerAllAccounts(\n  accounts,\n'
+            '  hasPreset: ref.read(p),\n);',
+          ),
+          isEmpty,
+        );
+        // 入れ子の括弧の外にある `hasPreset:` には騙されない。
+        expect(
+          callsWithoutHasPreset(
+            'registerAllAccounts(list()); other(hasPreset: true);',
+          ),
+          hasLength(1),
+        );
+        // 宣言は数えない。
+        expect(
+          callsWithoutHasPreset(
+            'static Future<void> registerAllAccounts(List<Account> a) async {}',
+          ),
+          isEmpty,
+        );
+      });
+
+      test('⚠⚠ lib のどこにも、接続できたアカウントから数える古い判定が無い', () {
+        final offenders = <String>[];
+        for (final file in libFiles()) {
+          final source = maskComments(file.readAsStringSync());
+          if (source.contains('hasPresetAmong')) offenders.add(file.path);
+          if (callsWithoutHasPreset(source).isNotEmpty) {
+            offenders.add('${file.path}（hasPreset を渡していない）');
+          }
+        }
+        expect(offenders, isEmpty);
+      });
+
+      test('⚠ アカウントを足した回も、届かないアカウントを数えている', () {
+        final source = maskComments(
+          read('lib/src/provider/account_manager_provider.dart'),
+        );
+        final at = source.indexOf(
+          'PushRegistrationService.registerAccount(enriched',
+        );
+        expect(at, greaterThan(0));
+        final before = source.substring(at - 400, at);
+        expect(before, contains('hasPresetAccountIn('));
+        expect(before, contains('offlineAccounts:'));
+      });
+    });
+
     test('⚠ 判定の実体が offlineAccounts を読んでいる（配線）', () {
       final source = maskComments(
         read('lib/src/provider/account_manager_provider.dart'),

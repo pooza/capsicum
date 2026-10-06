@@ -41,14 +41,10 @@ class PushRegistrationService {
   /// 指定ホストがプリセットサーバーかどうかを判定する。
   static bool isPresetServer(String host) => kPresetServerHosts.contains(host);
 
-  /// アカウント群の中にプリセットサーバーのアカウントが 1 件以上あるか判定する。
-  /// eligible 判定（「連れて登録」判定）の中央集約。
-  static bool hasPresetAmong(Iterable<Account> accounts) =>
-      accounts.any((a) => isPresetServer(a.key.host));
-
   /// このアカウントで relay への登録を試みてよいか (#597 / #1181)。
   ///
-  /// - [eligible] = プリセットのアカウントを 1 つでも持っている（[hasPresetAmong]）
+  /// - [eligible] = プリセットのアカウントを 1 つでも持っている
+  ///   （`hasPresetAccountProvider`・⚠ **接続できていないアカウントも数える**）
   /// - [hasEntitlement] = 有償リレーの利用権トークンを保持している（#1121）
   ///
   /// ⚠⚠ **以前は `eligible` と [isPresetServer] しか見ていなかったので、
@@ -671,7 +667,15 @@ class PushRegistrationService {
   /// することで厳密に one-at-a-time 化する。
   static Future<void> _tokenRefreshChain = Future<void>.value();
 
-  static void startTokenRefreshListener(List<Account> Function() getAccounts) {
+  ///
+  /// [hasPreset] も同じ理由で発火時点の値を読む。⚠⚠ **[getAccounts] の結果から
+  /// 数えない。**あちらは接続できたアカウントだけなので、プリセットのサーバーに
+  /// 届かない間にトークンが変わると、併用している外部サーバーの登録を畳んだまま
+  /// 登録し直さなくなる（[registerAllAccounts] の doc）。
+  static void startTokenRefreshListener(
+    List<Account> Function() getAccounts, {
+    required bool Function() hasPreset,
+  }) {
     _tokenRefreshSub?.cancel();
     final Stream<String>? stream;
     if (Platform.isIOS || Platform.isMacOS) {
@@ -690,7 +694,7 @@ class PushRegistrationService {
       // chain が failed future になり以降すべての emit が握り潰されて
       // プロセス終了までトークンローテーションが機能しなくなる。
       _tokenRefreshChain = _tokenRefreshChain
-          .then((_) => _runTokenRefresh(getAccounts))
+          .then((_) => _runTokenRefresh(getAccounts, hasPreset))
           .catchError((Object e, StackTrace st) {
             debugLogException(
               'capsicum: push.registration: token refresh failed',
@@ -710,6 +714,7 @@ class PushRegistrationService {
 
   static Future<void> _runTokenRefresh(
     List<Account> Function() getAccounts,
+    bool Function() hasPreset,
   ) async {
     debugPrint(
       'capsicum: push.registration: device token rotated, re-registering',
@@ -717,7 +722,7 @@ class PushRegistrationService {
     final accounts = getAccounts();
     if (accounts.isEmpty) return;
     await _cleanupDeviceRegistration(accounts);
-    await registerAllAccounts(accounts);
+    await registerAllAccounts(accounts, hasPreset: hasPreset());
   }
 
   /// デバイス全体のプッシュ登録を畳む。古いリレー登録・SNS サブスクリプ
@@ -845,7 +850,19 @@ class PushRegistrationService {
   ///
   /// プリセットサーバーのアカウントが1つでもあれば、全アカウントを登録対象とする。
   /// デバイストークンが未取得の場合は到着を待ってから登録する。
-  static Future<void> registerAllAccounts(List<Account> accounts) async {
+  ///
+  /// ⚠⚠ **[hasPreset] は [accounts] から数えない**（v2.0 の差分レビュー・
+  /// 2026-10-06）。[accounts] は接続できたアカウントだけなので、ここで数えると、
+  /// プリセットのサーバーに届かない状態で起動した人が「プリセットを持たない人」
+  /// になり、併用している外部サーバーの登録が飛ばされる。トークンが変わった回は
+  /// 登録を畳んだあとなので、**通知が止まったまま自動では戻らない**。
+  /// `docs/product-policy.md` の不変条件（プリセットの利用者の機能を止めない）の
+  /// 側。⚠ 呼ぶ側は `hasPresetAccountProvider` の値を渡す（`required` にして
+  /// あるのは、渡し忘れて同じ穴を開け直せないようにするため）。
+  static Future<void> registerAllAccounts(
+    List<Account> accounts, {
+    required bool hasPreset,
+  }) async {
     if (accounts.isEmpty) return;
 
     // 本配線が無いプラットフォームでは _waitForDeviceToken (最大 10 秒) を
@@ -870,7 +887,6 @@ class PushRegistrationService {
       }
     }
 
-    final hasPreset = hasPresetAmong(accounts);
     // registerAccount は in-flight ガード付きで内部 try/catch も備えるため、
     // 並列化して起動時のブロック時間を短縮する。N アカウント × 2 HTTP が
     // 直列で数秒積み上がっていたのを 1 ラウンドに圧縮する。

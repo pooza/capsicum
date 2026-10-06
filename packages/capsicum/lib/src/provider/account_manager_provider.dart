@@ -285,7 +285,12 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
 
     // プッシュ通知登録（ベストエフォート）。
     // 既存アカウントにプリセットサーバーがあれば、新規アカウントも登録対象。
-    final hasPreset = PushRegistrationService.hasPresetAmong(newAccounts);
+    // ⚠⚠ **届かないアカウントも数える**（[hasPresetAccountIn]）。プリセットの
+    // サーバーが落ちている間に外部サーバーを足した人を、登録から外さない。
+    final hasPreset = hasPresetAccountIn(
+      accounts: newAccounts.map((a) => a.key),
+      offlineAccounts: offline.map((o) => o.key),
+    );
     PushRegistrationService.registerAccount(enriched, eligible: hasPreset);
   }
 

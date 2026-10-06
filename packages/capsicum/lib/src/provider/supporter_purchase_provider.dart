@@ -482,7 +482,10 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
     try {
       final accounts = ref.read(accountManagerProvider).accounts;
       if (accounts.isNotEmpty) {
-        await PushRegistrationService.registerAllAccounts(accounts);
+        await PushRegistrationService.registerAllAccounts(
+          accounts,
+          hasPreset: ref.read(hasPresetAccountProvider),
+        );
       }
     } catch (e, st) {
       Sentry.captureException(
@@ -763,7 +766,10 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
     try {
       final accounts = ref.read(accountManagerProvider).accounts;
       if (accounts.isNotEmpty) {
-        await PushRegistrationService.registerAllAccounts(accounts);
+        await PushRegistrationService.registerAllAccounts(
+          accounts,
+          hasPreset: ref.read(hasPresetAccountProvider),
+        );
       }
     } catch (e, st) {
       Sentry.captureException(

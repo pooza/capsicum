@@ -38,7 +38,7 @@ end
 if (!eligible && !isPresetServer(account.key.host)) { /* skip */ }
 ```
 
-`eligible` は [`hasPresetAmong`](../packages/capsicum/lib/src/service/push_registration_service.dart)（同 45 行）＝ **プリセットのアカウントを 1 つでも持っていれば true**。
+`eligible` は [`hasPresetAccountProvider`](../packages/capsicum/lib/src/provider/account_manager_provider.dart) ＝ **プリセットのアカウントを 1 つでも持っていれば true**（⚠ 接続できていないアカウントも数える。当初は `hasPresetAmong` が接続できたアカウントだけを数えており、2026-10-06 の差分レビューで置き換えた）。
 
 ⚠⚠ **つまり「プリセットに 1 アカウント持てば、外部サーバーのアカウントも全部無償でリレーされる」。**これはバグではなく doc コメントに明記された仕様（「プリセットサーバーのアカウントを1つでも持っていれば、全アカウントを登録対象とする」）。
 

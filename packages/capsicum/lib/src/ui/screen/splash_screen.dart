@@ -90,7 +90,11 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
         // 観測範囲外（in-memory 値が null から始まるので「変化」にならない）
         // なので、ここで拾わないと上流に古い購読が孤児として残り続ける。
         await PushRegistrationService.reconcileDeviceToken(latest);
-        await PushRegistrationService.registerAllAccounts(latest);
+        await PushRegistrationService.registerAllAccounts(
+          latest,
+          // ⚠ 届かないアカウントも数える（[hasPresetAccountProvider]）。
+          hasPreset: container.read(hasPresetAccountProvider),
+        );
         // ⚠⚠ **未払いはプッシュでは知らせられない** (#1123)。relay が
         // `/push` を拒んでいる状態なので、**relay を通さないローカル通知**で
         // 出す。⚠ 登録のあと（relay へ問い合わせた結果が要る）。
@@ -98,6 +102,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
       }
       PushRegistrationService.startTokenRefreshListener(
         () => container.read(accountManagerProvider).accounts,
+        hasPreset: () => container.read(hasPresetAccountProvider),
       );
     });
 
