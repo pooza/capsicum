@@ -55,9 +55,12 @@ class ChannelTimelineNotifier
   Future<TimelineState> build(ChannelTimelineKey key) async {
     // 前のチャンネル / アカウントの新着を、このカラムへ漏らさない (#1098)。
     resetLiveIngestState();
-    final adapter = adapterForTimelineKey(
-      ref.watch(currentAccountProvider),
-      key.account,
+    // 🔴 `Account` 全体ではなく、解決したアダプタだけを見る（本線の
+    // `TimelineNotifier.build` と同じ理由。全体を見ると、復帰のたびに読み直す）。
+    final adapter = ref.watch(
+      currentAccountProvider.select(
+        (current) => adapterForTimelineKey(current, key.account),
+      ),
     );
     // ⚠ contextKey はギャップ補完 (#781) の stale 判定が読む。ここだけ空のまま
     // だったので、他の TL と同じく入れる。

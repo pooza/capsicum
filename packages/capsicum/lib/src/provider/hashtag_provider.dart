@@ -100,9 +100,12 @@ class HashtagTimelineNotifier
   Future<TimelineState> build(HashtagTimelineKey key) async {
     // 前のタグ / アカウントの新着を、このカラムへ漏らさない (#1098)。
     resetLiveIngestState();
-    final adapter = adapterForTimelineKey(
-      ref.watch(currentAccountProvider),
-      key.account,
+    // 🔴 `Account` 全体ではなく、解決したアダプタだけを見る（本線の
+    // `TimelineNotifier.build` と同じ理由。全体を見ると、復帰のたびに読み直す）。
+    final adapter = ref.watch(
+      currentAccountProvider.select(
+        (current) => adapterForTimelineKey(current, key.account),
+      ),
     );
     final contextKey = timelineContextKey(key.account, HashtagTab(key.spec));
     if (adapter == null || adapter is! HashtagSupport) {

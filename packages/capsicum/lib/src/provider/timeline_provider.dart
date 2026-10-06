@@ -1282,7 +1282,16 @@ class TimelineNotifier
     _servesStartupCache = !ref.read(inDeckColumnProvider);
     // 種別はキーで固定なので watch しない。アカウントは「同じアカウントのアダプタが
     // 作り直された」（再接続等）ときに build() をやり直すため watch する。
-    final adapter = _adapterFor(ref.watch(currentAccountProvider));
+    //
+    // 🔴 **`Account` 全体ではなく、解決したアダプタだけを見る**（リリース前
+    // レビュー・2026-10-06）。`Account` は `==` を持たないので、全体を watch
+    // すると**中身が同じでもインスタンスが替わるたびに build() がやり直される**。
+    // #1185 が復帰のたびに自分のプロフィールを引き直して差し替えるようになり、
+    // **アプリへ戻る（前回から 1 分以上）たびに TL が最新 1 ページから読み直し**に
+    // なっていた —— 読み進めた分と未表示の新着が消え、WebSocket も張り直す。
+    // ⚠ プロフィールの差し替えではアダプタは同じインスタンスのまま
+    // （`copyWithUser`）なので、ここは動かない。上のコメントの意図どおりになる。
+    final adapter = ref.watch(currentAccountProvider.select(_adapterFor));
     if (adapter == null) return TimelineState(contextKey: contextKey);
 
     // #716 計測: ホーム TL の初回描画を fetch (サーバー応答) / enrich (isCat) /

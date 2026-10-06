@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:capsicum/src/model/account.dart';
 import 'package:capsicum/src/model/account_key.dart';
@@ -318,5 +319,75 @@ void main() {
     expect(adapter.calls.where((c) => c.$2 != null).map((c) => c.$1), [
       TimelineType.local,
     ]);
+  });
+
+  // 🔴 リリース前レビュー（並行性の観点・2026-10-06）。`Account` は `==` を
+  // 持たないので、TL が `Account` 全体を watch していると、**中身が同じでも
+  // インスタンスが替わるたびに読み直しになる**。#1185 が復帰のたびに自分の
+  // プロフィールを引き直して差し替えるようになり、**アプリへ戻るたびに TL が
+  // 最新 1 ページへ置き換わっていた**（読み進めた分と未表示の新着が消える）。
+  test('🔴 プロフィールを引き直しただけでは、TL を読み直さない', () async {
+    final adapter = _RecordingAdapter();
+    final account = StateProvider<Account>((ref) => _account(_meKey, adapter));
+    final container = ProviderContainer(
+      overrides: [
+        currentAccountProvider.overrideWith((ref) => ref.watch(account)),
+      ],
+    );
+    addTearDown(container.dispose);
+    const key = (account: _meKey, type: TimelineType.home);
+    keepAlive(container, key);
+    await container.read(timelineProvider(key).future);
+    final callsBefore = adapter.calls.length;
+    expect(callsBefore, greaterThan(0), reason: '前提: 初回の取得は走っている');
+
+    // 復帰時の引き直しと同じ形（`copyWithUser`）: **アダプタは同じ**で、
+    // `Account` のインスタンスだけが新しくなる。
+    final current = container.read(account);
+    final refreshed = current.copyWithUser(
+      const User(id: 'me', username: 'me', displayName: '新しい表示名'),
+    );
+    expect(identical(refreshed, current), isFalse, reason: '前提: 別のインスタンス');
+    expect(identical(refreshed.adapter, current.adapter), isTrue);
+    container.read(account.notifier).state = refreshed;
+    await Future<void>.delayed(Duration.zero);
+    await container.read(timelineProvider(key).future);
+
+    expect(
+      adapter.calls.length,
+      callsBefore,
+      reason: '⚠ プロフィールの差し替えだけで TL を取り直している',
+    );
+
+    // 対照群: **アダプタが作り直されたら読み直す**（こちらは意図した挙動）。
+    final rebuilt = _RecordingAdapter();
+    container.read(account.notifier).state = _account(_meKey, rebuilt);
+    await Future<void>.delayed(Duration.zero);
+    await container.read(timelineProvider(key).future);
+
+    expect(rebuilt.calls, isNotEmpty, reason: '⚠ アダプタの作り直しに追随していない');
+  });
+
+  test('⚠ タグ / リスト / チャンネルの TL も、Account 全体を watch していない（配線）', () {
+    // 本線と同じ穴を 3 系統が写していた。**振る舞いは上の本線の検査で固定**し、
+    // こちらは同じ書き方に揃っていることだけを見る。
+    for (final path in [
+      'lib/src/provider/timeline_provider.dart',
+      'lib/src/provider/hashtag_provider.dart',
+      'lib/src/provider/list_provider.dart',
+      'lib/src/provider/channel_provider.dart',
+    ]) {
+      final source = File(path).readAsStringSync();
+      expect(
+        source,
+        isNot(contains('ref.watch(currentAccountProvider)')),
+        reason: '$path が Account 全体を watch している',
+      );
+      expect(
+        source,
+        contains('currentAccountProvider.select('),
+        reason: '$path がアダプタだけを見る形になっていない',
+      );
+    }
   });
 }
