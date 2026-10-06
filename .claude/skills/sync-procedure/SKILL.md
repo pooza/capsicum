@@ -104,6 +104,17 @@ disable-model-invocation: true
 
 - 美食丼の `#capsicum` タグタイムラインを取得: `curl -s "https://mstdn.b-shock.org/api/v1/timelines/tag/capsicum?limit=20"`
 - ダイスキーの capsicum チャンネル（delmulin 固有の capsicum 話題、`channelId=ak31f5utjv`、<https://misskey.delmulin.com/channels/ak31f5utjv>）を取得: `curl -s -X POST https://misskey.delmulin.com/api/channels/timeline -H 'Content-Type: application/json' -d '{"channelId":"ak31f5utjv","limit":20}'`
+- **capsicum のコミュニティ（`pf.korako.me` の `capsicum`）の新着を、本文まで読む**。⚠⚠ **タグ TL にはコミュニティの投稿が題名とリンクだけで載る**ので、題名を見て済ませると中身を丸ごと落とす（2026-10-06 に、デッキの発案者の要望 5 件を「題名しか載っていない」と報告して取りこぼした）:
+
+  ```sh
+  # 一覧（新しい順）。前回同期以降の投稿について、下の 2 本で本文と返信を読む
+  curl -s 'https://pf.korako.me/api/alpha/post/list?community_name=capsicum&sort=New&limit=15' \
+    | jq -r '.posts[] | "\(.post.published[0:16]) id=\(.post.id) comments=\(.counts.comments) \(.post.title[0:80])"'
+  curl -s 'https://pf.korako.me/api/alpha/post?id=<id>' | jq -r '.post_view.post.body'
+  curl -s 'https://pf.korako.me/api/alpha/comment/list?post_id=<id>&sort=Old&limit=20' | jq -r '.comments[] | .comment.body'
+  ```
+
+  ⚠ **本文に画像があれば開いて見る**（画面写真が要望の中身になっていることがある）。⚠ **箇条書きの要望は 1 行ずつ数える** —— 1 投稿 = 1 件ではない
 - バグ報告・機能要望・ユーザーからの質問がないか確認する
 - 未起票のバグ報告があれば GitHub Issue を起票する（報告元の投稿 URL を記載）
 - 好評・感想は報告のみ（Issue 化不要）
