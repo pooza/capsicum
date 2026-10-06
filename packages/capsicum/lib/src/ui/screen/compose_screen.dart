@@ -1677,10 +1677,20 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     });
     // ローカル添付を戻す (#1130)。⚠ **実在を確かめてから**（一時領域が消えて
     // いれば落とす）。ドライブ添付はそもそも保存対象外なので、ここには来ない。
+    // ⚠⚠ **待っている間に下書きが消されたら、添付も控えも入れない**（2 回目の
+    // 差分レビュー・2026-10-06）。本文を戻した時点で「取消」のバナーが出ている
+    // ので、実在の確認が終わる前に取消せる。そのまま続けると、**取消した下書きの
+    // 添付が画面に現れる**（確認が失敗した回は、見えない控えとして次の自動保存に
+    // 載り続ける）。
+    final epoch = _draftClearEpoch;
     final ComposeDraftAttachmentRestore resolved;
     try {
       resolved = await resolveComposeDraftAttachments(saved.attachments);
     } catch (e) {
+      if (epoch != _draftClearEpoch) {
+        _draftRestored = true;
+        return;
+      }
       // 🔴 **添付を戻せなかった回は、保存済みの添付の控えを持ち越す**
       // （リリース前レビューの Codex P1・2 巡目・2026-10-06）。
       //
@@ -1713,7 +1723,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       }
       return;
     }
-    if (!mounted) {
+    if (!mounted || epoch != _draftClearEpoch) {
       _draftRestored = true;
       return;
     }
@@ -1755,7 +1765,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// 出さない — **この時点では実害が無い**（消えていないだけ）で、次に開いた
   /// ときに古い下書きが復元されて初めて見える。投稿直後にも通る経路なので、
   /// ここで snackbar を出すと「投稿は成功しているのに失敗したように読める」。
+  /// [_clearDraft] が呼ばれた回数。添付の復元が、待っている間に下書きを
+  /// 消されたことを知るために見る（[_restoreDraft]）。
+  int _draftClearEpoch = 0;
+
   Future<void> _clearDraft({bool discard = true}) async {
+    _draftClearEpoch++;
     // ⚠ 持ち越していた控えも捨てる。残すと、消したはずの下書きの添付が
     // 次の自動保存で書き戻される。
     _unrestoredDraftAttachments = const [];

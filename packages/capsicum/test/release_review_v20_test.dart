@@ -716,7 +716,10 @@ void main() {
       expect(catchAt, greaterThan(tryAt), reason: '失敗時の分岐を切り出せていない');
       final failure = restore.substring(
         catchAt,
-        restore.indexOf('if (!mounted) {', catchAt),
+        restore.indexOf(
+          'if (!mounted || epoch != _draftClearEpoch) {',
+          catchAt,
+        ),
       );
 
       // 控えを持ち越す。
@@ -769,6 +772,48 @@ void main() {
       expect(head, contains('if (_unrestoredDraftAttachments.isNotEmpty) {'));
       expect(head, contains('showDialog<bool>'));
       expect(head, contains('if (proceed != true) return;'));
+    });
+
+    // 2 回目の差分レビュー（並行性・2026-10-06）: 本文を戻した時点で「取消」の
+    // バナーが出ているので、添付の実在確認が終わる前に取消せる。そのまま
+    // 続けると、取消した下書きの添付（失敗した回は見えない控え）が生き返る。
+    test('⚠⚠ 添付を待つ間に下書きを消されたら、添付も控えも入れない（配線）', () {
+      final source = maskComments(
+        read('lib/src/ui/screen/compose_screen.dart'),
+      );
+      final start = source.indexOf('Future<void> _restoreDraft() async');
+      final end = source.indexOf('Future<void> _clearDraft(');
+      expect(start, greaterThan(0));
+      expect(end, greaterThan(start), reason: '本体を切り出せていない');
+      final body = source.substring(start, end);
+
+      final snapshot = body.indexOf('final epoch = _draftClearEpoch;');
+      final resolve = body.indexOf('resolveComposeDraftAttachments(');
+      final carry = body.indexOf(
+        '_unrestoredDraftAttachments = saved.attachments',
+      );
+      final add = body.indexOf('_attachments.addAll(');
+      expect(snapshot, greaterThan(0));
+      expect(snapshot, lessThan(resolve), reason: '待つ前に控えていない');
+      expect(carry, greaterThan(resolve));
+      expect(add, greaterThan(carry));
+
+      // 控えを持ち越す前と、添付を入れる前の両方で、消されていないかを見る。
+      const check = 'epoch != _draftClearEpoch';
+      expect(
+        body.substring(resolve, carry),
+        contains(check),
+        reason: '⚠ 失敗した回に、取消した下書きの控えを持ち越す',
+      );
+      expect(
+        body.substring(carry, add),
+        contains(check),
+        reason: '⚠ 成功した回に、取消した下書きの添付を入れる',
+      );
+
+      // 消す側が数を進めている。
+      final clear = source.substring(end, end + 200);
+      expect(clear, contains('_draftClearEpoch++'));
     });
 
     test('前提: 下書きの復元と自動保存は、新規の投稿画面でだけ有効になる', () {
