@@ -34,7 +34,8 @@ class DeckColumnFocusRing extends ConsumerStatefulWidget {
 
   final String columnId;
 
-  /// 枠を出すか。**カラムが 1 本しかないときは出さない**（決定済み事項 10）。
+  /// 枠を出すか。**同時に見えているカラムが 1 本のときは出さない**（決定済み
+  /// 事項 10・#1243）。⚠ 「列に 1 本」ではなく「見えているのが 1 本」で決める。
   final bool showRing;
 
   final Widget child;

@@ -194,16 +194,18 @@ void main() {
     expect(focusedId(container), 'b');
   });
 
-  testWidgets('⚠ 枠の条件は「列に 2 本以上」で、「見えているのが 2 本以上」ではない', (tester) async {
+  testWidgets('⚠ 枠の条件は「見えているのが 2 本以上」で、「列に 2 本以上」ではない (#1243)', (tester) async {
     await pumpDeck(
       tester,
       size: const Size(390, 700),
       columnIds: const ['a', 'b'],
     );
 
-    // 狭幅なので見えているのは 1 本だが、列に 2 本あるので枠は出る。⚠ 送った先で
-    // 「今どれを見ているか」が分かるので、こちらのほうが親切（害は無い）。
-    expect(find.byKey(deckFocusRingKey('a')), findsOneWidget);
+    // 狭幅で見えているのは 1 本。列に 2 本あっても枠は出さない。⚠ 見えている
+    // カラムがフォーカスなのは自明で、枠は情報を足さない（「うるさい」という声が
+    // 出た・2026-10-06）。フォーカスそのものは従来どおり持っている。
+    expect(find.byKey(deckFocusRingKey('a')), findsNothing);
+    expect(find.byKey(deckFocusRingKey('b')), findsNothing);
   });
 
   testWidgets('カラムから開いたカラムはフォーカスになり、点滅が要求される', (tester) async {

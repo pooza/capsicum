@@ -578,11 +578,13 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
                             width: layout.columnWidth,
                             height: constraints.maxHeight,
                             // フォーカス中の枠と、押されたときのフォーカス移動
-                            // (#1172)。⚠ **枠は 1 本のときは出さない**
-                            // （決定済み事項 10）。
+                            // (#1172)。⚠⚠ **枠は、同時に見えているカラムが
+                            // 2 本以上のときだけ出す**（決定済み事項 10・#1243）。
+                            // 1 本しか見えない幅では、見えているカラムが
+                            // フォーカスなので、枠は情報を足さずうるさいだけになる。
                             child: DeckColumnFocusRing(
                               columnId: column.id,
-                              showRing: columns.length > 1,
+                              showRing: layout.visibleColumns > 1,
                               child: child,
                             ),
                           ),
