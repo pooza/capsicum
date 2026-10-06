@@ -15,6 +15,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
 import 'support/dart_source.dart';
+import 'support/source_files.dart';
 
 /// v2.0 のリリース前レビュー（5 観点 + Codex・2026-10-06）で出た赤の再発防止。
 ///
@@ -124,11 +125,7 @@ void main() {
     // サーバーに届かない間にトークンが変わると、併用している外部サーバーの
     // 登録を畳んだまま登録し直さず、通知が止まる。
     group('登録の経路も、接続できたアカウントだけで判定していない（配線）', () {
-      List<File> libFiles() => Directory('lib')
-          .listSync(recursive: true)
-          .whereType<File>()
-          .where((f) => f.path.endsWith('.dart'))
-          .toList();
+      List<File> libFiles() => sourceFiles('lib');
 
       /// `registerAllAccounts(` の呼び出しのうち、`hasPreset:` を渡していない
       /// ものの位置。宣言（`static Future<void> registerAllAccounts(`）は除く。
