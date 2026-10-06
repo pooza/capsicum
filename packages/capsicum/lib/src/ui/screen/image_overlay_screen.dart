@@ -324,11 +324,22 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
         throw StateError('Failed to encode normalized PNG');
       }
       if (!mounted) return;
+      // 🔴 **前回のレイヤを戻し終えるまで、編集画面を出さない**（リリース前
+      // レビューの Codex P1・2026-10-06）。以前は元画像を先に出してから
+      // 復元を待っていたので、**復元の途中で「完了」を押せた** —— スタンプは
+      // URL から取り直すので、回線が遅いほどその窓が長い。押すと**まだ空の
+      // レイヤ列で書き出され、前回のレイヤが黙って消えた**（焼き込み画像と
+      // レイヤの控えを両方置き換える）。⚠ 復元の途中で足したレイヤが、
+      // あとから入る復元分の**下**に潜る問題も同じ窓だった。
+      //
+      // ⚠ `_image` が null のあいだは本文が読み込み中の表示になり、「完了」も
+      // レイヤの追加も出ない。**門を足すのではなく、出す順番を入れ替えた。**
+      await _restoreLayers();
+      if (!mounted) return;
       setState(() {
         _image = data.buffer.asUint8List();
         _imageSize = size;
       });
-      await _restoreLayers();
     } catch (e, st) {
       await Sentry.captureException(scrubException(e), stackTrace: st);
       if (!mounted) return;
