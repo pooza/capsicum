@@ -177,6 +177,72 @@ void main() {
     });
   });
 
+  // ---- 2-2. 追い越された読み直しが、先に戻らない（Codex P1・2 巡目）----
+
+  group('🔴 await refresh() のあとで読む状態は、確定している', () {
+    // 起動時の未払いの通知（splash の `_notifyUnpaidEntitlement`）と同じ呼び方。
+    // notifier を初めて読むと build() が読み直しを予約し、呼び出し元がすぐ
+    // もう 1 本を始める ＝ **必ず重なる**。🔴 世代の仕組みを入れた直後は、
+    // 明示的に呼んだ側が追い越されて先に戻り、初期値を読んでいた。
+    test('provider を初めて読んで、すぐ読み直しを待つ', () async {
+      final container = ProviderContainer(
+        overrides: [
+          accountManagerProvider.overrideWith(
+            () => _Accounts(
+              AccountManagerState(
+                accounts: [_account(external)],
+                current: _account(external),
+              ),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(entitlementStatusProvider.notifier).refresh();
+      final status = container.read(entitlementStatusProvider);
+
+      expect(status.isRefreshing, isFalse, reason: '⚠ まだ読み直しの途中で戻ってきた');
+      // ⚠ テスト環境では保存を読めないので unknown に落ち着く（初期値は absent）。
+      expect(status.view, EntitlementView.unknown);
+    });
+
+    test('続けて 2 本始めても、先の 1 本は後の 1 本が終わるまで戻らない', () async {
+      final container = ProviderContainer(
+        overrides: [
+          accountManagerProvider.overrideWith(
+            () => _Accounts(
+              AccountManagerState(
+                accounts: [_account(external)],
+                current: _account(external),
+              ),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(entitlementStatusProvider.notifier);
+
+      // ⚠ 3 本が重なる（build() が予約した 1 本 + ここで始める 2 本）。
+      // **どれを待っても、いちばん新しい 1 本が終わるまで戻らない。**
+      // ⚠⚠ 「2 本目が終わったか」では見ない —— 1 本目が待つ相手は 2 本目では
+      // なく、その時点でいちばん新しい 1 本（build() が予約したぶん）になる。
+      final first = notifier.refresh();
+      final second = notifier.refresh();
+
+      await first;
+      final afterFirst = container.read(entitlementStatusProvider);
+      expect(afterFirst.isRefreshing, isFalse, reason: '⚠ 追い越された側が先に戻った');
+      expect(afterFirst.view, EntitlementView.unknown);
+
+      await second;
+      expect(
+        container.read(entitlementStatusProvider).view,
+        EntitlementView.unknown,
+      );
+    });
+  });
+
   // ---- 3. 読めなかったことを「持っていない」にしない ----
 
   group('🔴 利用権を読めなかったことを「未購入」にしない', () {
@@ -430,6 +496,47 @@ void main() {
       final addAll = body.indexOf('_attachments.addAll(');
       expect(addAll, greaterThan(resolve));
       expect(body.substring(addAll), contains('_draftRestored = true'));
+    });
+
+    // 🔴 Codex P1・2 巡目。1 巡目の修正は、添付の復元が例外で落ちた回に
+    // 「解禁して投げ直す」形で、次の自動保存が空の添付で上書きしていた。
+    test('添付を戻せなかった回は、控えを持ち越して保存に載せる（配線）', () {
+      final source = maskComments(
+        read('lib/src/ui/screen/compose_screen.dart'),
+      );
+      final start = source.indexOf('Future<void> _restoreDraft() async');
+      final end = source.indexOf('Future<void> _clearDraft(');
+      final restore = source.substring(start, end);
+      final tryAt = restore.indexOf('resolveComposeDraftAttachments(');
+      final catchAt = restore.indexOf('} catch (e) {', tryAt);
+      expect(catchAt, greaterThan(tryAt), reason: '失敗時の分岐を切り出せていない');
+      final failure = restore.substring(
+        catchAt,
+        restore.indexOf('if (!mounted) {', catchAt),
+      );
+
+      // 控えを持ち越す。
+      expect(
+        failure,
+        contains('_unrestoredDraftAttachments = saved.attachments'),
+      );
+      // ⚠ 投げ直さない（呼び出し側は fire-and-forget）。
+      expect(failure, isNot(contains('rethrow')));
+      // ⚠ 保存は解禁する（false のままだと本文が保存されなくなる）。
+      expect(failure, contains('_draftRestored = true'));
+
+      // 🔴 自動保存が、その控えを載せ直している。
+      final saveStart = source.indexOf('Future<void> _saveDraft() async');
+      final save = source.substring(saveStart, start);
+      expect(save, contains('..._unrestoredDraftAttachments'));
+      expect(
+        save,
+        contains('_attachments.length + _unrestoredDraftAttachments.length'),
+      );
+
+      // ⚠ 下書きを消したら、控えも捨てる（消したはずの添付を書き戻さない）。
+      final clear = source.substring(end, end + 400);
+      expect(clear, contains('_unrestoredDraftAttachments = const []'));
     });
 
     test('前提: 自動保存は `_draftRestored` を門にしている', () {

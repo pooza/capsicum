@@ -196,8 +196,35 @@ class EntitlementStatusNotifier extends Notifier<EntitlementStatus> {
   }
 
   /// 手元 → relay の順で読み直す。
-  Future<void> refresh() async {
+  ///
+  /// 🔴 **返る Future は、「いちばん新しい読み直し」が終わるまで完了しない**
+  /// （リリース前レビューの Codex P1・2 巡目・2026-10-06）。追い越された側が
+  /// 先に戻ると、`await refresh()` のあとで状態を読む呼び出し元が**古い状態を
+  /// 読む**。起動時の未払いの通知（`splash_screen` の `_notifyUnpaidEntitlement`）が
+  /// まさにその形で、しかも**必ず重なる** —— notifier を初めて読むと `build()` が
+  /// 読み直しを予約し、呼び出し元がすぐもう 1 本を始めるので、明示的に呼んだ側が
+  /// 追い越されて先に戻り、**初期値（未購入）を読んで通知を出し損ねていた**。
+  /// ⚠ relay がプッシュを止めたあとは、この通知が唯一の知らせになる。
+  Future<void> refresh() {
     final generation = ++_generation;
+    final run = _runRefresh(generation);
+    _latestRefresh = run;
+    return run;
+  }
+
+  /// いちばん新しい [refresh] の Future。追い越された側がこれを待つ。
+  Future<void>? _latestRefresh;
+
+  Future<void> _runRefresh(int generation) async {
+    await _refresh(generation);
+    // 追い越されていたら、勝った側が終わるまで待つ。⚠ 勝った側がさらに
+    // 追い越されていても、その Future が同じ規則で後続を待つので、1 回待てば
+    // 最後の 1 本まで届く。⚠ いちばん新しい 1 本はここを通らない（自分自身を
+    // 待つことは無い）。
+    if (generation != _generation) await _latestRefresh;
+  }
+
+  Future<void> _refresh(int generation) async {
     bool stale() => generation != _generation;
 
     // ⚠⚠ **プリセットを最初に見る (#1232)。**プリセットのアカウントがあれば
