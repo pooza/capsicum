@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:capsicum/src/constants.dart';
+import 'package:capsicum/src/provider/supporter_purchase_provider.dart';
 import 'package:capsicum/src/service/entitlement_token_store.dart';
 import 'package:capsicum/src/service/push_relay_client.dart';
 import 'package:capsicum/src/util/sensitive_fields.dart';
@@ -159,6 +161,83 @@ void main() {
     });
   });
 
+  // 2 回目の差分レビュー（2026-10-06）。
+  group('利用権の発行 — 待ち時間と記録', () {
+    test('⚠⚠ 発行は、relay がストアへ問い合わせる上限より長く待つ', () {
+      fakeAsync((async) {
+        final adapter = _ScriptedAdapter([
+          (201, '{"token":"et-abc","store":"apple","purchase_id":"tx-1"}'),
+        ]);
+        final client = PushRelayClient()..httpClientAdapterForTesting = adapter;
+        client.issueEntitlementToken(
+          store: 'apple',
+          purchaseId: 'tx-1',
+          deviceId: 'install-1',
+        );
+        async.elapse(const Duration(milliseconds: 100));
+
+        expect(adapter.receiveTimeouts, [kRelayEntitlementIssueReceiveTimeout]);
+        // relay は Apple を本番 → サンドボックスの順に、それぞれ最大 15 秒引く。
+        expect(
+          kRelayEntitlementIssueReceiveTimeout,
+          greaterThan(const Duration(seconds: 30)),
+        );
+      });
+    });
+
+    DioException failure(int status, Object? data) => DioException(
+      requestOptions: RequestOptions(path: '/entitlements'),
+      response: Response<Object?>(
+        requestOptions: RequestOptions(path: '/entitlements'),
+        statusCode: status,
+        data: data,
+      ),
+      type: DioExceptionType.badResponse,
+    );
+
+    test('⚠⚠ 失敗の記録は、ステータスと「塞がっていた」で分かれる', () {
+      final busy = entitlementIssueFingerprint(
+        failure(503, {
+          'error': 'Verification busy',
+          'reason': 'verification_busy',
+        }),
+      );
+      final unconfigured = entitlementIssueFingerprint(
+        failure(503, {'error': 'Relay is not configured'}),
+      );
+      final unauthorized = entitlementIssueFingerprint(failure(401, null));
+      final offline = entitlementIssueFingerprint(
+        DioException(
+          requestOptions: RequestOptions(path: '/entitlements'),
+          type: DioExceptionType.connectionError,
+        ),
+      );
+
+      expect(
+        {
+          busy.join('|'),
+          unconfigured.join('|'),
+          unauthorized.join('|'),
+          offline.join('|'),
+        },
+        hasLength(4),
+        reason: '同じ 1 件に畳まれている',
+      );
+      expect(busy, contains('verification_busy'));
+      expect(unconfigured, isNot(contains('verification_busy')));
+    });
+
+    test('⚠ 応答の値をそのまま載せない（知っている語だけ通す）', () {
+      expect(
+        relayBusyReasonOf(failure(503, {'reason': 'verification_busy'})),
+        'verification_busy',
+      );
+      expect(relayBusyReasonOf(failure(503, {'reason': 'x' * 200})), isNull);
+      expect(relayBusyReasonOf(failure(503, 'plain text')), isNull);
+      expect(relayBusyReasonOf(StateError('x')), isNull);
+    });
+  });
+
   group('EntitlementToken — 応答の読み取り', () {
     test('relay の応答から作れる', () {
       final token = EntitlementToken.fromRelay({
@@ -301,6 +380,7 @@ class _ScriptedAdapter implements HttpClientAdapter {
 
   final List<(int, String)> responses;
   int calls = 0;
+  final List<Duration?> receiveTimeouts = [];
 
   @override
   Future<ResponseBody> fetch(
@@ -311,6 +391,7 @@ class _ScriptedAdapter implements HttpClientAdapter {
     final (status, body) =
         responses[calls < responses.length ? calls : responses.length - 1];
     calls++;
+    receiveTimeouts.add(options.receiveTimeout);
     return ResponseBody.fromString(
       body,
       status,

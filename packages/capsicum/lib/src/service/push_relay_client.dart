@@ -126,6 +126,7 @@ class PushRelayClient {
       // ⚠ breadcrumb のラベル用。この経路は fedi サーバーに紐づかない
       // （購入はストアアカウントに紐づく・設計書 2-A）ので relay を名乗る。
       server: 'relay',
+      receiveTimeout: kRelayEntitlementIssueReceiveTimeout,
     );
   }
 
@@ -270,6 +271,7 @@ class PushRelayClient {
     required String operation,
     required Map<String, Object?> data,
     required String server,
+    Duration? receiveTimeout,
   }) async {
     DioException? lastError;
     for (var attempt = 0; attempt <= _registerRetryDelays.length; attempt++) {
@@ -277,7 +279,10 @@ class PushRelayClient {
         final response = await _dio.post<Map<String, dynamic>>(
           path,
           data: data,
-          options: Options(headers: {'X-Relay-Secret': _secret}),
+          options: Options(
+            headers: {'X-Relay-Secret': _secret},
+            receiveTimeout: receiveTimeout,
+          ),
         );
         if (attempt > 0) {
           _breadcrumb(

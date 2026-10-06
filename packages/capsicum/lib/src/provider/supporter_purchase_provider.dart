@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
@@ -723,10 +724,9 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
         stackTrace: st,
         withScope: (scope) {
           scope.setTag('supporter.purchase', 'entitlement_issue_failed');
-          scope.fingerprint = [
-            'supporter.purchase.entitlement_issue',
-            e.runtimeType.toString(),
-          ];
+          scope.fingerprint = entitlementIssueFingerprint(e);
+          final reason = relayBusyReasonOf(e);
+          if (reason != null) scope.setTag('relay.reason', reason);
         },
       );
       state = state.copyWith(
@@ -820,3 +820,32 @@ final supporterEntryVisibleProvider = Provider<bool>((ref) {
   if (!supporterPurchaseHasBackend) return true;
   return false;
 });
+
+/// relay が「塞がっている」と断った回なら、その理由の語。それ以外は null。
+///
+/// ⚠ **応答の値をそのまま返さない。**Sentry のタグと fingerprint に載せるので、
+/// 知っている固定の語だけを通す。
+String? relayBusyReasonOf(Object error) {
+  if (error is! DioException) return null;
+  final data = error.response?.data;
+  if (data is! Map) return null;
+  return data['reason'] == 'verification_busy' ? 'verification_busy' : null;
+}
+
+/// 利用権の発行に失敗した回の、Sentry の fingerprint。
+///
+/// ⚠⚠ **型だけで束ねない**（2 回目の差分レビュー・2026-10-06）。以前は
+/// `DioException` の 1 件に、送り直しても塞がっていた 503・設定が無い 503・
+/// 共有シークレットの不一致（401）・relay の 5xx・圏外が**全部入っていた**ので、
+/// 件数から「relay が埋められている」を見分けられなかった。ステータスと、
+/// 塞がっていた回の印で分ける。
+List<String> entitlementIssueFingerprint(Object error) {
+  final status = error is DioException ? error.response?.statusCode : null;
+  final reason = relayBusyReasonOf(error);
+  return [
+    'supporter.purchase.entitlement_issue',
+    error.runtimeType.toString(),
+    if (status != null) 'status_$status',
+    ?reason,
+  ];
+}

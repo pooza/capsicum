@@ -11,6 +11,15 @@ const kPushRelayConnectTimeout = Duration(seconds: 10);
 /// capsicum-relay 向けの受信タイムアウト。
 const kPushRelayReceiveTimeout = Duration(seconds: 10);
 
+/// 利用権の発行（`POST /entitlements`）だけの受信タイムアウト。
+///
+/// ⚠⚠ **relay がストアへ問い合わせる上限より長く取る。**relay は応答の前に
+/// ストアを引き（Apple は本番 → サンドボックスの順で、それぞれ最大 15 秒）、
+/// その間は前景の枠（既定で 1 本）を握っている。既定の 10 秒で諦めると、
+/// **送り直した自分の要求が、まだ走っている自分の 1 本目に枠を取られて断られる**
+/// （2 回目の差分レビュー・2026-10-06）。待てば 1 本目が答えを持って帰る。
+const kRelayEntitlementIssueReceiveTimeout = Duration(seconds: 35);
+
 /// APNs / FCM のデバイストークン到着待ち（初回 subscribe 直後）。
 const kDeviceTokenWait = Duration(seconds: 10);
 
