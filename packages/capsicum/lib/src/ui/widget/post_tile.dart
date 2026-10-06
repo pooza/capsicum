@@ -2046,7 +2046,8 @@ class _PostTileState extends ConsumerState<PostTile> {
                 label,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   fontSize: 11,
-                  color: Colors.white,
+                  // ⚠ 白に固定しない（#1240）。
+                  color: foregroundOnHostColor(color),
                   fontWeight: FontWeight.w500,
                 ),
                 maxLines: 1,

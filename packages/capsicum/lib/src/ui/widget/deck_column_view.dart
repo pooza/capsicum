@@ -273,14 +273,15 @@ class _DeckColumnHeader extends ConsumerWidget {
     final current = ref.watch(currentAccountProvider);
     final user = current?.key == account ? current!.user : null;
     // ⚠ 背景はカラムのアカウントのサーバーの色 (#1152・2026-09-22 pooza)。
-    // サーバーバッジと同じ [resolveHostColor] を使う。あれは「白い文字が読める
-    // 暗さ」に調整済みの色を返す（モロヘイヤの色はそのまま・それ以外は明度を
-    // 落とす）ので、見出しの文字とアイコンは白で揃える。
+    // サーバーバッジと同じ [resolveHostColor] を使う。
+    // ⚠⚠ **文字とアイコンを白に固定しない (#1240)。**モロヘイヤの色はそのまま
+    // 返るので、サーバーが明るい色を設定していると白では読めない。背景の
+    // 明るさから選ぶ（[foregroundOnHostColor]）。
     final background = resolveHostColor(
       ref.watch(hostThemeColorProvider),
       account.host,
     );
-    const foreground = Colors.white;
+    final foreground = foregroundOnHostColor(background);
     final titleStyle = theme.textTheme.titleSmall?.copyWith(color: foreground);
     final subStyle = theme.textTheme.bodySmall?.copyWith(
       color: foreground.withValues(alpha: 0.8),
@@ -355,7 +356,7 @@ class _DeckColumnHeader extends ConsumerWidget {
             // 出すと、別のアカウントとして操作が外に出る。
             if (user != null && canComposeFromColumn(column.tab, adapter))
               IconButton(
-                icon: const Icon(Icons.edit_outlined, color: foreground),
+                icon: Icon(Icons.edit_outlined, color: foreground),
                 tooltip: 'このアカウントで投稿',
                 visualDensity: VisualDensity.compact,
                 onPressed: () => openDeckCompose(context, ref, column),
@@ -368,11 +369,11 @@ class _DeckColumnHeader extends ConsumerWidget {
             // 効かない（`NotificationFilterButton.color` の doc が正本）。
             if (column.tab is NotificationsTab ||
                 column.tab is AllNotificationsTab)
-              const NotificationFilterButton(color: foreground),
+              NotificationFilterButton(color: foreground),
             // カラムから開いたカラムは使い捨てなので、ヘッダーで閉じられるようにする
             // (#1148)。⚠ 列から外すだけで購読は止めない（autoDispose に任せる・#1093）。
             IconButton(
-              icon: const Icon(Icons.close, color: foreground),
+              icon: Icon(Icons.close, color: foreground),
               tooltip: 'カラムを閉じる',
               visualDensity: VisualDensity.compact,
               onPressed: () =>

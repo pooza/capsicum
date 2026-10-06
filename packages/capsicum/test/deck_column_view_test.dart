@@ -143,7 +143,7 @@ void main() {
       expect(find.text('@me@misskey.example'), findsNothing);
     });
 
-    testWidgets('背景はカラムのアカウントのサーバーの色で、文字は白', (tester) async {
+    testWidgets('背景はカラムのアカウントのサーバーの色で、暗い色なら文字は白', (tester) async {
       await pump(tester, const UserListTab(UserListKind.followers, 'u1'));
       await tester.pumpAndSettle();
 
@@ -155,6 +155,58 @@ void main() {
       );
       final title = tester.widget<Text>(find.text('フォロワー'));
       expect(title.style?.color, Colors.white);
+    });
+
+    // #1240: モロヘイヤの色は暗くせずそのまま使うので、サーバーが明るい色を
+    // 設定していると、白に固定した文字とアイコンが読めなくなっていた。
+    testWidgets('⚠ サーバーの色が明るいときは、文字とアイコンを暗い色にする (#1240)', (tester) async {
+      const pink = Color(0xFFFFC1E3);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            currentAccountProvider.overrideWithValue(account),
+            hostThemeColorProvider.overrideWithValue(const {
+              'misskey.example': pink,
+            }),
+          ],
+          child: MaterialApp(
+            // ⚠ 報告はダークモード。テーマの文字色（白系）に引きずられないこと。
+            theme: ThemeData.dark(),
+            home: Scaffold(
+              body: DeckColumnView(
+                column: DeckColumn(
+                  id: 'x',
+                  account: account.key,
+                  tab: const UserListTab(UserListKind.followers, 'u1'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byWidgetPredicate((w) => w is ColoredBox && w.color == pink),
+        findsOneWidget,
+        reason: '色そのものは変えない（サーバーの意思）',
+      );
+      final title = tester.widget<Text>(find.text('フォロワー'));
+      expect(title.style?.color, Colors.black87);
+      final close = tester.widget<Icon>(find.byIcon(Icons.close));
+      expect(close.color, Colors.black87, reason: 'アイコンも文字と同じ色に従う');
+    });
+
+    test('文字の色は背景の明るさで決まる (#1240)', () {
+      expect(foregroundOnHostColor(const Color(0xFFFFC1E3)), Colors.black87);
+      expect(foregroundOnHostColor(const Color(0xFFFFFFFF)), Colors.black87);
+      expect(foregroundOnHostColor(const Color(0xFF3F51B5)), Colors.white);
+      expect(foregroundOnHostColor(const Color(0xFF000000)), Colors.white);
+      // ⚠ 明度を落とした既定の色（モロヘイヤの無いサーバー）は白のまま。
+      expect(
+        foregroundOnHostColor(resolveHostColor(const {}, 'misskey.example')),
+        Colors.white,
+      );
     });
 
     testWidgets('⚠ カラムのアカウントと割り当てが食い違うときは、他人のアイコンを出さない', (tester) async {

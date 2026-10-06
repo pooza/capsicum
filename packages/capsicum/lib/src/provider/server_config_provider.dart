@@ -47,6 +47,18 @@ Color resolveHostColor(Map<String, Color> mulukhiyaColors, String host) {
   return HSLColor.fromAHSL(1, host.hashCode % 360, 0.5, 0.35).toColor();
 }
 
+/// [resolveHostColor] の色の上に載せる文字・アイコンの色 (#1240)。
+///
+/// ⚠⚠ **白に固定しない。**モロヘイヤの色は「白い文字を載せる暗い背景」の
+/// 想定でそのまま使っているが、サーバーが明るい色を設定すれば前提が崩れる
+/// （明るいピンクの見出しに白い文字が載り、読めなくなった）。色のほうは
+/// サーバーの意思なので変えず、文字のほうを背景の明るさに合わせる。
+Color foregroundOnHostColor(Color background) {
+  return ThemeData.estimateBrightnessForColor(background) == Brightness.dark
+      ? Colors.white
+      : Colors.black87;
+}
+
 /// Darken a color if it is too bright for white text.
 Color _ensureDark(Color color) {
   final hsl = HSLColor.fromColor(color);
