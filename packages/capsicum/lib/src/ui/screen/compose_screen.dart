@@ -1700,6 +1700,17 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       debugLogException('capsicum: compose draft attachment restore failed', e);
       _unrestoredDraftAttachments = saved.attachments;
       _draftRestored = true;
+      // ⚠ **戻せなかったことを伝える。**黙っていると、利用者は下書きに添付が
+      // あったことに気づかないまま投稿する（投稿の前にも確かめるが、
+      // [_submitInternal]、先に知らせておく）。
+      if (mounted && saved.attachments.isNotEmpty) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('下書きの添付を復元できませんでした')));
+        });
+      }
       return;
     }
     if (!mounted) {
@@ -3794,6 +3805,51 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         context,
       ).showSnackBar(SnackBar(content: Text(unsendable)));
       return;
+    }
+
+    // 🔴 **下書きを戻している最中は投稿しない**（リリース前レビューの Codex P1・
+    // 3 巡目・2026-10-06）。本文は添付より先に戻るので、その間に投稿すると
+    // **本文だけが出て、直後の `_clearDraft` が添付の控えを消す**。
+    //
+    // ⚠⚠ **`_draftAutoSave` を必ず条件に入れる。**下書きの復元が走るのは
+    // **新規の投稿画面だけ**（`initState`）で、返信・引用・テンプレート・
+    // 編集し直しでは `_draftRestored` は false のまま。条件から外すと、
+    // **それらの画面で永久に投稿できなくなる**。
+    if (_draftAutoSave && !_draftRestored) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('下書きを読み込んでいます。少し待ってから、もう一度お試しください。')),
+      );
+      return;
+    }
+
+    // 🔴 **戻せなかった添付がある回は、確かめてから投稿する**（同上）。
+    // 投稿すると下書きごと控えが消えるので、黙って進めない。
+    if (_unrestoredDraftAttachments.isNotEmpty) {
+      if (!mounted) return;
+      final count = _unrestoredDraftAttachments.length;
+      final proceed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('添付を復元できていません'),
+          content: Text(
+            '下書きにあった添付 $count 件を復元できませんでした。\n\n'
+            'このまま投稿すると、添付なしで投稿され、下書きに残っていた添付の'
+            '控えは破棄されます。',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('キャンセル'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('添付なしで投稿'),
+            ),
+          ],
+        ),
+      );
+      if (proceed != true) return;
     }
 
     if (await ref.read(confirmBeforePostProvider.notifier).readPersisted()) {

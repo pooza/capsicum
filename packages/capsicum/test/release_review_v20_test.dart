@@ -539,6 +539,44 @@ void main() {
       expect(clear, contains('_unrestoredDraftAttachments = const []'));
     });
 
+    // 🔴 Codex P1・3 巡目。本文は添付より先に戻るので、その間に投稿すると
+    // 本文だけが出て、直後の消去が添付の控えを消す。
+    test('下書きを戻している最中と、戻せなかった回は、そのまま投稿しない（配線）', () {
+      final source = maskComments(
+        read('lib/src/ui/screen/compose_screen.dart'),
+      );
+      final start = source.indexOf('Future<void> _submitInternal() async');
+      expect(start, greaterThan(0));
+      // 投稿前確認（既存）より前の区間だけを見る。
+      final end = source.indexOf('confirmBeforePostProvider', start);
+      expect(end, greaterThan(start), reason: '本体を切り出せていない');
+      final head = source.substring(start, end);
+
+      expect(head, contains('if (_draftAutoSave && !_draftRestored) {'));
+      // ⚠⚠ **`_draftAutoSave` 抜きで止めない。**下書きの復元は新規の投稿画面
+      // でしか走らないので、無条件に止めると**返信・引用・テンプレートで
+      // 永久に投稿できなくなる**。
+      expect(
+        RegExp(r'if \(!_draftRestored\)').hasMatch(head),
+        isFalse,
+        reason: '⚠ 返信・引用の画面で投稿できなくなる',
+      );
+      // 戻せなかった添付がある回は、確かめる。
+      expect(head, contains('if (_unrestoredDraftAttachments.isNotEmpty) {'));
+      expect(head, contains('showDialog<bool>'));
+      expect(head, contains('if (proceed != true) return;'));
+    });
+
+    test('前提: 下書きの復元と自動保存は、新規の投稿画面でだけ有効になる', () {
+      final source = maskComments(
+        read('lib/src/ui/screen/compose_screen.dart'),
+      );
+      // ⚠ 有効にする箇所が増えたら、上の門の条件も見直す。
+      expect('_draftAutoSave = true'.allMatches(source), hasLength(1));
+      final at = source.indexOf('_draftAutoSave = true');
+      expect(source.substring(at, at + 80), contains('_restoreDraft();'));
+    });
+
     test('前提: 自動保存は `_draftRestored` を門にしている', () {
       final source = maskComments(
         read('lib/src/ui/screen/compose_screen.dart'),
