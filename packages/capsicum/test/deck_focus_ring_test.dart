@@ -208,6 +208,49 @@ void main() {
     expect(find.byKey(deckFocusRingKey('b')), findsNothing);
   });
 
+  // 2 回目の差分レビュー（2026-10-06）: 枠を消した幅で点滅まで消えると、いま
+  // 見えているカラムを開き直す操作（通知カラムを見ながら通知を押す等）が、
+  // 何も起きないように見える。
+  testWidgets('⚠⚠ 枠を出さない幅でも、点滅は出る（止まれば何も残らない）', (tester) async {
+    final container = await pumpDeck(
+      tester,
+      size: const Size(390, 700),
+      columnIds: const ['a', 'b'],
+    );
+    expect(find.byKey(deckFocusBlinkKey('a')), findsNothing);
+
+    container.read(deckFocusProvider.notifier).focusAndBlink('a');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(find.byKey(deckFocusBlinkKey('a')), findsOneWidget);
+    // ⚠ 常時の枠は出さないまま（#1243）。
+    expect(find.byKey(deckFocusRingKey('a')), findsNothing);
+
+    await tester.pumpAndSettle();
+    expect(find.byKey(deckFocusBlinkKey('a')), findsNothing);
+  });
+
+  testWidgets('⚠⚠ 幅が縮んで 1 本しか見えなくなったら、見えているカラムがフォーカスになる', (tester) async {
+    final container = await pumpDeck(
+      tester,
+      size: const Size(800, 600),
+      columnIds: const ['a', 'b'],
+    );
+    await tester.tap(find.byKey(const ValueKey('stub-b')));
+    await tester.pumpAndSettle();
+    expect(focusedId(container), 'b');
+
+    // 幅を縮める。スクロール位置は先頭のままなので、見えているのは a。
+    tester.view.physicalSize = const Size(390, 700);
+    await tester.pumpAndSettle();
+
+    expect(
+      focusedId(container),
+      'a',
+      reason: '⚠ 宛先が、画面の外のカラムに残っている（枠が無いので見分けられない）',
+    );
+  });
+
   testWidgets('カラムから開いたカラムはフォーカスになり、点滅が要求される', (tester) async {
     final container = await pumpDeck(
       tester,

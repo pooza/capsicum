@@ -452,7 +452,7 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
         // 見れば分かるので、自己紹介のような題で幅を使わない。
         actions: [
           // ⚠ アイコンが増えたので、タブ UI と同じコンパクト枠に詰める (#1173)。
-          // 既定の 48px タップ枠のままだと、狭幅（375px）でタイトルが潰れる。
+          // 既定の 48px タップ枠のままだと、狭幅（375px）にアイコン 5 つが収まらない。
           IconButtonTheme(
             data: IconButtonThemeData(
               style: IconButton.styleFrom(
@@ -561,7 +561,17 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
                     columnCount: columns.length,
                     minColumnWidth: minColumnWidth,
                   );
+                  // ⚠⚠ **幅が縮んで 1 本しか見えなくなったら、フォーカスを見えて
+                  // いるカラムへ揃える**（2 回目の差分レビュー・2026-10-06）。
+                  // 同期はスクロールの通知でしか走らないので、広い幅で右側の
+                  // カラムにフォーカスを置いたまま縮めると、宛先（検索・通知・
+                  // 簡易投稿バー・⌘N）が画面の外のカラムに残る。⚠ この幅では
+                  // 枠を出さない（#1243）ので、ずれていても見分けられない。
+                  final narrowed =
+                      layout.visibleColumns == 1 &&
+                      (_layout?.visibleColumns ?? 1) != 1;
                   _layout = layout;
+                  if (narrowed) _syncFocusToVisibleColumn();
                   return SingleChildScrollView(
                     controller: _scrollController,
                     scrollDirection: Axis.horizontal,
@@ -583,6 +593,7 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
                             // 2 本以上のときだけ出す**（決定済み事項 10・#1243）。
                             // 1 本しか見えない幅では、見えているカラムが
                             // フォーカスなので、枠は情報を足さずうるさいだけになる。
+                            // ⚠ 点滅（押した操作が効いた合図）はこの幅でも出る。
                             child: DeckColumnFocusRing(
                               columnId: column.id,
                               showRing: layout.visibleColumns > 1,

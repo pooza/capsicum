@@ -10,6 +10,10 @@ import '../../provider/deck_provider.dart';
 /// 「出ているか」だけを見る。
 Key deckFocusRingKey(String columnId) => ValueKey('deck-focus-ring-$columnId');
 
+/// 常時の枠を出さない幅で、[columnId] のカラムが点滅している間だけ在る目印。
+Key deckFocusBlinkKey(String columnId) =>
+    ValueKey('deck-focus-blink-$columnId');
+
 /// フォーカス中のカラムを枠で見せ、押されたらフォーカスを移す (#1172・
 /// `docs/deck-ui-plan.md` 決定済み事項 10)。
 ///
@@ -34,8 +38,14 @@ class DeckColumnFocusRing extends ConsumerStatefulWidget {
 
   final String columnId;
 
-  /// 枠を出すか。**同時に見えているカラムが 1 本のときは出さない**（決定済み
-  /// 事項 10・#1243）。⚠ 「列に 1 本」ではなく「見えているのが 1 本」で決める。
+  /// **常時の**枠を出すか。**同時に見えているカラムが 1 本のときは出さない**
+  /// （決定済み事項 10・#1243）。⚠ 「列に 1 本」ではなく「見えているのが 1 本」で
+  /// 決める。
+  ///
+  /// ⚠⚠ **点滅はこの値に関わらず出す。**点滅は「押した操作が効いた」の合図で、
+  /// いま見えているカラムを開き直す操作（通知カラムを見ながら通知を押す・
+  /// カラム編集でいま見えているカラムを選ぶ）は、点滅が無いと**何も起きない
+  /// ように見える**（2 回目の差分レビュー・2026-10-06）。
   final bool showRing;
 
   final Widget child;
@@ -111,6 +121,31 @@ class _DeckColumnFocusRingState extends ConsumerState<DeckColumnFocusRing>
                         border: Border.all(
                           color: accent.withValues(alpha: 0.85 + 0.15 * flash),
                           width: 2 + 2 * flash,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            )
+          else if (focused)
+            // ⚠ 常時の枠が無い幅では、点滅している間だけ描く（止まれば何も無い）。
+            Positioned.fill(
+              child: IgnorePointer(
+                child: AnimatedBuilder(
+                  animation: _blink,
+                  builder: (context, _) {
+                    final t = _blink.value;
+                    final flash = 1 - (t * 2 - 1).abs();
+                    if (!_blink.isAnimating || flash <= 0) {
+                      return const SizedBox.shrink();
+                    }
+                    return DecoratedBox(
+                      key: deckFocusBlinkKey(widget.columnId),
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: accent.withValues(alpha: flash),
+                          width: 4 * flash,
                         ),
                       ),
                     );
