@@ -103,7 +103,7 @@ void main() {
     await pump(tester, initial: '/home');
     await tester.tap(find.text('ホーム'));
     await tester.pumpAndSettle();
-    expect(find.text('デッキ'), findsOneWidget);
+    expect(find.byTooltip('タブ表示に切り替え'), findsOneWidget);
     // 戻る（←）は出さない。戻るのは右端の切り替えに一本化した。
     expect(find.byType(BackButton), findsNothing);
 
@@ -111,14 +111,17 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('ホーム'), findsOneWidget);
-    expect(find.text('デッキ'), findsNothing);
+    expect(find.byTooltip('タブ表示に切り替え'), findsNothing);
+    // ⚠ 題は置かない (#1242)。デッキかどうかは右端の切り替えボタンで見る。
     // ⚠ 作り直していない（下に残っていた HomeScreen がそのまま出る）。
     expect(homeInits, hasLength(1));
   });
 
   testWidgets('下に何も無いデッキからは、ホームへ出る', (tester) async {
     await pump(tester, initial: '/deck');
-    expect(find.text('デッキ'), findsOneWidget);
+    expect(find.byTooltip('タブ表示に切り替え'), findsOneWidget);
+    // ⚠ AppBar に題を置かない (#1242・2026-10-06 pooza)。
+    expect(find.text('デッキ'), findsNothing);
 
     await tester.tap(find.byTooltip('タブ表示に切り替え'));
     await tester.pumpAndSettle();

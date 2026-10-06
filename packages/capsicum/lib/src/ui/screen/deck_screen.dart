@@ -448,7 +448,8 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
         // 右端の「タブ表示に切り替え」に一本化した（AppBar の切り替えと役割が
         // 重なるため）。
         automaticallyImplyLeading: false,
-        title: const Text('デッキ'),
+        // ⚠ **題は置かない (#1242・2026-10-06 pooza)。**デッキ画面であることは
+        // 見れば分かるので、自己紹介のような題で幅を使わない。
         actions: [
           // ⚠ アイコンが増えたので、タブ UI と同じコンパクト枠に詰める (#1173)。
           // 既定の 48px タップ枠のままだと、狭幅（375px）でタイトルが潰れる。
