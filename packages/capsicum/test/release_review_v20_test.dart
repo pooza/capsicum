@@ -357,6 +357,94 @@ void main() {
         EntitlementView.unknown,
       );
     });
+
+    // 2 回目の差分レビュー（並行性・2026-10-06）: 読み直しの中で
+    // `hasPresetAccountProvider` を読むと、値が変わっていればその場で listener が
+    // 走り、**入れ子の読み直しが始まる**。外側がそのあと「いちばん新しい 1 本」を
+    // 自分で上書きしていたので、**自分自身を待って永久に終わらなかった**。
+    test('⚠⚠ 読み直しの中で入れ子の読み直しが始まっても、待ちが終わる', () async {
+      late _Accounts accounts;
+      final container = ProviderContainer(
+        overrides: [
+          accountManagerProvider.overrideWith(
+            () => accounts = _Accounts(
+              AccountManagerState(
+                accounts: [_account(external)],
+                current: _account(external),
+              ),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(entitlementStatusProvider.notifier);
+      await notifier.refresh();
+
+      // プリセットのアカウントを足す（判定が変わる）→ **同じ同期区間で**読み直す。
+      accounts.replace(
+        AccountManagerState(
+          accounts: [_account(external), _account(preset)],
+          current: _account(external),
+        ),
+      );
+      await notifier.refresh().timeout(
+        const Duration(seconds: 2),
+        onTimeout: () => fail('読み直しの待ちが終わらない（自分自身を待っている）'),
+      );
+      expect(
+        container.read(entitlementStatusProvider).view,
+        EntitlementView.preset,
+      );
+    });
+
+    // 同じレビュー: 「記録を消す」は読み直しの世代を進めていなかったので、
+    // 応答待ちの読み直しが、消している最中に着いた応答を**保存し直せた**。
+    test('⚠⚠ 進行中の読み直しを無効にしても、その待ちは終わる', () async {
+      final container = ProviderContainer(
+        overrides: [
+          accountManagerProvider.overrideWith(
+            () => _Accounts(
+              AccountManagerState(
+                accounts: [_account(external)],
+                current: _account(external),
+              ),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(entitlementStatusProvider.notifier);
+      // ⚠ build() が予約した 1 本を先に終わらせる（残すと、それが「後続」になって
+      // 待ちが終わってしまい、欠陥が見えない）。
+      await notifier.refresh();
+
+      final running = notifier.refresh();
+      notifier.invalidatePending();
+      // ⚠ 無効にしただけで後続を始めていない。待つ相手がいないので、すぐ終わる。
+      await running.timeout(
+        const Duration(seconds: 2),
+        onTimeout: () => fail('無効にされた読み直しが、自分自身を待っている'),
+      );
+    });
+
+    test('⚠⚠ 記録を消す・保存する前に、進行中の読み直しを無効にする（配線）', () {
+      final source = maskComments(
+        read('lib/src/provider/supporter_purchase_provider.dart'),
+      );
+      for (final write in [
+        'await EntitlementTokenStore.clear()',
+        'await EntitlementTokenStore.save(token)',
+      ]) {
+        final at = source.indexOf(write);
+        expect(at, greaterThan(0), reason: '$write が見つからない');
+        final before = source.substring(at - 300, at);
+        expect(
+          before,
+          contains('invalidatePending()'),
+          reason: '$write の前に無効化していない',
+        );
+      }
+    });
   });
 
   // ---- 3. 読めなかったことを「持っていない」にしない ----

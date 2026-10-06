@@ -208,20 +208,48 @@ class EntitlementStatusNotifier extends Notifier<EntitlementStatus> {
   Future<void> refresh() {
     final generation = ++_generation;
     final run = _runRefresh(generation);
-    _latestRefresh = run;
+    // ⚠⚠ **入れ子で始まった後続を、上書きしない**（2 回目の差分レビュー・
+    // 2026-10-06）。[_refresh] は最初の `await` まで同期で走り、その中の
+    // `ref.read(hasPresetAccountProvider)` が値の変化を見つけると、**その場で**
+    // `build()` の listener が入れ子の [refresh] を始める。ここへ戻ってきた
+    // 時点で「いちばん新しい 1 本」は入れ子の側なので、無条件に書くと古い側へ
+    // 戻してしまい、**自分自身を待って永久に終わらなくなる**。
+    if (generation == _generation) {
+      _latestRefresh = run;
+      _latestRun = generation;
+    }
     return run;
+  }
+
+  /// 進行中の読み直しを無効にする（**後続は始めない**）。
+  ///
+  /// ⚠⚠ **手元の保存を書き換える側が、書き換える前に呼ぶ**（記録の消去・
+  /// 購入や復元で受け取った token の保存）。世代が進むのは次の [refresh] が
+  /// 始まってからなので、呼ばないと、書き換えている最中に着いた古い応答が
+  /// **消した記録を保存し直す / 新しい token を古い値で上書きする**
+  /// （[_refresh] は保存の前に世代を見ているが、世代が進んでいなければ通る）。
+  /// ⚠ 呼んだ側は、書き換えたあとで [refresh] を呼んで状態を引き直す。
+  void invalidatePending() {
+    _generation++;
   }
 
   /// いちばん新しい [refresh] の Future。追い越された側がこれを待つ。
   Future<void>? _latestRefresh;
 
+  /// [_latestRefresh] を始めた世代。
+  ///
+  /// ⚠ **[_generation] とは別に持つ。**[invalidatePending] は世代だけを進めて
+  /// 後続を始めないので、「追い越されたか」を [_generation] で見ると、待つ相手が
+  /// 自分自身になる。
+  int _latestRun = 0;
+
   Future<void> _runRefresh(int generation) async {
     await _refresh(generation);
-    // 追い越されていたら、勝った側が終わるまで待つ。⚠ 勝った側がさらに
-    // 追い越されていても、その Future が同じ規則で後続を待つので、1 回待てば
-    // 最後の 1 本まで届く。⚠ いちばん新しい 1 本はここを通らない（自分自身を
+    // 後続が始まっていたら、それが終わるまで待つ。⚠ 後続がさらに追い越されて
+    // いても、その Future が同じ規則で次を待つので、1 回待てば最後の 1 本まで
+    // 届く。⚠⚠ **見るのは [_latestRun]**（自分が最新なら待たない ＝ 自分自身を
     // 待つことは無い）。
-    if (generation != _generation) await _latestRefresh;
+    if (generation != _latestRun) await _latestRefresh;
   }
 
   Future<void> _refresh(int generation) async {

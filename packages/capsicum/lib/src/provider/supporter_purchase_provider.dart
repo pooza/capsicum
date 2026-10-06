@@ -10,6 +10,7 @@ import '../service/entitlement_token_store.dart';
 import '../service/push_registration_service.dart';
 import '../util/exception_scrub.dart';
 import 'account_manager_provider.dart';
+import 'entitlement_status_provider.dart';
 import 'supporter_purchase_backend.dart';
 import 'supporter_status_provider.dart';
 
@@ -409,6 +410,9 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
   /// 確認してから**押す口にしてある（画面側がダイアログを出す）。
   Future<void> forgetEntitlement() async {
     if (state.purchaseInProgress) return;
+    // ⚠⚠ **消す前に、応答待ちの読み直しを無効にする**（2 回目の差分レビュー・
+    // 2026-10-06）。消している最中に着いた古い応答が、記録を保存し直せた。
+    ref.read(entitlementStatusProvider.notifier).invalidatePending();
     await EntitlementTokenStore.clear();
     // ⚠ 画面の「取り直す / 記録を消す」の出し分けはこの値を見るので、
     // **保存を消したらここも落とす**（残すとボタンが消えない）。
@@ -710,6 +714,8 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
           );
       final token = EntitlementToken.fromRelay(json);
       if (token == null) throw StateError('relay returned no entitlement');
+      // ⚠ 応答待ちの読み直しに、いま受け取った token を古い値で上書きさせない。
+      ref.read(entitlementStatusProvider.notifier).invalidatePending();
       await EntitlementTokenStore.save(token);
     } catch (e, st) {
       Sentry.captureException(
