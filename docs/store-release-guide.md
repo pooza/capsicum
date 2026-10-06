@@ -214,6 +214,8 @@ end
 
 - ⚠⚠ **ベータ版のテスターは、プリセットサーバーの利用者に限る**（TestFlight の外部テスターも Google Play のクローズドテストも同じ範囲）。ベータ版の購入はサンドボックス扱いで本番のリレーでも有効になるが、プリセットの利用者はもともと無償なので、無料で使える人は増えない（[paid-relay-plan.md](paid-relay-plan.md) 7-2）
 - **iOS**: TestFlight 外部テスター経由（内部テスターは本名相互公開の問題があるため不使用）
+  - ⚠ **外部テスター向けにはベータ版の審査が入る。**アップロードの処理が終わっても、審査を通るまで外部テスターには配られない。状態は `.claude/scripts/asc-status.rb builds`（内部 / 外部 / 審査を分けて出す）
+  - ⚠⚠ **審査は 2 本を並行できない。**前のビルドが審査待ちの間に新しいビルドを出すには、**前のビルドの審査を止めてから、新しいビルドを出し直す**（App Store Connect での手作業・2026-10-06 に 194 → 195 で踏んだ）。⚠ **自動では移らない**ので、短い間隔でビルドを重ねると、そのたびに待ち行列へ並び直すことになる
 - **Android**: Google Play で直接配布（GitHub Releases への APK 添付は v1.5.1 で廃止）
 - **macOS**: Mac App Store 一本（.dmg / Developer ID 配布は採用しない）。「App Store からのアプリのみ許可」設定のユーザーに届かない問題と、署名・公証・更新通知の二重メンテを避けるため。詳細は [release-pipeline.md](archive/release-pipeline.md) 参照
 - **Linux**: AppImage 単独（Flathub は [#604](https://github.com/pooza/capsicum/issues/604) で 2026-05-29 に断念、Snap は不採用）。GitHub Releases に添付して即座に配布。手順は [store-release スキルの linux.md](../.claude/skills/store-release/linux.md)（§4.5）
