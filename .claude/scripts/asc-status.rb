@@ -23,6 +23,7 @@ require 'json'
 require 'jwt'
 require 'net/http'
 require 'openssl'
+require 'time'
 require 'uri'
 
 BUNDLE_ID = 'jp.co.b-shock.capsicum'
@@ -161,6 +162,15 @@ def print_builds
     puts "  #{version['version']} (#{attrs['version']})  #{version['platform']}  " \
       "処理=#{attrs['processingState']}  内部=#{detail['internalBuildState']}  " \
       "外部=#{detail['externalBuildState']}  審査=#{review['betaReviewState'] || '未提出'}"
+    # ⚠ **審査待ちは「いつから待っているか」を出す。**状態だけだと、数時間なのか
+    # 数日なのかが分からず、待つべきか問い合わせるべきかを決められない。
+    submitted = review['submittedDate']
+    next unless submitted && review['betaReviewState'] == 'WAITING_FOR_REVIEW'
+
+    hours = ((Time.now - Time.parse(submitted)) / 3600).round(1)
+    puts "      提出=#{Time.parse(submitted).getlocal.strftime('%m-%d %H:%M')}  " \
+      "アップロード=#{Time.parse(attrs['uploadedDate']).getlocal.strftime('%m-%d %H:%M')}  " \
+      "待ち=#{hours} 時間"
   end
 end
 
