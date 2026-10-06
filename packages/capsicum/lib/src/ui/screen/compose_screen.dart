@@ -727,6 +727,16 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   // 到達するのはプロセス初回の prefs ロード中だけ。
   bool _draftRestored = false;
 
+  /// 保存済みの下書きにあったが、**画面へ戻せなかった**添付の控え
+  /// （リリース前レビューの Codex P1・2026-10-06）。
+  ///
+  /// ⚠⚠ **自動保存のたびに載せ直す**（[_saveDraft]）。添付の実在確認が例外で
+  /// 落ちた回は `_attachments` が空のままなので、そのまま保存すると**下書きの
+  /// 添付のパスとレイヤの控えが消える**。⚠ 通常は空。
+  ///
+  /// ⚠ 下書きを消したとき（投稿・取消）には一緒に捨てる（[_clearDraft]）。
+  List<ComposeDraftAttachment> _unrestoredDraftAttachments = const [];
+
   /// Misskey は親投稿のチャンネルにぶら下げるのが Web UI 期待挙動。呼び出し側
   /// (post_tile / notification_tile) は replyTo / redraft / quoteTo だけ
   /// 渡してくるので、ここでフォールバックして全経路で継承する
@@ -1493,11 +1503,14 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       text: _controller.text,
       cwText: _cwController.text,
       cwEnabled: _cwEnabled,
-      attachmentCount: _attachments.length,
+      attachmentCount: _attachments.length + _unrestoredDraftAttachments.length,
       // ローカル添付はパスとレイヤ列も保存する (#1130)。⚠ **ドライブ添付は
       // null が返るので落ちる**（件数には残る）。
       attachments: [
         for (final entry in _attachments) ?entry.toDraftAttachment(),
+        // 🔴 **戻せなかった添付の控えを、保存のたびに載せ直す**
+        // （[_unrestoredDraftAttachments]）。載せないと、ここで控えが消える。
+        ..._unrestoredDraftAttachments,
       ],
       // 設定値も保存する (#964)。本文だけ戻して公開範囲が既定に戻ると、
       // 気づかず広い範囲へ投げる事故になる。
@@ -1667,11 +1680,27 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     final ComposeDraftAttachmentRestore resolved;
     try {
       resolved = await resolveComposeDraftAttachments(saved.attachments);
-    } catch (_) {
-      // ⚠ 落ちても離脱時保存は解禁する（上の `restore()` の失敗と同じ理由。
-      // false のままだと `_saveDraft` が永久に no-op になる）。
+    } catch (e) {
+      // 🔴 **添付を戻せなかった回は、保存済みの添付の控えを持ち越す**
+      // （リリース前レビューの Codex P1・2 巡目・2026-10-06）。
+      //
+      // ここで選べる道は 3 つあり、2 つは失う。
+      //
+      // | | 失うもの |
+      // | --- | --- |
+      // | 解禁して何もしない | 🔴 次の自動保存が空の添付で上書きし、**控えが消える** |
+      // | 解禁しない | 🔴 `_saveDraft` が永久に no-op になり、**書いた本文が消える** |
+      // | ✅ 解禁し、控えを保存に載せ続ける | 何も失わない |
+      //
+      // ⚠ 本文を戻した時点で 3 秒後の自動保存が予約されているので、1 つ目は
+      // **利用者が何もしなくても起きる**。⚠ 1 巡目の修正は 1 つ目の形だった。
+      //
+      // ⚠ **投げ直さない。**呼び出し側は fire-and-forget なので、投げると
+      // 未処理の非同期エラーになる（上の `restore()` の失敗と同じ扱い）。
+      debugLogException('capsicum: compose draft attachment restore failed', e);
+      _unrestoredDraftAttachments = saved.attachments;
       _draftRestored = true;
-      rethrow;
+      return;
     }
     if (!mounted) {
       _draftRestored = true;
@@ -1716,6 +1745,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// ときに古い下書きが復元されて初めて見える。投稿直後にも通る経路なので、
   /// ここで snackbar を出すと「投稿は成功しているのに失敗したように読める」。
   Future<void> _clearDraft({bool discard = true}) async {
+    // ⚠ 持ち越していた控えも捨てる。残すと、消したはずの下書きの添付が
+    // 次の自動保存で書き戻される。
+    _unrestoredDraftAttachments = const [];
     final persisted = await _draftStore.clear(discard: discard);
     if (persisted) return;
     reportOpFailure(
