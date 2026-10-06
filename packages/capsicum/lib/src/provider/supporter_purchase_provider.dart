@@ -50,7 +50,32 @@ bool get supporterPurchaseHasBackend =>
 /// なる —— 買えないことは**商品説明と案内で伝える**（#1124）。
 bool get subscriptionPurchaseSupported => supporterPurchaseSupported;
 
-enum SupporterPurchaseOutcomeKind { success, canceled, error }
+/// 購入・復元の結果の種類。
+///
+/// ⚠⚠ **「失敗」を 1 つに畳まない**（リリース前レビュー・2026-10-06）。以前は
+/// `error` しか無く、サブスクの失敗はすべて「利用権を有効にできませんでした」と
+/// 出していた —— **決済が通らなかっただけ**の回にも、**復元に失敗した**回にも
+/// 同じ文面で、利用者が次に何をすべきか読み取れなかった。
+enum SupporterPurchaseOutcomeKind {
+  success,
+  canceled,
+
+  /// ストアでの購入が成立しなかった（決済の拒否・ストアとの通信の失敗など）。
+  error,
+
+  /// ⚠ **購入は成立したが、利用権を発行できなかった**（relay へ届かない等）。
+  /// **「購入できなかった」と言ってはいけない**ほう。
+  entitlementError,
+
+  /// 復元の要求そのものが失敗した。
+  restoreError,
+
+  /// 復元を要求したが、**ストアが購入を 1 件も返さなかった。**
+  /// ⚠ 失敗ではないが、**何も出さないと「押しても何も起きない」に見える**
+  /// （添え書きが「通知が届かないときにお試しください」と案内している口なので、
+  /// 困っている人ほどここへ来る）。
+  nothingToRestore,
+}
 
 /// 直近の購入試行結果。UI（段 3）がスナックバー等で提示する。
 class SupporterPurchaseOutcome {
@@ -252,7 +277,11 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
         subscription: byId[supporterSubscriptionProductId],
       );
       // ⚠ 利用権は後から反映する（これが遅くても画面は出ている）。
-      state = state.copyWith(hasEntitlement: await _loadEntitlement());
+      // ⚠⚠ **先に待ってから `state` を読む。**`state.copyWith(x: await …)` と
+      // 書くと、Dart は**レシーバの `state` を先に評価する**ので、待っている間に
+      // 変わった `purchaseInProgress` / `lastOutcome` を古い値で巻き戻す。
+      final hasEntitlement = await _loadEntitlement();
+      state = state.copyWith(hasEntitlement: hasEntitlement);
     } catch (e, st) {
       Sentry.captureException(
         scrubException(e),
@@ -286,7 +315,11 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
     try {
       // ⚠ **ここにも上限を置く (#1231)。**キーホルダは本来すぐ返るが、
       // **返らない事故が起きたときに利用権の表示が永久に古いまま**になる。
-      return await EntitlementTokenStore.load().timeout(localTimeout) != null;
+      // 🔴 **[EntitlementTokenStore.load] ではなく `loadOrThrow`。**前者は
+      // 読めなくても null を返すので、下の catch（直前の値を保つ）に**一度も
+      // 来ていなかった**（リリース前レビューで判明・2026-10-06）。
+      return await EntitlementTokenStore.loadOrThrow().timeout(localTimeout) !=
+          null;
     } catch (e, st) {
       Sentry.captureException(
         scrubException(e),
@@ -408,7 +441,7 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
       state = state.copyWith(
         purchaseInProgress: false,
         lastOutcome: const SupporterPurchaseOutcome(
-          SupporterPurchaseOutcomeKind.error,
+          SupporterPurchaseOutcomeKind.restoreError,
           isSubscription: true,
         ),
       );
@@ -461,7 +494,20 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
         },
       );
     } finally {
-      state = state.copyWith(purchaseInProgress: false);
+      // 🔴 **復元できる購入が無かったことを伝える**（リリース前レビュー
+      // 2026-10-06）。以前は何も立てなかったので、ボタンが一瞬無効になって
+      // 戻るだけで、**「押しても何も起きない」に見えた**。
+      // ⚠ 復元の要求そのものが失敗した回は、[restoreEntitlement] が既に
+      // `restoreError` を立てているので上書きしない。
+      state = state.copyWith(
+        purchaseInProgress: false,
+        lastOutcome:
+            state.lastOutcome ??
+            const SupporterPurchaseOutcome(
+              SupporterPurchaseOutcomeKind.nothingToRestore,
+              isSubscription: true,
+            ),
+      );
     }
     return false;
   }
@@ -535,8 +581,13 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
         );
         state = state.copyWith(
           purchaseInProgress: false,
-          lastOutcome: const SupporterPurchaseOutcome(
+          lastOutcome: SupporterPurchaseOutcome(
             SupporterPurchaseOutcomeKind.error,
+            // 🔴 **サブスクの購入かどうかを載せる**（リリース前レビュー
+            // 2026-10-06）。以前は常に false だったので、プッシュ通知設定画面
+            // （サブスクの結果だけを出す）では、**ストアがエラーを返しても
+            // 何も表示されなかった**。
+            isSubscription: event.productId == supporterSubscriptionProductId,
           ),
         );
         return;
@@ -638,7 +689,7 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
       state = state.copyWith(
         purchaseInProgress: false,
         lastOutcome: const SupporterPurchaseOutcome(
-          SupporterPurchaseOutcomeKind.error,
+          SupporterPurchaseOutcomeKind.entitlementError,
           isSubscription: true,
         ),
       );
@@ -672,7 +723,7 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
       state = state.copyWith(
         purchaseInProgress: false,
         lastOutcome: const SupporterPurchaseOutcome(
-          SupporterPurchaseOutcomeKind.error,
+          SupporterPurchaseOutcomeKind.entitlementError,
           isSubscription: true,
         ),
       );

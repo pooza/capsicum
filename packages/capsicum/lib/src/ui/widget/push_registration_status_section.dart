@@ -100,8 +100,9 @@ class PushRegistrationStatusSection extends ConsumerWidget {
         child: Text('アカウント情報を取得できませんでした'),
       );
     }
-    final accounts = ref.watch(accountManagerProvider).accounts;
-    final hasPreset = PushRegistrationService.hasPresetAmong(accounts);
+    // 🔴 接続できていないプリセットのアカウントも数える
+    // （[hasPresetAccountProvider]）。
+    final hasPreset = ref.watch(hasPresetAccountProvider);
     // ⚠⚠ **`watch` より先に `hasPreset` で抜ける**（#1123 の完了条件 3）。
     // プリセットのみの人に利用権の問い合わせを走らせない。
     final hasEntitlement =

@@ -31,7 +31,10 @@ class PushNotificationSettingsScreen extends ConsumerWidget {
     final statusMap =
         ref.watch(pushRegistrationStatusProvider).valueOrNull ??
         const <String, PushRegistrationSnapshot>{};
-    final hasPreset = PushRegistrationService.hasPresetAmong(accounts);
+    // 🔴 **接続できていないプリセットのアカウントも数える**
+    // （[hasPresetAccountProvider]）。`accounts` だけで判定すると、プリセットの
+    // サーバーに届かない日に、併用している人へ購入を促す。
+    final hasPreset = ref.watch(hasPresetAccountProvider);
 
     // 利用権の状態 (#1123 / #1217 / #1218)。
     //

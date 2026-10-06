@@ -184,7 +184,10 @@ Future<void> _notifyUnpaidEntitlement(
     final status = container.read(entitlementStatusProvider);
     await EntitlementNoticeService.notifyIfNeeded(
       view: status.view,
-      hasPreset: PushRegistrationService.hasPresetAmong(accounts),
+      // 🔴 接続できていないプリセットのアカウントも数える。`accounts` だけで
+      // 判定すると、プリセットのサーバーに届かない日に、併用している人へ
+      // 「お支払いを確認できていません」の通知を出す。
+      hasPreset: container.read(hasPresetAccountProvider),
       notifications: container.read(notificationSubsystemProvider),
       prefs: await SharedPreferences.getInstance(),
     );

@@ -197,10 +197,13 @@ void main() {
       expect(tip, isNot(sub));
     });
 
-    test('⚠ サブスクの失敗は「購入できなかった」と言い切らない', () {
+    test('⚠ 利用権の発行の失敗は「購入できなかった」と言い切らない', () {
+      // ⚠ 以前は失敗の種類が `error` 1 つで、サブスクなら全部この文面だった。
+      // ストアで決済が通らなかった回（`error`）と分けたので、見る先は
+      // `entitlementError`（リリース前レビュー 2026-10-06）。
       final sub = supporterPurchaseOutcomeMessage(
         const SupporterPurchaseOutcome(
-          SupporterPurchaseOutcomeKind.error,
+          SupporterPurchaseOutcomeKind.entitlementError,
           isSubscription: true,
         ),
       );

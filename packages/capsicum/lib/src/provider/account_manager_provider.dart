@@ -1539,6 +1539,45 @@ final currentAccountKeyProvider = Provider<AccountKey?>((ref) {
   return ref.watch(currentAccountProvider)?.key;
 }, dependencies: [currentAccountProvider]);
 
+/// プリセットサーバーのアカウントを持っているか。**接続できていないものを含む。**
+///
+/// 🔴 **課金の話を出すかどうかは、必ずこれで決める**（リリース前レビュー・
+/// 2026-10-06）。以前は各所が `accountManagerProvider.accounts`（**接続できた
+/// アカウントだけ**）を見ていたので、**プリセットのサーバーに届かない状態で
+/// 起動すると、プリセットを持つ人が「持っていない人」として扱われ、購入を
+/// 促された**（サーバーが落ちた日に、外部サーバーと併用している人の全員が
+/// 踏む）。relay は同じ端末のプリセットの購読で通し続けるので、**通知は届いて
+/// いるのに画面だけが課金を促す**形だった。`docs/product-policy.md` の不変条件
+/// （プリセットの利用者に課金しない）の違反。
+///
+/// ⚠⚠ **`offlineAccounts` を必ず含める。**到達不能（背景で再接続を試みている）
+/// も、secret が読めず「未接続」になっているものも、**その人がプリセットの
+/// 利用者であることは変わらない**。⚠ 外すと、上の事故がそのまま戻る。
+///
+/// ⚠ **値が変わったら依存先が作り直される**ので、アカウントの追加・削除・
+/// 再接続に追随する（`entitlementStatusProvider` がこれを聞いている）。
+final hasPresetAccountProvider = Provider<bool>((ref) {
+  final state = ref.watch(accountManagerProvider);
+  return hasPresetAccountIn(
+    accounts: state.accounts.map((a) => a.key),
+    offlineAccounts: state.offlineAccounts.map((o) => o.key),
+  );
+});
+
+/// [hasPresetAccountProvider] の判定そのもの。
+///
+/// ⚠ **引数を 2 つに分けてあるのは、片方を渡し忘れられないようにするため**
+/// （`required`）。1 本のリストで受けると、呼ぶ側が `accounts` だけ渡して
+/// 同じ穴を開け直せる。
+bool hasPresetAccountIn({
+  required Iterable<AccountKey> accounts,
+  required Iterable<AccountKey> offlineAccounts,
+}) =>
+    accounts.any((key) => PushRegistrationService.isPresetServer(key.host)) ||
+    offlineAccounts.any(
+      (key) => PushRegistrationService.isPresetServer(key.host),
+    );
+
 /// 到達不能でオフライン保持中のアカウント一覧 (#792)。
 final offlineAccountsProvider = Provider<List<OfflineAccount>>((ref) {
   return ref.watch(accountManagerProvider).offlineAccounts;

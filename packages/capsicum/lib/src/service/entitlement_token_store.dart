@@ -100,6 +100,7 @@ class EntitlementTokenStore {
   /// するので、**読みを減らすこと自体に意味がある**（#474）。
   ///
   /// ⚠⚠ **書き換えるのは [save] / [clear] だけ**なので、古い値が残ることはない。
+  /// ⚠ **入るのは読めた結果だけ**（読めなかった回は確定させない・[load]）。
   static EntitlementToken? _cached;
   static bool _loaded = false;
 
@@ -108,16 +109,34 @@ class EntitlementTokenStore {
   /// ⚠ **読めなくても例外を投げない。**キーリングが停止している Linux 等で
   /// **push 登録そのものを道連れにしない**（#1117 / #1136）。持っていない扱いに
   /// 倒すと、非プリセットの購入者は従来どおり登録されないだけで済む。
+  ///
+  /// 🔴 **読めなかった結果をキャッシュしない。**以前は失敗も `_loaded = true` で
+  /// 確定させていたので、**1 度読めないだけで、プロセスが終わるまで「持って
+  /// いない」ことになった** —— 購入済みの人に購入ボタンが出て、登録にも
+  /// トークンが載らない（リリース前レビューの Codex P1・2026-10-06）。
+  /// 読めなかった回は確定させず、**次に呼ばれたときにもう一度読む**。
+  ///
+  /// ⚠ **「読めない」と「持っていない」を区別したい側は [loadOrThrow] を使う**
+  /// （購入の画面。買った人に買わせないため）。こちらは登録の経路用。
   static Future<EntitlementToken?> load() async {
-    if (_loaded) return _cached;
-
     try {
-      final raw = await _gate.read(key: _key);
-      _cached = _decode(raw);
+      return await loadOrThrow();
     } catch (e) {
       debugPrint('capsicum: entitlement: load failed (${e.runtimeType})');
-      _cached = null;
+      return null;
     }
+  }
+
+  /// [load] と同じだが、**読めなかったときは例外を投げる。**
+  ///
+  /// ⚠⚠ **購入の画面はこちらを使う。**null を「持っていない」と読むと、
+  /// キーホルダが一時的に読めないだけで**購入済みの人に購入ボタンを出す**。
+  /// 呼び出し側は例外を「分からない」として扱い、**未購入へ倒さない**。
+  static Future<EntitlementToken?> loadOrThrow() async {
+    if (_loaded) return _cached;
+
+    final raw = await _gate.read(key: _key);
+    _cached = _decode(raw);
     _loaded = true;
     return _cached;
   }

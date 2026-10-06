@@ -1,10 +1,10 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../service/entitlement_token_store.dart';
-import '../service/push_registration_service.dart';
 import '../util/exception_scrub.dart';
 import 'account_manager_provider.dart';
 import 'supporter_status_provider.dart';
@@ -55,6 +55,19 @@ enum EntitlementView {
   /// 持てば、非プリセットのアカウントも含めて全部無償（relay のゲートの
   /// `preset` 判定）。
   preset,
+
+  /// 🔴 **手元の保存を読めなかった。持っているかどうか分からない**
+  /// （リリース前レビュー・2026-10-06）。
+  ///
+  /// ⚠⚠ **[absent] に混ぜない。**キーホルダが一時的に読めない（再起動後に
+  /// 一度も画面ロックを解除していない・Linux のキーリングが止まっている・
+  /// 読み出しが詰まった）だけで「未購入」と出すと、**購入済みの人に購入ボタンを
+  /// 出す**。⚠ 以前は読み出しの失敗が null（＝持っていない）に畳まれていて、
+  /// 区別する手段が無かった。
+  ///
+  /// ⚠ 購入ボタンは出さない（`showRelayPurchaseButton` は未購入と失効だけ）。
+  /// 復元の口は出す —— 読めないのが続くなら、そこから抜けられる。
+  unknown,
 }
 
 /// relay の `status` を [EntitlementView] へ畳む。
@@ -163,22 +176,38 @@ class EntitlementStatus {
 /// **圏外で画面が空になる**（プッシュ不達の切り分けはこの画面から始まるので、
 /// 通信できないときこそ何か出ている必要がある）。
 class EntitlementStatusNotifier extends Notifier<EntitlementStatus> {
+  /// [refresh] の世代。**後から始まった refresh が勝つ。**
+  ///
+  /// 🔴 無いと、relay の応答が遅れた古い refresh が、**あとの操作の結果を
+  /// 上書きする**（リリース前レビュー・2026-10-06）: 応答待ちの間に利用者が
+  /// 「記録を消す」を押すと、遅れて着いた応答が**消したトークンを保存し直す**。
+  int _generation = 0;
+
   @override
   EntitlementStatus build() {
+    // 🔴 **プリセットを持つかどうかが変わったら、読み直す。**以前は起動時・
+    // 購入・復元・記録の消去でしか読み直さなかったので、**起動後にプリセットの
+    // アカウントを足しても「ご購入が必要です」が残り続けた**（サポーター画面）。
+    // ⚠ 接続できていなかったプリセットのアカウントが背景で復帰した回も、
+    // ここを通る。
+    ref.listen<bool>(hasPresetAccountProvider, (_, _) => refresh());
     scheduleMicrotask(refresh);
     return const EntitlementStatus(isRefreshing: true);
   }
 
   /// 手元 → relay の順で読み直す。
   Future<void> refresh() async {
+    final generation = ++_generation;
+    bool stale() => generation != _generation;
+
     // ⚠⚠ **プリセットを最初に見る (#1232)。**プリセットのアカウントがあれば
     // 利用権は**無条件にある**ので、手元の保存も relay の状態も関係ない。
     // ⚠ **relay へ問い合わせない** —— 判定に要らないうえ、プリセットのみの
     // 利用者に利用権の通信を走らせない方針（`push_notification_settings_screen`
     // の門と同じ理由）。
-    if (PushRegistrationService.hasPresetAmong(
-      ref.read(accountManagerProvider).accounts,
-    )) {
+    // 🔴 **接続できていないプリセットのアカウントも数える**
+    // （[hasPresetAccountProvider]）。
+    if (ref.read(hasPresetAccountProvider)) {
       state = const EntitlementStatus(view: EntitlementView.preset);
       return;
     }
@@ -186,7 +215,17 @@ class EntitlementStatusNotifier extends Notifier<EntitlementStatus> {
     // ⚠ **プリセットの人が購入済みでも、購入の状態は出さない**（2026-10-05
     // pooza 判断）。⚠⚠ **解約はもともとストア側でしかできない**（`capsicum-site`
     // の特定商取引法に基づく表記）ので、アプリから消えても失われる導線は無い。
-    final local = await _loadLocal();
+    final EntitlementToken? local;
+    try {
+      local = await _loadLocal();
+    } catch (_) {
+      // 🔴 **読めなかったときは「分からない」。未購入へ倒さない。**
+      // 記録は [_loadLocal] が済ませている。
+      if (stale()) return;
+      state = const EntitlementStatus(view: EntitlementView.unknown);
+      return;
+    }
+    if (stale()) return;
 
     if (local == null) {
       state = const EntitlementStatus(view: EntitlementView.absent);
@@ -203,6 +242,8 @@ class EntitlementStatusNotifier extends Notifier<EntitlementStatus> {
       final json = await ref
           .read(supporterRelayClientProvider)
           .fetchEntitlement(local.token);
+      // ⚠⚠ **保存より前に世代を見る。**古い応答に手元の保存を書かせない。
+      if (stale()) return;
       if (json == null) {
         // ⚠⚠ **404 は「失効」ではない。**relay が知らない token ＝ 手元の保存が
         // 古い / 壊れている。⚠ **勝手に消さない** —— 消すと再登録の手掛かりごと
@@ -212,6 +253,7 @@ class EntitlementStatusNotifier extends Notifier<EntitlementStatus> {
       }
       final fresh = EntitlementToken.fromRelay(json);
       if (fresh != null) await EntitlementTokenStore.save(fresh);
+      if (stale()) return;
       // ⚠ `reason` は relay が計算した判定（relay#63）。⚠⚠ **手元に保存しない**
       // —— 保存すると「いつの判定か」が分からなくなる。画面に出すのは
       // **いま問い合わせた結果**だけで、圏外のときは `status` 側の判定に戻る。
@@ -223,25 +265,44 @@ class EntitlementStatusNotifier extends Notifier<EntitlementStatus> {
         expiresAt: fresh?.expiresAt ?? local.expiresAt,
       );
     } catch (e, st) {
-      Sentry.captureException(
-        scrubException(e),
-        stackTrace: st,
-        withScope: (scope) {
-          scope.setTag('entitlement.status', 'refresh_failed');
-          scope.fingerprint = [
-            'entitlement.status.refresh',
-            e.runtimeType.toString(),
-          ];
-        },
-      );
+      // ⚠⚠ **relay に届かなかっただけの回は送らない**（リリース前レビュー
+      // 2026-10-06）。圏外や不安定な回線で起動するたび・画面を開くたびに
+      // error が 1 件出ていて、**本当に見たい relay の 5xx / 401 が埋もれる**。
+      // ⚠ 起動時の呼び出し元（splash）は「圏外でも起きるので送らない」と
+      // 書いていたが、**ここが自分で送っていたので実現していなかった**。
+      final status = e is DioException ? e.response?.statusCode : null;
+      final unreachable = e is DioException && e.response == null;
+      if (!unreachable) {
+        Sentry.captureException(
+          scrubException(e),
+          stackTrace: st,
+          withScope: (scope) {
+            scope.setTag('entitlement.status', 'refresh_failed');
+            // ⚠ **応答のステータスで割る。**型だけだと、relay の 5xx と 401
+            // （共有シークレットの不一致）が同じ 1 件に畳まれる。
+            scope.fingerprint = [
+              'entitlement.status.refresh',
+              e.runtimeType.toString(),
+              '${status ?? 'none'}',
+            ];
+          },
+        );
+      }
+      if (stale()) return;
       // ⚠ 手元の値を残したまま印だけ下ろす（通信の失敗で「未購入」に見せない）。
       state = state.copyWith(isRefreshing: false);
     }
   }
 
+  /// 手元の利用権を読む。**読めなかったら例外のまま返す**（呼び出し側が
+  /// [EntitlementView.unknown] にする）。
+  ///
+  /// 🔴 **以前は [EntitlementTokenStore.load] を呼んでいた。**あちらは読めなく
+  /// ても null を返すので、**ここの catch には一度も来ておらず**、読めない回は
+  /// 「未購入」として表示されていた（リリース前レビュー・2026-10-06）。
   Future<EntitlementToken?> _loadLocal() async {
     try {
-      return await EntitlementTokenStore.load();
+      return await EntitlementTokenStore.loadOrThrow();
     } catch (e, st) {
       Sentry.captureException(
         scrubException(e),
@@ -251,7 +312,7 @@ class EntitlementStatusNotifier extends Notifier<EntitlementStatus> {
           scope.fingerprint = ['entitlement.status.load'];
         },
       );
-      return null;
+      rethrow;
     }
   }
 }

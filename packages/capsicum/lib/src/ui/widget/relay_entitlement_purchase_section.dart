@@ -251,12 +251,17 @@ class RelayEntitlementPurchaseSection extends ConsumerWidget {
   /// ⚠ **購入が返った回の引き直しは [build] の listener が担う。**その回は
   /// relay からの発行と保存が**まだ終わっていない**ので、ここで引き直しても
   /// 古い値を読む。返らなかった回だけ、ここで引き直す。
+  ///
+  /// ⚠⚠ **`ref` は待つ前に使い切る。**復元と登録は合わせて 20 秒以上かかりうる
+  /// ので、その間に画面を離れると `ref` は使えなくなる（`ref.read` が例外を
+  /// 投げ、引き直しも走らない）。notifier を先に取り出しておけば、画面が
+  /// 無くなっても最後まで走る。
   Future<void> _restore(WidgetRef ref) async {
-    final restored = await ref
-        .read(supporterPurchaseProvider.notifier)
-        .restoreAndReregister();
+    final purchase = ref.read(supporterPurchaseProvider.notifier);
+    final status = ref.read(entitlementStatusProvider.notifier);
+    final restored = await purchase.restoreAndReregister();
     if (restored) return;
-    await ref.read(entitlementStatusProvider.notifier).refresh();
+    await status.refresh();
   }
 
   /// 「記録を消す」を確認してから実行する (#1219)。
@@ -265,6 +270,9 @@ class RelayEntitlementPurchaseSection extends ConsumerWidget {
   /// **取り直すまで通知が止まる**。⚠ **何が消えて何が消えないか**を文面で
   /// 分ける —— ストアの購読は解約されない。
   Future<void> _confirmForget(BuildContext context, WidgetRef ref) async {
+    // ⚠ `ref` は待つ前に使い切る（[_restore] と同じ理由）。
+    final purchase = ref.read(supporterPurchaseProvider.notifier);
+    final status = ref.read(entitlementStatusProvider.notifier);
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -289,9 +297,9 @@ class RelayEntitlementPurchaseSection extends ConsumerWidget {
       ),
     );
     if (ok != true) return;
-    await ref.read(supporterPurchaseProvider.notifier).forgetEntitlement();
+    await purchase.forgetEntitlement();
     // ⚠ 消しただけでは画面が古い状態のままなので引き直す（`absent` へ落ちる）。
-    await ref.read(entitlementStatusProvider.notifier).refresh();
+    await status.refresh();
   }
 }
 
@@ -307,10 +315,17 @@ class RelayEntitlementPurchaseSection extends ConsumerWidget {
   required String? expiresAt,
 }) {
   final expiry = formatEntitlementExpiry(expiresAt);
+  // ⚠⚠ **どの状態でも「プリセット以外のサーバーでは」と書かない**（#1232 の
+  // 続き・リリース前レビュー 2026-10-06）。プリセットのアカウントを持つ人は
+  // [EntitlementView.preset] へ行くので、**ここから下の文面を読むのは全員
+  // 「プリセットを持たない人」**。その人にとっては**どのサーバーでも**同じ話で、
+  // 「プリセット以外では」と限定すると、**プリセットでだけ使える権利を持って
+  // いる**という存在しない状態を前提にした説明になる。⚠ 以前は `absent` だけ
+  // 直して、ほかの 4 状態に残していた。
   return switch (view) {
     EntitlementView.active => (
       '利用権は有効です',
-      'プリセット以外のサーバーでもプッシュ通知を受け取れます。',
+      'プッシュ通知を受け取れます。',
       Icons.check_circle_outline,
     ),
     // ⚠⚠ **届いている。**relay は返金済みでも**決済済みの期間までは通す**
@@ -320,27 +335,37 @@ class RelayEntitlementPurchaseSection extends ConsumerWidget {
     EntitlementView.refunded => (
       '返金済みです',
       expiry == null
-          ? '決済済みの期間が残っているあいだは、プリセット以外のサーバーでも'
-                'プッシュ通知をお使いいただけます。'
-          : '$expiry までは、プリセット以外のサーバーでもプッシュ通知を'
-                'お使いいただけます。期限を過ぎると届かなくなります。',
+          ? '決済済みの期間が残っているあいだは、プッシュ通知をお使いいただけます。'
+          : '$expiry までは、プッシュ通知をお使いいただけます。'
+                '期限を過ぎると届かなくなります。',
       Icons.schedule,
     ),
     // ⚠⚠ **止まっている。**2026-10-03 に「未払いの間は通さない」と決まった
     // （relay#63）ので、**「いまのところ届いています」とは言えない。**
     // ⚠ **利用者が自分で直せる唯一の状態**なので、直し方まで書く。
+    // ⚠ **操作は実在するボタンの名前で指す。**#1234 で「登録し直す」は
+    // 「購入を復元する」にまとまったので、「この節から登録をやり直す」という
+    // 名前の操作はもう無い。
     EntitlementView.grace => (
       'お支払いを確認できていません',
-      'プリセット以外のサーバーへのプッシュ通知が止まっています。'
-          'ストアでお支払い方法をご確認ください。'
-          'お支払いが確認できたあと、この節から登録をやり直すと再び届きます。',
+      'プッシュ通知が止まっています。ストアでお支払い方法をご確認ください。'
+          'お支払いが確認できたあと、下の「購入を復元する」を押すと再び届きます。',
       Icons.error_outline,
     ),
     EntitlementView.expired => (
       '利用権が失効しています',
-      'プリセット以外のサーバーでは、プッシュ通知が届かなくなります。'
-          'もう一度ご購入いただくと、この節から登録をやり直せます。',
+      'プッシュ通知が届かなくなります。'
+          'もう一度ご購入いただくと、再び届くようになります。',
       Icons.cancel_outlined,
+    ),
+    // 🔴 **「分からない」を「無い」と言わない**（リリース前レビュー
+    // 2026-10-06）。端末の保存を読めなかっただけで、購入済みかもしれない。
+    // ⚠ 購入を勧める語（「ご購入」）を入れない。
+    EntitlementView.unknown => (
+      '利用権の状態を確認できませんでした',
+      '端末に保存した情報を読み出せませんでした。'
+          'しばらくしてから、もう一度この画面を開いてください。',
+      Icons.help_outline,
     ),
     // ⚠⚠ **「サポート画面から」と書かない (#1217)。**購入の入口がこの節の
     // すぐ下に出るので、**辿り直させる案内が残ると誤導になる。**
@@ -378,20 +403,25 @@ class RelayEntitlementPurchaseSection extends ConsumerWidget {
 ///
 /// ⚠ **スナックバーの `ref.listen` は画面側に置く。**節の中で待ち受けると、
 /// 画面を離れる操作と競合して**結果を出す前に unmount されうる。**
-String supporterPurchaseOutcomeMessage(SupporterPurchaseOutcome outcome) =>
-    switch ((outcome.kind, outcome.isSubscription)) {
-      (SupporterPurchaseOutcomeKind.success, true) =>
-        'ありがとうございます！プッシュ通知リレーの利用権が有効になりました。',
-      (SupporterPurchaseOutcomeKind.success, false) =>
-        'ありがとうございます！サポーターになりました。',
-      (SupporterPurchaseOutcomeKind.canceled, _) => '購入をキャンセルしました。',
-      // ⚠ サブスクは購入が成立していても利用権の発行で落ちることがある
-      // （relay へ届かない等）。⚠⚠ **「購入できなかった」と言い切らない。**
-      (SupporterPurchaseOutcomeKind.error, true) =>
-        '利用権を有効にできませんでした。時間をおいてアプリを開き直してください。',
-      (SupporterPurchaseOutcomeKind.error, false) =>
-        '購入を完了できませんでした。時間をおいて再度お試しください。',
-    };
+String supporterPurchaseOutcomeMessage(
+  SupporterPurchaseOutcome outcome,
+) => switch ((outcome.kind, outcome.isSubscription)) {
+  (SupporterPurchaseOutcomeKind.success, true) =>
+    'ありがとうございます！プッシュ通知リレーの利用権が有効になりました。',
+  (SupporterPurchaseOutcomeKind.success, false) => 'ありがとうございます！サポーターになりました。',
+  (SupporterPurchaseOutcomeKind.canceled, _) => '購入をキャンセルしました。',
+  // ストアでの購入が成立しなかった（投げ銭もサブスクも同じ）。
+  (SupporterPurchaseOutcomeKind.error, _) => '購入を完了できませんでした。時間をおいて再度お試しください。',
+  // ⚠ サブスクは購入が成立していても利用権の発行で落ちることがある
+  // （relay へ届かない等）。⚠⚠ **「購入できなかった」と言い切らない。**
+  (SupporterPurchaseOutcomeKind.entitlementError, _) =>
+    '利用権を有効にできませんでした。時間をおいてアプリを開き直してください。',
+  (SupporterPurchaseOutcomeKind.restoreError, _) =>
+    '購入を復元できませんでした。時間をおいて再度お試しください。',
+  // ⚠ 失敗ではない。**買っていない人が押しても出る**ので、責める言い方に
+  // しない。
+  (SupporterPurchaseOutcomeKind.nothingToRestore, _) => '復元できる購入が見つかりませんでした。',
+};
 
 /// 購入ボタン（買う / 買い直す）を出すか (#1217 / #1219)。
 ///
