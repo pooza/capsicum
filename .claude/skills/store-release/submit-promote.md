@@ -65,6 +65,8 @@ https://github.com/pooza/capsicum/releases
 
 **新規 IAP（特に初回）は ASC 上で単独で審査提出しない。** アプリのバージョン提出に紐付けて同時提出する（バージョン提出画面の「App 内課金」欄で対象 IAP を選択）。リリース前レビュー前に IAP だけ先行提出すると、レビュー結果を取り込む前のビルドと審査がちぐはぐになるため。初回 IAP のスクリーンショット等の必須項目は「提出準備完了」状態にしておき、実提出は製品版昇格時のアプリ版提出に合わせる。初回 IAP が承認されれば 2 回目以降は単独提出も可。
 
+⚠⚠ **「初回」は商品の種類ごとに数える**（消耗型 / 非消耗型 / 自動更新サブスク / 非更新サブスク）。投げ銭（消耗型）が承認済みでも、**最初の自動更新サブスクは新しいバージョンの提出に付けるしかない**（サブスクグループも同じ提出に入れる）。付け忘れると、次に付けられるのはその次のバージョン提出になる。正本は Apple のヘルプ「[Submit an In-App Purchase](https://developer.apple.com/help/app-store-connect/manage-submissions-to-app-review/submit-an-in-app-purchase/)」（2026-10-07 に確認）。
+
 投げ銭画面の金額はストアのローカライズ価格（`ProductDetails.price`）をそのまま表示する設計で、コード側に金額をハードコードしない。表示通貨は端末の App Store / Play アカウントのストア地域で決まるため、検証アカウントが日本以外（米国 sandbox 等）だと `$` 表示になる。これは不具合ではなく、日本ストアのユーザーには円で表示される（iPhone 実機で確認済み）。
 
 #### macOS の Apple Events (temporary-exception) 審査ノート（[#668](https://github.com/pooza/capsicum/issues/668)、v1.37〜）
