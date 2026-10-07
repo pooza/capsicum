@@ -14,6 +14,7 @@
 #   .claude/scripts/asc-status.rb versions   # iOS / macOS の審査状態
 #   .claude/scripts/asc-status.rb products   # サブスク・消耗型の状態と価格
 #   .claude/scripts/asc-status.rb builds     # TestFlight のビルドと審査の状態
+#   .claude/scripts/asc-status.rb parts      # サブスクを審査へ出すのに要る部品
 #   .claude/scripts/asc-status.rb            # versions と products
 #
 # 認証は fastlane と同じ ASC API Key（`~/.config/capsicum/AuthKey_<KEY_ID>.p8`）。
@@ -139,6 +140,40 @@ def print_subscription(sub)
     "全 #{(prices['data'] || []).size} 地域"
 end
 
+# サブスクを審査へ出すのに要る部品の状態。⚠ **商品が `READY_TO_SUBMIT` でも、
+# バージョンのページに「App 内課金とサブスクリプション」の欄が出ないことがある**
+# （2026-10-08）。どの部品が欠けているかを、画面を開かずに見るための口。
+def print_subscription_parts
+  puts '== サブスクの部品 =='
+  get("/v1/apps/#{app_id}/subscriptionGroups")['data'].each do |group|
+    puts "  group: #{group['attributes']['referenceName']}"
+    locs = get("/v1/subscriptionGroups/#{group['id']}/subscriptionGroupLocalizations")
+    locs['data'].each do |loc|
+      attrs = loc['attributes']
+      puts "    グループの表示名 #{attrs['locale']}: #{attrs['state']}  #{attrs['name']}"
+    end
+    puts '    グループの表示名: なし' if locs['data'].empty?
+    get("/v1/subscriptionGroups/#{group['id']}/subscriptions")['data'].each do |sub|
+      print_subscription_part(sub)
+    end
+  end
+end
+
+def print_subscription_part(sub)
+  attrs = sub['attributes']
+  puts "    #{attrs['productId']}  #{attrs['state']}  " \
+    "familySharable=#{attrs['familySharable']}  groupLevel=#{attrs['groupLevel']}"
+  locs = get("/v1/subscriptions/#{sub['id']}/subscriptionLocalizations")
+  locs['data'].each do |loc|
+    la = loc['attributes']
+    puts "      表示名 #{la['locale']}: #{la['state']}  #{la['name']}"
+  end
+  puts '      表示名: なし' if locs['data'].empty?
+  shot = get("/v1/subscriptions/#{sub['id']}/appStoreReviewScreenshot")['data']
+  puts "      審査用の画像: #{shot ? shot.dig('attributes', 'assetDeliveryState', 'state') : 'なし'}"
+  puts "      審査メモ: #{attrs['reviewNote'].to_s.empty? ? 'なし' : "#{attrs['reviewNote'].length} 文字"}"
+end
+
 # TestFlight のビルドごとの状態。⚠ 外部テスター向けは「ベータ版 App Review」が
 # 入るので、アップロードの処理が終わっても配られない。内部と外部は別に出る。
 def print_builds
@@ -178,6 +213,7 @@ case ARGV[0]
 when 'versions' then print_versions
 when 'products' then print_products
 when 'builds' then print_builds
+when 'parts' then print_subscription_parts
 when nil then (print_versions; print_products)
-else abort "使い方: #{File.basename($PROGRAM_NAME)} [versions|products|builds]"
+else abort "使い方: #{File.basename($PROGRAM_NAME)} [versions|products|builds|parts]"
 end
