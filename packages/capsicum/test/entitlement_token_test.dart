@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:capsicum/src/constants.dart';
 import 'package:capsicum/src/provider/supporter_purchase_provider.dart';
@@ -10,6 +9,7 @@ import 'package:capsicum/src/service/push_relay_client.dart';
 import 'package:capsicum/src/util/sensitive_fields.dart';
 import 'package:dio/dio.dart';
 import 'package:fake_async/fake_async.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// 有償リレーの利用権トークン (#597 / #1121)。
@@ -209,6 +209,59 @@ void main() {
           reason: '$head が待ち行列を通っていない',
         );
       }
+    });
+  });
+
+  // リリース PR の Codex P1（2026-10-08）。
+  group('EntitlementTokenStore — 初回の読みと書き換えの重なり', () {
+    const channel = MethodChannel(
+      'plugins.it_nomads.com/flutter_secure_storage',
+    );
+
+    /// 読みだけを [reading] が終わるまで待たせる。書き換えはすぐ返す。
+    void mockStorage(Future<String?> reading) {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        return call.method == 'read' ? reading : null;
+      });
+      addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+      EntitlementTokenStore.resetCacheForTesting();
+      addTearDown(EntitlementTokenStore.resetCacheForTesting);
+    }
+
+    test('🔴 読んでいる間に保存が済んだら、古い中身でキャッシュを上書きしない', () async {
+      final reading = Completer<String?>();
+      mockStorage(reading.future);
+
+      final loading = EntitlementTokenStore.loadOrThrow();
+      await EntitlementTokenStore.save(
+        const EntitlementToken(token: 'et-new', store: 'apple'),
+      );
+      // 読みが返すのは、保存より前の中身（空）。
+      reading.complete(null);
+
+      expect((await loading)?.token, 'et-new');
+      expect((await EntitlementTokenStore.loadOrThrow())?.token, 'et-new');
+    });
+
+    test('🔴 読んでいる間に消去が済んだら、消した token が戻らない', () async {
+      final reading = Completer<String?>();
+      mockStorage(reading.future);
+
+      final loading = EntitlementTokenStore.loadOrThrow();
+      await EntitlementTokenStore.clear();
+      reading.complete('{"token":"et-old","store":"apple"}');
+
+      expect(await loading, isNull);
+      expect(await EntitlementTokenStore.loadOrThrow(), isNull);
+    });
+
+    test('対照群: 重なりが無ければ、読んだ中身がそのまま入る', () async {
+      mockStorage(Future.value('{"token":"et-old","store":"apple"}'));
+
+      expect((await EntitlementTokenStore.loadOrThrow())?.token, 'et-old');
     });
   });
 

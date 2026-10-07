@@ -136,6 +136,13 @@ class EntitlementTokenStore {
     if (_loaded) return _cached;
 
     final raw = await _gate.read(key: _key);
+    // 🔴 **読んでいる間に [save] / [clear] が済んでいたら、そちらが新しい**
+    // （リリース PR の Codex P1・2026-10-08）。読みは待ち行列の外で走るので、
+    // 書き換えより前に読みはじめた 1 本があとから返ると、**古い中身で
+    // キャッシュを上書きし、プロセスが終わるまでそれを返し続ける** —— 買った
+    // 直後の token が消える / 消した token が戻る。
+    // ⚠ 書き換えは終わるときに `_loaded` を立てるので、それを見れば足りる。
+    if (_loaded) return _cached;
     _cached = _decode(raw);
     _loaded = true;
     return _cached;
