@@ -135,7 +135,16 @@ class EntitlementTokenStore {
   static Future<EntitlementToken?> loadOrThrow() async {
     if (_loaded) return _cached;
 
-    final raw = await _gate.read(key: _key);
+    final String? raw;
+    try {
+      raw = await _gate.read(key: _key);
+    } catch (_) {
+      // 🔴 **読みが失敗で返った回も同じ**（同・2 巡目）。その間に書き換えが
+      // 済んでいれば、キャッシュは確かな値なので、失敗を投げずにそれを返す。
+      // ⚠ 投げると [load] が null に倒し、買った直後の登録に token が載らない。
+      if (_loaded) return _cached;
+      rethrow;
+    }
     // 🔴 **読んでいる間に [save] / [clear] が済んでいたら、そちらが新しい**
     // （リリース PR の Codex P1・2026-10-08）。読みは待ち行列の外で走るので、
     // 書き換えより前に読みはじめた 1 本があとから返ると、**古い中身で

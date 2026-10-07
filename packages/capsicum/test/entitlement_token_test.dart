@@ -218,13 +218,14 @@ void main() {
       'plugins.it_nomads.com/flutter_secure_storage',
     );
 
-    /// 読みだけを [reading] が終わるまで待たせる。書き換えはすぐ返す。
-    void mockStorage(Future<String?> reading) {
+    /// 読みだけを [reading] の結果で返す。書き換えはすぐ返す。
+    /// ⚠ 関数で受ける（失敗の Future を先に作ると、聞き手が付く前に落ちる）。
+    void mockStorage(Future<String?> Function() reading) {
       TestWidgetsFlutterBinding.ensureInitialized();
       final messenger =
           TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
       messenger.setMockMethodCallHandler(channel, (call) async {
-        return call.method == 'read' ? reading : null;
+        return call.method == 'read' ? reading() : null;
       });
       addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
       EntitlementTokenStore.resetCacheForTesting();
@@ -233,7 +234,7 @@ void main() {
 
     test('🔴 読んでいる間に保存が済んだら、古い中身でキャッシュを上書きしない', () async {
       final reading = Completer<String?>();
-      mockStorage(reading.future);
+      mockStorage(() => reading.future);
 
       final loading = EntitlementTokenStore.loadOrThrow();
       await EntitlementTokenStore.save(
@@ -248,7 +249,7 @@ void main() {
 
     test('🔴 読んでいる間に消去が済んだら、消した token が戻らない', () async {
       final reading = Completer<String?>();
-      mockStorage(reading.future);
+      mockStorage(() => reading.future);
 
       final loading = EntitlementTokenStore.loadOrThrow();
       await EntitlementTokenStore.clear();
@@ -258,8 +259,30 @@ void main() {
       expect(await EntitlementTokenStore.loadOrThrow(), isNull);
     });
 
+    test('🔴 読みが失敗で返っても、その間に済んだ保存を捨てない', () async {
+      final reading = Completer<String?>();
+      mockStorage(() => reading.future);
+
+      final loading = EntitlementTokenStore.loadOrThrow();
+      final loadingLenient = EntitlementTokenStore.load();
+      await EntitlementTokenStore.save(
+        const EntitlementToken(token: 'et-new', store: 'apple'),
+      );
+      reading.completeError(PlatformException(code: 'boom'));
+
+      expect((await loading)?.token, 'et-new');
+      expect((await loadingLenient)?.token, 'et-new');
+    });
+
+    test('対照群: 書き換えが無ければ、読みの失敗はそのまま投げる（確定させない）', () async {
+      mockStorage(() => Future<String?>.error(PlatformException(code: 'boom')));
+
+      await expectLater(EntitlementTokenStore.loadOrThrow(), throwsA(anything));
+      expect(await EntitlementTokenStore.load(), isNull);
+    });
+
     test('対照群: 重なりが無ければ、読んだ中身がそのまま入る', () async {
-      mockStorage(Future.value('{"token":"et-old","store":"apple"}'));
+      mockStorage(() => Future.value('{"token":"et-old","store":"apple"}'));
 
       expect((await EntitlementTokenStore.loadOrThrow())?.token, 'et-old');
     });
