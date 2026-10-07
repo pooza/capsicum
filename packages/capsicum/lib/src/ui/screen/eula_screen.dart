@@ -53,9 +53,7 @@ class EulaScreen extends StatelessWidget {
                 child: const Text('利用規約を読む'),
               ),
               TextButton(
-                onPressed: () => launchUrlSafely(
-                  AppConstants.websiteUrl.replace(path: '/privacy-policy'),
-                ),
+                onPressed: () => launchUrlSafely(AppConstants.privacyPolicyUrl),
                 child: const Text('プライバシーポリシーを読む'),
               ),
               const Spacer(),

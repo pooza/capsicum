@@ -110,6 +110,9 @@ class AppConstants {
   static final contactUrl = Uri.parse('https://contact.capsicum.shrieker.net');
   static final communityUrl = Uri.parse('https://pf.korako.me/c/capsicum');
   static final termsUrl = Uri.parse('https://capsicum.shrieker.net/terms');
+  static final privacyPolicyUrl = Uri.parse(
+    'https://capsicum.shrieker.net/privacy-policy',
+  );
 
   /// 特定商取引法に基づく表記 (#428 C-1/C-3 確定: 法人名義 有限会社ビーショック)。
   /// capsicum-site の法人名義ページを参照する。最終的な URL の整備 (ページ

@@ -400,6 +400,32 @@ void main() {
       );
     });
 
+    test('⚠⚠ 利用規約とプライバシーポリシーは、節が両画面に出す', () {
+      final section = maskComments(read(sectionPath));
+      final terms = section.indexOf("title: const Text('利用規約')");
+      final privacy = section.indexOf("title: const Text('プライバシーポリシー')");
+      final legalGate = section.indexOf('if (showLegalNotice)');
+      final productGate = section.indexOf('if (product != null)');
+
+      expect(section, contains('AppConstants.termsUrl'));
+      expect(section, contains('AppConstants.privacyPolicyUrl'));
+      // ⚠⚠ **`showLegalNotice` の門より手前**（サポーター画面は false なので、
+      // 門の内側へ入れるとあちらで消える）。⚠ 商品の門よりは後ろ（買えない
+      // 回には出さない）。
+      expect(productGate, greaterThanOrEqualTo(0));
+      expect(terms, greaterThan(productGate));
+      expect(privacy, greaterThan(terms));
+      expect(legalGate, greaterThan(privacy));
+      // ⚠ 画面の側で自前に持たない（節の 1 本に保つ）。
+      for (final path in [pushPath, supporterPath]) {
+        expect(
+          maskComments(read(path)),
+          isNot(contains('privacyPolicyUrl')),
+          reason: path,
+        );
+      }
+    });
+
     test('便益の説明はサポーター画面だけ（プッシュ通知画面では重ねない）', () {
       expect(sectionUsages(maskComments(read(supporterPath))), ['true']);
       expect(sectionUsages(maskComments(read(pushPath))), ['false']);
@@ -693,6 +719,20 @@ void main() {
       expect(provider, isNot(contains('forgetEntitlement')));
       // 🔴 `clear()` は実装されていたのに、呼び出しが 1 件も無かった。
       expect(provider, isNot(contains('EntitlementTokenStore.clear()')));
+    });
+
+    test('⚠⚠ 前は購入の面に利用規約とプライバシーポリシーが無かった', () {
+      final r = Process.runSync('git', [
+        'show',
+        '6d8ababb:packages/capsicum/$sectionPath',
+      ], workingDirectory: '../..');
+      expect(r.exitCode, 0, reason: (r.stderr as String));
+      final section = maskComments(r.stdout as String);
+
+      expect(section, isNot(contains('AppConstants.termsUrl')));
+      expect(section, isNot(contains('privacyPolicyUrl')));
+      // ⚠ 特商法の表記は当時からあった（走査が空振りしていないことの確認）。
+      expect(section, contains('AppConstants.tokushohoUrl'));
     });
   });
 }

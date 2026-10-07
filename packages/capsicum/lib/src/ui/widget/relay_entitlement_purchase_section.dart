@@ -229,6 +229,25 @@ class RelayEntitlementPurchaseSection extends ConsumerWidget {
               style: const TextStyle(fontSize: 12, color: Colors.grey),
             ),
           ),
+          // ⚠⚠ **利用規約とプライバシーポリシーは、購入ボタンのある面に必ず出す**
+          // （2026-10-08 pooza）。自動更新サブスクを持つアプリは、**アプリの中に**
+          // この 2 つへのリンクを求められる（ストアの説明文のリンクとは別の要件）。
+          // 🔴 以前は初回起動の同意画面にしか無く、同意した後は辿れなかった。
+          // ⚠ **[showLegalNotice] に掛けない** —— あちらは投げ銭と共通の特商法
+          // 表記を二重にしないための門で、この 2 つは両画面とも節にしか無い。
+          ListTile(
+            leading: const Icon(Icons.description_outlined),
+            title: const Text('利用規約'),
+            trailing: const Icon(Icons.open_in_new, size: 18),
+            onTap: () => launchUrlOrToast(context, AppConstants.termsUrl),
+          ),
+          ListTile(
+            leading: const Icon(Icons.privacy_tip_outlined),
+            title: const Text('プライバシーポリシー'),
+            trailing: const Icon(Icons.open_in_new, size: 18),
+            onTap: () =>
+                launchUrlOrToast(context, AppConstants.privacyPolicyUrl),
+          ),
           if (showLegalNotice)
             ListTile(
               leading: const Icon(Icons.gavel_outlined),
