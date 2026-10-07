@@ -13,6 +13,7 @@ import '../constants.dart';
 import '../model/account.dart';
 import '../model/account_key.dart';
 import '../model/offline_account.dart';
+import '../preset_servers.dart';
 import '../service/account_storage.dart';
 import '../service/background_notification_service.dart';
 import '../service/compose_draft_store.dart';
@@ -1577,11 +1578,13 @@ final hasPresetAccountProvider = Provider<bool>((ref) {
 bool hasPresetAccountIn({
   required Iterable<AccountKey> accounts,
   required Iterable<AccountKey> offlineAccounts,
-}) =>
-    accounts.any((key) => PushRegistrationService.isPresetServer(key.host)) ||
-    offlineAccounts.any(
-      (key) => PushRegistrationService.isPresetServer(key.host),
-    );
+}) => accounts.any(_countsAsPreset) || offlineAccounts.any(_countsAsPreset);
+
+/// ⚠⚠ **動作確認用の `@test` は数えない**（[kPresetExemptUsername]）。
+/// ⚠ 大文字小文字は区別しない（Mastodon / Misskey のユーザー名と同じ）。
+bool _countsAsPreset(AccountKey key) =>
+    PushRegistrationService.isPresetServer(key.host) &&
+    key.username.toLowerCase() != kPresetExemptUsername;
 
 /// 到達不能でオフライン保持中のアカウント一覧 (#792)。
 final offlineAccountsProvider = Provider<List<OfflineAccount>>((ref) {

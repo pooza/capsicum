@@ -71,6 +71,50 @@ void main() {
       );
     });
 
+    test('⚠⚠ 動作確認用の @test は、プリセットの利用者に数えない', () {
+      AccountKey named(String host, String username) => AccountKey(
+        type: BackendType.mastodon,
+        host: host,
+        username: username,
+      );
+
+      // これしか入っていない端末は、購入の導線が出る側。
+      expect(
+        hasPresetAccountIn(
+          accounts: [named(preset, 'test')],
+          offlineAccounts: const [],
+        ),
+        isFalse,
+      );
+      expect(
+        hasPresetAccountIn(
+          accounts: const [],
+          offlineAccounts: [named(preset, 'Test')],
+        ),
+        isFalse,
+        reason: '大文字小文字は区別しない・オフライン保持の側も同じ',
+      );
+      // ⚠⚠ **ほかのプリセットのアカウントが 1 つでもあれば、従来どおり。**
+      expect(
+        hasPresetAccountIn(
+          accounts: [named(preset, 'test'), key(preset)],
+          offlineAccounts: const [],
+        ),
+        isTrue,
+      );
+      // ⚠ 前方一致で外さない（`tester` や `test2` は普通の利用者）。
+      for (final username in ['tester', 'test2', 'mytest']) {
+        expect(
+          hasPresetAccountIn(
+            accounts: [named(preset, username)],
+            offlineAccounts: const [],
+          ),
+          isTrue,
+          reason: username,
+        );
+      }
+    });
+
     test('利用権の状態: プリセットがオフライン保持でも preset になる', () async {
       final container = ProviderContainer(
         overrides: [
