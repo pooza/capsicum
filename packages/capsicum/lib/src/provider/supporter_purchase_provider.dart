@@ -199,6 +199,10 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
   /// 完了を待つと relay への通信ぶん遅れ、その間に二重に登録してしまう。
   int _subscriptionEventCount = 0;
 
+  /// [loadProducts] の世代 (#1248)。時間切れのあとに届いた答えを反映するとき、
+  /// その間に読み直しが始まっていないかを見分ける。
+  int _loadGeneration = 0;
+
   @override
   SupporterPurchaseState build() {
     // 課金経路を OS ごとの backend に閉じる (#599 §E-3)。iOS / Android / macOS は
@@ -244,68 +248,145 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
   /// ストアから商品情報を取得する。画面再表示時に UI から再呼び出し可。
   Future<void> loadProducts() async {
     if (!_backend.isSupported) return;
+    final generation = ++_loadGeneration;
+    final elapsed = Stopwatch()..start();
     state = state.copyWith(isLoadingProducts: true);
     try {
-      final available = await _backend.isAvailable().timeout(storeTimeout);
+      final availability = _backend.isAvailable();
+      final bool available;
+      try {
+        available = await availability.timeout(storeTimeout);
+      } on TimeoutException {
+        // 画面は下の catch で固着から抜けるが、**問い合わせそのものは捨てない**。
+        _adoptLateAvailability(availability, generation, elapsed);
+        rethrow;
+      }
       if (!available) {
         state = state.copyWith(isAvailable: false, isLoadingProducts: false);
         return;
       }
-      // ⚠ **投げ銭とサブスクを 1 回の問い合わせで取る** (#1122)。分けると
-      // 往復が 2 倍になるうえ、⚠⚠ **片方だけ失敗した状態**を扱う分岐が増える。
-      final products = await _backend
-          .queryProducts({
-            ...supporterTipProductIds,
-            if (subscriptionPurchaseSupported) supporterSubscriptionProductId,
-          })
-          .timeout(storeTimeout);
-      final byId = {for (final p in products) p.id: p};
-      // 定義順（金額昇順）に整列。ストアに存在しない ID は黙って除外する。
-      final ordered = [
-        for (final id in supporterTipProductIds)
-          if (byId[id] != null) byId[id]!,
-      ];
-      // ⚠⚠ **商品が取れた時点で先に画面へ出す (#1231)。**🔴 以前は
-      // `hasEntitlement: await _loadEntitlement()` と**`copyWith` の引数の中で
-      // 待って**いたため、**キーホルダの読み出しが返らないだけで、取れている
-      // 商品もホイールの裏に隠れたまま**になった。⚠ ストアの往復と手元の
-      // 読み出しは**本来無関係**。
-      state = state.copyWith(
-        isAvailable: true,
-        isLoadingProducts: false,
-        products: ordered,
-        // ⚠ **取れなければ null に戻す。**ストアから消えたあとも入口が残ると、
-        // 押しても買えないボタンになる（[_keepSubscription] の説明）。
-        subscription: byId[supporterSubscriptionProductId],
-      );
-      // ⚠ 利用権は後から反映する（これが遅くても画面は出ている）。
-      // ⚠⚠ **先に待ってから `state` を読む。**`state.copyWith(x: await …)` と
-      // 書くと、Dart は**レシーバの `state` を先に評価する**ので、待っている間に
-      // 変わった `purchaseInProgress` / `lastOutcome` を古い値で巻き戻す。
-      final hasEntitlement = await _loadEntitlement();
-      state = state.copyWith(hasEntitlement: hasEntitlement);
+      await _loadAvailableProducts();
     } catch (e, st) {
-      Sentry.captureException(
-        scrubException(e),
-        stackTrace: st,
-        withScope: (scope) {
-          // ⚠⚠ **タイムアウトを「失敗」に混ぜない (#1231)。**ストアが
-          // 返ってこない事象は**無言で画面が固着する**という別の壊れ方で、
-          // 件数の推移も原因も違う。⚠ 分けておかないと、**誰も気づけない**。
-          scope.setTag(
-            'supporter.purchase',
-            e is TimeoutException
-                ? 'load_products_timeout'
-                : 'load_products_failed',
-          );
-          scope.fingerprint = [
-            'supporter.purchase.load_products',
-            e.runtimeType.toString(),
-          ];
-        },
-      );
+      _reportLoadFailure(e, st);
       state = state.copyWith(isAvailable: false, isLoadingProducts: false);
     }
+  }
+
+  /// 時間切れのあとに届いた「利用可能か」の答えを、捨てずに反映する (#1248)。
+  ///
+  /// 🔴 **2.0.0 では、Windows の「サポート」の入口が丸ごと消えた。**#1231 の
+  /// 時間切れは、切れた時点で `isAvailable: false` に確定させ、**遅れて返った
+  /// 結果を誰も読まなかった**。Windows の入口は `isAvailable` だけで出し分けて
+  /// いて（[supporterEntryVisibleProvider]）、読み直しの口は投げ銭画面の中に
+  /// しか無い ＝ **入口が出ないので、読み直しにも行けない**。
+  ///
+  /// ⚠ [storeTimeout] の根拠は Play と Apple の実測で、**Microsoft Store は
+  /// 測っていなかった**。`GetAssociatedStoreProductsAsync` は起動直後に 15 秒を
+  /// 超えることがある（Sentry では起動のたびに時間切れ）。
+  ///
+  /// ⚠⚠ **時間切れは「画面を固着させない」ためのもので、「使えない」の判定では
+  /// ない。**答えが出たら、その答えに従う。
+  ///
+  /// ⚠ **ここから `loadProducts()` を呼び直さない。**Windows の backend は
+  /// `isAvailable()` のたびにストアへ問い合わせるので、遅いストアでは「時間切れ →
+  /// 遅れて到着 → 問い合わせ直し → 時間切れ」が回り続ける。届いた答えの続き
+  /// （[_loadAvailableProducts]）だけを進める。
+  void _adoptLateAvailability(
+    Future<bool> availability,
+    int generation,
+    Stopwatch elapsed,
+  ) {
+    unawaited(() async {
+      final bool available;
+      try {
+        available = await availability;
+      } catch (_) {
+        // 遅れて失敗した。時間切れの時点で「利用不可」にしてあるので、そのまま。
+        return;
+      }
+      // 待っている間に読み直しが始まっていれば、そちらが正。
+      if (generation != _loadGeneration || !available) return;
+      Sentry.captureMessage(
+        'supporter.purchase.load_products_late',
+        level: SentryLevel.info,
+        withScope: (scope) {
+          scope.setTag('supporter.purchase', 'load_products_late');
+          scope.fingerprint = ['supporter.purchase.load_products_late'];
+          // ⚠ 上限を決め直す材料（Microsoft Store の往復は未実測）。
+          scope.setContexts('supporter_purchase', {
+            'available_after_ms': elapsed.elapsedMilliseconds,
+          });
+        },
+      );
+      try {
+        await _loadAvailableProducts();
+      } catch (e, st) {
+        _reportLoadFailure(e, st);
+        // provider が破棄済みなら state へは書けない（終了中）。
+        try {
+          state = state.copyWith(isAvailable: false, isLoadingProducts: false);
+        } catch (_) {}
+      }
+    }());
+  }
+
+  /// ストアが利用可能と分かったあとの続き: 商品を取り、利用権を反映する。
+  Future<void> _loadAvailableProducts() async {
+    // ⚠ **投げ銭とサブスクを 1 回の問い合わせで取る** (#1122)。分けると
+    // 往復が 2 倍になるうえ、⚠⚠ **片方だけ失敗した状態**を扱う分岐が増える。
+    final products = await _backend
+        .queryProducts({
+          ...supporterTipProductIds,
+          if (subscriptionPurchaseSupported) supporterSubscriptionProductId,
+        })
+        .timeout(storeTimeout);
+    final byId = {for (final p in products) p.id: p};
+    // 定義順（金額昇順）に整列。ストアに存在しない ID は黙って除外する。
+    final ordered = [
+      for (final id in supporterTipProductIds)
+        if (byId[id] != null) byId[id]!,
+    ];
+    // ⚠⚠ **商品が取れた時点で先に画面へ出す (#1231)。**🔴 以前は
+    // `hasEntitlement: await _loadEntitlement()` と**`copyWith` の引数の中で
+    // 待って**いたため、**キーホルダの読み出しが返らないだけで、取れている
+    // 商品もホイールの裏に隠れたまま**になった。⚠ ストアの往復と手元の
+    // 読み出しは**本来無関係**。
+    state = state.copyWith(
+      isAvailable: true,
+      isLoadingProducts: false,
+      products: ordered,
+      // ⚠ **取れなければ null に戻す。**ストアから消えたあとも入口が残ると、
+      // 押しても買えないボタンになる（[_keepSubscription] の説明）。
+      subscription: byId[supporterSubscriptionProductId],
+    );
+    // ⚠ 利用権は後から反映する（これが遅くても画面は出ている）。
+    // ⚠⚠ **先に待ってから `state` を読む。**`state.copyWith(x: await …)` と
+    // 書くと、Dart は**レシーバの `state` を先に評価する**ので、待っている間に
+    // 変わった `purchaseInProgress` / `lastOutcome` を古い値で巻き戻す。
+    final hasEntitlement = await _loadEntitlement();
+    state = state.copyWith(hasEntitlement: hasEntitlement);
+  }
+
+  void _reportLoadFailure(Object e, StackTrace st) {
+    Sentry.captureException(
+      scrubException(e),
+      stackTrace: st,
+      withScope: (scope) {
+        // ⚠⚠ **タイムアウトを「失敗」に混ぜない (#1231)。**ストアが
+        // 返ってこない事象は**無言で画面が固着する**という別の壊れ方で、
+        // 件数の推移も原因も違う。⚠ 分けておかないと、**誰も気づけない**。
+        scope.setTag(
+          'supporter.purchase',
+          e is TimeoutException
+              ? 'load_products_timeout'
+              : 'load_products_failed',
+        );
+        scope.fingerprint = [
+          'supporter.purchase.load_products',
+          e.runtimeType.toString(),
+        ];
+      },
+    );
   }
 
   /// 手元の利用権トークンの有無を読む (#1121 / #1122)。
