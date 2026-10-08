@@ -32,7 +32,14 @@ class MisskeyUser {
   final List<Map<String, dynamic>>? avatarDecorations;
   final List<Map<String, dynamic>>? badgeRoles;
   final List<String>? verifiedLinks;
-  final String? defaultNoteVisibility;
+  // ⚠⚠ **`defaultNoteVisibility` を足し直さない (#1185)。**Misskey の API には
+  // **存在したことが無い** —— `packages/backend` にも `misskey-js` にも無く、
+  // `git log -S` で追っても **frontend のクライアント設定 (`preferences/def.ts`)
+  // にしか現れない**。サーバーが送らないので常に null で、capsicum はそれを
+  // `User.defaultScope` に写していた＝**Misskey の `defaultScope` は常に null**
+  // という死にコードだった。⚠ **既定の公開範囲をサーバーから読めるのは
+  // Mastodon の `source.privacy` だけ**（`docs/server-settings-gap-inventory.md`
+  // §5-2）。
   final DateTime? createdAt;
   final bool? canChat;
   final String? chatScope;
@@ -73,7 +80,6 @@ class MisskeyUser {
     this.avatarDecorations,
     this.badgeRoles,
     this.verifiedLinks,
-    this.defaultNoteVisibility,
     this.createdAt,
     this.canChat,
     this.chatScope,

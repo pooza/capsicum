@@ -55,4 +55,4 @@ final nowPlayingResolverProvider = Provider<NowPlayingResolver>((ref) {
       ),
     createNativeNowPlayingProvider(),
   ]);
-});
+}, dependencies: [currentAccountProvider]);

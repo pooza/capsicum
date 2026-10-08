@@ -25,4 +25,4 @@ final currentInstanceProvider = FutureProvider<Instance?>((ref) async {
     Sentry.captureException(scrubException(e), stackTrace: st);
     return null;
   }
-});
+}, dependencies: [currentAdapterProvider]);

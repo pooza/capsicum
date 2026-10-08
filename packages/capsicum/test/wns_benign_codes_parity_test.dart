@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// #1012: Windows の「正常系」診断コードが Dart とネイティブで一致すること。
 ///
 /// ⚠ **これまで一致を守っていたのは両側のコメントだけだった。** C++ 側の
-/// テストは tag ビルドでしか回らない（`docs/tech-notes.md`「Windows ネイティブを
+/// テストは tag ビルドでしか回らない（`docs/tech-notes-native.md`「Windows ネイティブを
 /// 触ったときの検証手順」）ので、`develop` に入る変更では誰も検査していない。
 ///
 /// ずれると症状が非対称に出る:

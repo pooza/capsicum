@@ -5,6 +5,7 @@ import 'package:http_parser/http_parser.dart';
 
 import '../network_timeouts.dart';
 import '../rate_limit_interceptor.dart';
+import 'extensions.dart';
 
 /// MiAuth の `/check` がセッションを承認済みとして返さなかった (`ok:false` /
 /// token 欠落) ことを示す。MiAuth はユーザー承認とサーバー反映の間に僅かな
@@ -460,6 +461,26 @@ class MisskeyClient {
     return MisskeyDriveFile.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// POST /api/drive/files/show — ID からドライブファイルを 1 件引く (#1187)。
+  ///
+  /// ⚠ **見つからない / 権限が無いときは 400 を返す**（`NO_SUCH_FILE` /
+  /// `ACCESS_DENIED`）。書き出したファイルは**期限で消える**ことがあるので、
+  /// 呼び出し側は「無い」を普通の結末として扱うこと。
+  Future<MisskeyDriveFile?> showDriveFile(String fileId) async {
+    try {
+      final response = await dio.post(
+        '/api/drive/files/show',
+        data: createBody({'fileId': fileId}),
+      );
+      return MisskeyDriveFile.fromJson(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 400 || e.response?.statusCode == 404) {
+        return null;
+      }
+      rethrow;
+    }
+  }
+
   /// POST /api/drive/files/delete
   Future<void> deleteDriveFile(String fileId) async {
     await dio.post(
@@ -619,29 +640,13 @@ class MisskeyClient {
       '/api/notes/drafts/list',
       data: createBody({'scheduled': true}),
     );
+    // ⚠ 変換は [misskeyScheduledPostFromMap] に寄せてある (#1187)。
+    // `scheduledNotePostFailed` 通知の `noteDraft` が同じ `NoteDraft` の形で
+    // 来るので、2 箇所で同じパースを書かないため。⚠ **`scheduledAt` を持たない
+    // 行を落とす**挙動は helper 側が引き継いでいる（null を返す）。
     return (response.data as List)
-        .where((e) {
-          final json = e as Map<String, dynamic>;
-          return json['scheduledAt'] != null;
-        })
-        .map((e) {
-          final json = e as Map<String, dynamic>;
-          return ScheduledPost(
-            id: json['id'] as String,
-            scheduledAt: DateTime.fromMillisecondsSinceEpoch(
-              json['scheduledAt'] as int,
-              isUtc: true,
-            ),
-            content: json['text'] as String?,
-            spoilerText: json['cw'] as String?,
-            visibility: json['visibility'] as String?,
-            mediaIds:
-                (json['fileIds'] as List?)
-                    ?.map((id) => id as String)
-                    .toList() ??
-                [],
-          );
-        })
+        .map((e) => misskeyScheduledPostFromMap(e as Map<String, dynamic>))
+        .nonNulls
         .toList();
   }
 
@@ -858,18 +863,33 @@ class MisskeyClient {
   /// クライアント側で持つ運用（2026-09-04 pooza 判断・クライアント側が正本）
   /// なので、サーバーの既読状態には触らない。WebUI や他クライアントを併用して
   /// いるユーザーの未読バッジが、capsicum の取得だけで消えるのを防ぐ。
+  /// [grouped] が true なら `POST /api/i/notifications-grouped` を叩く (#1048)。
+  ///
+  /// ⚠ **束ねられるのは `reaction` と `renote` だけ、しかも連続したものだけ**
+  /// （`notifications-grouped.ts` のループは直前の通知と同じ種別・同じノートか
+  /// しか見ない）。Mastodon が `group_key` で履歴全体を束ねるのとは粒度が違う。
+  ///
+  /// ⚠ **`markAsRead` は grouped 側も既定 `true`。**同じ理由で false を明示する。
+  ///
+  /// [excludeTypes] は出さない種別 (#1042)。⚠ **サーバーは enum で検証する**ので、
+  /// `notificationTypes` に無い名前を混ぜると 400 で一覧ごと落ちる。値の出所は
+  /// [misskeyNotificationWireNames]（`misskeyNotificationTypeMap` から導出）に
+  /// 限ること。
   Future<List<MisskeyNotification>> getNotifications({
     String? sinceId,
     String? untilId,
     int? limit,
+    List<String> excludeTypes = const [],
+    bool grouped = false,
   }) async {
     final response = await dio.post(
-      '/api/i/notifications',
+      grouped ? '/api/i/notifications-grouped' : '/api/i/notifications',
       data: createBody({
         'sinceId': ?sinceId,
         'untilId': ?untilId,
         'limit': ?limit,
         'markAsRead': false,
+        if (excludeTypes.isNotEmpty) 'excludeTypes': excludeTypes,
       }),
     );
     return (response.data as List)
@@ -1130,6 +1150,15 @@ class MisskeyClient {
       }),
     );
     return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/gallery/posts/show
+  Future<Map<String, dynamic>> showGalleryPost(String postId) async {
+    final response = await dio.post(
+      '/api/gallery/posts/show',
+      data: createBody({'postId': postId}),
+    );
+    return response.data as Map<String, dynamic>;
   }
 
   /// POST /api/users/gallery/posts
@@ -1860,10 +1889,30 @@ class MisskeyClient {
   }
 
   /// Web Push サブスクリプション解除。POST /api/sw/unregister
-  Future<void> unsubscribePush({required String endpoint}) async {
+  ///
+  /// ⚠⚠ **2026.10.0 以降は `auth` / `publickey` が必須**（#1201）。資格情報では
+  /// なく購読の auth secret (RFC 8291) で所有を確認する作りに変わったため、
+  /// `endpoint` 単体では `INVALID_PARAM`（`must have required property 'auth'`）
+  /// の 400 になる。
+  ///
+  /// ⚠ **版で分岐しない。**2026.10.0 より前の `paramDef` は `endpoint` のみを
+  /// 宣言しているが `additionalProperties: false` を持たず、Misskey の Ajv も
+  /// `removeAdditional` 無しなので**余分なキーは無視される**。
+  ///
+  /// ⚠ [publickey] / [auth] が null のときは送らない —— 鍵が読めないインストール
+  /// （v1.20 以前からのアップグレード）でも、従来どおり endpoint だけで試す。
+  Future<void> unsubscribePush({
+    required String endpoint,
+    String? publickey,
+    String? auth,
+  }) async {
     await dio.post(
       '/api/sw/unregister',
-      data: createBody({'endpoint': endpoint}),
+      data: createBody({
+        'endpoint': endpoint,
+        'publickey': ?publickey,
+        'auth': ?auth,
+      }),
     );
   }
 }

@@ -11,11 +11,17 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../service/tco_resolver.dart';
+import '../../url_helper.dart';
+import '../util/deck_navigation.dart';
 import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
+import '../util/moderation_notification_text.dart';
+import '../util/notification_detail_text.dart';
+import '../util/notification_group_text.dart';
 import '../util/notification_type_display.dart';
 import '../util/post_actions.dart';
 import '../util/post_scope_display.dart';
+import '../util/provider_scope_carrier.dart';
 import '../util/reaction_acceptance.dart';
 import '../util/relative_time.dart';
 import '../util/visible_timeline.dart';
@@ -25,6 +31,7 @@ import 'emoji_action_sheet.dart';
 import 'emoji_text.dart';
 import 'post_touch_action_row.dart';
 import 'reaction_picker_sheet.dart';
+import 'stacked_avatars.dart';
 import 'user_avatar.dart';
 
 class NotificationTile extends ConsumerStatefulWidget {
@@ -109,6 +116,36 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
         : _contentRenderer!.renderMfm(content);
   }
 
+  /// 書き出したファイルを開く (#1187)。`exportCompleted` 通知は `fileId` しか
+  /// 載せてこないので、**開くと決めた時点で** `drive/files/show` を 1 往復する。
+  ///
+  /// ⚠⚠ **「無い」は普通の結末。**書き出したファイルは期限で消えることがある
+  /// ので、見つからなかったことを利用者へ伝えて終わる（黙って何も起きない形に
+  /// しない —— タップが効かないのと区別できない）。
+  Future<void> _openExportedFile(
+    BuildContext context,
+    ExportCompletion export,
+  ) async {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! DriveSupport) return;
+    final drive = adapter as DriveSupport;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    Attachment? file;
+    try {
+      file = await drive.getDriveFile(export.fileId);
+    } catch (_) {
+      file = null;
+    }
+    final url = file?.url;
+    if (url == null) {
+      messenger?.showSnackBar(
+        const SnackBar(content: Text('書き出したファイルが見つかりませんでした')),
+      );
+      return;
+    }
+    await launchUrlSafely(Uri.parse(url));
+  }
+
   /// 実績一覧を開く (#918)。実績は自分のものしか通知されないので、対象は
   /// 常に現在のアカウント。
   ///
@@ -117,12 +154,10 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
   void _openAchievements(BuildContext context) {
     final user = ref.read(currentAccountProvider)?.user;
     if (user == null) return;
-    context.push(
-      '/achievements',
-      extra: {
-        'userId': user.id,
-        'displayName': user.displayName ?? user.username,
-      },
+    openAchievements(
+      context,
+      userId: user.id,
+      displayName: user.displayName ?? user.username,
     );
   }
 
@@ -131,21 +166,47 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
     final theme = Theme.of(context);
     final (icon, label) = _iconAndLabel;
     final content = notification.post?.content;
+    // 関係の切断・モデレーション警告 (#1084)。post も user も持たないので、
+    // 何が起きたかを本文として組み立てて出す。
+    final localHost = ref.watch(currentAccountProvider)?.key.host;
+    final moderationText = localHost == null
+        ? null
+        : moderationNotificationText(
+            notification,
+            localHost: localHost,
+            postLabel: widget.postLabel,
+          );
+    final moderationUri = localHost == null
+        ? null
+        : moderationNotificationWebUri(notification, localHost: localHost);
 
     return InkWell(
       onTap: notification.post != null
-          ? () => context.push('/post', extra: notification.post!)
+          ? () => openPost(context, notification.post!)
           // Collections 通知 (#741): post を持たないため、タップで対象コレクション
           // の詳細（#742）を開く。
           : notification.collection != null
-          ? () =>
-                context.push('/collection', extra: notification.collection!.id)
+          ? () => openCollection(context, notification.collection!.id)
           // 実績解除通知 (#918): post を持たないため、タップで実績一覧を開く。
           // ⚠ **`extra` は省略できない。** `/achievements` の builder は
           // `state.extra!` で `userId` を取り出すので、付けずに push すると
           // その場で例外になる（プロフィール画面の導線と同じ形で渡す）。
           : notification.type == NotificationType.achievementEarned
           ? () => _openAchievements(context)
+          // チャットルームへの招待 (#1187): post を持たないため、タップで招待
+          // 一覧（#626）を開く。⚠ **承諾 / 無視の導線はあちらが持っている**ので、
+          // ここで作り直さない。
+          : notification.chatInvitation != null
+          ? () => context.push('/chat/invitations')
+          // 書き出しの完了 (#1187): `fileId` しか無いので、ここで drive を 1 往復
+          // してから開く。⚠ **一覧を描くたびには引かない**（通知 1 件につき
+          // 1 往復になる）。
+          : notification.export != null
+          ? () => unawaited(_openExportedFile(context, notification.export!))
+          // 関係の切断・モデレーション警告 (#1084): 対応する画面が capsicum に
+          // 無いので、WebUI の「詳細を確認」と同じページをブラウザで開く。
+          : moderationUri != null
+          ? () => launchUrlSafely(moderationUri)
           : null,
       onLongPress: notification.post != null
           ? () => _showActionMenu(context)
@@ -206,6 +267,81 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ],
+                  // 種別固有の荷物 (#1187)。ロール名 / 書き出した対象 / 失敗した
+                  // 予約投稿の本文 / 招待されたルーム名 / 承認時の一言。
+                  //
+                  // ⚠⚠ **#1177 で種別名は出るようになったが、中身は空のまま
+                  // だった。**ここが埋まらないと「ロールが付与されました（どの
+                  // ロール？）」「予約投稿に失敗しました（どれ？）」のように、
+                  // **読めても行動できない**通知になる。
+                  if (notificationDetailText(notification)
+                      case final detail?) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      detail,
+                      style: theme.textTheme.bodyMedium,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    // 開ける先があるときだけ、何が起きるかを 1 行で予告する。
+                    // ⚠ モデレーション警告 (#1084) の「詳細を確認」と同じ形。
+                    if (notification.export != null ||
+                        notification.chatInvitation != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        notification.export != null
+                            ? 'ファイルを開く（ブラウザで開きます）'
+                            : '招待を確認',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
+                    ],
+                  ],
+                  // capsicum が名前を知らない種別に、サーバーが用意した文言を
+                  // 出す (#1042)。⚠ **HTML なのでタグを落として出す。**リンクは
+                  // 捨てる（本文より上に「詳細を確認」の導線を作るほどの頻度で
+                  // はなく、`ContentRenderer` は 1 タイルに 1 つしか持てない）。
+                  //
+                  // ⚠ **これが出るのは非 baseline の未知種別だけ**（実質は
+                  // `admin.report` / `admin.sign_up`）。本当に新しい種別では
+                  // サーバー側も文言を持っておらず null で来るので、
+                  // 「通知」の既定表示が引き続き受け皿になる。
+                  if (_fallbackText case final fallback?) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      fallback,
+                      style: theme.textTheme.bodyMedium,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                  if (moderationText != null) ...[
+                    const SizedBox(height: 4),
+                    Text(moderationText, style: theme.textTheme.bodyMedium),
+                    // 管理者が添えた説明文（警告のみ・任意）。
+                    if (notification.moderationWarning?.text
+                        case final note?) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        note,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                    if (moderationUri != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        '詳細を確認（ブラウザで開きます）',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
+                    ],
+                  ],
                   if (notification.post != null)
                     PostTouchActionRow(
                       targetPost:
@@ -245,7 +381,12 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
                 title: const Text('返信'),
                 onTap: () {
                   Navigator.pop(sheetContext);
-                  context.push('/compose', extra: {'replyTo': targetPost});
+                  context.push(
+                    '/compose',
+                    extra: extraWithProviderScope(context, {
+                      'replyTo': targetPost,
+                    }),
+                  );
                 },
               ),
               if (targetPost.quotable)
@@ -254,7 +395,12 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
                   title: const Text('引用'),
                   onTap: () {
                     Navigator.pop(sheetContext);
-                    context.push('/compose', extra: {'quoteTo': targetPost});
+                    context.push(
+                      '/compose',
+                      extra: extraWithProviderScope(context, {
+                        'quoteTo': targetPost,
+                      }),
+                    );
                   },
                 ),
               if (adapter is FavoriteSupport)
@@ -481,6 +627,8 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
       showReactionPickerSheet(
         context: context,
         ref: ref,
+        // 受付条件で使えない絵文字を無効化する (#1081)。
+        target: targetPost,
         onSelected: (emoji) => _runReactionAction(
           messenger,
           backend,
@@ -515,11 +663,19 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
   Widget _buildHeader(BuildContext context, String label) {
     final theme = Theme.of(context);
     final user = notification.user;
+    final groupCount = notification.groupCount;
 
     if (user == null) {
       return Row(
         children: [
-          Expanded(child: Text(label, style: theme.textTheme.bodySmall)),
+          Expanded(
+            child: Text(
+              // 代表を引き当てられなかった束ね（#1048）。ここで
+              // `notificationActorSuffix` を使うと「 ほか…」で始まってしまう。
+              notificationActorlessLabel(groupCount: groupCount, label: label),
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
           TimestampText(
             notification.createdAt,
             absolute: ref.watch(absoluteTimeProvider),
@@ -530,13 +686,25 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
     }
 
     final displayName = user.displayName ?? user.username;
+    // 束ねた通知は代表アカウントを重ねて出す (#1048)。⚠ 1 件のときは従来と
+    // 同じ 1 枚（`sampleUsers` は非グループ取得では空なので、ここは `user` から
+    // 組む）。
+    final samples = notification.sampleUsers.isEmpty
+        ? [user]
+        : notification.sampleUsers;
 
     return Row(
       children: [
-        GestureDetector(
-          onTap: () => context.push('/profile', extra: user),
-          child: UserAvatar(user: user, size: 24, borderRadius: 4),
-        ),
+        if (samples.length > 1)
+          StackedAvatars(
+            users: samples,
+            onTapFirst: () => openProfile(context, samples.first),
+          )
+        else
+          GestureDetector(
+            onTap: () => openProfile(context, user),
+            child: UserAvatar(user: user, size: 24, borderRadius: 4),
+          ),
         const SizedBox(width: 8),
         Expanded(
           child: Row(
@@ -551,7 +719,10 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              Text(' が$label', style: theme.textTheme.bodySmall),
+              Text(
+                notificationActorSuffix(groupCount: groupCount, label: label),
+                style: theme.textTheme.bodySmall,
+              ),
             ],
           ),
         ),
@@ -563,6 +734,22 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
         ),
       ],
     );
+  }
+
+  /// サーバーが用意した代替文言を 1 つの文字列に畳む (#1042)。
+  ///
+  /// ⚠ 見出し（`title`）と説明（`summary`）は別フィールドだが、通知行に 2 段
+  /// 積むと 1 件で画面を占める。改行 1 つで繋いで 3 行で打ち切る。
+  String? get _fallbackText {
+    final title = notification.fallbackTitle;
+    final body = notification.fallbackBody;
+    if (title == null && body == null) return null;
+    final parts = [
+      for (final raw in [title, body])
+        if (raw != null && stripHtml(raw).trim().isNotEmpty)
+          stripHtml(raw).trim(),
+    ];
+    return parts.isEmpty ? null : parts.join('\n');
   }
 
   (IconData, String) get _iconAndLabel {

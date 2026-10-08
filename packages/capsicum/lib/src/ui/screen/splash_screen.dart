@@ -5,7 +5,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../main.dart'
     show appLaunchStopwatch, firebaseReady, pendingSharedText, shareIntentReady;
+import '../../model/account.dart';
 import '../../provider/account_manager_provider.dart';
+import '../../provider/entitlement_status_provider.dart';
+import '../../provider/platform_providers.dart';
+import '../../service/entitlement_notice_service.dart';
 import '../../service/push_registration_service.dart';
 import '../../util/exception_scrub.dart';
 import '../../util/startup_trace.dart';
@@ -86,10 +90,19 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
         // 観測範囲外（in-memory 値が null から始まるので「変化」にならない）
         // なので、ここで拾わないと上流に古い購読が孤児として残り続ける。
         await PushRegistrationService.reconcileDeviceToken(latest);
-        await PushRegistrationService.registerAllAccounts(latest);
+        await PushRegistrationService.registerAllAccounts(
+          latest,
+          // ⚠ 届かないアカウントも数える（[hasPresetAccountProvider]）。
+          hasPreset: container.read(hasPresetAccountProvider),
+        );
+        // ⚠⚠ **未払いはプッシュでは知らせられない** (#1123)。relay が
+        // `/push` を拒んでいる状態なので、**relay を通さないローカル通知**で
+        // 出す。⚠ 登録のあと（relay へ問い合わせた結果が要る）。
+        await _notifyUnpaidEntitlement(container, latest);
       }
       PushRegistrationService.startTokenRefreshListener(
         () => container.read(accountManagerProvider).accounts,
+        hasPreset: () => container.read(hasPresetAccountProvider),
       );
     });
 
@@ -159,5 +172,31 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
         ),
       ),
     );
+  }
+}
+
+/// 未払いなら起動時にローカル通知を出す (#1123)。
+///
+/// ⚠⚠ **ベストエフォート。**ここで何が起きても起動を止めない —— 利用権の案内は
+/// 起動の前提ではない。⚠ 失敗しても Sentry へは送らない（relay へ届かない回は
+/// 圏外でも起きるので、ノイズにしかならない）。
+Future<void> _notifyUnpaidEntitlement(
+  ProviderContainer container,
+  List<Account> accounts,
+) async {
+  try {
+    await container.read(entitlementStatusProvider.notifier).refresh();
+    final status = container.read(entitlementStatusProvider);
+    await EntitlementNoticeService.notifyIfNeeded(
+      view: status.view,
+      // 🔴 接続できていないプリセットのアカウントも数える。`accounts` だけで
+      // 判定すると、プリセットのサーバーに届かない日に、併用している人へ
+      // 「お支払いを確認できていません」の通知を出す。
+      hasPreset: container.read(hasPresetAccountProvider),
+      notifications: container.read(notificationSubsystemProvider),
+      prefs: await SharedPreferences.getInstance(),
+    );
+  } catch (_) {
+    // ⚠ 握りつぶす（上の doc のとおり）。
   }
 }

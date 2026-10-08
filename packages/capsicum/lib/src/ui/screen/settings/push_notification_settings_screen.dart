@@ -1,14 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../constants.dart';
 import '../../../model/account.dart';
 import '../../../provider/account_manager_provider.dart';
+import '../../../provider/entitlement_status_provider.dart';
 import '../../../provider/push_registration_status_provider.dart';
+import '../../../provider/supporter_purchase_provider.dart';
 import '../../../service/announcement_subscription_service.dart';
 import '../../../service/push_registration_service.dart';
 import '../../../service/push_registration_status.dart';
 import '../../widget/push_registration_status_section.dart';
+import '../../widget/relay_entitlement_purchase_section.dart';
 import '../../widget/section_header.dart';
+import '../../widget/term_link_text.dart';
 
 /// プッシュ通知の登録状態をアカウント別に一覧表示し、失敗していれば
 /// 再試行できる設定画面（#340）。
@@ -26,7 +31,65 @@ class PushNotificationSettingsScreen extends ConsumerWidget {
     final statusMap =
         ref.watch(pushRegistrationStatusProvider).valueOrNull ??
         const <String, PushRegistrationSnapshot>{};
-    final hasPreset = PushRegistrationService.hasPresetAmong(accounts);
+    // 🔴 **接続できていないプリセットのアカウントも数える**
+    // （[hasPresetAccountProvider]）。`accounts` だけで判定すると、プリセットの
+    // サーバーに届かない日に、併用している人へ購入を促す。
+    final hasPreset = ref.watch(hasPresetAccountProvider);
+
+    // 利用権の状態 (#1123 / #1217 / #1218)。
+    //
+    // ⚠⚠ **`watch` より先に `hasPreset` で抜ける。**プリセットのみの人に対して
+    // は利用権の provider も購入の provider も起動させない（#1123 の完了条件 3・
+    // ⚠ **見た目だけ満たしても通信は増える**）。
+    final entitlementView = hasPreset
+        ? EntitlementView.absent
+        : ref.watch(entitlementStatusProvider).view;
+
+    // ⚠⚠ **手元に利用権があるか** —— `absent` 以外＝トークンを持っている、
+    // **または読めなくて分からない**（`unknown`）。分からない回も登録は試みる。
+    // **登録を試みる側の判定に使う** (#1218)。⚠ **`status` では切らない**
+    // （`expired` でも登録は試みて、止めるのは relay の仕事）。
+    final hasEntitlement = entitlementView != EntitlementView.absent;
+
+    // 利用権の購入結果を知らせ、この画面の表示を購入後の状態へ追いつかせる
+    // (#1217)。
+    //
+    // ⚠⚠ **画面側で待ち受ける。**[RelayEntitlementPurchaseSection] は購入が
+    // 成立すると消える側なので、ウィジェットに置くと**結果を出す前に unmount
+    // されうる。**
+    //
+    // ⚠⚠ **再登録はここでやらない。**[SupporterPurchaseNotifier] の
+    // `_completeAndReregister` が購入成立の時点で `registerAllAccounts` を
+    // 打っている。🔴 **2026-10-04 の実機確認で、ここから二重に打っていたのを
+    // 実測した**（relay の journald に `register.created` が 0.6 秒差で 2 本）。
+    // ⚠ **足りないのは [entitlementStatusProvider] の引き直しだけ** ——
+    // あちらは `refresh()` を呼ばれないと `absent` のままなので、買っても
+    // 画面が「利用権がありません」のまま残る。
+    //
+    // ⚠ **投げ銭の結果は拾わない。**この画面に投げ銭の入口は無いので、
+    // サポーター画面で買ったものの結果をここで出すと文脈が合わない。
+    // ⚠⚠ **門は `hasPreset` だけにした (#1224)。**以前は「購入の入口が出る
+    // とき」(`absent` / `expired`) に限っていたが、節のできることを 2 画面で
+    // 揃えたので、**`unverified` で「取り直す」を押した結果もここで出す**
+    // 必要がある。⚠ プリセットのみの人には節が出ないので待ち受けない。
+    if (!hasPreset) {
+      ref.listen<SupporterPurchaseState>(supporterPurchaseProvider, (
+        prev,
+        next,
+      ) {
+        final outcome = next.lastOutcome;
+        if (outcome == null || outcome == prev?.lastOutcome) return;
+        if (!outcome.isSubscription) return;
+        final messenger = ScaffoldMessenger.of(context);
+        messenger.hideCurrentSnackBar();
+        messenger.showSnackBar(
+          SnackBar(content: Text(supporterPurchaseOutcomeMessage(outcome))),
+        );
+        if (outcome.kind == SupporterPurchaseOutcomeKind.success) {
+          ref.read(entitlementStatusProvider.notifier).refresh();
+        }
+      });
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -37,28 +100,129 @@ class PushNotificationSettingsScreen extends ConsumerWidget {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Text(
-              hasPreset
-                  ? 'プリセットサーバーのアカウントが登録されているため、'
-                        'すべてのアカウントでプッシュ通知が利用できます。'
-                        '登録に失敗した場合は、各アカウントの行から再試行できます。'
-                  : 'プッシュ通知はプリセットサーバーのアカウントが '
-                        '1 つ以上登録されている場合に利用できます。',
+            // ⚠⚠ **用語からサイトの説明へ辿れるようにする (#1221)。**有償リレー
+            // で「プリセットサーバー」が**課金の線引きそのもの**になったため、
+            // 初めて見る人がここで詰まる。⚠ **光らせるのはこの画面で 1 箇所だけ**
+            // （利用権の節には張らない・2026-10-05 pooza 決定）。
+            child: TermLinkText(
+              term: 'プリセットサーバー',
+              url: AppConstants.presetServersUrl,
+              text:
+                  // ⚠⚠ **利用権がある場合を書き分ける (#1218)。**買った人に
+                  // 「プリセットのアカウントが要ります」と出していた。
+                  // ⚠ **分からない回は「ある」と言い切らない**（2 回目の差分
+                  // レビュー・2026-10-06）。すぐ下の節が「確認できませんでした」と
+                  // 出すので、ここで「利用権があるため」と言うと食い違う。
+                  switch ((
+                    hasPreset,
+                    hasEntitlement &&
+                        entitlementView != EntitlementView.unknown,
+                  )) {
+                    (true, _) =>
+                      'プリセットサーバーのアカウントが登録されているため、'
+                          'すべてのアカウントでプッシュ通知が利用できます。'
+                          '登録に失敗した場合は、各アカウントの行から再試行できます。',
+                    (false, true) =>
+                      'プッシュ通知リレーの利用権があるため、すべてのアカウントで'
+                          'プッシュ通知が利用できます。'
+                          '登録に失敗した場合は、各アカウントの行から再試行できます。',
+                    (false, false) =>
+                      'プッシュ通知は、プリセットサーバーのアカウントが 1 つ以上'
+                          '登録されているか、プッシュ通知リレーの利用権がある場合に'
+                          '利用できます。',
+                  },
               style: const TextStyle(fontSize: 13),
             ),
           ),
+          ..._entitlementSection(ref, hasPreset: hasPreset),
           const SectionHeader('アカウント別の登録状況'),
           ...accounts.map(
             (account) => _AccountStatusTile(
               account: account,
               snapshot: statusMap[account.key.toStorageKey()],
               hasPreset: hasPreset,
+              // ⚠ 行ごとに `watch` させない（親で 1 回引いて渡す・#1218）。
+              hasEntitlement: hasEntitlement,
             ),
           ),
         ],
       ),
     );
   }
+
+  /// 有償リレーの利用権の状態 (#597 / #1123)。
+  ///
+  /// ⚠⚠ **プリセットサーバーのアカウントがあるなら何も出さない。**無償のまま
+  /// 何も変わらない人に課金の状態を見せない —— ゲートが閉じるのは
+  /// **「非プリセット かつ 利用権なし」**のときだけで、⚠ **プリセットに 1 つでも
+  /// アカウントがあれば全アカウントが通る**（設計書の意図どおりの「迂回」）。
+  ///
+  /// ⚠ **未購入でも、非プリセットの人には出す。**「いつのまにか通知が来ない」を
+  /// 避けるのがこの Issue の出発点で、**買っていないこと自体が原因になりうる。**
+  ///
+  /// ⚠⚠ **中身は [RelayEntitlementPurchaseSection] に全部移した (#1224)。**
+  /// ここに残るのは**見出しと「出すかどうか」の門だけ** —— サポーター画面と
+  /// できることを完全に同じにするため。以前はこちらだけが状態表示と
+  /// 「登録し直す」を持ち、あちらだけが「取り直す」を持っていた。
+  List<Widget> _entitlementSection(WidgetRef ref, {required bool hasPreset}) {
+    // ⚠⚠ **`watch` より先に抜ける。**ここで provider を起動すると、プリセットの
+    // みの人でも**キーホルダの読み出しと relay への問い合わせが走る** ——
+    // 「何も表示が増えない」を見た目だけで満たしても、**通信は増えている。**
+    // ⚠ 下の [showEntitlementSection] も同じ判定を持つ（あちらは検査で固定した
+    // 判断そのもの、ここは**起動させないための門**）。
+    if (hasPreset) return const [];
+
+    final status = ref.watch(entitlementStatusProvider);
+    if (!showEntitlementSection(
+      hasPreset: hasPreset,
+      view: status.view,
+      isRefreshing: status.isRefreshing,
+    )) {
+      return const [];
+    }
+
+    return [
+      // ⚠⚠ **画面名と重複するが「プッシュ通知リレーの利用権」で統一する**
+      // (#1226 案 A・2026-10-04 pooza)。購入ボタンが並ぶ面では商品名が曖昧で
+      // ないほうがよく、**capsicum-site の特商法表記の商品名と完全一致する**。
+      // ⚠ 「この見出しだけ短く」は検討の上で採らなかった（再提案しない）。
+      const SectionHeader('プッシュ通知リレーの利用権'),
+      // ⚠⚠ **中身は共有ウィジェット 1 本 (#1224)。**状態表示・購入・取り直す・
+      // 登録し直す・記録を消すが、**サポーター画面と完全に同じ**出方になる。
+      // ⚠ **ここで組み立て直さない** —— 以前はこちらだけが状態表示と
+      // 「登録し直す」を持ち、あちらだけが「取り直す」を持っていた。
+      const RelayEntitlementPurchaseSection(
+        // ⚠ 便益は状態別の文面が言っているので重ねない。
+        showBenefit: false,
+        // ⚠⚠ **購入ボタンのある画面に法定表記が要る**（C-3）。
+        showLegalNotice: true,
+      ),
+    ];
+  }
+}
+
+/// 利用権の節を出すか (#597 / #1123)。
+///
+/// 判断材料が真偽値と enum だけなので、画面から切り出してテスト可能にしてある
+/// （[resolveAnnouncementRow] と同じ流儀）。
+///
+/// ⚠⚠ **プリセットサーバーのアカウントがあるなら出さない**（完了条件の 3 つ目）。
+/// 無償のまま何も変わらない人に課金の状態を見せない —— ゲートが閉じるのは
+/// **「非プリセット かつ 利用権なし」**のときだけで、⚠ **プリセットに 1 つでも
+/// アカウントがあれば全アカウントが通る**（設計書の意図どおりの「迂回」）。
+///
+/// ⚠ **読み込み中に「未購入」と出さない。**一瞬でも「買ってください」と見せると、
+/// **買った人に二重購入をさせうる。**⚠ ただし**手元に状態がある**（`absent` 以外）
+/// なら、問い合わせ中でもその値を出してよい —— 圏外で画面が空になるほうが困る。
+@visibleForTesting
+bool showEntitlementSection({
+  required bool hasPreset,
+  required EntitlementView view,
+  required bool isRefreshing,
+}) {
+  if (hasPreset) return false;
+  if (isRefreshing && view == EntitlementView.absent) return false;
+  return true;
 }
 
 /// アカウント行の下に出すお知らせ通知 (#477) の UI 種別。
@@ -111,11 +275,15 @@ class _AccountStatusTile extends ConsumerStatefulWidget {
     required this.account,
     required this.snapshot,
     required this.hasPreset,
+    required this.hasEntitlement,
   });
 
   final Account account;
   final PushRegistrationSnapshot? snapshot;
   final bool hasPreset;
+
+  /// 手元に有償リレーの利用権トークンがあるか (#1218)。
+  final bool hasEntitlement;
 
   @override
   ConsumerState<_AccountStatusTile> createState() => _AccountStatusTileState();
@@ -146,9 +314,15 @@ class _AccountStatusTileState extends ConsumerState<_AccountStatusTile> {
     final hasPreset = widget.hasPreset;
     final label = '@${account.key.username}@${account.key.host}';
     final state = snapshot?.state ?? PushRegistrationState.idle;
-    // プリセットサーバー本体か、プリセットがあって「連れて登録」される側か
-    final eligible =
-        hasPreset || PushRegistrationService.isPresetServer(account.key.host);
+    // ⚠⚠ **判定はサービス側の 1 本を呼ぶ (#1218)。**ここに書き写すと、
+    // 経路が増えたときに**サービス側だけ直って画面が取り残される** ——
+    // 実際 #1181 で利用権の経路を足したときにそうなり、**買った人に
+    // 「登録対象外」と出していた**（2026-10-04 の内部テストで実測）。
+    final eligible = PushRegistrationService.shouldAttemptRegistration(
+      host: account.key.host,
+      eligible: hasPreset,
+      hasEntitlement: widget.hasEntitlement,
+    );
 
     final (
       statusText,

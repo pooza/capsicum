@@ -7,6 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../model/account_key.dart';
+import '../model/deck_column.dart';
 import '../util/shared_preferences_cache.dart';
 import 'account_manager_provider.dart';
 import 'channel_provider.dart';
@@ -43,6 +45,19 @@ const _recentEmojisKey = 'recent_emojis';
 const _composeTemplateHistoryKey = 'compose_template_history';
 const _emojiZeroWidthSpaceKey = 'emoji_zero_width_space';
 const _darkSurfaceVariantKey = 'dark_surface_variant';
+
+/// 通知を束ねて出すか (#1048)。
+const _notificationGroupingKey = 'notification_grouping';
+
+/// 通知一覧に出さない種別 (#1042)。`NotificationType` の `name` を並べる。
+const _notificationExcludedTypesKey = 'notification_excluded_types';
+
+/// デッキのカラム列 (#1091)。⚠ バックアップに含めるかは #1101 で決める
+/// （`settings_backup.dart` の `pendingBackupDecisionKeys`）。
+const _deckColumnsKey = 'deck_columns';
+
+/// デッキのカラム幅の下限（ユーザー設定・#1092）。
+const _deckColumnWidthKey = 'deck_column_width';
 const _tabConfigPrefix = 'tab_config_';
 const _avatarShapeKey = 'avatar_shape';
 const _mouseDragScrollKey = 'mouse_drag_scroll';
@@ -561,6 +576,144 @@ class TabConfigNotifier extends FamilyNotifier<List<TabConfigEntry>, String> {
   }
 }
 
+/// デッキのカラム列 (#1091)。
+///
+/// タブ設定（[tabConfigProvider]）の一般化で、永続化も同じ `List<String>`
+/// （`docs/deck-ui-plan.md` 決定済み事項 6-1）。⚠ 違いは 2 つ:
+///
+/// - **family ではない。**カラムごとにアカウントを持つので、列そのものは
+///   アカウントに依存しない
+/// - ⚠⚠ **同じ中身を重複して置ける**（6-2）。並べ替え・削除は [DeckColumn.id] で
+///   指す。**中身（アカウント + 種別）で指さない**
+///   - ⚠ **重複を許すのは [DeckColumnsNotifier.add]（カラム設定から足す）だけ**
+///     （#1182）。操作の結果として開く [DeckColumnsNotifier.insertAfter] は許さない
+///   - ⚠⚠ **ただし [SearchTab] は [insertAfter] でも重複できる**（#1193）。検索は
+///     「中身へのナビゲーション」ではなく道具で、語が違えば中身も違う
+///
+/// ⚠ 削除しても購読を明示的に止めない（6-3）。重複カラムは provider を共有するので、
+/// 最後の 1 本が消えたときに autoDispose が片づける。
+final deckColumnsProvider =
+    NotifierProvider<DeckColumnsNotifier, List<DeckColumn>>(
+      DeckColumnsNotifier.new,
+    );
+
+class DeckColumnsNotifier extends Notifier<List<DeckColumn>> {
+  @override
+  List<DeckColumn> build() {
+    // タブ設定と同じく pre-warm 済みの SharedPreferences から同期で読む (#579)。
+    final saved = sharedPrefsOrThrow.getStringList(_deckColumnsKey);
+    if (saved == null) return const [];
+    final columns = <DeckColumn>[];
+    final seenIds = <String>{};
+    for (final line in saved) {
+      final column = DeckColumn.deserialize(line);
+      // 読めない行と、id が重複する行（手編集等）は黙って捨てる。⚠ 重複 id を
+      // 残すと、並べ替え・削除が 2 本のどちらを指すか決まらない。
+      if (column == null || !seenIds.add(column.id)) continue;
+      columns.add(column);
+    }
+    return columns;
+  }
+
+  Future<void> _save() => sharedPrefsOrThrow.setStringList(_deckColumnsKey, [
+    for (final c in state) c.serialize(),
+  ]);
+
+  /// 列内で未使用の id を採番する。並べ替えても変わらない。
+  String _newId() {
+    final used = {for (final c in state) c.id};
+    var n = DateTime.now().microsecondsSinceEpoch;
+    String id;
+    do {
+      id = (n++).toRadixString(36);
+    } while (used.contains(id));
+    return id;
+  }
+
+  /// 末尾にカラムを足す。⚠ **同じ中身が既にあっても足す**（重複を許す・6-2）。
+  Future<DeckColumn> add(AccountKey account, TabType tab) async {
+    final column = DeckColumn(id: _newId(), account: account, tab: tab);
+    state = [...state, column];
+    await _save();
+    return column;
+  }
+
+  /// [afterId] のカラムの右隣にカラムを足す (#1148)。カラムから開いた投稿・
+  /// プロフィール等の出し先（決定済み事項 9・SubwayTooter の `nextPosition`）。
+  ///
+  /// [afterId] が列に無ければ（開いた直後に元のカラムが消された等）末尾に足す。
+  ///
+  /// ⚠⚠ **重複は許さない**（#1182・決定済み事項 9）。同じ中身
+  /// （[DeckColumn.contentKey] ＝ アカウント + 種別）のカラムが既にあれば
+  /// **足さずにそれを返す**。⚠ **[add] とはここが逆**。区分は種別ではなく
+  /// 入口で、カラム設定から意図して足す [add] は今どおり重複を許す（6-2）。
+  /// 操作の結果として開くこちらは、同じものが 2 本並んでも得るものが無い。
+  ///
+  /// ⚠ **返した既存カラムの位置は動かさない**（開いた元の右隣へ移さない）。
+  /// 呼ぶ側がスクロールして見せる（`deck_screen.dart` の `_openColumn`）。
+  ///
+  /// ⚠ アカウントもキーに含むので、**別アカウントのカラムから開けば別カラム**。
+  /// 投稿・プロフィールの ID はサーバーローカルで、取り違えると別のものを指す。
+  ///
+  /// ⚠⚠ **例外は [SearchTab] だけ**（#1193・決定済み事項 9-2 の「検索カラムは
+  /// 対象外」）。#1182 が重複を禁じた根拠は「同じ中身が 2 本並んでも得るものは
+  /// 無い」で、**開いた投稿・プロフィールへのナビゲーション**に当てた判断。
+  /// 検索ボタンは「この中身を見せて」ではなく**「検索の道具を 1 本ください」**
+  /// という操作で、⚠ **語が違えば中身も違う**ので根拠が当たらない。
+  /// ⚠ [SearchTab] は荷物を持たないため `contentKey` が `search` の 1 語になり、
+  /// 判定に通すと**同じアカウントの検索カラムが全部同一視される**。
+  Future<DeckColumn> insertAfter(
+    String afterId,
+    AccountKey account,
+    TabType tab, {
+    Object? seed,
+  }) async {
+    final column = DeckColumn(
+      id: _newId(),
+      account: account,
+      tab: tab,
+      seed: seed,
+    );
+    // ⚠ 検索カラムは重複排除の対象外（#1193）。⚠⚠ **種別で例外を作るのはここ
+    // だけ**で、増やすなら決定済み事項 9-2 を先に直す。
+    final existing = tab is SearchTab
+        ? null
+        : state.where((c) => c.contentKey == column.contentKey).firstOrNull;
+    if (existing != null) return existing;
+    final index = state.indexWhere((c) => c.id == afterId);
+    final next = [...state];
+    next.insert(index < 0 ? next.length : index + 1, column);
+    state = next;
+    await _save();
+    return column;
+  }
+
+  /// [id] のカラムを外す。無ければ何もしない。
+  Future<void> remove(String id) async {
+    if (!state.any((c) => c.id == id)) return;
+    state = [
+      for (final c in state)
+        if (c.id != id) c,
+    ];
+    await _save();
+  }
+
+  /// [id] のカラムを [newIndex] へ動かす。
+  ///
+  /// [newIndex] は**取り除いたあとの列での挿入位置**（`ReorderableListView` の
+  /// `onReorderItem` と同じ意味・`tab_management_sheet.dart` 参照）。範囲外は端へ
+  /// 丸める。
+  Future<void> move(String id, int newIndex) async {
+    final from = state.indexWhere((c) => c.id == id);
+    if (from < 0) return;
+    final next = [...state];
+    final column = next.removeAt(from);
+    next.insert(newIndex.clamp(0, next.length), column);
+    state = next;
+    await _save();
+  }
+}
+
 /// Visible tabs in display order, derived from [tabConfigProvider].
 ///
 /// Timeline tabs whose type is not supported by the current adapter
@@ -570,72 +723,76 @@ class TabConfigNotifier extends FamilyNotifier<List<TabConfigEntry>, String> {
 /// excluded (#464 — Misskey 同士でも別サーバーの ChannelTab が残存表示
 /// される問題対策。ListTab と同型に揃える)。
 /// Server lists not yet in the config are appended automatically.
-final visibleTabsProvider = Provider.family<List<TabType>, String>((
-  ref,
-  storageKey,
-) {
-  final adapter = ref.watch(currentAdapterProvider);
-  final supported =
-      adapter?.capabilities.supportedTimelines ??
-      {TimelineType.home, TimelineType.local, TimelineType.federated};
-  final serverLists = ref.watch(listsProvider).valueOrNull ?? [];
-  final serverListIds = serverLists.map((l) => l.id).toSet();
-  // 現サーバーのフォロー中チャンネル ID 集合。followedChannelsProvider が
-  // まだ resolve していない (loading) 段階では `null` のままで、capability
-  // チェックだけにフォールバックする (前アカウントの古い ChannelTab を
-  // 切るのが目的なので、loading 中の誤判定で正規チャンネルを消すのを避ける)。
-  final serverChannelsAsync = ref.watch(followedChannelsProvider);
-  final serverChannelIds = serverChannelsAsync.valueOrNull
-      ?.map((c) => c.id)
-      .toSet();
-  final config = ref.watch(tabConfigProvider(storageKey));
-
-  final tabs = config.where((e) => e.visible).map((e) => e.tab).where((tab) {
-    if (tab is TimelineTab) return supported.contains(tab.type);
-    if (tab is ListTab) return serverListIds.contains(tab.id);
-    if (tab is ChannelTab) {
-      if (adapter is! ChannelSupport) return false;
-      // serverChannelIds が未確定 (初回ロード前) の間は capability 判定の
-      // みでフォールバック。確定後に本フィルタが効いて他サーバー由来の
-      // ChannelTab が消える。
-      if (serverChannelIds == null) return true;
-      return serverChannelIds.contains(tab.id);
-    }
-    return true;
-  }).toList();
-
-  // Append server lists not yet tracked in the config.
-  final configListIds = config
-      .where((e) => e.tab is ListTab)
-      .map((e) => (e.tab as ListTab).id)
-      .toSet();
-  for (final list in serverLists) {
-    if (!configListIds.contains(list.id)) {
-      tabs.add(ListTab(id: list.id, name: list.title));
-    }
-  }
-
-  // Append followed channels not yet tracked in the config (#666 — channel
-  // tabs were only synced when the tab management sheet opened, so they did
-  // not appear right after login. Mirror the list behaviour above so they
-  // show as soon as followedChannelsProvider resolves). Channels the user
-  // explicitly hid are already in `config` (visible == false) and thus in
-  // configChannelIds, so they are not re-appended.
-  if (adapter is ChannelSupport && serverChannelIds != null) {
-    final configChannelIds = config
-        .where((e) => e.tab is ChannelTab)
-        .map((e) => (e.tab as ChannelTab).id)
+final visibleTabsProvider = Provider.family<List<TabType>, String>(
+  (ref, storageKey) {
+    final adapter = ref.watch(currentAdapterProvider);
+    final supported =
+        adapter?.capabilities.supportedTimelines ??
+        {TimelineType.home, TimelineType.local, TimelineType.federated};
+    final serverLists = ref.watch(listsProvider).valueOrNull ?? [];
+    final serverListIds = serverLists.map((l) => l.id).toSet();
+    // 現サーバーのフォロー中チャンネル ID 集合。followedChannelsProvider が
+    // まだ resolve していない (loading) 段階では `null` のままで、capability
+    // チェックだけにフォールバックする (前アカウントの古い ChannelTab を
+    // 切るのが目的なので、loading 中の誤判定で正規チャンネルを消すのを避ける)。
+    final serverChannelsAsync = ref.watch(followedChannelsProvider);
+    final serverChannelIds = serverChannelsAsync.valueOrNull
+        ?.map((c) => c.id)
         .toSet();
-    final followedChannels = serverChannelsAsync.valueOrNull ?? const [];
-    for (final ch in followedChannels) {
-      if (!configChannelIds.contains(ch.id)) {
-        tabs.add(ChannelTab(id: ch.id, name: ch.name));
+    final config = ref.watch(tabConfigProvider(storageKey));
+
+    final tabs = config.where((e) => e.visible).map((e) => e.tab).where((tab) {
+      if (tab is TimelineTab) return supported.contains(tab.type);
+      if (tab is ListTab) return serverListIds.contains(tab.id);
+      if (tab is ChannelTab) {
+        if (adapter is! ChannelSupport) return false;
+        // serverChannelIds が未確定 (初回ロード前) の間は capability 判定の
+        // みでフォールバック。確定後に本フィルタが効いて他サーバー由来の
+        // ChannelTab が消える。
+        if (serverChannelIds == null) return true;
+        return serverChannelIds.contains(tab.id);
+      }
+      return true;
+    }).toList();
+
+    // Append server lists not yet tracked in the config.
+    final configListIds = config
+        .where((e) => e.tab is ListTab)
+        .map((e) => (e.tab as ListTab).id)
+        .toSet();
+    for (final list in serverLists) {
+      if (!configListIds.contains(list.id)) {
+        tabs.add(ListTab(id: list.id, name: list.title));
       }
     }
-  }
 
-  return tabs;
-});
+    // Append followed channels not yet tracked in the config (#666 — channel
+    // tabs were only synced when the tab management sheet opened, so they did
+    // not appear right after login. Mirror the list behaviour above so they
+    // show as soon as followedChannelsProvider resolves). Channels the user
+    // explicitly hid are already in `config` (visible == false) and thus in
+    // configChannelIds, so they are not re-appended.
+    if (adapter is ChannelSupport && serverChannelIds != null) {
+      final configChannelIds = config
+          .where((e) => e.tab is ChannelTab)
+          .map((e) => (e.tab as ChannelTab).id)
+          .toSet();
+      final followedChannels = serverChannelsAsync.valueOrNull ?? const [];
+      for (final ch in followedChannels) {
+        if (!configChannelIds.contains(ch.id)) {
+          tabs.add(ChannelTab(id: ch.id, name: ch.name));
+        }
+      }
+    }
+
+    return tabs;
+  },
+  dependencies: [
+    currentAdapterProvider,
+    listsProvider,
+    followedChannelsProvider,
+  ],
+);
 
 /// Whether a specific tab type is currently visible.
 final isTabVisibleProvider =
@@ -1004,6 +1161,86 @@ class ThemeModeNotifier extends PersistedNotifier<ThemeMode> {
       prefs.setString(_themeModeKey, value.name);
 
   Future<void> setMode(ThemeMode mode) => persist(mode);
+}
+
+/// 通知を束ねて出すか (#1048)。既定は ON。
+///
+/// ⚠ **OFF にする意味がある。**実況中は「誰が反応したか」を 1 人ずつ見たい
+/// 場面があり（#1048 の「先に決めること」1）、束ねるとその情報が「N 人」に
+/// 潰れる。⚠ **OFF はグループ化していない API へ切り替える**（クライアント側で
+/// 展開し直すのではない）。同じ経路が「サーバーに v2 が無い」ときの受け皿にも
+/// なっているので、実質的な追加コストはほぼ無い。
+final notificationGroupingProvider =
+    NotifierProvider<NotificationGroupingNotifier, bool>(
+      NotificationGroupingNotifier.new,
+    );
+
+class NotificationGroupingNotifier extends PersistedNotifier<bool> {
+  @override
+  bool get defaultValue => true;
+  @override
+  bool? readSaved(SharedPreferences prefs) =>
+      prefs.getBool(_notificationGroupingKey);
+  @override
+  Future<void> writeSaved(SharedPreferences prefs, bool value) =>
+      prefs.setBool(_notificationGroupingKey, value);
+
+  Future<void> toggle() => persist(!state);
+
+  Future<void> setGrouping(bool value) => persist(value);
+}
+
+/// 通知一覧に出さない種別 (#1042)。
+///
+/// ⚠⚠ **「出す種別」ではなく「出さない種別」を持つ。**理由は
+/// [NotificationQuery.excludeTypes] の doc が正本（許可リストにすると capsicum が
+/// 名前を知らない種別が黙って消える）。空なら全種別。
+///
+/// ⚠ **アカウントごとではなくアプリ全体の設定。**デッキのカラムごとに別の
+/// 絞り込みを持たせるのは #1042 の要求に無い（カラムごとの状態は保存形式から
+/// 作り直しになる）。全アカウント・全カラムに同じ絞り込みが効く。
+final notificationExcludedTypesProvider =
+    NotifierProvider<NotificationExcludedTypesNotifier, Set<NotificationType>>(
+      NotificationExcludedTypesNotifier.new,
+    );
+
+class NotificationExcludedTypesNotifier
+    extends PersistedNotifier<Set<NotificationType>> {
+  @override
+  Set<NotificationType> get defaultValue => const {};
+
+  @override
+  Set<NotificationType>? readSaved(SharedPreferences prefs) {
+    final saved = prefs.getStringList(_notificationExcludedTypesKey);
+    if (saved == null) return null;
+    // ⚠ **読めない名前は落とす。**enum 名を保存しているので、種別を rename /
+    // 削除したときに残骸が来る。落とすと「絞り込みが 1 つ消える」で済むが、
+    // 例外にすると設定が丸ごと既定へ戻る。
+    return {
+      for (final name in saved) ?_enumByName(NotificationType.values, name),
+    };
+  }
+
+  @override
+  Future<void> writeSaved(
+    SharedPreferences prefs,
+    Set<NotificationType> value,
+  ) => prefs.setStringList(
+    _notificationExcludedTypesKey,
+    value.map((t) => t.name).toList(),
+  );
+
+  Future<void> setExcluded(NotificationType type, bool excluded) {
+    final next = {...state};
+    if (excluded) {
+      next.add(type);
+    } else {
+      next.remove(type);
+    }
+    return persist(next);
+  }
+
+  Future<void> clear() => persist(const {});
 }
 
 /// Whether to hide posts with #実況 hashtag.
@@ -1757,6 +1994,42 @@ class EmojiSizeNotifier extends PersistedNotifier<double> {
   Future<void> setSize(double size) => persist(size);
 }
 
+/// デッキのカラム幅の下限 (#1092)。
+///
+/// ⚠ **「快適な幅」ではなく「これ以上狭くしない下限」**（`docs/deck-ui-plan.md`
+/// 未決事項 8）。iPhone 13 mini の論理幅。律速は投稿タイルの最上段（表示名と
+/// バッジ群が同じ 1 行を奪い合う）で、⚠ **overflow 検出では見つからない**
+/// （バッジ群が `FittedBox(scaleDown)` なので黙って縮む）。**ユーザー設定でも
+/// これより下げられない。**
+const minDeckColumnWidth = 375.0;
+
+/// ユーザー設定で広げられる上限。広すぎるとデッキの意味（同時に見える本数）が
+/// 無くなるので置く。
+const maxDeckColumnWidth = 800.0;
+
+/// デッキのカラム幅の下限（ユーザー設定）。実際の幅は `computeDeckLayout` が
+/// 画面幅から決め、ここはその下限として使う。
+final deckColumnWidthProvider =
+    NotifierProvider<DeckColumnWidthNotifier, double>(
+      DeckColumnWidthNotifier.new,
+    );
+
+class DeckColumnWidthNotifier extends PersistedNotifier<double> {
+  @override
+  double get defaultValue => minDeckColumnWidth;
+  @override
+  double normalize(double value) =>
+      value.clamp(minDeckColumnWidth, maxDeckColumnWidth);
+  @override
+  double? readSaved(SharedPreferences prefs) =>
+      prefs.getDouble(_deckColumnWidthKey);
+  @override
+  Future<void> writeSaved(SharedPreferences prefs, double value) =>
+      prefs.setDouble(_deckColumnWidthKey, value);
+
+  Future<void> setWidth(double width) => persist(width);
+}
+
 class ThumbnailScaleNotifier extends PersistedNotifier<double> {
   @override
   double get defaultValue => defaultThumbnailScale;
@@ -2069,6 +2342,9 @@ final backedUpPreferenceProviders = <ProviderOrFamily>[
   updateCheckEnabledProvider,
   nowPlayingUrlProviderProvider,
   postTouchActionsProvider,
+  // 通知 (#1042 / #1048)
+  notificationGroupingProvider,
+  notificationExcludedTypesProvider,
   // 履歴
   recentEmojisProvider,
   composeTemplateHistoryProvider,

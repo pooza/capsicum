@@ -7,6 +7,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../util/exception_scrub.dart';
+import '../../util/mulukhiya_conflict.dart';
 import '../util/annict_link.dart';
 
 /// Annict の作品全体感想 (review) を投稿する画面 (#592)。
@@ -47,6 +48,12 @@ class _AnnictReviewScreenState extends ConsumerState<AnnictReviewScreen> {
   // 連携フロー後の自動リトライは 1 回まで。連携直後のトークン伝播遅延で
   // 再び 401/403 が返った時の無限ループを防ぐ (record 画面と同じ)。
   bool _linkRetried = false;
+
+  /// 409 `duplicate_request` を受けた (#1176)。**以降は投稿ボタンを出さない。**
+  ///
+  /// ⚠⚠ 冪等性ロックは**先の要求が成功すると TTL（既定 30 秒）まで残る**ので、
+  /// 押し直せる状態に戻すと**先の要求が成功していた場合に二重に記録される**。
+  bool _duplicateSent = false;
 
   @override
   void dispose() {
@@ -114,6 +121,19 @@ class _AnnictReviewScreenState extends ConsumerState<AnnictReviewScreen> {
         setState(() => _submitting = false);
         return;
       }
+      // ⚠⚠ **409 `duplicate_request` は「失敗」ではない** (#1176)。record 画面と
+      // 同じ理由で、押し直せる状態に戻さない（送り直すと二重に記録される）。
+      final conflict = mulukhiyaConflictCode(e);
+      if (conflict == MulukhiyaConflict.duplicateRequest) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(annictConflictMessage(conflict))),
+        );
+        setState(() {
+          _submitting = false;
+          _duplicateSent = true;
+        });
+        return;
+      }
       // 5xx はサーバ起因の異常。成功率を観測するため Sentry に上げる
       // (401/403/連携不足は通常運用なのでノイズとして送らない)。
       if (status != null && status >= 500) {
@@ -121,7 +141,7 @@ class _AnnictReviewScreenState extends ConsumerState<AnnictReviewScreen> {
       }
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Annict への投稿に失敗しました')));
+      ).showSnackBar(SnackBar(content: Text(annictConflictMessage(conflict))));
       setState(() => _submitting = false);
     } catch (e, st) {
       if (!mounted) return;
@@ -141,7 +161,7 @@ class _AnnictReviewScreenState extends ConsumerState<AnnictReviewScreen> {
         title: const Text('Annict に感想を投稿'),
         actions: [
           TextButton(
-            onPressed: _submitting ? null : _submit,
+            onPressed: _submitting || _duplicateSent ? null : _submit,
             child: const Text('投稿'),
           ),
         ],
@@ -189,6 +209,15 @@ class _AnnictReviewScreenState extends ConsumerState<AnnictReviewScreen> {
               if (_submitting) ...[
                 const SizedBox(height: 16),
                 const Center(child: CircularProgressIndicator()),
+              ],
+              // ⚠ 送り直しを促さない文面を画面にも残す (#1176)。SnackBar は消える
+              // ので、押せなくなった理由が分からなくなる。
+              if (_duplicateSent) ...[
+                const SizedBox(height: 16),
+                Text(
+                  annictConflictMessage(MulukhiyaConflict.duplicateRequest),
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
               ],
             ],
           ),

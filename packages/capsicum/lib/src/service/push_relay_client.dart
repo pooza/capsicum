@@ -69,12 +69,16 @@ class PushRelayClient {
   /// 行を増やさず token を置換する」を実現する (capsicum-relay#15)。relay の
   /// schema 変更が入るまでは未知フィールドとして無視されるので、client 側が
   /// 先行して送出してよい。
+  /// [entitlementToken] は relay が発行した有償リレーの利用権 (#597 / #1121)。
+  /// ⚠ **無くても登録は通る**（relay 側は観測のために記録するだけで、判定は
+  /// `subscriptions.device_id` から引く）。
   Future<Map<String, dynamic>> register({
     required String token,
     required String deviceType,
     required String account,
     required String server,
     String? deviceId,
+    String? entitlementToken,
   }) {
     return _postWithRetry(
       path: '/register',
@@ -85,8 +89,44 @@ class PushRelayClient {
         'account': account,
         'server': server,
         'device_id': ?deviceId,
+        'entitlement_token': ?entitlementToken,
       },
       server: server,
+    );
+  }
+
+  /// 購入に対する利用権トークンを relay に発行してもらう (#597 / #1121)。
+  ///
+  /// ⚠⚠ **戻ってくる token は「購入した証拠」ではない。**この endpoint の認証は
+  /// 共有シークレット 1 本で、**そのシークレットはバイナリから取り出せる**ので、
+  /// 誰でも `status: unverified` の行を作れる。**有効かどうかを決めるのは relay
+  /// 側**（レシート検証・capsicum-relay#61 / #62）で、⚠ **クライアントは
+  /// `status` を見て登録を止めない。**
+  ///
+  /// ⚠ **`purchaseId` はストアの購入識別子**（Apple は StoreKit の
+  /// transactionId、Google は purchaseToken）。relay 側がその場でストアへ
+  /// 問い合わせ、状態を反映してから応答する。
+  ///
+  /// retry は [register] と同じ transient ポリシー。
+  Future<Map<String, dynamic>> issueEntitlementToken({
+    required String store,
+    required String purchaseId,
+    required String deviceId,
+    String? productId,
+  }) {
+    return _postWithRetry(
+      path: '/entitlements',
+      operation: 'entitlement_issue',
+      data: {
+        'store': store,
+        'purchase_id': purchaseId,
+        'device_id': deviceId,
+        'product_id': ?productId,
+      },
+      // ⚠ breadcrumb のラベル用。この経路は fedi サーバーに紐づかない
+      // （購入はストアアカウントに紐づく・設計書 2-A）ので relay を名乗る。
+      server: 'relay',
+      receiveTimeout: kRelayEntitlementIssueReceiveTimeout,
     );
   }
 
@@ -186,6 +226,35 @@ class PushRelayClient {
     }
   }
 
+  /// 手元の利用権トークンの**いまの状態**を読む (#1123 / capsicum-relay#80)。
+  ///
+  /// ⚠⚠ **[issueEntitlementToken] を状態確認に使い回さない。**あちらは upsert
+  /// なので冪等ではあるが、呼ぶたびに relay 側の `relay_entitlement_token_total`
+  /// が増え `entitlement.issued` が出る —— **「発行の回数」を数えている counter が
+  /// 「画面を開いた回数」に汚染され、ゲートを閉じてよいかの判断材料が濁る。**
+  ///
+  /// ⚠⚠ **404（知らない token）は「失効」ではない。**呼び出し側で混ぜないこと ——
+  /// 前者は端末の保存が壊れた / 消された、後者は解約や支払い失敗で、**案内が違う。**
+  /// ここでは 404 を null で返す。
+  /// 🔴 **token は URL に載せない**（capsicum-relay#81 の Codex P2）。relay の
+  /// nginx は素の `access_log` を有効にしており、**リクエスト行に完全なパスが
+  /// 残る** —— ⚠⚠ **token はそのまま利用権として使える capability** なので、
+  /// 平文でログに溜まる。⚠ **ヘッダは既定のログ書式に含まれない。**
+  Future<Map<String, dynamic>?> fetchEntitlement(String token) async {
+    try {
+      final response = await _dio.get<Map<String, dynamic>>(
+        '/entitlements',
+        options: Options(
+          headers: {'X-Relay-Secret': _secret, 'X-Entitlement-Token': token},
+        ),
+      );
+      return response.data;
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) return null;
+      rethrow;
+    }
+  }
+
   /// リレー応答の `id` を防御的にパースする。整数・数値文字列の両方を許容し、
   /// 解釈不能なら null を返す（呼び出し側で契約違反として計装する）。
   /// register / announcement_subscriptions の両系統で共有する。
@@ -202,6 +271,7 @@ class PushRelayClient {
     required String operation,
     required Map<String, Object?> data,
     required String server,
+    Duration? receiveTimeout,
   }) async {
     DioException? lastError;
     for (var attempt = 0; attempt <= _registerRetryDelays.length; attempt++) {
@@ -209,7 +279,10 @@ class PushRelayClient {
         final response = await _dio.post<Map<String, dynamic>>(
           path,
           data: data,
-          options: Options(headers: {'X-Relay-Secret': _secret}),
+          options: Options(
+            headers: {'X-Relay-Secret': _secret},
+            receiveTimeout: receiveTimeout,
+          ),
         );
         if (attempt > 0) {
           _breadcrumb(
@@ -221,7 +294,7 @@ class PushRelayClient {
         return response.data!;
       } on DioException catch (e) {
         lastError = e;
-        if (!_isTransientNetwork(e) || attempt >= _registerRetryDelays.length) {
+        if (!_isTransient(e) || attempt >= _registerRetryDelays.length) {
           rethrow;
         }
         final delay = _registerRetryDelays[attempt];
@@ -251,6 +324,24 @@ class PushRelayClient {
           type: DioExceptionType.unknown,
           message: '$operation exhausted retries with no error captured',
         );
+  }
+
+  /// 送り直せば通る見込みのある失敗か。接続段階の失敗（[_isTransientNetwork]）
+  /// と、relay が「いまは手が塞がっている」と断った回（[_isRelayBusy]）。
+  static bool _isTransient(DioException e) =>
+      _isTransientNetwork(e) || _isRelayBusy(e);
+
+  /// relay が利用権の確認の枠が埋まっていて断った回（capsicum-relay#89）。
+  ///
+  /// ⚠⚠ **503 を一律に送り直さない。**`reason` が `verification_busy` の回だけ。
+  /// 設定の欠落（`Relay is not configured`）のような 503 は、待っても直らない。
+  ///
+  /// ⚠ relay はこの回に**何も保存していない**ので、送り直さずに諦めると購入が
+  /// relay に載らないまま残る（利用者は「購入を復元する」を押すことになる）。
+  static bool _isRelayBusy(DioException e) {
+    if (e.response?.statusCode != 503) return false;
+    final data = e.response?.data;
+    return data is Map && data['reason'] == 'verification_busy';
   }
 
   /// 接続段階の transient エラーか判定する。`badResponse` (4xx/5xx) は

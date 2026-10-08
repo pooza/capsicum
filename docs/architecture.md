@@ -1,5 +1,62 @@
 # capsicum アーキテクチャ設計
 
+## リポジトリの構成
+
+⚠ **`docs/CLAUDE.md` から移してきた**（2026-10-03・#1184 の棚卸し）。あちらは毎セッション全読されるので、**引くだけの一覧**はこちらに置く。
+
+```text
+capsicum/
+  .claude/                # Claude Code の設定（settings.local.json だけ gitignore）
+    skills/               # 名前付き手順の正本（#1114。⚠ docs 側はポインタ）
+      sync-procedure/     # セッション開始時の同期
+      resume-work/        # 作業中断からの復帰
+      milestone-transition/  # マイルストーン完了→次着手の移行
+      doc-maintenance/    # docs / メモリの棚卸し（⚠ 配置の原則は docs 側）
+      login-troubleshooting/  # 「ログインできない」報告の切り分け
+      release-review/     # リリース前レビュー（5 観点・赤黄緑の送り分け）
+      store-release/      # 毎回のリリース手順（⚠ 工程ごとの補助ファイルつき）
+    hooks/                # 守らせたいものの機械化（4 本。⚠ 規約は docs/dev-environment.md が正本）
+    scripts/              # 許可確認を出さずに回すための道具（sentry-api.sh: トークンを画面に出さず Sentry を叩く / asc-status.rb: App Store Connect の審査・課金商品・TestFlight の状態を読む）
+  docs/                   # 開発ドキュメント（下の表）
+  packages/               # モノレポ構成（Melos。⚠ 中身は下の「パッケージ構成」）
+```
+
+### docs の行き先
+
+| ファイル | 中身 |
+| --- | --- |
+| `CLAUDE.md` | プロジェクトのルール・構造・履歴の正本 |
+| `architecture.md` | 本ファイル |
+| `product-policy.md` | ⚠ UI 設計方針・対応バージョン方針・運営元（UI を触る回は読む） |
+| `annict-integration.md` | Annict 連携（モロヘイヤ前提・作品/エピソード検索〜感想投稿） |
+| `tech-notes.md` | 落とし穴集（Dart / Flutter・体感速度・Sentry・D&D・認証）。⚠ 冒頭に行き先の表がある |
+| `tech-notes-native.md` | 落とし穴集（ネイティブプッシュ APNs / WNS・CI / ビルド） |
+| `tech-notes-api.md` | 落とし穴集（NodeInfo / Mastodon / Misskey / モロヘイヤ の API） |
+| `dev-environment.md` | 開発マシン（macOS）・Claude Code の権限とコマンドの書き方・Sentry・iOS / Android 検証端末 |
+| `dev-environment-desktop.md` | 補助機（Linux / Windows）のセットアップ・ツールチェーン・実機検証の経路 |
+| `desktop-plugin-compatibility.md` | デスクトップ対応のプラグイン棚卸し |
+| `flutter-upstream-watch.md` | Flutter 上流バグの追跡（月初に手動 chase・資格情報の満了チェックも相乗り） |
+| `api-gap-inventory.md` | 棚卸し: API にあって capsicum が使っていない機能（#993・1.x / 2.0 / 拾わない の 3 分類） |
+| `webui-gap-inventory.md` | 棚卸し: WebUI にあって capsicum に無い機能（#991・層①＝画面 / ②＝画面内の操作 / ③＝表示要素） |
+| `server-settings-gap-inventory.md` | 棚卸し: サーバー側に保存された設定の反映漏れ（#992・⚠ 「送らない = サーバー既定が効く」を壊さないための正本） |
+| `mastodon-capsicum-api-watch.md` | Mastodon 新版の API 変更を client 影響でトリアージ（フォーク diff 手順つき） |
+| `misskey-capsicum-api-watch.md` | Misskey 新版の API 変更を client 影響でトリアージ（マイナー毎・daisskey SHA アンカー） |
+| `roadmap.md` | 枠の数・各枠の主題・1.x と 2.x の境界（⚠ 含有 Issue は Milestones が正本） |
+| `large-item-workflow.md` | 大玉の進め方（棚卸し → 分類 → 設計書 → 起票）。⚠ **次に大玉を回すときに読む**（2026-10-03 に CLAUDE.md から移した・#1139） |
+| `deck-ui-plan.md` | #720 デッキ表示の**入口**（結論 / 決定済み事項 1〜3 / 振り分け表 / 未決事項）。⚠ 詳細 UI 仕様ではない |
+| `deck-ui-decisions.md` | デッキの**決定済み事項 4〜12 の本文**（2026-10-03 に分けた・#1184）。⚠⚠ **新しい決定はここに足す**（入口は表に 1 行だけ） |
+| `paid-relay-plan.md` | #597 有償プッシュリレーの設計書（⚠ #596 は記録層で判定層ではない） |
+| `paid-relay-baseline.md` | #597 の前提になる実測（⚠ プリセット非保有の利用者は 0 人） |
+| `doc-maintenance.md` | 配置の原則（公開境界・二重管理禁止・メモリは status を持たない）。⚠ 回す手順はスキル側 |
+| `store-release-guide.md` | 初回セットアップ（署名・fastlane）とストア掲載情報・配布方針 |
+| `store-listing.md` | 各ストアの掲載文（提出のたびに参照する現役ドキュメント） |
+| `supporter-subscription-plan.md` | 投げ銭サブスクの商品設計（審査ノートの英文もここ） |
+| `msstore-review-notes-login.md` | Microsoft Store 審査向けのログイン説明（提出のたびに再利用） |
+| `brand/` | ブランドアセット（アイコン・ロゴ等） |
+| `archive/` | 過去の記録（現役運用では参照しない。release-log.md / release-pipeline.md 等） |
+
+⚠ **ポインタだけのファイル**（本文はスキル側・#1114）: `sync-procedure.md` / `milestone-transition.md` / `login-troubleshooting.md`。
+
 ## パッケージ構成
 
 Melos によるモノレポ。4パッケージ構成。
@@ -232,25 +289,63 @@ adapterProvider                 // 現在のアカウントの BackendAdapter
 // モロヘイヤ
 mulukhiyaServiceProvider        // MulukhiyaService? （オプショナル）
 
-// UI 状態
-// タイムライン、通知等のプロバイダーは画面実装時に追加
+// タイムライン（⚠ family キーにアカウントを含む。デッキで 2 アカウントの
+// 同じタグを並べても混ざらないようにするため）
+timelineProvider / hashtagTimelineProvider / listTimelineProvider / channelTimelineProvider
+
+// デッキ（v2.0）
+deckColumnsProvider             // カラム列（永続化される構成）
+deckFocusProvider               // フォーカス中のカラム（⌘N・簡易投稿バーの宛先）
+
+// 利用権（v2.0）
+entitlementStatusProvider       // リレーを使える状態の見え方（EntitlementView）
 ```
+
+⚠ **「現在のアカウント」は単数の状態だが、デッキのカラムの中ではスコープで上書きされる**（下の「デッキ」節）。`currentAccountProvider` を読むコードは、どのスコープで読まれているかで別のアカウントを指す。
 
 ## ルーティング
 
-GoRouter による宣言的ルーティング。認証状態に応じたリダイレクト。
+GoRouter による宣言的ルーティング。認証状態に応じたリダイレクト。⚠ **パスにアカウントを持たない** —— どのアカウントの画面かは `currentAccountProvider`（とデッキのスコープ上書き）で決まる。
 
 ```text
-/                          → スプラッシュ / オンボーディング
-/login                     → ログイン画面
-/@:user@:host/             → 認証済みシェル
-  ├── home                 → ホーム（タイムライン）
-  ├── notifications        → 通知
-  ├── search               → 検索
-  ├── settings             → 設定
-  ├── posts/:id            → 投稿詳細
-  └── users/:id            → ユーザープロフィール
+/splash                    → スプラッシュ
+/server /login /eula       → サーバー選択・ログイン・利用規約
+（認証済みシェル）
+  ├── /home                → ホーム（タブ UI のタイムライン）
+  ├── /deck                → デッキ（マルチカラム）
+  ├── /compose             → 投稿
+  ├── /notifications       → 通知（/notifications/all は全アカウント）
+  ├── /search              → 検索
+  ├── /post /profile       → 投稿詳細・プロフィール
+  ├── /hashtag/:tag /list/:id /channel/:id /clip/:id /antenna/:id
+  └── /settings/…          → 設定（push / supporter / backup ほか）
 ```
+
+全量は `packages/capsicum/lib/src/router.dart`。
+
+## デッキ（v2.0・#720）
+
+タイムライン・スレッド・プロフィールなどを横に並べるマルチカラム表示。**カラムごとにアカウントを違えられる。**設計の正本は [deck-ui-plan.md](deck-ui-plan.md)（入口）と [deck-ui-decisions.md](deck-ui-decisions.md)（決定済み事項の本文）。ここには構造だけを書く。
+
+| もの | 置き場 |
+| --- | --- |
+| カラム 1 本のモデル | `model/deck_column.dart`（`DeckColumn`） |
+| カラム列・フォーカス | `provider/deck_provider.dart` |
+| 画面とスコープの組み立て | `ui/screen/deck_screen.dart` |
+| カラムのヘッダーと中身 | `ui/widget/deck_column_view.dart` |
+
+- **カラムは 2 つの方法で識別する。**列の要素（並べ替え・削除・Widget の key）は追加時に採番する `id`、中身（provider の family キー）は `account + tab`。同じ中身のカラムを 2 本置けるので、中身だけでは並べ替えの対象を指せない
+- **アカウントの解決はスコープの上書きで行う。**`DeckScreen` は、現在のアカウント以外のカラムにルートを親とする `ProviderContainer` を作り、`currentAccountProvider` を上書きする。これで `currentAdapterProvider` などを読む既存の画面・ウィジェットを書き換えずに、カラムのアカウントとして動かせる
+- ⚠ **現在のアカウントのカラムはルートのコンテナをそのまま使う**（別コンテナにするとタブ UI と同じ購読キーでぶつかる）
+- ⚠ **カラムから開くシート・ダイアログにもスコープを持ち越す**（`carryProviderScope`）。持ち越さないと、アカウント B のカラムの投稿をアカウント A として操作してしまう
+- **カラムの TL provider が生きているのはデッキが開いている間だけ**（`mountedDeckCountProvider`）。カラム列そのものは永続化された構成なので、閉じても残る
+
+## 添付画像のレイヤ編集（v2.0・#884）
+
+投稿する画像に文字・カスタム絵文字のスタンプ・端末の画像を重ねる。画面は `ui/screen/image_overlay_screen.dart`、レイヤの記述は `model/image_overlay_layer.dart`（`OverlayLayerSpec`）。
+
+- **投稿に使うのは焼き込み済みの PNG。**レイヤの記述は「もう一度編集できるようにするための控え」で、投稿経路には出てこない
+- ⚠ **記述は `ui.Image` を持たない。**スタンプはショートコードと URL で覚え、再編集のときに取り直す。原寸画像を添付ごとに抱えないためで、同じ理由で下書きへそのまま書き出せる
 
 ## テキストパース
 
@@ -272,9 +367,19 @@ GoRouter による宣言的ルーティング。認証状態に応じたリダ�
 - **APNs / FCM**: Apple / Google のプッシュ配信
 - **Fedi**: Mastodon / Misskey サーバー（本家 API）
 
+### 誰がリレーを使えるか（v2.0・#597）
+
+**プリセットサーバーのアカウントを 1 つでも持つ端末は、非プリセットのアカウントも含めて全部無償。**それ以外の端末は、アプリ内で購入する利用権（月額のサブスクリプション）が要る。設計の正本は [paid-relay-plan.md](paid-relay-plan.md)。
+
+- **判定するのは relay で、クライアントは判定しない。**購入すると `POST /entitlements` で利用権トークンを受け取り（`service/entitlement_token_store.dart`・OS のセキュアストレージ）、`/register` に載せる。relay はストアのレシートを自分で検証し、利用権の無い非プリセットの登録を `/register` で断り、配送を `/push` で止める
+- **クライアントが持つのは「見え方」だけ。**`provider/entitlement_status_provider.dart` が relay の `status` を `EntitlementView`（未購入 / 有効 / 猶予 / 返金済み / 失効 / プリセット）へ畳む。⚠ **知らない値は「有効」側へ倒す**（買った人に買わせるほうが重い誤案内なので）
+- ⚠⚠ **プリセット利用者には課金の話を出さない。**`EntitlementView.preset` は relay へ問い合わせずに決まり、購入ボタンを出さない（不変条件は [product-policy.md](product-policy.md)）
+- 状態表示・購入・復元（登録のやり直しを含む）・記録の削除の UI は共有ウィジェット `ui/widget/relay_entitlement_purchase_section.dart` 1 本で、「capsicum をサポート」と設定の「プッシュ通知」の両方から使う
+- ⚠ **買っても届かないアカウント（モロヘイヤの中継が無い Misskey）は、買う前にその節で知らせる**（経緯は [paid-relay-baseline.md](paid-relay-baseline.md)「買う前に知らせる」）
+
 ### 登録フロー
 
-アプリ起動時、プリセットサーバーのアカウントが 1 つでもあれば全アカウントを登録対象にする。
+アプリ起動時、プリセットサーバーのアカウントが 1 つでもあるか、利用権を持っていれば、全アカウントを登録対象にする。
 
 ```mermaid
 sequenceDiagram

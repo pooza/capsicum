@@ -20,7 +20,7 @@ sudo apt install -y \
 
 ### linuxdeploy 系ツール
 
-[`docs/dev-environment.md`](../../../docs/dev-environment.md) の補助機セットアップ
+[`docs/dev-environment-desktop.md`](../../../docs/dev-environment-desktop.md) の補助機セットアップ
 方針 (パッケージマネージャ不使用、GitHub Releases から `~/.local/bin/` に直接配置)
 に従う。
 

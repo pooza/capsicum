@@ -34,6 +34,10 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
     // Sync server lists / followed channels into tab config after the
     // current frame, and again whenever each set changes.
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // ⚠ 開くたびに取り直す (#1156)。デッキのカラム編集シートと同じ理由で、
+      // followedChannelsProvider は自分では古くならない。
+      ref.invalidate(listsProvider);
+      ref.invalidate(followedChannelsProvider);
       _syncLists();
       _syncChannels();
       ref.listenManual(listsProvider, (_, _) {
@@ -84,7 +88,10 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
   void _addHashtag() {
     final text = _controller.text.trim().replaceFirst(RegExp('^#'), '');
     if (text.isEmpty) return;
-    _notifier.addTab(HashtagTab(text));
+    // ⚠ 入力欄では `+` が AND の区切り (#1158)。組み立ては 1 箇所へ (#1159)。
+    final spec = hashtagSpecFromTags(text.split('+'));
+    if (spec.isEmpty) return;
+    _notifier.addTab(HashtagTab(spec));
     _controller.clear();
   }
 
@@ -104,6 +111,10 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
           children: [
             const Text('AND条件で絞り込むタグをカンマ区切りで入力してください。'),
             const Text('空にするとAND条件を解除します。'),
+            // ⚠ 追加欄は `+` 区切り、ここはカンマ区切りで記法が違う (#1158)。
+            // ⚠⚠ カンマ区切りは `+` をタグの一部として書けるので、`#c++` の
+            // ような Misskey のタグを AND に混ぜられるのはこちらだけ (#1159)。
+            const Text('タグ自体に + が入る場合もここから入力できます。'),
             const SizedBox(height: 12),
             TextField(
               controller: andController,
@@ -131,9 +142,9 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
                         .map((t) => t.replaceFirst(RegExp('^#'), '').trim())
                         .where((t) => t.isNotEmpty)
                         .toList();
-              final newSpec = andTags.isEmpty
-                  ? primary
-                  : '$primary+${andTags.join('+')}';
+              // ⚠ タグに `+` が含まれうるので、連結は hashtagSpecFromTags へ
+              // 寄せる (#1159)。
+              final newSpec = hashtagSpecFromTags([primary, ...andTags]);
               _notifier.replaceTab(
                 HashtagTab(currentSpec),
                 HashtagTab(newSpec),
@@ -249,6 +260,8 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
       NotificationsTab() => '通知',
       AnnouncementsTab() => 'お知らせ',
       MessagesTab() => 'メッセージ',
+      // デッキのカラム専用 (#1148)。タブ管理には出ない。
+      DeckOnlyTab() => 'デッキ専用',
     };
   }
 
@@ -261,6 +274,7 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
       NotificationsTab() => Icons.notifications_outlined,
       AnnouncementsTab() => Icons.campaign_outlined,
       MessagesTab() => Icons.chat_bubble_outline,
+      DeckOnlyTab() => Icons.view_column_outlined,
     };
   }
 
@@ -402,6 +416,9 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
                             controller: _controller,
                             decoration: const InputDecoration(
                               hintText: 'ハッシュタグを入力',
+                              // ⚠ デッキのカラム編集と同じ文言にする (#1158)。
+                              helperText: '+ でつなぐと AND（例: nitiasa+precure）',
+                              helperMaxLines: 2,
                               prefixText: '#',
                               isDense: true,
                             ),

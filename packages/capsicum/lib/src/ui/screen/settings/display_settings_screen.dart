@@ -129,6 +129,18 @@ class DisplaySettingsScreen extends ConsumerWidget {
             onChanged: (_) => ref.read(hideLivecureProvider.notifier).toggle(),
           ),
           SwitchListTile(
+            title: const Text('通知をまとめて表示'),
+            subtitle: const Text(
+              '同じ投稿への反応を「ほか N 人が…」の 1 行にまとめます。'
+              'オフにすると誰が反応したかを 1 人ずつ並べます'
+              '（実況中に個々の反応を追いたいときはオフ）',
+            ),
+            value: ref.watch(notificationGroupingProvider),
+            onChanged: (value) => ref
+                .read(notificationGroupingProvider.notifier)
+                .setGrouping(value),
+          ),
+          SwitchListTile(
             title: const Text('起動時に既読位置を復元'),
             subtitle: const Text(
               'オンにすると前回読んでいた位置から、オフにすると常に最新の投稿から'

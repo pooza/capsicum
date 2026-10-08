@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -16,6 +17,7 @@ import '../util/sentry_tag_hash.dart';
 import 'announcement_subscription_service.dart';
 import 'apns_service.dart';
 import 'device_install_id.dart';
+import 'entitlement_token_store.dart';
 import 'fcm_service.dart';
 import 'push_device_type.dart';
 import 'push_key_store.dart';
@@ -39,10 +41,76 @@ class PushRegistrationService {
   /// 指定ホストがプリセットサーバーかどうかを判定する。
   static bool isPresetServer(String host) => kPresetServerHosts.contains(host);
 
-  /// アカウント群の中にプリセットサーバーのアカウントが 1 件以上あるか判定する。
-  /// eligible 判定（「連れて登録」判定）の中央集約。
-  static bool hasPresetAmong(Iterable<Account> accounts) =>
-      accounts.any((a) => isPresetServer(a.key.host));
+  /// このアカウントで relay への登録を試みてよいか (#597 / #1181)。
+  ///
+  /// - [eligible] = プリセットのアカウントを 1 つでも持っている
+  ///   （`hasPresetAccountProvider`・⚠ **接続できていないアカウントも数える**）
+  /// - [hasEntitlement] = 有償リレーの利用権トークンを保持している（#1121）
+  ///
+  /// ⚠⚠ **以前は `eligible` と [isPresetServer] しか見ていなかったので、
+  /// プリセットのアカウントを持たない購入者は `/register` に一度も到達せず、
+  /// 購入が丸ごと死んでいた (#1181)。**relay 側（capsicum-relay#58 / #59 / #60）は
+  /// 「来た要求をどう扱うか」の話なので、**要求が来ないことは向こうからは見えない。**
+  ///
+  /// ⚠ **クライアント側のゲートは緩くてよい。認可は relay の仕事**
+  /// （設計書 決定済み事項 2-C「止めるのは `/push`」）。
+  ///
+  /// ⚠⚠ **token が本物かをここで判定しない。**`POST /entitlements` の認証は
+  /// 共有シークレット 1 本で**バイナリから取り出せる**ので、**token は購入の
+  /// 証拠にならない**。持っているのは「買ったつもりがある」という意思表示までで、
+  /// 有効かどうかは relay がレシートで決める（capsicum-relay#61 / #62）。
+  ///
+  /// ⚠ **`status` も見ない。**`unverified` のまま登録を止めると、relay 側の
+  /// 検証が済む前に自分で締め出すことになる。
+  static bool shouldAttemptRegistration({
+    required String host,
+    required bool eligible,
+    required bool hasEntitlement,
+  }) => eligible || isPresetServer(host) || hasEntitlement;
+
+  /// サーバーソフトウェアの仕様で、このアカウントへのプッシュ通知が成立しないか
+  /// (2026-10-06 pooza)。
+  ///
+  /// **モロヘイヤの通知の中継が無い Misskey** がこれに当たる。Misskey 本家は
+  /// `/api/sw/register` を外部アプリのトークンから呼べないので
+  /// （GHSA-7pxq-6xx9-xpgm の対策）、capsicum からは購読を登録できない。
+  ///
+  /// ⚠⚠ **用途は「買う前に知らせる」こと。**利用権を持たない非プリセットの
+  /// アカウントは登録そのものを試みない（[shouldAttemptRegistration]）ので、
+  /// 登録の結果（`notSupported`）からは**購入したあとにしか分からない**。
+  /// 🔴 何も言わないと、**月額を払ってから「対応していません」と知る**ことになる。
+  /// 1.x では「身内が承知のうえで使っている」立場だったが、有償で外へ出すと
+  /// **知らずに買う人**が出るので、立場が変わった。
+  ///
+  /// ⚠ **購入を止める判定ではない。**同じ端末に届くアカウントが別にあれば
+  /// 利用権には意味があるし、Misskey 側が開放したらそのまま対象に入る方針
+  /// （`docs/paid-relay-plan.md` 1-6）。⚠⚠ **開放されたら、この判定と文面を外す。**
+  ///
+  /// ⚠ 登録処理（[_registerAccountImpl]）の分岐と**同じ条件**で書くこと。
+  /// 引数を素の値で受けるのは、`Account` を組まずに全部の分岐を検査するため。
+  static bool pushUnavailableByServerSpec({
+    required BackendType type,
+    required String? mulukhiyaControllerType,
+    required String? mulukhiyaVersion,
+  }) {
+    if (type != BackendType.misskey) return false;
+    final viaProxy =
+        mulukhiyaControllerType == 'misskey' &&
+        mulukhiyaVersion != null &&
+        _mulukhiyaSupportsPushProxy(mulukhiyaVersion);
+    return !viaProxy;
+  }
+
+  /// [accounts] のうち、[pushUnavailableByServerSpec] に当たるもの。
+  static List<Account> accountsWithoutPushSupport(List<Account> accounts) => [
+    for (final account in accounts)
+      if (pushUnavailableByServerSpec(
+        type: account.key.type,
+        mulukhiyaControllerType: account.mulukhiya?.controllerType,
+        mulukhiyaVersion: account.mulukhiya?.version,
+      ))
+        account,
+  ];
 
   /// 現在のプラットフォームで push backend (APNs/FCM 経由 + capsicum-relay)
   /// が本配線済みか。macOS / Linux / Windows のうち未対応のものは false にし、
@@ -126,7 +194,15 @@ class PushRegistrationService {
         store.update(accountKey, PushRegistrationState.skipped);
         return;
       }
-      if (!eligible && !isPresetServer(account.key.host)) {
+      // 有償リレーの利用権 (#597 / #1121)。⚠ **プロセス内でキャッシュされる**
+      // ので、アカウントごとに呼んでも secure storage を開くのは 1 回。
+      // ⚠ 読めなくても null に倒れる（push 登録を道連れにしない）。
+      final entitlement = await EntitlementTokenStore.load();
+      if (!shouldAttemptRegistration(
+        host: account.key.host,
+        eligible: eligible,
+        hasEntitlement: entitlement != null,
+      )) {
         debugPrint(
           'capsicum: push.registration: skipped (not preset): ${account.key.host}',
         );
@@ -136,7 +212,12 @@ class PushRegistrationService {
 
       store.update(accountKey, PushRegistrationState.registering);
 
-      final deviceToken = _getDeviceToken();
+      // ⚠⚠ **到着を待つ (#1223)。**`registerAllAccounts`（起動時の経路）は待つのに
+      // ここは待っていなかったので、**トークンが遅れているだけの回に再試行が
+      // 構造的に無意味**だった。🔴 2026-10-04 の実機で踏んだ —— 再インストール
+      // 直後の端末で、再試行を何度押しても「取得できませんでした」から動かない。
+      // ⚠ キャッシュがあれば即返るので、通常の回に遅延は増えない。
+      final deviceToken = _getDeviceToken() ?? await _waitForDeviceToken();
       if (deviceToken == null) {
         debugPrint('capsicum: push.registration: no device token available');
         final isPermissionDenied = _isNotificationPermissionDenied();
@@ -199,6 +280,9 @@ class PushRegistrationService {
         account: '${account.key.username}@${account.key.host}',
         server: account.key.host,
         deviceId: deviceId,
+        // 有償リレーの利用権 (#597 / #1121)。⚠ **無ければ載せないだけ**で、
+        // relay 側は観測のために記録するだけ（判定は `device_id` から引く）。
+        entitlementToken: entitlement?.token,
       );
 
       relayId = PushRelayClient.parseRelayId(sub['id']);
@@ -221,7 +305,8 @@ class PushRegistrationService {
           accountKey,
           PushRegistrationState.failed,
           reason: PushRegistrationFailureReason.relayFailed,
-          errorMessage: 'リレーサーバー応答に id / push_token が含まれていません',
+          // ⚠ `errorMessage` は登録状況の行に出る（利用者が読む・#1226）。
+          errorMessage: 'プッシュ通知リレーサーバーの応答に id / push_token が含まれていません',
         );
         return;
       }
@@ -406,13 +491,23 @@ class PushRegistrationService {
               auth: keys.auth,
             );
           } else {
+            // ⚠⚠ **鍵が読めないので、Misskey 2026.10.0 以降では解除できない**
+            // (#1201)。`auth` / `publickey` が必須になった版は `endpoint` 単体を
+            // 400 で断る。⚠ **それでも呼ぶ** —— 旧版では従来どおり成功するし、
+            // 新版でも悪化はしない（この経路はもともと「鍵が無い」救済措置）。
             await (account.adapter as PushSubscriptionSupport).unsubscribePush(
               endpoint: endpoint,
             );
           }
         } else {
+          // ⚠ モロヘイヤ非経由の Misskey（本家・2026.10.0 以降）は、ここで
+          // `auth` / `publickey` を送らないと購読が消えない (#1201)。鍵は
+          // 読めれば渡す（Mastodon 側は受け取って捨てる）。
+          final keys = await PushKeyStore.read(accountKey);
           await (account.adapter as PushSubscriptionSupport).unsubscribePush(
             endpoint: endpoint,
+            p256dh: keys?.p256dh,
+            auth: keys?.auth,
           );
         }
       } catch (e, st) {
@@ -572,7 +667,15 @@ class PushRegistrationService {
   /// することで厳密に one-at-a-time 化する。
   static Future<void> _tokenRefreshChain = Future<void>.value();
 
-  static void startTokenRefreshListener(List<Account> Function() getAccounts) {
+  ///
+  /// [hasPreset] も同じ理由で発火時点の値を読む。⚠⚠ **[getAccounts] の結果から
+  /// 数えない。**あちらは接続できたアカウントだけなので、プリセットのサーバーに
+  /// 届かない間にトークンが変わると、併用している外部サーバーの登録を畳んだまま
+  /// 登録し直さなくなる（[registerAllAccounts] の doc）。
+  static void startTokenRefreshListener(
+    List<Account> Function() getAccounts, {
+    required bool Function() hasPreset,
+  }) {
     _tokenRefreshSub?.cancel();
     final Stream<String>? stream;
     if (Platform.isIOS || Platform.isMacOS) {
@@ -591,7 +694,7 @@ class PushRegistrationService {
       // chain が failed future になり以降すべての emit が握り潰されて
       // プロセス終了までトークンローテーションが機能しなくなる。
       _tokenRefreshChain = _tokenRefreshChain
-          .then((_) => _runTokenRefresh(getAccounts))
+          .then((_) => _runTokenRefresh(getAccounts, hasPreset))
           .catchError((Object e, StackTrace st) {
             debugLogException(
               'capsicum: push.registration: token refresh failed',
@@ -611,6 +714,7 @@ class PushRegistrationService {
 
   static Future<void> _runTokenRefresh(
     List<Account> Function() getAccounts,
+    bool Function() hasPreset,
   ) async {
     debugPrint(
       'capsicum: push.registration: device token rotated, re-registering',
@@ -618,7 +722,7 @@ class PushRegistrationService {
     final accounts = getAccounts();
     if (accounts.isEmpty) return;
     await _cleanupDeviceRegistration(accounts);
-    await registerAllAccounts(accounts);
+    await registerAllAccounts(accounts, hasPreset: hasPreset());
   }
 
   /// デバイス全体のプッシュ登録を畳む。古いリレー登録・SNS サブスクリプ
@@ -746,7 +850,19 @@ class PushRegistrationService {
   ///
   /// プリセットサーバーのアカウントが1つでもあれば、全アカウントを登録対象とする。
   /// デバイストークンが未取得の場合は到着を待ってから登録する。
-  static Future<void> registerAllAccounts(List<Account> accounts) async {
+  ///
+  /// ⚠⚠ **[hasPreset] は [accounts] から数えない**（v2.0 の差分レビュー・
+  /// 2026-10-06）。[accounts] は接続できたアカウントだけなので、ここで数えると、
+  /// プリセットのサーバーに届かない状態で起動した人が「プリセットを持たない人」
+  /// になり、併用している外部サーバーの登録が飛ばされる。トークンが変わった回は
+  /// 登録を畳んだあとなので、**通知が止まったまま自動では戻らない**。
+  /// `docs/product-policy.md` の不変条件（プリセットの利用者の機能を止めない）の
+  /// 側。⚠ 呼ぶ側は `hasPresetAccountProvider` の値を渡す（`required` にして
+  /// あるのは、渡し忘れて同じ穴を開け直せないようにするため）。
+  static Future<void> registerAllAccounts(
+    List<Account> accounts, {
+    required bool hasPreset,
+  }) async {
     if (accounts.isEmpty) return;
 
     // 本配線が無いプラットフォームでは _waitForDeviceToken (最大 10 秒) を
@@ -771,7 +887,6 @@ class PushRegistrationService {
       }
     }
 
-    final hasPreset = hasPresetAmong(accounts);
     // registerAccount は in-flight ガード付きで内部 try/catch も備えるため、
     // 並列化して起動時のブロック時間を短縮する。N アカウント × 2 HTTP が
     // 直列で数秒積み上がっていたのを 1 ラウンドに圧縮する。

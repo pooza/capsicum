@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/dart_source.dart';
+import 'support/source_files.dart';
 
 /// #1027-F2 / #1035-A3: サーバーと同じ単位で数え、勝手に切らない。
 ///
@@ -55,11 +56,7 @@ bool ignoresPostLengthRule(String code) =>
     !code.contains('postLengthRuleProvider');
 
 void main() {
-  List<File> uiFiles() => Directory('lib/src/ui')
-      .listSync(recursive: true)
-      .whereType<File>()
-      .where((f) => f.path.endsWith('.dart'))
-      .toList();
+  List<File> uiFiles() => sourceFiles('lib/src/ui');
 
   /// 宣言そのもの（`ui/util/text_length_counter.dart`）か。
   ///

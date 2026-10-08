@@ -25,17 +25,22 @@ class PostListScreen extends ConsumerWidget {
   /// 一覧が空のときの文言。
   final String emptyMessage;
 
+  /// デッキのカラムの中身として描く (#1150)。AppBar を出さない（見出しと閉じる
+  /// ボタンはカラムのヘッダーが持つ。戻るボタンはデッキ画面ごと閉じてしまう）。
+  final bool embedded;
+
   const PostListScreen({
     super.key,
     required this.title,
     required this.fetcher,
     this.emptyMessage = '投稿はありません',
+    this.embedded = false,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
-      appBar: AppBar(title: Text(title)),
+      appBar: embedded ? null : AppBar(title: Text(title)),
       body: BottomSafeArea(
         child: CursorPagedListView<Post>(
           debugLabel: 'PostListScreen',

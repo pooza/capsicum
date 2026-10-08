@@ -10,27 +10,17 @@ Flutter ベースの Mastodon / Misskey クライアント。
 - **配布**: Google Play / App Store / Mac App Store / Microsoft Store / Linux AppImage（直配）
 - **利用者**: サーバーの一般ユーザー
 
-## 設計の出発点
+### v2.0 で加わった 3 本
 
-アーカイブされた [Kaiteki](https://github.com/Kaiteki-Fedi/Kaiteki) を参考にしている。
-（参照用にローカルクローンを併設している。配置先は開発者の手元で管理）
+v2.0 はメジャーリリースで、次の 3 本を束ねている。**構造は [architecture.md](architecture.md)、判断の経緯は各設計書が正本。**
 
-### Kaiteki から継承する設計
+| | 何か | 設計書 |
+| --- | --- | --- |
+| **デッキ表示**（[#720](https://github.com/pooza/capsicum/issues/720)） | タイムラインなどを横に並べるマルチカラム。カラムごとにアカウントを違えられる | [deck-ui-plan.md](deck-ui-plan.md)（入口）/ [deck-ui-decisions.md](deck-ui-decisions.md)（決定の本文） |
+| **有償プッシュ通知リレー**（[#597](https://github.com/pooza/capsicum/issues/597)） | プリセットサーバーの利用者は無償のまま、それ以外の利用者へアプリ内課金で開放する | [paid-relay-plan.md](paid-relay-plan.md) |
+| **添付画像のレイヤ編集**（[#884](https://github.com/pooza/capsicum/issues/884)） | 投稿する画像に文字・スタンプ・画像を重ね、後から編集し直せる | 設計書なし（Issue とコードが正本） |
 
-- **Adapter パターン**: `BackendAdapter` + Feature インターフェース（mix-in）による SNS 差異の吸収
-- **SharedMastodonAdapter**: Mastodon 派生（Pleroma、Glitch 等）の共通化
-- **モデル変換**: `toKaiteki()` extension method による統一ドメインモデルへの変換
-- **Probing**: NodeInfo → API endpoint 試行によるサーバー種別の自動検出
-- **テキストパーサー**: MFM / HTML / Markdown の Strategy パターン
-- **モノレポ構成**: core / backends / fediverse_objects / メインアプリの分離
-
-### Kaiteki から変更した点
-
-- Flutter SDK を stable channel に固定
-- ストレージ層: Hive → flutter_secure_storage + shared_preferences
-- HTTP クライアント: `http` → dio
-- 対象 SNS を Mastodon + Misskey に限定
-- L10n はサブモジュールでなく直接管理
+⚠⚠ **デッキを触る回は deck-ui-decisions.md を、課金・利用権を触る回は paid-relay-plan.md と [product-policy.md](product-policy.md) の「課金の方向性」を先に読む。**どちらも「再判定しない」と明記した決定を持っており、コードのコメントが節番号で参照している。
 
 ## モロヘイヤ連携
 
@@ -64,118 +54,11 @@ capsicum はサーバーが提供する API を検出し、利用可能な機能
 | ハンドラー一覧 | `GET /mulukhiya/api/admin/handler/list` |
 | メディアカタログ | `GET /mulukhiya/api/media` |
 
-## UI 設計方針
+## UI 設計方針 / 対応バージョン方針
 
-### 用語統一
+⚠ **別ファイルにある → [product-policy.md](product-policy.md)。**用語統一・タグ管理の位置づけ・アクションメニュー・ドロワーのナビゲーション様式・Mastodon / Misskey の機能マッピング・DM の方針・タイムラインの読み込み挙動・公開範囲の考え方・モロヘイヤ連携画面の導線・プッシュ通知・サポート優先順位、および**機能検出（probing）ベースで版番号で分岐しない**という対応バージョン方針はそちら。
 
-capsicum は「最新版を対象にする」方針で開発しており、UI 表示に用いる用語も最新の Mastodon / Misskey に追従する。古い Mastodon で使われていた用語は最新 Mastodon しか知らない新規ユーザーには通じないため、UI・エラーメッセージ・ダイアログ等ユーザー目に触れる文字列では使用しない。
-
-| 旧称 / 別称 | 現在の呼称 | 種別 | 備考 |
-|------|-----------|------|------|
-| トゥート | 投稿 | 廃止語 | 最新 Mastodon では使われていない |
-| 未収載 | ひかえめな公開 | 廃止語 | 最新 Mastodon では使われていない |
-| インスタンス | サーバー | 廃止語 | Mastodon / Misskey 共通で廃止 |
-| ノート | 投稿 | 統一 | Misskey では現役用語。capsicum では「投稿」に統一 |
-| チャット | メッセージ | 統一 | Misskey の `/api/chat/*` 由来。capsicum では UI 表記を「メッセージ」に統一（コード識別子は `Chat*` のまま API 命名に追従） |
-| リプライ | 返信 | 統一 | 両上流とも**操作名は「返信」**（Mastodon `status.reply` / Misskey `_actions.reply`）。⚠ **Misskey が「リプライ」を使うのは通知の種別ラベル**（`_notification._types.reply`）だけで、capsicum はその種別を `mention` に畳んでいるので出番が無い。アクションメニュー・投稿フォームの AppBar・タッチ操作の設定はすべて「返信」（#1117-E） |
-| Flash | Play | 統一 | Misskey は **UI 表記が「Play」**（`navbar.ts` / `_play:` ロケール）で、**エンティティ・API 名が `Flash`**（`/api/flash/*`）という食い違いがある。capsicum も同じ使い分けをする（UI は「Play」・コード識別子は `Flash*`） |
-
-「廃止語」は最新版で廃止された用語であり、capsicum でも一切使わない。「統一」は他方の SNS では現役だが、capsicum では UI 一貫性のためにどちらか片方に寄せている用語を指す。
-
-コード内部の識別子（`Instance`, `InstanceProbe` 等）は変更不要。UI に表示する文字列のみ統一する。文字列リテラルをコード全体に散らすと用語の取りこぼしが起きやすいため、[post_scope_display.dart](../packages/capsicum/lib/src/ui/util/post_scope_display.dart) のように中央集約した定数を参照する設計を優先する。
-
-### タグ管理の位置づけ
-
-文末ハッシュタグの管理（削除してタグづけ・お気に入りタグ・タグセット・予約投稿タグ編集等）は、capsicum の根幹にある基本機能であり、リプライ・ブースト・ブックマークと同等に扱う。アニメファンにとって用語管理（キャラ名・作品名のタグ付け）は本質的な活動であり、この日常的なタグ管理ニーズを満たすことは他のクライアントにない capsicum 独自の価値である。品質・信頼性に関する問題は最優先で対応すること。
-
-### アクションメニュー
-
-投稿に対するアクション（お気に入り・ブースト・ブックマーク等）は、タイムライン上にボタンを露出させず、長押しで表示する BottomSheet メニュー内に格納する。誤タップ防止のため。
-
-### ドロワー項目のナビゲーション様式（#805）
-
-左ドロワーから機能を選んだときの遷移様式は、次の基準で使い分ける（一貫性のため明文化）:
-
-- **ボトムシートのクイックチューザ** = 「自分の保存済みの◯◯（チャンネル / クリップ / アンテナ / Play / プロフィールタグ / リスト等）を 1 つ選んで、そのタイムラインへ飛ぶ」用途。頻繁操作を軽く済ませ、ホーム文脈から素早く飛べるようにする。全画面化すると日常操作が一段重くなるため採らない。
-- **独立画面（`context.push`）** = そこに滞在する / 管理する行き先（通知・ブックマーク・ドライブ・設定・各種管理 UI 等）。
-
-保存済みショートカットの「作成 / 編集 / メンバー管理」などの管理 UI は、クイックチューザの奥（シート内の導線）または対象画面内に温存する。ドロワー直下の一等地はクイックチューザに割り当てる。
-
-### Mastodon / Misskey 機能マッピング
-
-| 操作 | Mastodon | Misskey | 備考 |
-|------|----------|---------|------|
-| お気に入り | FavoriteSupport | ―（リアクションで代替） | Misskey は ReactionSupport で対応済み |
-| ブックマーク | BookmarkSupport | BookmarkSupport（内部は favorites API） | Misskey の「お気に入り」は意味的にブックマーク相当 |
-| ブースト / リノート | repeatPost() | repeatPost()（renote） | ラベルは ReactionSupport の有無で切替 |
-
-- Misskey adapter は `FavoriteSupport` mixin を持たない（リアクションで代替済み）
-- Misskey 判定は `adapter is ReactionSupport` で行う
-
-### DM / メッセージの方針
-
-- **Mastodon**（#179）: `GET /api/v1/conversations` で DM 専用タイムラインを実装
-- **Misskey**（#248）: DM タイムライン API がない。最近の Misskey では「メッセージ」機能（スレッド形式チャット）が DM の後継と位置づけられており、こちらに対応する。v1.22 で実装完了。追加のバグ修正・enhancement（#442 系列・#449 レンダリング要素反映・#440 push tap 動線・グループチャット #438 等）は v1.25 / v1.28 で消化済み（個別 Issue の対応状況は Milestones が正本）
-
-### タイムラインの読み込み挙動
-
-タイムラインをスクロール中に一旦読み込みが止まり、少し戻すと再読み込みされる挙動はページネーションの正常な動作であり、不具合ではない。ユーザー報告の表現に引きずられずに判断する。
-
-### 公開範囲とタイムラインの考え方
-
-**タイムラインの設計は読む側の責任**とする。「自分と無関係な投稿はノイズだ」という言説は capsicum は採らない。見たくないものを見ないようにする道具（ハッシュタグ TL・リスト・ミュート等）は**読む側に**提供するが、**投稿者を静かにさせる方向の機能・配慮は入れない**。
-
-この帰結として:
-
-- **「TL を汚さないよう投稿者が公開範囲を下げる」を前提にした設計をしない。** 公開範囲は「誰に見えるか」の設定であって、「誰向けの話題か」の表明ではない。**話題の対象を示すのはハッシュタグの仕事**（プリセットサーバーのデフォルトハッシュタグがそれを担っている）。
-- 定形投稿・周知系の機能に公開範囲を持たせない（[#767](https://github.com/pooza/capsicum/issues/767) の投稿テンプレートが実例。テンプレートは `id` / `name` / `body` / `cw` だけを持つ）。
-- **モロヘイヤがキーワードから多くのタグを自動付与するのは、フィルタのしやすさへの配慮**（デフォルトタグ・辞書タグ・グループタグ等のハンドラー）。タグが多いこと自体が目的ではなく、**読む側にフィルタの取っ手を渡している**。「タグの多い投稿はスパム」という言説はここでも採らない — むしろその立場の人にとってこそフィルタしやすい構造になっている。よって **capsicum 側で「タグが多いのは問題だ」という前提の機能（自動削減・既定での非表示化等）を提案しない**。タグ管理を厚くする方向（[タグ管理の位置づけ](#タグ管理の位置づけ)）が capsicum の役割。
-
-**技術的にも「ひかえめな公開で周知」は成立しない**（Mastodon 4.6 のフォークで実証済み）。`Status::Visibility` の enum は `suffix: :visibility` 付きで、`public_visibility` スコープが拾うのは `public` のみ。ハッシュタグ TL（`TagFeed#get` → `public_scope`）も同じスコープを使うため、**ひかえめな公開の投稿はハッシュタグ TL に出ない**。プリセットサーバーではローカル TL をデフォルトハッシュタグの TL に置換しているので、周知をひかえめな公開で出すと**届けたい相手（フォロワー外の同じサーバーの住人）にこそ届かなくなる**。
-
-「周知だから公開範囲を絞る」系の要望が来た場合、実装する前にこの非対称を説明する。
-
-### モロヘイヤ連携画面の導線
-
-エピソードブラウザはタグセット BottomSheet 内のメニュー項目として配置する（Mastodon 改造版 WebUI と同じ動線）。投稿画面のツールバーに独立したアイコンを置く方式は、ユーザーに発見されにくいため採用しない。
-
-### プッシュ通知
-
-プッシュ通知には、Mastodon の Web Push を APNs/FCM に変換する中継サーバーの運用が必要。capsicum は主に自前サーバー（プリセット登録済み）のユーザー向けに開発されており、プリセットサーバーのユーザーには [pooza/capsicum-relay](https://github.com/pooza/capsicum-relay) 経由で無償でリレーを提供している。外部ユーザー向けの有償提供（[#597](https://github.com/pooza/capsicum/issues/597)・未実装・v2.0）の設計書は [paid-relay-plan.md](paid-relay-plan.md) が正本（2026-09-06）。
-
-⚠ **「コスト補填」という当初の建付けは実測で組み直した。**開発工数を人件費換算すると回収に届かないため、**回収を KPI に置く限り永久に「やらない」が正解になる**。収益目標は **「relay のインフラを持ち出しにしないこと」**（2026-09-06 pooza 決定）。⚠ **プリセットのアカウントを 1 つも持たない利用者は現時点で 0 人**（本番 DB の実測）なので、**対象は「これから来る人」で需要は未証明**。⚠ **サーバー別に数えると外部が 36% に見えるが、マルチアカウント利用者の別アカウント宛であって「外部ユーザー」ではない**。
-
-v1.15 の観測性強化（#293）により、iOS のバックグラウンド通知は発火回数 0回で事実上機能していないことが確認された。v1.18 でプッシュ通知リレー（[#52](https://github.com/pooza/capsicum/issues/52)）を実装し、根本解決済み。リレーサーバー（Ruby、公開ドメイン `relay.capsicum.shrieker.net`）の実装は [pooza/capsicum-relay](https://github.com/pooza/capsicum-relay) リポジトリが正本（ホスト構成・デプロイ手順はインフラノートが正本）。初期設計判断の経緯は [archive/push-relay-plan.md](archive/push-relay-plan.md) に保存。具体的な課金設計（料金体系・ストア課金統合等）は [paid-relay-plan.md](paid-relay-plan.md) が正本（投げ銭本体は [#428](https://github.com/pooza/capsicum/issues/428) / [supporter-subscription-plan.md](supporter-subscription-plan.md)）。
-
-⚠ **配送の重さは device_type で大きく違う**（2026-09-06 実測・正本は [paid-relay-plan.md](paid-relay-plan.md) 1-5）。**Windows (WNS) が処理時間の 88% を占め、1 件あたり iOS の 16 倍**（2,056ms 対 126ms）。⚠ **APNs だけが永続 HTTP/2 接続を保持しており、WNS / FCM は 1 通ごとに TLS を張り直している**。改善は [relay#54](https://github.com/pooza/capsicum-relay/issues/54)（接続再利用・v1.65）/ [relay#55](https://github.com/pooza/capsicum-relay/issues/55)（非同期化・#597 と同じ回）/ [relay#56](https://github.com/pooza/capsicum-relay/issues/56)（バックオフ・on-hold）。⚠ **WNS の `dropped` は「端末が落ちている / スリープ」**であって dedup ではない。**raw notification は queue されない**ので、その間の通知は失われる。
-
-### サポート優先順位
-
-自前のサーバー（美食丼・デルムリン丼・キュアスタ！・ダイスキー）以外では、サーバーログの確認やサーバー側の操作（レートリミット解除等）ができないため、サポートの優先順位を下げる。自前サーバー以外での問題はクライアント側で対処可能な範囲に限定し、サーバー側の問題が疑われる場合は「サーバー管理者に問い合わせてください」等の案内に留める。
-
-## 対応バージョン方針
-
-### 基本戦略: 機能検出（Feature Probing）ベース
-
-バージョン番号による分岐は行わない。サーバーが提供する API エンドポイントを probing し、利用可能な機能に応じて UI を出し分ける。
-
-### フォークに対する方針
-
-capsicum は Mastodon 本家および Misskey 本家の API に対して実装する。フォークに対して個別の互換処理は行わない。本家 API との互換性を維持するのはフォーク側の責任であり、probing の結果として動作するならそのまま使えるが、動作しない場合も capsicum 側では対応しない。
-
-なお、Mastodon フォークが Misskey 互換の API を提供するケースもありうる。この場合も同様に probing の結果に従い、利用可能な機能があればそのまま使う。フォーク固有の対応は行わない。
-
-ただし、自前のサーバー（モロヘイヤ導入済み環境）が提供する独自機能には最大限対応する。capsicum の主目的は自前のインフラとの連携であり、フォーク互換とは別の話である。
-
-### 機能不足時の通知
-
-probing の結果、基本的な機能が欠けているサーバーに対しては「このサーバーは一部の機能に対応していません」旨の通知を表示する。バージョン番号には言及しない。接続自体は拒否せず、利用可能な範囲で動作させる。
-
-**「バージョン番号に言及しない」は機能ゲーティングの通知に限った話**である。これは probing ベースで機能を出し分ける（版番号で分岐しない）基本戦略に対応する。一方、**サーバー情報画面**では、サーバーの素性を事実として提示する目的で、nodeinfo の software 名（Mastodon / Misskey / Fedibird 等）と本家 latest リリースへの追従状況（例「Misskey v2025.4.1 · 最新は 2026.6.0」）を表示する（[#816](https://github.com/pooza/capsicum/issues/816)）。これは機能ゲートではなく情報表示で、capsicum が最新の Mastodon / Misskey を対象にする以上「本家名を名乗らない／latest に届かないサーバーは新機能が使えない」ことをユーザーに納得してもらうためのもの。追従判定は nodeinfo の software 名が `mastodon` / `misskey` に完全一致する場合のみ行い、fedibird 等の別ソフトには出さない。設立日表示（[#815](https://github.com/pooza/capsicum/issues/815)、`accounts/1` 近似・account id の snowflake 化 2021-03 に注意）も同じ「サーバーの素性を可視化する」系。
-
-### 開発上のターゲット
-
-主な動作確認対象は自前のサーバー（美食丼 / デルムリン丼 / キュアスタ！ / ダイスキー）であり、最新の Mastodon / Misskey に追従している前提で開発する。古いバージョン固有の互換処理やフォーク固有の互換処理は原則として書かない。
+⚠⚠ **UI を作る前に読む。**用語と公開範囲の扱いは揺れやすく、揺れると実装が分岐する。
 
 ## ブランチ戦略
 
@@ -279,56 +162,12 @@ claude plugin install ginseng@ginseng-style
 
 ## ディレクトリ構成
 
-```text
-capsicum/
-  .claude/                # Claude Code の設定（settings.local.json だけ gitignore）
-    skills/               # 名前付き手順の正本（#1114。⚠ docs 側はポインタ）
-      sync-procedure/     # セッション開始時の同期
-      resume-work/        # 作業中断からの復帰
-      milestone-transition/  # マイルストーン完了→次着手の移行
-      doc-maintenance/    # docs / メモリの棚卸し（⚠ 配置の原則は docs 側）
-      login-troubleshooting/  # 「ログインできない」報告の切り分け
-      release-review/     # リリース前レビュー（5 観点・赤黄緑の送り分け）
-      store-release/      # 毎回のリリース手順（⚠ 工程ごとの補助ファイルつき）
-    hooks/                # 守らせたいものの機械化（deny-shell-loops.sh）
-    scripts/              # 許可確認を出さずに回すための道具（sentry-api.sh: トークンを画面に出さず Sentry を叩く）
-  docs/                   # 開発ドキュメント
-    CLAUDE.md             # 本ファイル
-    architecture.md       # アーキテクチャ設計
-    annict-integration.md # Annict 連携機能の説明（モロヘイヤ前提・作品/エピソード検索〜感想投稿）
-    tech-notes.md         # 実装の落とし穴・API 固有の注意点
-    dev-environment.md    # 開発マシン・検証端末・Sentry 環境
-    desktop-plugin-compatibility.md  # デスクトップ対応のプラグイン棚卸し
-    flutter-upstream-watch.md  # Flutter 上流バグの追跡（月初に手動で chase・資格情報の満了チェックも相乗り）
-    api-gap-inventory.md  # 棚卸し: API にあって capsicum が使っていない機能（#993 の成果物・1.x / 2.0 / 拾わない の分類）
-    webui-gap-inventory.md  # 棚卸し: WebUI にあって capsicum に無い機能（#991 の成果物・同じ 3 分類。層①＝画面 / ②＝画面内の操作 / ③＝表示要素）
-    server-settings-gap-inventory.md  # 棚卸し: サーバー側に保存された設定の反映漏れ（#992 の成果物・誤爆 0 件の実測記録。⚠ 送らない = サーバー既定が効く、の設計を壊さないための正本）
-    mastodon-capsicum-api-watch.md  # Mastodon 新バージョンの API 変更を client 影響でトリアージ（フォーク diff 手順つき・4.6 / 4.7 追従済み）
-    misskey-capsicum-api-watch.md  # Misskey 新バージョンの API 変更を client 影響でトリアージ（マイナー毎・daisskey SHA アンカー）
-    sync-procedure.md     # ⚠ ポインタのみ（本文は .claude/skills/sync-procedure / resume-work へ移した・#1114）
-    roadmap.md            # 枠の数・各枠の主題・1.x と 2.x の境界（2026-09-04 策定・含有 Issue は Milestones が正本）
-    deck-ui-plan.md       # #720 デッキ表示の設計スパイク（2026-09-06・現アーキの前提棚卸し / 壊れる境界 / 段階性。⚠ 詳細 UI 仕様ではない）
-    paid-relay-plan.md    # #597 有償プッシュリレーの設計書（2026-09-06。⚠ #596 は記録層で判定層ではない・認可を新規に作る話）
-    milestone-transition.md  # ⚠ ポインタのみ（本文は .claude/skills/milestone-transition/）
-    doc-maintenance.md    # 配置の原則（公開境界・二重管理禁止・メモリは status を持たない）。⚠ 回す手順は .claude/skills/doc-maintenance/
-    store-release-guide.md  # 初回セットアップ（署名・fastlane）とストア掲載情報・配布方針。⚠ 毎回の手順は .claude/skills/store-release/
-    store-listing.md      # 各ストアの掲載文（提出のたびに参照する現役ドキュメント）
-    supporter-subscription-plan.md  # 投げ銭サブスクの商品設計（審査ノートの英文もここ）
-    msstore-review-notes-login.md   # Microsoft Store 審査向けのログイン説明（提出のたびに再利用）
-    login-troubleshooting.md  # ⚠ ポインタのみ（本文は .claude/skills/login-troubleshooting/）
-    brand/                # ブランドアセット（アイコン・ロゴ等。v1.53 でルート assets/ から移設）
-    archive/              # 過去の記録（現役運用では参照しない。release-log.md / release-pipeline.md 等）
-  packages/               # モノレポ構成（Melos）
-    capsicum/             # メインアプリ
-    capsicum_core/        # ドメインモデル・Adapter インターフェース
-    capsicum_backends/    # Mastodon / Misskey API 実装
-    fediverse_objects/    # API レスポンスのシリアライズモデル
-```
+⚠ **別ファイルにある → [architecture.md](architecture.md)「リポジトリの構成」。**`.claude/`（スキル・フック・スクリプト）と `docs/` の行き先の表、`packages/` のモノレポ構成はそちら（2026-10-03 に移した・#1184）。
 
 ## Issue 管理
 
 - GitHub Issues + Milestones で管理（モロヘイヤと同じ体系）
-- 優先度ラベル: P1 〜 P4
+- **優先度のラベルは無い。**P1〜P3 はリリース前レビューと Codex の指摘に付ける分類で、Issue の優先度はマイルストーン（どの枠に入れるか）で表す。ラベルは種別（`bug` / `enhancement` / `documentation`）・対象（`Mastodon` / `Misskey` / `モロヘイヤ` / `desktop` / `flutter`）・状態（`on-hold` / `reproduction-needed` / `verification-pending`）・端末（`Windows` / `Linux`）の 4 系統
 - 1 マイルストーンの規模は「大更新の数」で測る（件数ではなく）。詳細は[マイルストーン運用](#マイルストーン運用)節を参照
 
 ### 正本ルール
@@ -348,6 +187,8 @@ capsicum/
 
 ⚠ **1.x と 2.x は並走系列で、境界は「時期」でも「技術的な線」でもない。****メジャーに何を載せるかは製品判断（売りの束ね方）**で、pooza が決める。`v2.0` は [#720](https://github.com/pooza/capsicum/issues/720) デッキ UI + [#597](https://github.com/pooza/capsicum/issues/597) 有償リレー + [#884](https://github.com/pooza/capsicum/issues/884) 画像編集レイヤの **3 本を束ねるメジャーリリース**。⚠ **この枠には「大更新 0〜1 件」の目安を当てない**（容量は通常枠の数倍。実績の最大は v1.0 の 46 件に対し直近の平均は 13 件）。技術規模が決めるのは「点リリースで単独配置するか」と「万一入りきらないとき何から逃がすか（＝ #884）」だけ。⚠ **2026-08-17〜 の「外部要因の発生ベース」運用は v1.65 をもって終了**した。
 
+⚠⚠ **容量の特例が当たるのは「メジャーアップグレードの枠」（x.0）だけ**（2026-09-23 pooza）。**x.1 以降は通常の枠**なので、下の「大更新 0〜1 件 + 小粒・中粒 5〜12 件」がそのまま当たる。⚠ **特例を系列の性質（2.x だから大きい）と読み違えないこと** —— 大きいのは **v1.0 / v2.0 のような x.0 の枠**で、理由は**売りを束ねるメジャーだから**。⚠ 2026-09-23 に v2.1 がこの読み違いで過積載（13 件・大更新 2 件）になり、[v2.2](https://github.com/pooza/capsicum/milestone/88) を作って #1074 / #1053 / #1073 を逃がした。⚠ **積載を見るときは、件数より先に「大更新が何件あるか」を数える**（件数だけ見ると 13 件は「わずかな超過」に見える）。⚠ **次に特例が当たるのは 3.0 だが、起こすネタが無いので当分は発生しない見込み**（2026-09-23 pooza）。
+
 - **大更新は独立マイルストーンに単独配置**。UI の構造変更・既存モデルの拡張・複数画面への影響などが絡む「大更新」は、他に同規模以上の項目がないマイルストーンに入れる。並走させると設計検討・実装・動作確認がいずれも中途半端になるため
 - **規模の測り方は「大更新の数」が主軸**。1 マイルストーンに入れるのは大更新 0〜1 件 + 小粒・中粒 5〜12 件程度を目安とする。件数は目安であって閾値ではない。リリース前レビュー（5 観点）の followup が膨らんだ場合、上限に縛られて後送りするより同一マイルストーンに取り込んで消化する方が望ましい（直前リリースの設計理解が新鮮なうちに直したいため）。**P1（緊急性あり）に加え、極めて容易な P2/P3 も同一マイルストーンで消化する**（数行の bug fix・コメント書き直し・リネーム・型変更等）。それでも入りきらない場合は、(a) リファクタ系を次マイルストーンに送る、(b) 観測性強化系を分離する、のどちらかで調整する
 - **マイルストーン未設定は意図的な場合がある**。実現性検討中・Flutter 側の対応待ち・横断的タスクなどで pooza が意図的に未割り当てにしていることがあるため、「トリアージが必要」等と機械的に指摘しない。同期報告では一覧として淡々と列挙するに留める
@@ -359,30 +200,9 @@ capsicum/
 
 ### 大玉の進め方（棚卸し → 分類 → 設計書 → 起票）
 
-v2.0 に集めたメジャー級の大玉と、その種を見つける棚卸し 3 本（[#991](https://github.com/pooza/capsicum/issues/991) WebUI 差分 / [#992](https://github.com/pooza/capsicum/issues/992) サーバー保存設定 / [#993](https://github.com/pooza/capsicum/issues/993) 未使用 API）の回し方（2026-08-25 合意）。
+⚠ **別ファイルにある → [large-item-workflow.md](large-item-workflow.md)。**棚卸しを 1 本ずつ回す順序・分類を 3 分岐にする（「拾わない」を必ず明示する）線・超大玉は設計書を先に書く線、および 3 本の棚卸しから出た方法論（**層を分けて回す** / **母数の取り方を変えると別のものが見える** / **実害の第 3 の型＝見せたくないものが見えている**）はそちら（2026-10-03 に移した・#1139）。
 
-1. **棚卸しは 1 本ずつ回す。**3 本は母数も手法も違うので同時に走らせない。順序は **#993 → #991 → #992**（#993 が最も機械的で当たりが出やすく、その結果が #991 の見方を決めるため）。**3 本とも完了・親 Issue は 3 本とも close 済み**で、次は v2.x のロードマップ（枠の数・各枠の主題・1.x との境界）。
-
-   | 親（close 済み） | 完了日 | 成果物 | 続きの Issue |
-   | --- | --- | --- | --- |
-   | [#993](https://github.com/pooza/capsicum/issues/993) API 基準 | 2026-08-31 | [api-gap-inventory.md](api-gap-inventory.md) | [#1046](https://github.com/pooza/capsicum/issues/1046) 層②③ の残り |
-   | [#991](https://github.com/pooza/capsicum/issues/991) WebUI 基準（層① のみ） | 2026-09-03 | [webui-gap-inventory.md](webui-gap-inventory.md) | [#1077](https://github.com/pooza/capsicum/issues/1077) 層② の変種と層③ |
-   | [#992](https://github.com/pooza/capsicum/issues/992) サーバー側設定 | 2026-09-03 | [server-settings-gap-inventory.md](server-settings-gap-inventory.md) | [#1078](https://github.com/pooza/capsicum/issues/1078) 未確認 3 点 / [#1079](https://github.com/pooza/capsicum/issues/1079) preferences の決着 |
-
-   ⚠ **親 Issue の close は「宿題の切り出し」とセットにする。**#991 / #992 は完了後も 2 日ほど open のまま残った（2026-09-04 の同期で検出）。宿題を Issue 本文でなく計画書の「未実施」節に置いたため、**行き先が Issue として見えず close の判断がつかなくなっていた**。完了条件が「計画書を残すところまで」の調査 Issue は、**計画書に残った宿題を Issue へ切り出してから close する**。
-
-   ⚠ **#991 が #993 の後でも価値を出した理由を残す。**#993 の分類 A / B / C のどこにも無い項目が 3 件出た。3 件とも `routes/api.rb` にあるので #993 の母数には入っていたが、**capsicum が「付ける」側だけ実装して「見る」側を持っていない**形（お気に入りは付けられるが一覧できない / タグはフォローできるが一覧できない / 引用数は出しているが一覧できない）だった。**エンドポイント単位で数えると片方が緑なので落ちる。画面単位で見ると「一覧が無い」として一発で出る。**棚卸しは母数の取り方を変えると別のものが見える、という実例。
-
-   ⚠ **#992 では「実害の型」が 1 つ増えた。**本文は実害を「誤爆（投稿）」と「見たくないものが見える（読み方）」の 2 種類で定義していたが、実測で出たのは **「見せたくないものが見えている」という第 3 の型**（本人が非表示にしたプロフィールのタブを capsicum が出していた → [#1076](https://github.com/pooza/capsicum/issues/1076)）。**「隠すべきものは隠す」は本来やってなきゃいけない**ので、意思表示の無視ではなく実装漏れとして扱う（2026-09-03 pooza）。**探すときは「サーバーが強制できない設定」から入ると早い** — 強制できるものはサーバーが既に強制しているので、クライアントが落とせる穴はそこにしか無い。
-
-   ⚠ **#993 でいちばん効いた知見: 層を分けて回すこと。**「① 呼んでいないエンドポイント / ② 呼んでいる経路の未使用パラメータ / ③ 受け取っている entity の未読フィールド」の 3 層で見ると、**当たりの性質が層ごとに違った**。層① から出た 4 件は全部 enhancement（機能の欠落）だったのに対し、**層②③ から出た 3 件は全部 bug**（すでに動いている機能の壊れ方）で、しかも 3 件とも**サーバーがエラーを返さない**ため Sentry にもユーザー報告にも出てこないものだった。**層① だけで終えると、この種類は永久に見つからない。**
-
-   ⚠ **層③ をモデルのフィールド一覧で測ると誤診する。**capsicum は一部の値を型付きモデルを経由せず生の `Map<String, dynamic>` から読んでいる。正しい母数の取り方は [api-gap-inventory.md](api-gap-inventory.md) §1「層③ の測り方」にコマンドごと置いた。
-2. **分類は 3 分岐にする** — 「1.x で処理」「2.0 以降」に加えて **「拾わない」を必ず明示し、理由を書く**。棚卸しの母数には方針として実装しないもの（英語対応しない / 投稿の更新しない / Fedibird 低優先 / per-server 対応しない 等）が必ず混じるので、**黙って落とすと次の棚卸しで同じものが再浮上する**。
-3. **成果物は `docs/` の計画書 1 本にまとめ、Issue 化は分類が確定してから。**先に起票すると、マイルストーン未定のまま滞留する [#905](https://github.com/pooza/capsicum/issues/905) / [#915](https://github.com/pooza/capsicum/issues/915) の形になる。確定後に **1.x 行きだけを稼働中の枠へ、2.0 行きは v2.0 に据え置き**で起票する。
-4. **超大玉は設計書を先に書く。**複数 Issue に分解されることが確実なもの（[#720](https://github.com/pooza/capsicum/issues/720) デッキ UI / [#597](https://github.com/pooza/capsicum/issues/597) 有償リレー）は、Issue に割る前に `docs/` へ設計書を置く。⚠ **[#884](https://github.com/pooza/capsicum/issues/884)（画像編集のレイヤ管理）は対象外** — 投稿フォーム内で閉じるので Issue 本文で足り、設計書にすると逆に重くなる。
-
-設計書の型は既存の 6 本（[archive/push-relay-plan.md](archive/push-relay-plan.md) / [archive/desktop-notification-design.md](archive/desktop-notification-design.md) ほか）に倣い、**`## 決定済み事項` と `## 未決事項` を分ける**。未決を明示的に置けるので「全部決まるまで完成しない」状態で止まらない。⚠ **設計書の効用は分解だけではない** — desktop-notification-design では書いた結果 #476 が不要と判明して close できた。**Issue から始めるとこれができない**。
+⚠⚠ **次に大玉を回すときは先に読む。**⚠ **Issue から始めると設計書の効用（書いた結果「不要」と分かって close できる）が得られない。**
 
 ### ソース検査ガードの書き方
 
@@ -437,46 +257,59 @@ dart analyze --fatal-infos > /tmp/analyze.log 2>&1; echo "ANALYZE_EXIT=$?"
 
 ⚠ これは「[ソース検査ガードの書き方](#ソース検査ガードの書き方)」と同じ形の failure — **検査そのものが動いていないのに緑**。CI で最後は捕まるが、手元で捕まえる意味が消える。
 
+#### docs / skills を触った回は、ガードのテストも通す
+
+⚠⚠ **`dart format` と `dart analyze` は Markdown を見ない。**docs の規約を見ているのは [`docs_convention_guard_test.dart`](../packages/capsicum/test/docs_convention_guard_test.dart) なので、**整形と解析だけで push すると素通りする**（対象は `docs/` 直下・`docs/archive/`・`.claude/skills/`）。
+
+```bash
+(cd packages/capsicum && flutter test test/docs_convention_guard_test.dart)
+```
+
+🔴 **2026-10-03 に 2 回踏んだ。**`⚠⚠` で始まる見出しを足して push し（`b95ac00b`）、⚠⚠ **CI は赤になるはずが、次の push に追い越されて `cancelled` になり表に出なかった**（追い越されると気付けない）。もう 1 回はこの節自身を足して**本ファイルが 60,000 バイトを超えた**。
+
 ⚠ **これは毎コミットの話で、リリース手順の一部ではない**（#1114 の棚卸しで、`store-release-guide.md` §4.0 の中＝リリース時しか読まれない場所に置かれていたのを移した）。
+
+#### 振る舞いを変えた回は、テストを部分実行で済ませない
+
+⚠⚠ **`dart format` と `dart analyze` はテストを走らせない。**CI は `packages/*/` のうち `test/` を持つ 4 パッケージを**全量**流すので、**手元で関係しそうなファイルだけ選んで流すと、期待値を固定した別のテストを取りこぼす**。
+
+```bash
+(cd packages/capsicum && flutter test)           # ⚠ 約 4 分・2,300 件
+(cd packages/capsicum_core && flutter test)
+(cd packages/capsicum_backends && flutter test)
+(cd packages/fediverse_objects && flutter test)
+```
+
+🔴 **2026-10-03 に踏んだ。**[#1193](https://github.com/pooza/capsicum/issues/1193) で `insertAfter` の重複排除から `SearchTab` を外したとき、`deck_columns_test` ほか 7 本を選んで流して緑を確認し push したが、**`deck_appbar_test.dart` に正反対を固定したテスト**（「検索カラムは 1 本だけ。2 度押しても足さず、そこへ送る」）が残っていて CI が赤になった（`433d73dd`）。
+
+⚠⚠ **これは「歯があることを確かめた」では防げない。**[ソース検査ガードの書き方](#ソース検査ガードの書き方) の 3 点セットは**自分が足したテスト**に歯があるかを見るもので、**既にある別のテストが古い期待値を抱えているか**は見ない。⚠ **仕様を変える変更では、古い期待値の在り処を探すほうが本体**（`grep` で種別名・Issue 番号を当たる / 全量を流す）。
+
+⚠ **選んで流すのは、仕様を変えずに実装だけ直した回に限る。**⚠⚠ **決定済み事項を書き換えた回は必ず全量**（docs を直しているなら、どこかのテストがその決定を固定している）。
 
 ### クロスリファレンス
 
 - capsicum → モロヘイヤ: `pooza/mulukhiya-toot-proxy#XXXX`
 - モロヘイヤ → capsicum: `pooza/capsicum#XXXX`
 
-## 運営元
+## 運営元・課金の方向性
 
-capsicum の運営元は有限会社ビーショック（<https://www.b-shock.co.jp>）。課金（投げ銭サブスクは v1.27 で実装済み・外部ユーザー向け通知リレーの有償提供は構想中）を前提に、商品扱いとする方針。
+⚠ **別ファイルにある → [product-policy.md](product-policy.md)。**運営主体（個人 / 法人の使い分け）・ストアの登録名義・投げ銭の方向性はそちら。
 
-- サイト運営・問い合わせ窓口・特商法表示は法人名義（capsicum-site / Google Workspace アドレス経由）
-- 著作権表記は個人名義のままで問題なし
-- **ストア発行元（Apple / Google / Microsoft Store の Seller / Publisher Display Name）は当面個人（小石達也）で 3 ストア整合**。Apple は登録時の Team Prefix 固定の経緯で個人、Google も個人で運用、Microsoft Store も同方針で 2026-05-09 に個人開発者登録 + アプリ予約完了（identity_name=`9AFBB08E.capsicum`、publisher_display_name=`小石達也`）
-- 法人化（個人 → 有限会社ビーショックへの 3 ストア一括移行 + Apple は App Transfer 経由）は税務・ブランド要請が顕在化した時点で実施。**サポーターサブスク（[#428](https://github.com/pooza/capsicum/issues/428), v1.27）開始は移行の必須トリガーではない**（税務処理・プライバシー面の判断根拠は非公開メモリ `project_supporter_subscription_individual_entity` が正本）
-- 「個人開発のアプリ」「個人発行元のストア配布」と「法人運営のサービス」は法的に矛盾しない（開発 / 配布 / 運営は独立した役割）。ブランド一貫性のみ運用課題として残るが、無料アプリの間は実害なし
+## プリセットサーバー
 
-### 課金の方向性
+主な動作確認・連携対象で、ログイン画面のプリセットサーバー一覧に掲載している 5 台。いずれもモロヘイヤ導入済み。
 
-当初は「外部ユーザー向けプッシュ通知リレーのコスト補填」を想定していたが、プリセットサーバーの既存ユーザーから「機能差別化なしでよいので投げ銭させてほしい」という要望が先に顕在化したため、サポーターサブスク（[#428](https://github.com/pooza/capsicum/issues/428)）を主軸に設計検討する方針に変更（2026-04-30）。
+⚠⚠ **「プリセットサーバー」と「自前サーバー」は同じではない。**自前サーバー（pooza が運用し、Mastodon / Misskey のフォークを追従させているもの）は 4 台で、**きゅあすきーはプリセットサーバーだが自前サーバーではない**。⚠ **サーバー側の操作（ログの確認・設定の変更・版の追従）を前提にできるのは自前の 4 台だけ。**
 
-- 機能差別化なし、装飾レベルの視覚的フィードバック（サポーターバッジ等）にとどめる
-- 外部ユーザー向けプッシュ通知リレーの有償提供と同一 SKU で吸収できないか検討
-- ストア審査対策（"What does this app do?" で trivial 扱いを避ける）として複数階層・継続性のあるサブスクで構成
+| 呼称 | ドメイン | 種別 | 運用 | 備考 |
+| --- | --- | --- | --- | --- |
+| 美食丼 | `mstdn.b-shock.org` | Mastodon | 自前 | メインの運用サーバー。#capsicum タグ TL の集約先 |
+| デルムリン丼 | `mstdn.delmulin.com` | Mastodon | 自前 | デフォルトハッシュタグ `#delmulin` |
+| キュアスタ！ | `precure.ml` | Mastodon | 自前 | デフォルトハッシュタグ `#precure_fun` |
+| ダイスキー | `misskey.delmulin.com` | Misskey | 自前 | デフォルトハッシュタグ `#delmulin` |
+| きゅあすきー | `mk.precure.fun` | Misskey | **自前ではない** | デフォルトハッシュタグ `#precure_fun`。運営者は pooza ではないが、共同管理人に近い協力者。ダイスキーと同じフォークを使っているが、**モロヘイヤも含めて版の追従は独立している** |
 
-v1.27 マイルストーンに単独配置し（大更新のため他項目と並走させず）、商品設計 + 課金経路 + 装飾範囲まで同マイルストーン内で実装・出荷した。並走した自動化系タスク [#544](https://github.com/pooza/capsicum/issues/544)（Microsoft Store Web UI 手動 publish ルート再開）も同マイルストーンで対応済み。Flathub 対応は 2026-05-29 に断念（提出 PR が AI Slop 判定、#604 / #470 とも close）。Linux 配布は AppImage 単独。
-
-## 自前サーバー
-
-主な動作確認・連携対象。Mastodon / Misskey フォークを運用しており、モロヘイヤ導入済み。
-
-| 呼称 | ドメイン | 種別 | 備考 |
-| --- | --- | --- | --- |
-| 美食丼 | `mstdn.b-shock.org` | Mastodon | メインの運用サーバー。#capsicum タグ TL の集約先 |
-| デルムリン丼 | `mstdn.delmulin.com` | Mastodon | デフォルトハッシュタグ `#delmulin` |
-| キュアスタ！ | `precure.ml` | Mastodon | デフォルトハッシュタグ `#precure_fun` |
-| きゅあすきー | `mk.precure.fun` | Misskey | デフォルトハッシュタグ `#precure_fun` |
-| ダイスキー | `misskey.delmulin.com` | Misskey | デフォルトハッシュタグ `#delmulin` |
-
-上記はログイン画面のプリセットサーバー一覧にも掲載している。デフォルトハッシュタグは、ローカルタイムラインをハッシュタグタイムラインに置換する独自設計で、これらのサーバーでのみ有効。
+デフォルトハッシュタグは、ローカルタイムラインをハッシュタグタイムラインに置換する独自設計で、これらのサーバーでのみ有効。
 
 ## 対応対象外のプラットフォーム
 
@@ -490,7 +323,7 @@ v1.27 マイルストーンに単独配置し（大更新のため他項目と�
 | [mastodon](https://github.com/pooza/mastodon) | Mastodon フォーク（美食丼 / デルムリン丼 / キュアスタ！） |
 | [misskey](https://github.com/pooza/misskey) | Misskey フォーク（ダイスキー） |
 | [Kaiteki](https://github.com/Kaiteki-Fedi/Kaiteki) | 設計の参考元（アーカイブ済み） |
-| [capsicum-relay](https://github.com/pooza/capsicum-relay) | プッシュ通知リレーサーバー（Web Push → APNs / FCM）。Ruby + Sinatra |
+| [capsicum-relay](https://github.com/pooza/capsicum-relay) | プッシュ通知リレーサーバー（Web Push → APNs / FCM / WNS）。Ruby + Sinatra。⚠ **ブランチは 2 本立てで、`develop` がステージング・`main` が本番に対応する**（`main` へは PR 経由。デプロイは必ずステージングを先に通す）。Issue とマイルストーンは capsicum 本体と同じ工程で扱う |
 | [capsicum-site](https://github.com/pooza/capsicum-site) | プロジェクトサイト（`capsicum.shrieker.net`）。GitHub Pages で配信。プライバシーポリシー・子どもの安全基準等 |
 
 ## リリース計画
@@ -499,64 +332,32 @@ v1.27 マイルストーンに単独配置し（大更新のため他項目と�
 
 [GitHub Milestones](https://github.com/pooza/capsicum/milestones) が正本。各マイルストーンの概要・スコープはマイルストーンの description に記載し、CLAUDE.md には複写しない。個別 Issue の一覧・ステータスも同様。
 
-最新リリース: **v1.64.0**（2026-09-12 タグ、build 183、pubspec 1.64.0+183、リリース PR [#1102](https://github.com/pooza/capsicum/pull/1102)、merge `a1e9e5e4`）。**大更新なし — ユーザー報告と実機検証で出た不具合を消化する枠**（Android のログイン復帰と Linux のキーリングが中心）。**全 5 プラットフォーム公開済み**（2026-09-12 実測）: iOS / macOS とも 1.64.0 が `READY_FOR_SALE`（ASC API のプラットフォーム別 `appStoreState`）/ Android は production track の versionCode 183 が `completed`（Play API）/ Windows は Microsoft Store の現行パッケージが `9AFBB08E.capsicum_1.64.183.0_x64`（displaycatalog）/ Linux AppImage は [GitHub Release v1.64.0](https://github.com/pooza/capsicum/releases/tag/v1.64.0)（Latest）。⚠ **build 180〜182 はナイトリーで報告者に渡した番号なので、製品版は 183 から**。マイルストーン [#78](https://github.com/pooza/capsicum/milestone/78)。消化（18 件）: [#1085](https://github.com/pooza/capsicum/issues/1085) Linux: Secret Service が応答しないと起動が真っ黒なまま返らない（**この枠の主役**・ユーザー報告由来）/ [#1104](https://github.com/pooza/capsicum/issues/1104) Linux: キーリングの解錠に失敗すると secret を消してしまう / [#1115](https://github.com/pooza/capsicum/issues/1115) Linux: キーリングが戻っても「今すぐ再試行」で復帰しない / [#1108](https://github.com/pooza/capsicum/issues/1108) Android: 「承認」を押してもブラウザが固まったまま戻らない / [#1057](https://github.com/pooza/capsicum/issues/1057) Android: OAuth は成功しているのにログイン画面から遷移しない / [#1105](https://github.com/pooza/capsicum/issues/1105) ログイン済みアカウントを足し直すと赤画面 / [#1113](https://github.com/pooza/capsicum/issues/1113) 「削除して再編集」の引き継ぎ漏れ（**ユーザー報告由来**）/ [#1064](https://github.com/pooza/capsicum/issues/1064) await を跨いだ `ref.read` が成功を「失敗」に化けさせる / [#1082](https://github.com/pooza/capsicum/issues/1082) isCat のキャッシュが 2 系統ある / [#1038](https://github.com/pooza/capsicum/issues/1038) 絵文字画像が差し替わるとアスペクト比が古いまま / [#1062](https://github.com/pooza/capsicum/issues/1062) モーダルボトムシートの下端が潜り込む / [#1061](https://github.com/pooza/capsicum/issues/1061) 下端 inset のガードが粗い / [#1063](https://github.com/pooza/capsicum/issues/1063) lock ガードが入力未配線のとき fail-open / [#1067](https://github.com/pooza/capsicum/issues/1067) `Package.resolved` の形式が端末ごとに往復する / [#1035](https://github.com/pooza/capsicum/issues/1035) v1.61 レビューの送り分 / [#1083](https://github.com/pooza/capsicum/issues/1083) v1.63 レビューの送り分 / [#1065](https://github.com/pooza/capsicum/issues/1065) 小粒 2 件 / [#1116](https://github.com/pooza/capsicum/issues/1116) リリース前レビューでリリース前に直すもの。送り分は [#1117](https://github.com/pooza/capsicum/issues/1117)（v1.65）。**relay は v1.64 で触っていない**（同名マイルストーン無し）。⚠ **ただし relay の open は 3 件ある**（[relay#54](https://github.com/pooza/capsicum-relay/issues/54) WNS 接続の再利用 = **relay v1.65** / [relay#55](https://github.com/pooza/capsicum-relay/issues/55) 配送の非同期化 = #597 と同じ回 / [relay#56](https://github.com/pooza/capsicum-relay/issues/56) `dropped` 端末へのバックオフ = on-hold）。
+最新リリース: **v1.66.0**（2026-09-21 タグ、build 187、pubspec 1.66.0+187、リリース PR [#1164](https://github.com/pooza/capsicum/pull/1164)、merge `cb2c83ac`）+ **v1.66.1**（2026-09-22 タグ、build 188・**Windows のみ**、リリース PR [#1169](https://github.com/pooza/capsicum/pull/1169)、merge `79c815bc`）。**大更新なし — 返信の宛先を Web UI と同じにする回**（[#1161](https://github.com/pooza/capsicum/issues/1161) が出荷理由）+ v1.65 レビューの送り分。⚠ **この版から動作対象が iOS 15 / macOS 12 以降**（[#1162](https://github.com/pooza/capsicum/issues/1162)・Xcode 27 の下限）。**公開完了（2026-09-22 実測）**: iOS はストアページが 1.66.0 / macOS は lookup が 1.66.0（2026-09-21 公開）/ Windows は Microsoft Store が `1.66.188.0` を返す（displaycatalog）/ Android は production 187（2026-09-22 に Play API で `status=completed` を実測）/ Linux AppImage は [GitHub Release v1.66.0](https://github.com/pooza/capsicum/releases/tag/v1.66.0)（Latest。v1.66.1 は Windows のみのため非 Latest・MSIX のみ添付）。マイルストーン [#85](https://github.com/pooza/capsicum/milestone/85) / [#87](https://github.com/pooza/capsicum/milestone/87)（どちらも 2026-09-22 close）。消化（v1.66 は 9 件）: [#1161](https://github.com/pooza/capsicum/issues/1161) 返信の宛先にメンション全員 / [#1162](https://github.com/pooza/capsicum/issues/1162) 動作対象の引き上げ / [#1144](https://github.com/pooza/capsicum/issues/1144) v1.65 レビューの送り分 / [#1141](https://github.com/pooza/capsicum/issues/1141) Linux キーリング失敗の案内 / [#1120](https://github.com/pooza/capsicum/issues/1120) flutter_secure_storage 更新 / [#1134](https://github.com/pooza/capsicum/issues/1134) dSYM アップロード / [#1146](https://github.com/pooza/capsicum/issues/1146) CI の二重実行 / [#1137](https://github.com/pooza/capsicum/issues/1137) / [#1138](https://github.com/pooza/capsicum/issues/1138) スキル整理。送り分は [#1163](https://github.com/pooza/capsicum/issues/1163) / [#1165](https://github.com/pooza/capsicum/issues/1165)。**relay v1.66.1 は残 0 で完了**（[relay#65](https://github.com/pooza/capsicum-relay/issues/65) WNS 5000B 超過の degrade・`07b1a7e` をステージング / 本番へデプロイ済み・[枠も 2026-09-22 に close](https://github.com/pooza/capsicum-relay/milestone/13)）。
 
-⚠⚠ **実機で検証するまで、報告者のサーバーだけが直っていなかった**（#1113）。carry-over の「宣言」と「compose が読む」はガードで固定してあったのに、**アダプターが `Post` へ実際に入れているか**は誰も見ていなかった。Misskey の `Note → Post` 変換が `inReplyToId` を落としており、**報告元がダイスキー（Misskey）なので報告の本丸が未修正のまま**だった。⚠ **ガードの層が 1 つ抜けると、通っているテストの数は増えても守られていない。**同じ原因で Misskey の TL に「返信」の印も出ていなかった。
+⚠⚠ **v1.66 は v2.0 開発中の 1.x リリースの初回で、2 回とも `origin/main` から `release/x.y.z` を切って出した**（[develop が次リリース対象でないときの出し方](#develop-が次リリース対象でないときの出し方)・#1142）。**back-merge で pubspec が衝突したら develop 側の `2.0.0+…` を残す**（`81aa4c1c` / `d5628802`）。⚠ **v2.0 のビルド番号は 189 以上**（1.x が 188 まで使った）。
 
-⚠⚠ **Play の foreground service（#1108 の `shortService`）の用途申告は求められなかった**（2026-09-12 実測）。「アプリのコンテンツ」に項目が出ず、production への昇格も止められず公開された。⚠ **この件は「不要」→「必要」→「実測では求められなかった」と 2 回ひっくり返っている**ので、**次に触るときは実測を優先する**（型固有の権限 `FOREGROUND_SERVICE_<型>` を足すと話が変わる）。撮影した説明動画は使わずに済んだ。
+⚠ **v1.66.1 は Windows 専用の点リリース**（relay#65）。relay が WNS raw の上限 5000B を超えた通知から暗号化本文を落として `degraded:"1"` で送り、Windows 側は iOS と同じ汎用文面（「capsicum」/「<account> に通知があります」）で出す。**起動中は 8 秒待って、同じアカウント宛を WebSocket 経路が出していなければ出す**（ID が無く dedup できないため・Codex P1 / P2 で詰めた）。実機で「終了中 / 起動中で WebSocket 無し / 8 秒以内に終了」の 3 ケースを本番 relay で確認済み。
 
-⚠⚠ **「手元は緑・CI は赤」を 2 回目に踏んだ**（`widget_test`）。`Platform.isLinux` でだけ通る疎通確認を足したため、macOS の手元は分岐を素通りし、Linux の CI だけ 800ms のタイマーが残って落ちた。⚠ **直し方を「macOS では skip」にしない**——守っている本体（Linux）を手元で一度も踏まなくなる。**テストは「その OS のふり」をして通す**（`debugSecretServiceOverride` 等の `debug*Override` はそのために置いてある）。同じ罠はソース検査で機械的に止めた。
-
-⚠ **リリース前レビュー（5 観点・1 巡）の赤は、この枠で入れた変更からは出なかった**（v1.59〜v1.63 と逆の出方で、赤 1 件は既存の Misskey フォロー一覧のページング）。代わりに**セキュリティが 3 件**出ている: 細工した設定バックアップで UI が長時間固まる（#1035 で入れた深さガードが引用符 1 個で回避できた）/ secret を含む例外が breadcrumb に載りうる（`exception_scrub_guard_test` が `cause` を見ていなかった）/ **外部の deep link からコールドスタートで任意ホストのログイン画面を開ける**（`/login` の引数をクエリへ移した副作用）。⚠ **いずれも「前の版で入れた対策の隣」から出ている。**
-
-⚠⚠ **#1085 は最初「ハング」しか塞いでいなかった**。libsecret が**例外で断る**経路は残っており、Sentry（`CAPSICUM-53`）で実発生して #1104 になった。⚠ **報告どおりの症状が消えても、同じ入口の別の分岐は開いている**ことがある。⚠ 根本原因は `flutter_secure_storage_linux` が**プラットフォームスレッドで同期呼び出しする**こと（Dart のタイマーは発火しても描くスレッドが居ない）で、純 Dart の D-Bus で先に疎通確認する形にした（正本は `secret_service_probe.dart` の doc）。
-
-過去リリースの詳細ログは [archive/release-log.md](archive/release-log.md) に退避した（正本は [GitHub Releases](https://github.com/pooza/capsicum/releases) / Milestones）。マイルストーン移行時のログトリム手順は [milestone-transition.md](milestone-transition.md) を参照。
+過去リリースの詳細ログは [archive/release-log.md](archive/release-log.md) に退避した（正本は [GitHub Releases](https://github.com/pooza/capsicum/releases) / Milestones）。マイルストーン移行時のログトリム手順は [milestone-transition スキル](../.claude/skills/milestone-transition/SKILL.md) の step 7。
 
 ### デスクトップ対応
 
-macOS / Linux / Windows のデスクトップ環境への展開。動機は、iOS 版を Mac 上で実況用途に使って手応えがあること。v1.21 以降のマイルストーンに組み込み済み（当初は v1.19 → v1.20 → v1.21 と後ろ倒しを重ね、プッシュ通知完成 v1.20 を挟んだ上で着手する並びに落ち着いた）。
+**5 プラットフォームとも出荷済み**（macOS = v1.21 で土台・v1.27 まで / Linux AppImage = v1.24〜 / Windows Microsoft Store = v1.27〜）。⚠ **段階ごとの経緯・動機・配布方針の変遷・v1.24 の Linux 固有差分は [archive/desktop-rollout-settled.md](archive/desktop-rollout-settled.md) へ退避した**（#1184）。各マイルストーンの主題・スコープ・個別 Issue 構成は [GitHub Milestones](https://github.com/pooza/capsicum/milestones) が正本。
 
-1. **第1段階: macOS ネイティブ化（v1.21、土台完成）** — `flutter config --enable-macos-desktop` を有効化し、Apple Developer Team / Apple Development 署名 / App Sandbox / Hardened Runtime / keychain-access-groups の設定を導入。Universal Purchase で iOS と同一 App レコードに紐付け済み。プラグインのデスクトップ対応状況の棚卸し・video_player → media_kit の事前調査もこの段階で完了。ストア配布（.pkg ラップ + fastlane の macOS lane）は [#407](https://github.com/pooza/capsicum/issues/407) で v1.21.x にて対応する
-2. **第2段階: バックグラウンド/通知モデルの再設計（v1.23、完了）** — デスクトップにはバックグラウンド更新の概念がないため、通知ポーリング相当の仕組みを抽象化して差し替え可能にした。v1.18 のプッシュ通知リレー完了・v1.19 (#348) での workmanager / iOS BGTask 撤去後、モバイル側は APNs / FCM 一本化済み。v1.23 で `BackgroundTaskScheduler`（#328、Dart `Timer` + 常駐前提のフォールバック実装）/ `MediaPicker`（#329、image_picker + file_selector 統合）/ `NotificationSubsystem`（#330、flutter_local_notifications プラットフォーム差吸収）の各層を導入
-3. **第3段階: Linux / Windows 対応（v1.24〜v1.27、完了）** — 第2段階で通知周りが整理され、プラグイン依存の棚卸しが済んでから着手。Linux は **AppImage 単独配布**（v1.24〜。Flathub は [#604](https://github.com/pooza/capsicum/issues/604) で 2026-05-29 断念、以降は AppImage 単独に確定）。Windows は v1.25 で **自己署名 MSIX 直配**（[#423](https://github.com/pooza/capsicum/issues/423)）、v1.27 で **Microsoft Store 公開達成**（[#544](https://github.com/pooza/capsicum/issues/544)、毎リリース Partner Center Web UI から手動 publish）。OAuth は 3 OS とも `flutter_web_auth_2` の localhost callback（port 7099、[`AppConstants.localhostOAuthPort`](../packages/capsicum/lib/src/constants.dart)）に統一。動画再生は media_kit 移行（[#492](https://github.com/pooza/capsicum/issues/492)、v1.30）で Linux / Windows も対応。コード署名証明書取得（[#534](https://github.com/pooza/capsicum/issues/534)）は Store 再署名のため当面不要（IV 証明書取得済みだが capsicum 適用はお蔵入りで close）。Windows push 本配線（[#474](https://github.com/pooza/capsicum/issues/474)）は **v1.40（「Windows 仕上げ」大更新マイルストーン）で出荷済み**（WNS 資格情報の満了は 2028-06-22）。Windows 投げ銭 IAP（[#599](https://github.com/pooza/capsicum/issues/599)）は当初 v1.40 に束ねる想定だったが、x64 実機環境・Partner Center アドオン審査待ちで分離し **v1.43 で出荷済み**（Microsoft Store IAP）。SMTC NowPlaying（[#484](https://github.com/pooza/capsicum/issues/484)）は v1.33 で実装・**実機検証済み**（C++/WinRT メソッドチャンネル。ARM64 Windows でローカル x64 ビルドは ATL 未導入 / jni / crashpad の x64-on-ARM64 で詰まるため、CI windows-release.yml の `capsicum-msix` artifact を gh run download → `Add-AppxPackage` で導入して検証する経路を確立）。実機検証は Linux [#425](https://github.com/pooza/capsicum/issues/425) / macOS [#494](https://github.com/pooza/capsicum/issues/494)。
-
-各マイルストーンの主題・スコープ・個別 Issue 構成は [GitHub Milestones](https://github.com/pooza/capsicum/milestones) が正本（CLAUDE.md には複写しない）。過去の版ごとの主題・消化 Issue・分割の経緯は [archive/release-log.md](archive/release-log.md) と Milestones を参照する。スコープの組み方・過積載時の調整・移行整備の判断規約は「[Issue 管理 › マイルストーン運用](#マイルストーン運用)」節と [milestone-transition.md](milestone-transition.md) を正本とする（**大更新は独立配置**が基本方針）。
-
-Issue [#475](https://github.com/pooza/capsicum/issues/475) (Linux push 方針) の議論で、**desktop 3 OS 共通の「WebSocket streaming → OS ローカル通知」設計** を確定した（2026-05-15、[desktop-notification-design.md](archive/desktop-notification-design.md)）。Mastodon の `user` stream / Misskey の `main` channel に長寿命 WebSocket で接続し、notification / announcement event を `flutter_local_notifications` (libnotify / NSUserNotification / WinRT Toast) に流す経路。アプリ起動中の中間解として 3 OS 共通で機能し、native push（[#468](https://github.com/pooza/capsicum/issues/468) macOS APNs=v1.34 / [#474](https://github.com/pooza/capsicum/issues/474) Windows WNS=v1.40、いずれも実装済み）とは `notification.id` dedup で併存する。実装 issue は [#569](https://github.com/pooza/capsicum/issues/569) として切り出し済み（v1.34 主役、大更新）。本設計の確定により、ポーリング前提だった「お知らせ通知 A 案」(#476) は不要となり close、capsicum-relay 経由の C 案 (#477、v1.29) は mobile 配信を継続して担う構図に整理された。この配送対象は v1.57 で **mobile + macOS + Windows** に広がった（macOS = [#919](https://github.com/pooza/capsicum/issues/919) / capsicum-relay#36 Phase 1、Windows = [#978](https://github.com/pooza/capsicum/issues/978) / relay#36 Phase 2。relay 側はいずれも本番へデプロイ済み）。**Linux だけはネイティブ push の経路自体が無い**ため、お知らせは**アプリ起動中しか届かない**。設定画面はトグルの代わりにその旨を説明する。
-
-配送先を増やすときは **relay の `AnnouncementWorker#deliver` の `case` と capsicum の `deliverableDeviceTypes` が 1 対 1** であること（片方だけ広げると「購読行はあるのに届かない」／「送っても黙って捨てられる」になる）に加え、**payload に載せるフィールドの device_type 差**にも注意する。Windows 宛だけは `announcement_body`（整形済み本文）を足し `announcement_content`（HTML）を落とす — WNS raw の上限 5000B に対して HTML は表示に使われないため。⚠ **この整形本文を全 device_type 共通の payload に足してはいけない**: APNs / FCM は 4KB 上限で、お知らせの payload には degrade で落とせるキーが無く（`ApnsPayload::ENCRYPTED_KEYS` は暗号化 Web Push 由来のキーのみ）、`poll_server` が配送後に `mark_announcement_seen` を打つため **1 通が永久に失われる**（relay PR #43 の Codex P1）。
-
-動機の具体例:
-
-- iOS アプリを Mac で動かす (Designed for iPad) モードだとファイル選択が iOS のドキュメントピッカーになり、Mac のネイティブな Finder ベースの選択ができない。画像・動画添付が実況用途で地味に手間。macOS ネイティブビルドなら `file_selector` / `image_picker` の macOS 実装が NSOpenPanel を出してくれる
-- キーボードショートカット・ウィンドウ管理・通知センター連携など、デスクトップ固有の体験も macOS ネイティブなら自然に組める
-
-設計指針（分岐を最小化するためのルール）:
+設計指針（分岐を最小化するためのルール・**今も効く**）:
 
 - **UI の分岐軸はプラットフォームではなく画面幅**にする。`Platform.isXxx` は UI 層に基本入れない。iPad で画面が広ければデスクトップと同じレイアウトになるべきだし、デスクトップでウィンドウを狭めたらモバイル風になるべき。Responsive design の単一軸に集約する
-- **プラットフォーム固有機能は必ず抽象層を経由**させる。`flutter_local_notifications` を直接呼ばず、`BackgroundTaskScheduler` のようなインターフェースを挟む。第2段階（通知モデル再設計）の主題と噛み合う
+- **プラットフォーム固有機能は必ず抽象層を経由**させる。`flutter_local_notifications` を直接呼ばず、`BackgroundTaskScheduler` のようなインターフェースを挟む
 - **プラットフォーム定数はテーブル化**。ショートカット・メニュー構成などは1箇所にまとめ、プラットフォームごとにテーブルを差し替える
 - **条件付きコンパイル（conditional import）は最後の手段**。使う場合も `lib/src/platform/` のような特定ディレクトリに閉じ込める
 
-配布・ストア・ツールチェーンの方針（macOS は Apple Developer Program を iOS と共用、Linux は AppImage 単独（Flathub は 2026-05-29 断念 [#604](https://github.com/pooza/capsicum/issues/604)）、Snap は不採用、Windows は v1.25 で GitHub Releases 経由の自己署名 MSIX 直配を再開し v1.27 で Microsoft Store 公開を達成 ([#544](https://github.com/pooza/capsicum/issues/544)、2026-05-20 審査通過)。以降は Store 経由を主・自己署名直配を補助の 2 系統で運用）、および段階的な実装順序は [release-pipeline.md](archive/release-pipeline.md) を参照。プラグインのデスクトップ対応状況の棚卸しは [desktop-plugin-compatibility.md](desktop-plugin-compatibility.md) にまとめている。第2段階では `BackgroundTaskScheduler`（[#328](https://github.com/pooza/capsicum/issues/328)）/ `MediaPicker`（[#329](https://github.com/pooza/capsicum/issues/329)）/ 通知サブシステム（[#330](https://github.com/pooza/capsicum/issues/330)）の抽象化が主題となる。
+お知らせ・通知の配送（**触るときは必ず読む**）: desktop 3 OS は「WebSocket streaming → OS ローカル通知」で、native push（macOS APNs / Windows WNS）とは `notification.id` dedup で併存する。⚠ **Linux だけはネイティブ push の経路自体が無い**ため、お知らせは**アプリ起動中しか届かない**（設定画面はトグルの代わりにその旨を説明する）。設計の正本は [archive/desktop-notification-design.md](archive/desktop-notification-design.md)。
 
-macOS の付加機能として、Music.app 等の「共有」メニューから capsicum に投稿を流す Share Extension（[#422](https://github.com/pooza/capsicum/issues/422)）を **v1.24 で同梱済み**。iOS の Share Extension と同パターンで App Group コンテナ経由、共有元（Music.app 等）が渡す URL・テキストをそのまま compose に流し込む。なお NowPlaying の整形そのものは、v1.33 の責務分担見直しで**クライアント（capsicum）側に確定**しており（[nowplaying-design.md](archive/nowplaying-design.md) §責務分担）、モロヘイヤ側に残すのは URL を持たない源向けの enrich（メタデータ → 共有 URL 解決、[mulukhiya #4382](https://github.com/pooza/mulukhiya-toot-proxy/issues/4382)）のみ。旧来の「サーバー側ハンドラへ整形委譲」は廃止方針。
+配送先を増やすときは **relay の `AnnouncementWorker#deliver` の `case` と capsicum の `deliverableDeviceTypes` が 1 対 1** であること（片方だけ広げると「購読行はあるのに届かない」／「送っても黙って捨てられる」になる）に加え、**payload に載せるフィールドの device_type 差**にも注意する。Windows 宛だけは `announcement_body`（整形済み本文）を足し `announcement_content`（HTML）を落とす — WNS raw の上限 5000B に対して HTML は表示に使われないため。⚠ **この整形本文を全 device_type 共通の payload に足してはいけない**: APNs / FCM は 4KB 上限で、お知らせの payload には degrade で落とせるキーが無く（`ApnsPayload::ENCRYPTED_KEYS` は暗号化 Web Push 由来のキーのみ）、`poll_server` が配送後に `mark_announcement_seen` を打つため **1 通が永久に失われる**（relay PR #43 の Codex P1）。
 
-### Linux 固有の差分（v1.24）
+⚠ **プラグインのデスクトップ対応状況は [desktop-plugin-compatibility.md](desktop-plugin-compatibility.md)、端末のセットアップは [dev-environment-desktop.md](dev-environment-desktop.md)。**
 
-v1.24 リリース直前の Linux 実機検証で判明・対応した、他プラットフォームと挙動が違う部分の **一覧**。各項目の詳細な理由・手順は二重管理を避けるため正本（コード doc コメント / distribution 配下）に集約し、ここでは差分の存在と参照先だけを示す（#509）。
-
-- **OAuth 経路はシステムブラウザ + localhost callback** — 正本は [`AppConstants.localhostOAuthPort`](../packages/capsicum/lib/src/constants.dart)（ポート 7099 固定の理由・3 OS 共通の背景を記載）。Linux / Windows / macOS いずれも `flutter_web_auth_2` の server impl で回避する。
-- **AppImage の起動時観測性**（`crashpad_handler` の chmod 補正 / `AppRun` logging wrapper）— 正本は [distribution/linux/appimage/README.md](../distribution/linux/appimage/README.md) と [`build.sh`](../distribution/linux/appimage/build.sh)。
-- **sentry-native database path 固定** — 正本は [`platform/paths.dart`](../packages/capsicum/lib/src/platform/paths.dart) の `resolveSentryNativeDatabasePath`（AppRun の XDG 解決との対応も記載）。
-- **flutter_secure_storage の register race 対策** — 正本は [`account_storage.dart`](../packages/capsicum/lib/src/service/account_storage.dart) の `_readWithRegisterRetry`（短間隔 retry の理由を記載）。
-
-背景 issue は #488 / #489 / #491 / #496、プラグイン対応状況は [desktop-plugin-compatibility.md](desktop-plugin-compatibility.md) の flutter_web_auth_2 行を参照。
-
-制約: モロヘイヤ透過プロキシ前提のためネットワーク層は問題にならない。
-
-運用ルール:
+### 運用ルール
 
 - リリース前レビューは各マイルストーンの Issue をすべて消化した後、リリース直前に毎度実施する。[#27](https://github.com/pooza/capsicum/issues/27) の「セキュリティレビュー」だけでは実害バグを取りこぼすため、以下 5 観点をサブエージェントで並列に走らせる（手順の正本は **`/release-review`** スキル: [SKILL.md](../.claude/skills/release-review/SKILL.md)）:
   - セキュリティ（`/security-review` スキル）
@@ -569,7 +370,10 @@ v1.24 リリース直前の Linux 実機検証で判明・対応した、他プ�
 - **2 回目レビュー（差分レビュー）**: プラットフォーム追加・大更新独立配置マイルストーンに限り、1 回目の修正 commit に起因する新規問題を拾うため 2 回目を回す。対象は 1 回目以降の差分と新規サーフェスのみ。リリース 1 週間前までに完了させ、直前に出た P1 はホットフィックス前提で次リリースに送ってよい（詳細は [release-review スキル](../.claude/skills/release-review/SKILL.md)）
 - ATOK 二重入力（[#54](https://github.com/pooza/capsicum/issues/54)）は Flutter 側の対応待ち。リリースごとにリリースノートの「既知の不具合」に記載し、Flutter 側の関連 issue の動向を確認する。記載時は回避策も併記する: (1) ATOK の「インライン入力」を OFF にする、(2) インライン入力 ON のままでも ATOK の「従来のカーソル位置入力を使用」を ON にすれば回避可（インライン入力を活かせる分こちらが実用的）、(3) 標準キーボードに切り替える
 - マイルストーン未設定の Issue は `no:milestone` フィルタで確認する
-- **`Windows` / `Linux` ラベルは「その実機でないと進まない」の目印**（再現確認が起点・修正案の選択が実機の挙動次第）。開発のメインは macOS なので、着手できる端末が限られることを一目で分かるようにするためのもの。3 OS 共通のデスクトップ機能に付ける `desktop` とは別で、`desktop` は macOS でも進められる。拾い方は [dev-environment.md](dev-environment.md) の「その端末で拾う作業の探し方」
+- **`Windows` / `Linux` ラベルは「その実機でないと進まない」の目印**（再現確認が起点・修正案の選択が実機の挙動次第）。開発のメインは macOS なので、着手できる端末が限られることを一目で分かるようにするためのもの。3 OS 共通のデスクトップ機能に付ける `desktop` とは別で、`desktop` は macOS でも進められる。拾い方は [dev-environment-desktop.md](dev-environment-desktop.md) の「その端末で拾う作業の探し方」
+- **`verification-pending` は「実装は済んでいて、動作確認だけが残っている」の目印**（2026-10-01 新設）。⚠ **`reproduction-needed` と逆向き** —— あちらは情報が足りず**着手しない**側、こちらは**出来上がっていて見るだけ**の側。**手が空いたときにまとめて消化する**ための札なので、`gh issue list --label verification-pending` で引けること自体が目的。⚠ **動作確認が済んだら、ラベルを外すのではなく Issue を close する**（close し忘れるとラベルだけが残って数が合わなくなる）。⚠⚠ **`gh issue list --label` は検索インデックス経由で数十秒遅れる** —— 付けた直後に数えるなら `gh api 'repos/pooza/capsicum/issues?labels=verification-pending&state=open'` を使う
+  - **付ける側の基準**: UI レイアウト / タップ挙動 / 画面遷移・設定画面の追加のように、**アプリを触れば分かるもの**。⚠ **検証困難なもの（race / fork 依存 / 認証エラーの類別 / 再現条件が薄いもの）には付けない** —— あれらは**動作確認なしで close してよい**側（修正コミットの hash を添えて閉じ、再発は Sentry で観察する）なので、札を付けると**永久に消えないキュー**になる
+  - **実機が要るものは端末ラベルと併用する**（例: #1190 は `verification-pending` + `Windows`）。⚠ **`verification-pending` 単独なら「手元の Mac で見られる」**と読めるようにしておく
 - Flutter framework 由来の不具合（capsicum 側で根治不能なもの、`flutter` ラベル付き）は [flutter-upstream-watch.md](flutter-upstream-watch.md) で集中管理し、**月初のセッションで手動 chase** して上流の進捗を巡回する。⚠ **クラウドの schedule routine は 2026-08-21 に廃止した**（4 か月連続で発火しても成果コミットが 1 件も残らず、実務はローカル頼みだった）。**資格情報の満了チェックがこの巡回に相乗りしている**点に注意
 
 ### 実装しない機能
@@ -591,6 +395,8 @@ v1.24 リリース直前の Linux 実機検証で判明・対応した、他プ�
 
 - **サーバーの呼称**: 「インスタンス」ではなく「サーバー」を使う
 - **ファイル参照**: マークダウンリンクにする
+- **見出しはプレーンにする**: ⚠ **見出しの先頭に `⚠` / `⚠⚠` を付けない。**GitHub はアンカーを作るときに記号を落とすため、`### ⚠⚠ develop が…` は `#-develop-…` という**先頭にハイフンが残る**形になり、同じ文書内からのリンクが前例のない綴りになる（2026-09-17 に #1142 で実際に踏んだ）。**強調は本文 1 行目へ移す**。⚠ **機械で見ている**（[`docs_convention_guard_test.dart`](../packages/capsicum/test/docs_convention_guard_test.dart)・#1184。⚠⚠ **フェンス内の `# ⚠ …` は誤検出なので、`grep` の件数で確かめない**）
+- **1 ファイルは 1 回で読める大きさに収める**: ⚠⚠ **60,000 バイト以下**（#1184）。Read の上限 25,000 トークンと、docs の **約 2.55 バイト/トークン**という実測から。超えたら**決着した節を [archive/](archive/) へ移す**。⚠ **節番号は振り直さない**（コードのコメントが節を名前で参照している）。判断規約は [doc-maintenance.md](doc-maintenance.md)、検査は上と同じガード
 
 ### CLAUDE.md の定期見直し
 

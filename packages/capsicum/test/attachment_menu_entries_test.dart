@@ -36,7 +36,7 @@ void main() {
     expect(build().whereType<MenuActionEntry>().map((e) => e.label), [
       '拡大して確認…',
       'トリミング・回転…',
-      '文字・スタンプを入れる…',
+      '文字・スタンプ・画像を重ねる…',
       '説明 (ALT)…',
     ]);
   });
@@ -54,7 +54,12 @@ void main() {
   test('ローカル静止画（プレビュー可・トリミング可）は全項目が有効', () {
     final entries = build();
 
-    for (final label in ['拡大して確認…', 'トリミング・回転…', '文字・スタンプを入れる…', '説明 (ALT)…']) {
+    for (final label in [
+      '拡大して確認…',
+      'トリミング・回転…',
+      '文字・スタンプ・画像を重ねる…',
+      '説明 (ALT)…',
+    ]) {
       expect(action(entries, label).onSelected, isNotNull, reason: label);
     }
   });
@@ -66,7 +71,7 @@ void main() {
 
     expect(action(entries, '拡大して確認…').onSelected, isNotNull);
     expect(action(entries, 'トリミング・回転…').onSelected, isNull);
-    expect(action(entries, '文字・スタンプを入れる…').onSelected, isNull);
+    expect(action(entries, '文字・スタンプ・画像を重ねる…').onSelected, isNull);
   });
 
   /// 動画 / 音声。`_attachmentImageProvider` が null を返すのでプレビューも不可。
@@ -75,7 +80,7 @@ void main() {
 
     expect(action(entries, '拡大して確認…').onSelected, isNull);
     expect(action(entries, 'トリミング・回転…').onSelected, isNull);
-    expect(action(entries, '文字・スタンプを入れる…').onSelected, isNull);
+    expect(action(entries, '文字・スタンプ・画像を重ねる…').onSelected, isNull);
     expect(action(entries, '説明 (ALT)…').onSelected, isNotNull);
   });
 
@@ -106,7 +111,12 @@ void main() {
     final log = <String>[];
     final entries = build(log: log);
 
-    for (final label in ['拡大して確認…', 'トリミング・回転…', '文字・スタンプを入れる…', '説明 (ALT)…']) {
+    for (final label in [
+      '拡大して確認…',
+      'トリミング・回転…',
+      '文字・スタンプ・画像を重ねる…',
+      '説明 (ALT)…',
+    ]) {
       action(entries, label).onSelected!();
     }
 

@@ -41,6 +41,12 @@ class MastodonStatus {
   /// 編集された投稿は、自サーバーの設定に関わらず編集済みとして届く。
   final DateTime? editedAt;
 
+  /// サーバーが正規化して返したハッシュタグ (#1056)。`name` / `url` を持つ。
+  ///
+  /// ⚠⚠ **`name` は小文字へ正規化されている**（索引のため）。表示には本文の形を
+  /// 使う（`capsicum_core` の `Post.tags` の注記）。
+  final List<Map<String, dynamic>>? tags;
+
   /// 宛先に入っているメンション (#1161)。`id` / `username` / `acct` / `url`。
   final List<Map<String, dynamic>>? mentions;
 
@@ -72,6 +78,7 @@ class MastodonStatus {
     this.url,
     this.editedAt,
     this.mentions,
+    this.tags,
   });
 
   factory MastodonStatus.fromJson(Map<String, dynamic> json) =>

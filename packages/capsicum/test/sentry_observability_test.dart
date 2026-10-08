@@ -1,4 +1,5 @@
 import 'package:capsicum/src/util/sentry_observability.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -59,6 +60,43 @@ void main() {
       expect(isSensitiveTagKey('host'), isTrue);
       expect(isSensitiveTagKey('hostname'), isFalse);
       expect(isSensitiveTagKey('host_count'), isFalse);
+    });
+  });
+
+  group('shouldRecordLifecycleBreadcrumb — #1199 App Hang の切り分け', () {
+    test('表示が落ちる側の遷移は記録する', () {
+      for (final state in const ['hidden', 'paused', 'detached']) {
+        expect(
+          shouldRecordLifecycleBreadcrumb(null, state),
+          isTrue,
+          reason: state,
+        );
+      }
+    });
+
+    test('復帰も記録する（ハングの前後どちらかを決めるため）', () {
+      expect(shouldRecordLifecycleBreadcrumb('hidden', 'resumed'), isTrue);
+    });
+
+    test('⚠ inactive は記録しない（desktop では alt-tab ごとに来る）', () {
+      expect(shouldRecordLifecycleBreadcrumb(null, 'inactive'), isFalse);
+      expect(shouldRecordLifecycleBreadcrumb('resumed', 'inactive'), isFalse);
+      // 直前が inactive 扱いで記録されていない状態からでも、hidden は通る。
+      expect(shouldRecordLifecycleBreadcrumb('resumed', 'hidden'), isTrue);
+    });
+
+    test('同じ状態の連続は記録しない', () {
+      expect(shouldRecordLifecycleBreadcrumb('resumed', 'resumed'), isFalse);
+      expect(shouldRecordLifecycleBreadcrumb('hidden', 'hidden'), isFalse);
+    });
+
+    test('⚠ 実在する AppLifecycleState の名前を網羅している', () {
+      // `inactive` だけが落ちる側。将来 enum が増えたらここで気づく。
+      final recorded = AppLifecycleState.values
+          .map((s) => s.name)
+          .where((name) => shouldRecordLifecycleBreadcrumb(null, name))
+          .toSet();
+      expect(recorded, {'resumed', 'hidden', 'paused', 'detached'});
     });
   });
 }

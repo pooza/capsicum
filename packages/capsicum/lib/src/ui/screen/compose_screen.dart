@@ -15,6 +15,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../constants.dart';
 import '../../model/account.dart';
+import '../../model/image_overlay_layer.dart';
 import '../../platform/now_playing/now_playing_provider.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/channel_provider.dart';
@@ -23,6 +24,7 @@ import '../../provider/platform_providers.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
+import '../../service/compose_draft_attachment.dart';
 import '../../service/compose_draft_store.dart';
 import '../../service/sentry_op_failure.dart';
 import '../../url_helper.dart';
@@ -36,12 +38,16 @@ import '../../util/text_length.dart';
 import '../../util/upstream_error_message.dart';
 import '../../util/user_acct.dart';
 import '../util/annict_link.dart';
+import '../util/compose_draft_notice.dart';
+import '../util/compose_settings_display.dart';
 import '../util/compose_template_display.dart';
 import '../util/draft_display.dart';
 import '../util/drive_description_sync.dart';
+import '../util/hashtag_body.dart';
 import '../util/livecure_snackbar.dart';
 import '../util/post_scope_display.dart';
 import '../util/program_schedule_display.dart';
+import '../util/provider_scope_carrier.dart';
 import '../util/redraft_carry_over.dart';
 import '../util/relative_time.dart';
 import '../util/reply_mentions.dart';
@@ -53,6 +59,7 @@ import '../widget/content_parser.dart';
 import '../widget/desktop_menu_model.dart';
 import '../widget/emoji_text.dart';
 import '../widget/insert_picker_sheet.dart';
+import '../widget/overflow_icon_row.dart';
 import '../widget/quick_chooser_sheet.dart';
 import '../widget/screen_menu.dart';
 import 'annict_record_screen.dart';
@@ -100,10 +107,22 @@ Post? resolveComposeQuote(Post? quoteTo, Post? redraft) =>
 
 class _MediaEntry {
   // トリミング (#577) で差し替えるため可変。drive ファイルは差し替えない。
+  // ⚠ **直に代入しない。**差し替えは [replaceFile] / [applyOverlay] を通す
+  // （レイヤの控えと辻褄を合わせるため・#1129）。
   XFile? file;
   final Attachment? driveFile;
   String description = '';
   bool sensitive = false;
+
+  /// レイヤを焼き込む**前**の画像 (#1129)。レイヤを重ねていなければ null。
+  ///
+  /// ⚠ **[file] は焼き込み済み**（表示・投稿に使う）。再編集するときは必ず
+  /// こちらを元画像として渡す。焼き込み済みの画像に [overlayLayers] を重ねると
+  /// 同じレイヤが二重に乗る。
+  XFile? overlaySource;
+
+  /// [overlaySource] に重ねたレイヤ列（先頭が最背面）(#1129)。
+  List<OverlayLayerSpec> overlayLayers = const [];
 
   _MediaEntry.local(XFile this.file) : driveFile = null;
 
@@ -112,7 +131,70 @@ class _MediaEntry {
       description = driveFile.description ?? '',
       sensitive = false;
 
+  /// 下書きから戻す (#1130)。
+  ///
+  /// ⚠ **実在の確認は済んでいる前提**（[resolveComposeDraftAttachments]）。
+  /// ⚠⚠ **焼き込み前の画像が消えていた記述はレイヤを落として渡ってくる**ので、
+  /// ここでは受け取ったものをそのまま持つ（`overlaySource` が null なら
+  /// `overlayBase` は焼き込み済みの `file` に落ちる＝レイヤ無しの新規編集）。
+  _MediaEntry.restored(ComposeDraftAttachment saved)
+    : file = XFile(saved.path, name: saved.name, mimeType: saved.mimeType),
+      driveFile = null,
+      description = saved.description,
+      sensitive = saved.sensitive,
+      overlaySource = saved.overlaySourcePath == null
+          ? null
+          : XFile(saved.overlaySourcePath!),
+      overlayLayers = saved.layers;
+
   bool get isDrive => driveFile != null;
+
+  /// 下書きへ書き出す形 (#1130)。ドライブ添付は対象外なので null。
+  ///
+  /// ⚠ **焼き込み済みの [file] と控えの [overlaySource] を対で渡す。**片方だけ
+  /// 残すと、次に開いたときに同じレイヤが二重に乗る（[replaceFile] の doc と
+  /// 同じ理由）。
+  ComposeDraftAttachment? toDraftAttachment() {
+    final current = file;
+    if (isDrive || current == null) return null;
+    return ComposeDraftAttachment(
+      path: current.path,
+      name: current.name,
+      mimeType: current.mimeType,
+      overlaySourcePath: overlaySource?.path,
+      layers: overlayLayers,
+      description: description,
+      sensitive: sensitive,
+    );
+  }
+
+  /// 中身を別の画像へ差し替える（トリミング等）。
+  ///
+  /// ⚠⚠ **レイヤの控えを必ず捨てる。**差し替え後の画像に前のレイヤを重ねると
+  /// **同じ文字やスタンプが二重に乗る**。トリミングは焼き込み済みの画像に掛かる
+  /// ので、レイヤを保ったまま切る経路は今のところ無い（#884-G で決着させる）。
+  void replaceFile(XFile next) {
+    file = next;
+    overlaySource = null;
+    overlayLayers = const [];
+  }
+
+  /// レイヤの編集結果を反映する (#1129)。
+  ///
+  /// [source] は**焼き込み前**の画像。2 回目以降の編集では最初の元画像のままで、
+  /// 焼き込み結果に置き換わらない。
+  void applyOverlay({
+    required XFile source,
+    required XFile baked,
+    required List<OverlayLayerSpec> layers,
+  }) {
+    file = baked;
+    overlaySource = source;
+    overlayLayers = layers;
+  }
+
+  /// 次に編集画面へ渡す元画像。まだレイヤを重ねていなければ現在のファイル。
+  XFile? get overlayBase => overlaySource ?? file;
 }
 
 /// 添付サイズ超過で reject したファイルの集約用 (#375)。
@@ -202,8 +284,13 @@ List<MenuEntry> buildAttachmentMenuEntries({
     onSelected: (busy || !croppable) ? null : callbacks.crop,
   ),
   MenuActionEntry(
-    label: '文字・スタンプを入れる…',
-    icon: Icons.title,
+    // ⚠ **入口はできることを書き、画面は「レイヤー」** (#1178・2026-09-27 pooza)。
+    // 絵は編集画面の一覧トグルと同じ `layers_outlined` に揃えて、入口と一覧を
+    // 目でつなぐ（`Icons.title` は文字入れだけの機能に見えていた）。
+    // ⚠ デスクトップのメニューは 1 行の見出しだけで補足を置けないので、
+    // **見出しだけで伝わる名前**にしてある（モバイルのシートとも揃える）。
+    label: '文字・スタンプ・画像を重ねる…',
+    icon: Icons.layers_outlined,
     onSelected: (busy || !croppable) ? null : callbacks.addOverlay,
   ),
   MenuActionEntry(
@@ -344,6 +431,16 @@ class ComposeScreen extends ConsumerStatefulWidget {
   /// 「このテンプレで投稿」する導線で使う。
   final ComposeTemplate? template;
 
+  /// 本文の末尾に置くハッシュタグ（`#` を除いたタグ名の列）(#1172)。
+  ///
+  /// ハッシュタグの TL（タブ UI の画面・デッキのカラム）から新規投稿を開いたときに、
+  /// そのタグを引き継ぐためのもの。⚠ **カーソルは本文の先頭に置く**（タグを消さずに
+  /// 書き始められるように・`docs/deck-ui-plan.md` 決定済み事項 10）。
+  ///
+  /// ⚠ **spec（`c%2B%2B` / `a+b`）を渡さない** (#1159)。`hashtagSpecTags` で分解
+  /// してから渡す。タグの区切り・`#` の付け方は [SimplePostBar] の送信と揃える。
+  final List<String> hashtags;
+
   const ComposeScreen({
     super.key,
     this.redraft,
@@ -355,6 +452,7 @@ class ComposeScreen extends ConsumerStatefulWidget {
     this.initialText,
     this.restoreDraft,
     this.template,
+    this.hashtags = const [],
   });
 
   @override
@@ -365,6 +463,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     with WidgetsBindingObserver {
   final _controller = ShortcodeWarningController();
   final _cwController = TextEditingController();
+
+  /// 下のツールバーのアイコン列（狭い幅で横スクロールする側）(#1167)。
+  ///
+  /// ⚠ `Scrollbar` と `SingleChildScrollView` が**同じものを共有する**必要がある
+  /// ので、画面側で持って [ScrollingIconRow] へ渡す（別々だと assert で落ちる）。
+  final _toolbarScroll = ScrollController();
   final List<_MediaEntry> _attachments = [];
   // OS のファイラーからのドラッグ中だけ true。ドロップ可能なことを示す
   // ハイライト表示に使う (#571)。デスクトップ以外では発火しない。
@@ -392,6 +496,47 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// したがって現在は **丸めず、送れない状況では送信を止める**
   /// （[_unsendableScopeReason]）。⚠ **広げる方向の自動補正はしない。**
   PostScope _scope = PostScope.public;
+
+  /// 利用者が**自分で操作した**設定の名前 (#1195)。下書きへ一緒に保存する。
+  ///
+  /// ⚠⚠ **[_scope] に値が入っていることは「選んだ」を意味しない。**フォームを
+  /// 開いた時点でアカウントの既定が入るので、**公開範囲に触らず本文だけ打っても
+  /// 保存される**。それを選択として戻すと、サーバー側で既定を変えても古い値が
+  /// 残り続ける（#1185 が反映されない）。
+  final _chosen = <String>{};
+
+  /// 閲覧注意の `false` を**明示的に送れるか** (#1194)。サーバーが
+  /// `source.sensitive` を返したときだけ true。
+  ///
+  /// ⚠⚠ **既定が true の利用者は、送らないと閲覧注意を外せない**（省くと
+  /// サーバー既定が当たる）。⚠ **常に送る形にはできない** —— `source` を返さない
+  /// サーバーでは、いままで効いていた「サーバー既定に任せる」が壊れる。
+  bool _sensitiveExplicit = false;
+
+  /// アカウントの既定（サーバー側の投稿設定）をフォームへ入れる (#1194)。
+  ///
+  /// ⚠ **まっさらな新規投稿の枝からしか呼ばない。**返信・引用・再編集・下書きの
+  /// 復元は「その投稿の値」を引き継ぐ側で、既定より強い。
+  ///
+  /// ⚠⚠ **言語はここでは入れない。**`initState` の時点では `Localizations` が
+  /// まだ使えないので、post-frame で「サーバー既定 → 無ければ端末ロケール」の
+  /// 順に決める（下の `addPostFrameCallback`）。
+  void _applyAccountDefaults() {
+    final user = ref.read(currentAccountProvider)?.user;
+    if (user == null) return;
+    if (user.defaultScope != null) _scope = user.defaultScope!;
+    // ⚠ **知らない値は無視する。**上流が増やした policy を素通しで入れると、
+    // メニューに無い値が選択済みとして残る（再編集の引き継ぎと同じ守り）。
+    final quotePolicy = user.defaultQuotePolicy;
+    if (quotePolicy != null && _quoteApprovalLabels.containsKey(quotePolicy)) {
+      _quoteApprovalPolicy = quotePolicy;
+    }
+    if (user.defaultSensitive != null) {
+      _sensitiveEnabled = user.defaultSensitive!;
+      // 既定を読めた ＝ `false` を明示して送れる。
+      _sensitiveExplicit = true;
+    }
+  }
 
   /// ⚠ **この投稿が返信として送られるか (#1113)。**
   ///
@@ -582,6 +727,16 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   // 到達するのはプロセス初回の prefs ロード中だけ。
   bool _draftRestored = false;
 
+  /// 保存済みの下書きにあったが、**画面へ戻せなかった**添付の控え
+  /// （リリース前レビューの Codex P1・2026-10-06）。
+  ///
+  /// ⚠⚠ **自動保存のたびに載せ直す**（[_saveDraft]）。添付の実在確認が例外で
+  /// 落ちた回は `_attachments` が空のままなので、そのまま保存すると**下書きの
+  /// 添付のパスとレイヤの控えが消える**。⚠ 通常は空。
+  ///
+  /// ⚠ 下書きを消したとき（投稿・取消）には一緒に捨てる（[_clearDraft]）。
+  List<ComposeDraftAttachment> _unrestoredDraftAttachments = const [];
+
   /// Misskey は親投稿のチャンネルにぶら下げるのが Web UI 期待挙動。呼び出し側
   /// (post_tile / notification_tile) は replyTo / redraft / quoteTo だけ
   /// 渡してくるので、ここでフォールバックして全経路で継承する
@@ -650,30 +805,41 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     return {..._languageOptions, current: current};
   }
 
-  List<DropdownMenuItem<PostScope>> _scopeItems(WidgetRef ref) {
-    final adapter = ref.read(currentAdapterProvider);
-    // 送る手段のある範囲だけを出す (#1043)。⚠ **ただし現在値は必ず含める。**
-    // 返信・redraft 等で「指名」が入っていることがあり、items に無い値を
-    // DropdownButton に渡すと assert で落ちる。並び順は PostScope.values に
-    // 揃えたいので、`selectableScopes` に足すのではなく values 側で絞る。
-    final selectable = selectableScopes(adapter);
+  /// 公開範囲のドロップダウンに並べる値。
+  ///
+  /// 送る手段のある範囲だけを出す (#1043)。⚠ **ただし現在値は必ず含める。**
+  /// 返信・redraft 等で「指名」が入っていることがあり、items に無い値を
+  /// DropdownButton に渡すと assert で落ちる。並び順は PostScope.values に
+  /// 揃えたいので、`selectableScopes` に足すのではなく values 側で絞る。
+  ///
+  /// ⚠⚠ **`items` と `selectedItemBuilder` の両方がここを通ること** (#1167)。
+  /// `DropdownButton` は 2 つの**長さが一致していることを前提**にしており
+  /// （`selectedItemBuilder` は items と同じ順で引かれる）、絞り込みを片方だけに
+  /// 書くと**閉じているボタンに別の範囲の名前が出る**。しかも範囲が 1 つだけの
+  /// サーバーでは食い違わないので、**テストでも手元でも気づけない。**
+  List<PostScope> _scopeValues(WidgetRef ref) {
+    final selectable = selectableScopes(ref.read(currentAdapterProvider));
     return PostScope.values
         .where((s) => selectable.contains(s) || s == _scope)
-        .map((scope) {
-          final display = postScopeDisplay(scope, adapter);
-          return DropdownMenuItem(
-            value: scope,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(display.icon, size: 16),
-                const SizedBox(width: 4),
-                Text(display.label, style: const TextStyle(fontSize: 13)),
-              ],
-            ),
-          );
-        })
-        .toList();
+        .toList(growable: false);
+  }
+
+  List<DropdownMenuItem<PostScope>> _scopeItems(WidgetRef ref) {
+    final adapter = ref.read(currentAdapterProvider);
+    return _scopeValues(ref).map((scope) {
+      final display = postScopeDisplay(scope, adapter);
+      return DropdownMenuItem(
+        value: scope,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(display.icon, size: 16),
+            const SizedBox(width: 4),
+            Text(display.label, style: const TextStyle(fontSize: 13)),
+          ],
+        ),
+      );
+    }).toList();
   }
 
   @override
@@ -806,30 +972,21 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       _scope = widget.quoteTo!.scope;
     } else if (widget.sharedText != null) {
       _initSharedNowPlaying(widget.sharedText!);
-      final account = ref.read(currentAccountProvider);
-      if (account != null && account.user.defaultScope != null) {
-        _scope = account.user.defaultScope!;
-      }
-    } else if (widget.initialText != null) {
-      _controller.text = widget.initialText!;
-      _controller.selection = TextSelection.collapsed(
-        offset: _controller.text.length,
+      _applyAccountDefaults();
+    } else if (widget.initialText != null || widget.hashtags.isNotEmpty) {
+      // ⚠⚠ **ハッシュタグもこの枝で処理する** (#1172)。下の「まっさらな新規投稿」の
+      // 枝は保存済みの下書きを復元するので、タグを置いた上に下書きが載ると
+      // どちらが本文か決まらなくなる。本文を種から作る枝はここに揃える。
+      _controller.value = initialComposeBody(
+        widget.initialText,
+        widget.hashtags,
       );
-      final account = ref.read(currentAccountProvider);
-      if (account != null && account.user.defaultScope != null) {
-        _scope = account.user.defaultScope!;
-      }
+      _applyAccountDefaults();
     } else if (widget.template != null) {
       _applyTemplateContent(widget.template!);
-      final account = ref.read(currentAccountProvider);
-      if (account != null && account.user.defaultScope != null) {
-        _scope = account.user.defaultScope!;
-      }
+      _applyAccountDefaults();
     } else {
-      final account = ref.read(currentAccountProvider);
-      if (account != null && account.user.defaultScope != null) {
-        _scope = account.user.defaultScope!;
-      }
+      _applyAccountDefaults();
       // Fresh compose: enable draft auto-save and try to restore the
       // previously saved draft (if any).
       _draftAutoSave = true;
@@ -846,8 +1003,22 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       // ため、**元投稿の言語を引き継いでも端末ロケールで潰されていた**
       // （引き継ぎを足すときに実際に踏みかけた）。
       if (adapter is MastodonAdapter && _language == null) {
+        // ⚠⚠ **サーバー側の既定を先に見る (#1194)。**`source.language` は公開
+        // 範囲と同じ画面で設定するのに読んでおらず、**端末のロケールで上書き
+        // して送っていた**ので、WebUI の設定が常に無視されていた。
+        //
+        // ⚠ `setting_default_language` は WebUI で「サイトの表示言語に合わせる」
+        // を選べるので null が普通に来る。そのときは従来どおり端末ロケールで、
+        // これは Mastodon 側の畳み方（`valid_locale_cascade` が利用者のロケール
+        // へ倒す）と同じ向き。⚠⚠ **サーバーは「合わせる」を `''` で返す**ので、
+        // アダプタで null へ畳んでいる（素通しだと `??` が効かず空欄になる）。
+        final serverDefault = ref
+            .read(currentAccountProvider)
+            ?.user
+            .defaultLanguage;
         setState(
-          () => _language = Localizations.localeOf(context).languageCode,
+          () => _language =
+              serverDefault ?? Localizations.localeOf(context).languageCode,
         );
       }
       // CustomEmojiSupport 対応サーバーなら絵文字を先読み (#308)。
@@ -1189,6 +1360,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     _controller.removeListener(_onTextChanged);
     _controller.dispose();
     _cwController.dispose();
+    _toolbarScroll.dispose();
     for (final c in _pollControllers) {
       c.dispose();
     }
@@ -1267,6 +1439,13 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       if (before?.scope != null) _scope = before!.scope!;
       _sensitiveEnabled = before?.sensitive ?? false;
       _localOnly = before?.localOnly ?? false;
+      // ⚠ **「選んだ」の印も復元前へ戻す (#1195)。**控えを取ったのは復元が走る
+      // 前＝アカウントの既定が入っているだけの状態なので、取消したなら選択は
+      // 無かったことになる。⚠ 残すと、触っていない既定が「選択」として保存
+      // され続ける（この Issue そのもの）。
+      _chosen
+        ..clear()
+        ..addAll(before?.chosen ?? const <String>{});
       _draftRestoredNotice = false;
       _draftSavedAt = null;
     });
@@ -1324,12 +1503,23 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       text: _controller.text,
       cwText: _cwController.text,
       cwEnabled: _cwEnabled,
-      attachmentCount: _attachments.length,
+      attachmentCount: _attachments.length + _unrestoredDraftAttachments.length,
+      // ローカル添付はパスとレイヤ列も保存する (#1130)。⚠ **ドライブ添付は
+      // null が返るので落ちる**（件数には残る）。
+      attachments: [
+        for (final entry in _attachments) ?entry.toDraftAttachment(),
+        // 🔴 **戻せなかった添付の控えを、保存のたびに載せ直す**
+        // （[_unrestoredDraftAttachments]）。載せないと、ここで控えが消える。
+        ..._unrestoredDraftAttachments,
+      ],
       // 設定値も保存する (#964)。本文だけ戻して公開範囲が既定に戻ると、
       // 気づかず広い範囲へ投げる事故になる。
       scope: _scope,
       sensitive: _sensitiveEnabled,
       localOnly: _localOnly,
+      // ⚠ **何を自分で選んだか (#1195)。**これが空で本文も無ければ、ストアは
+      // 「下書きなし」として消す（開いて閉じただけで残らない）。
+      chosen: _chosen,
     );
 
     // 取消の消去と直列化する (Codex P2 / PR #1013)。並行に走ると、消去の
@@ -1420,8 +1610,18 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     }
     // 復元経路の解決をもって、以降の離脱時保存 (#966) を解禁する (#969)。
     // 保存済みが無い（saved == null）場合も基準世代は確定しているので解禁する。
-    _draftRestored = true;
-    if (!mounted || saved == null) return;
+    //
+    // 🔴 **保存済みがある回は、添付を戻し終えるまで解禁しない**（リリース前
+    // レビューの Codex P1・2026-10-06）。以前はここで解禁してから、添付の
+    // 実在確認（非同期）へ進んでいた。その間に画面を離れる / アプリが裏へ回ると、
+    // `_saveDraft` が**まだ空の `_attachments`** を控えて保存し、**下書きの添付の
+    // パスとレイヤの控えを消した**（ストアは空なら添付の欄ごと消す）。
+    // ⚠ 解禁を遅らせても失うものは無い —— その間に保存が走らなければ、
+    // **元の下書きがそのまま残る**。
+    if (!mounted || saved == null) {
+      _draftRestored = true;
+      return;
+    }
 
     // 「取消」で戻せるよう、書き戻す前の状態を控える (#964)。復元は新規 compose
     // のたびに黙って走るので、意図しない復元を 1 タップで捨てられるようにする。
@@ -1432,6 +1632,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       scope: _scope,
       sensitive: _sensitiveEnabled,
       localOnly: _localOnly,
+      // ⚠ **控えにも印を入れる (#1195)。**取消で戻すときに使う。ここは復元の
+      // 直前なので、**たいてい空**（既定が入っているだけ）。
+      chosen: {..._chosen},
     );
 
     if (saved.hasText) {
@@ -1448,26 +1651,108 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       // 設定値も戻す (#964)。⚠ **scope が null なら触らない** — 旧スロット由来
       // （保存していなかった頃）で、既定値やアカウントの defaultScope を上書き
       // してしまう。
-      if (saved.scope != null) _scope = saved.scope!;
-      _sensitiveEnabled = saved.sensitive;
+      //
+      // ⚠⚠ **利用者が選んだものだけ戻す (#1195)。**触っていない既定まで戻すと、
+      // サーバー側で既定を変えても古い値が残り続ける（#1185 が反映されない）。
+      // ⚠ **旧スロット（印が無い）は「選んだ」に倒す** —— #964 の守り（本文だけ
+      // 戻して公開範囲が既定へ戻る事故）を互換の都合で外さないため。
+      if (saved.scope != null &&
+          saved.isChosen(ComposeDraftStore.chosenScope)) {
+        _scope = saved.scope!;
+        // 戻した選択は「選んだまま」。⚠ 印を引き継がないと、次の保存で消える。
+        _chosen.add(ComposeDraftStore.chosenScope);
+      }
+      // ⚠ **閲覧注意も同じ扱い (#1194)。**サーバー既定を読むようになったので、
+      // 触っていない値を戻すと既定を変えても反映されなくなる（#1195 と同型）。
+      if (saved.isChosen(ComposeDraftStore.chosenSensitive)) {
+        _sensitiveEnabled = saved.sensitive;
+        _sensitiveExplicit = true;
+        _chosen.add(ComposeDraftStore.chosenSensitive);
+      }
       _localOnly = saved.localOnly;
       _draftSavedAt = saved.savedAt;
       // 復元したこと自体を伝える (#964)。「復元されたことも伝わっていない」が
       // 「わかりづらい」のもう半分の原因だった。
       _draftRestoredNotice = true;
     });
-    // 添付を持ったまま離れた場合、本文だけが戻ってくる (#966)。黙って戻すと
-    // 「保存された」と思って添付を失うので、復元したときだけ明示する。本文が
-    // 空で何も復元していないなら、伝えることがないので出さない。
-    final attachmentCount = saved.attachmentCount;
-    if (saved.hasText && attachmentCount > 0) {
+    // ローカル添付を戻す (#1130)。⚠ **実在を確かめてから**（一時領域が消えて
+    // いれば落とす）。ドライブ添付はそもそも保存対象外なので、ここには来ない。
+    // ⚠⚠ **待っている間に下書きが消されたら、添付も控えも入れない**（2 回目の
+    // 差分レビュー・2026-10-06）。本文を戻した時点で「取消」のバナーが出ている
+    // ので、実在の確認が終わる前に取消せる。そのまま続けると、**取消した下書きの
+    // 添付が画面に現れる**（確認が失敗した回は、見えない控えとして次の自動保存に
+    // 載り続ける）。
+    final epoch = _draftClearEpoch;
+    final ComposeDraftAttachmentRestore resolved;
+    try {
+      resolved = await resolveComposeDraftAttachments(saved.attachments);
+    } catch (e) {
+      if (epoch != _draftClearEpoch) {
+        _draftRestored = true;
+        return;
+      }
+      // 🔴 **添付を戻せなかった回は、保存済みの添付の控えを持ち越す**
+      // （リリース前レビューの Codex P1・2 巡目・2026-10-06）。
+      //
+      // ここで選べる道は 3 つあり、2 つは失う。
+      //
+      // | | 失うもの |
+      // | --- | --- |
+      // | 解禁して何もしない | 🔴 次の自動保存が空の添付で上書きし、**控えが消える** |
+      // | 解禁しない | 🔴 `_saveDraft` が永久に no-op になり、**書いた本文が消える** |
+      // | ✅ 解禁し、控えを保存に載せ続ける | 何も失わない |
+      //
+      // ⚠ 本文を戻した時点で 3 秒後の自動保存が予約されているので、1 つ目は
+      // **利用者が何もしなくても起きる**。⚠ 1 巡目の修正は 1 つ目の形だった。
+      //
+      // ⚠ **投げ直さない。**呼び出し側は fire-and-forget なので、投げると
+      // 未処理の非同期エラーになる（上の `restore()` の失敗と同じ扱い）。
+      debugLogException('capsicum: compose draft attachment restore failed', e);
+      _unrestoredDraftAttachments = saved.attachments;
+      _draftRestored = true;
+      // ⚠ **戻せなかったことを伝える。**黙っていると、利用者は下書きに添付が
+      // あったことに気づかないまま投稿する（投稿の前にも確かめるが、
+      // [_submitInternal]、先に知らせておく）。
+      if (mounted && saved.attachments.isNotEmpty) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('下書きの添付を復元できませんでした')));
+        });
+      }
+      return;
+    }
+    if (!mounted || epoch != _draftClearEpoch) {
+      _draftRestored = true;
+      return;
+    }
+    if (resolved.restorable.isNotEmpty) {
+      setState(
+        () =>
+            _attachments.addAll(resolved.restorable.map(_MediaEntry.restored)),
+      );
+    }
+    // 🔴 **添付を戻し終えてから解禁する**（上の説明）。
+    _draftRestored = true;
+
+    // 添付の行方を明示する (#966 → #1130)。黙って戻すと下書きと無関係の添付に
+    // 見え、黙って落とすと「保存された」と思って失う。文面の分岐は
+    // [composeDraftAttachmentNotice] で固定してある。
+    final notice = composeDraftAttachmentNotice(
+      savedCount: saved.attachmentCount,
+      restoredCount: resolved.restorable.length,
+      overlaysDroppedCount: resolved.overlaysDropped,
+      hasText: saved.hasText,
+    );
+    if (notice != null) {
       // initState の post-frame は _restoreDraft の await より先に走りうるので、
       // ここで改めて次フレームに載せる。
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('前回の入力を復元しました（添付 $attachmentCount 件は含まれません）')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(notice)));
       });
     }
   }
@@ -1480,7 +1765,15 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// 出さない — **この時点では実害が無い**（消えていないだけ）で、次に開いた
   /// ときに古い下書きが復元されて初めて見える。投稿直後にも通る経路なので、
   /// ここで snackbar を出すと「投稿は成功しているのに失敗したように読める」。
+  /// [_clearDraft] が呼ばれた回数。添付の復元が、待っている間に下書きを
+  /// 消されたことを知るために見る（[_restoreDraft]）。
+  int _draftClearEpoch = 0;
+
   Future<void> _clearDraft({bool discard = true}) async {
+    _draftClearEpoch++;
+    // ⚠ 持ち越していた控えも捨てる。残すと、消したはずの下書きの添付が
+    // 次の自動保存で書き戻される。
+    _unrestoredDraftAttachments = const [];
     final persisted = await _draftStore.clear(discard: discard);
     if (persisted) return;
     reportOpFailure(
@@ -1733,6 +2026,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       setState(() {
         _attachments.addAll(accepted.map((f) => _MediaEntry.local(f)));
       });
+      _scheduleDraftSave();
     }
     if (rejected.isNotEmpty && mounted) {
       await _showOversizeDialog(rejected);
@@ -1821,11 +2115,14 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       setState(() {
         _attachments.addAll(selected.map((f) => _MediaEntry.drive(f)));
       });
+      // ⚠ ドライブ添付は下書きに実体を持たないが、**件数は変わる** (#1130)。
+      _scheduleDraftSave();
     }
   }
 
   void _removeAttachment(int index) {
     setState(() => _attachments.removeAt(index));
+    _scheduleDraftSave();
   }
 
   /// トリミング対象にできるのはローカルの静止画のみ。動画 / 音声 / ドライブ
@@ -1885,17 +2182,24 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     if (!mounted) return;
     setState(() {
       // 差し替え後も同じ添付スロットを保つため index を再取得せず置換する。
-      entry.file = croppedFile;
+      // ⚠ レイヤの控えはここで捨てる（`replaceFile` の doc を参照・#1129）。
+      entry.replaceFile(croppedFile);
     });
+    // 差し替えた実体を下書きへ反映する (#1130)。
+    _scheduleDraftSave();
   }
 
   /// 添付済みのローカル画像に文字 / Unicode 絵文字 (#576) とカスタム絵文字の
   /// スタンプ (#883) を重ねて書き出し、結果で元の添付を差し替える。説明 (ALT)
   /// と閲覧注意フラグは引き継ぐ。
+  ///
+  /// ⚠⚠ **2 回目以降は「焼き込み前の画像 + 前回のレイヤ」で開く** (#1129)。
+  /// 焼き込み済みの `entry.file` を渡すと、前のレイヤが画に残ったうえへ同じレイヤが
+  /// もう一度乗る。
   Future<void> _addOverlay(int index) async {
     final entry = _attachmentAt(index);
     if (entry == null) return;
-    final original = entry.file;
+    final original = entry.overlayBase;
     if (original == null) return;
 
     final Uint8List bytes;
@@ -1912,15 +2216,22 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     }
     if (!mounted) return;
 
-    final composited = await Navigator.of(context).push<Uint8List>(
+    final composited = await Navigator.of(context).push<ImageOverlayResult>(
       MaterialPageRoute(
-        builder: (_) => ImageOverlayScreen(imageData: bytes),
+        builder: (_) => ImageOverlayScreen(
+          imageData: bytes,
+          initialLayers: entry.overlayLayers,
+        ),
         fullscreenDialog: true,
       ),
     );
     if (composited == null || !mounted) return;
 
-    final overlaidFile = await _writeTempPng(original, composited, 'overlay');
+    final overlaidFile = await _writeTempPng(
+      original,
+      composited.png,
+      'overlay',
+    );
     if (overlaidFile == null) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -1931,7 +2242,16 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     }
 
     if (!mounted) return;
-    setState(() => entry.file = overlaidFile);
+    setState(
+      () => entry.applyOverlay(
+        source: original,
+        baked: overlaidFile,
+        layers: composited.layers,
+      ),
+    );
+    // ⚠⚠ **レイヤ列を下書きへ落とすのはここ (#1130)。**打鍵を待つと、編集直後に
+    // アプリが落ちたぶんのレイヤが丸ごと消える。
+    _scheduleDraftSave();
   }
 
   /// PNG バイト列を一時ファイルに書き出し [XFile] を返す。元ファイル名の stem を
@@ -2243,6 +2563,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     );
     if (result != null) {
       setState(() => entry.description = result);
+      _scheduleDraftSave();
     }
   }
 
@@ -2270,7 +2591,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// いた。サムネタップでこの 1 枚のメニューを開き、全編集操作をここから分岐
   /// させて一貫した動線にまとめる（アクションメニューの設計方針に沿う）。
   ///
-  /// 「拡大して確認」「トリミング・回転」「文字・スタンプを入れる」は差し替え可能な
+  /// 「拡大して確認」「トリミング・回転」「文字・スタンプ・画像を重ねる」は差し替え可能な
   /// ローカル画像のみ。動画等プレビュー・編集できないエントリでは「説明 (ALT)」
   /// のみ表示する。削除はサムネ右上の × に残す（クイック操作）。
   Future<void> _showAttachmentMenu(int index) async {
@@ -2300,8 +2621,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
               ),
             if (croppable)
               ListTile(
-                leading: const Icon(Icons.title),
-                title: const Text('文字・スタンプを入れる'),
+                leading: const Icon(Icons.layers_outlined),
+                title: const Text('文字・スタンプ・画像を重ねる'),
                 onTap: () => Navigator.pop(
                   sheetContext,
                   _AttachmentMenuAction.addOverlay,
@@ -2794,7 +3115,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       await _clearDraft();
     }
     if (!mounted) return;
-    context.pushReplacement('/compose', extra: {'restoreDraft': draft});
+    context.pushReplacement(
+      '/compose',
+      extra: extraWithProviderScope(context, {'restoreDraft': draft}),
+    );
   }
 
   /// テンプレートの内容を本文・CW へ反映し、使用履歴を更新する。CW は空なら
@@ -3154,8 +3478,14 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
 
   void _togglePoll() => setState(() => _pollEnabled = !_pollEnabled);
 
-  void _toggleSensitive() =>
-      setState(() => _sensitiveEnabled = !_sensitiveEnabled);
+  void _toggleSensitive() => setState(() {
+    _sensitiveEnabled = !_sensitiveEnabled;
+    // ⚠ **自分で切り替えた ＝ 明示 (#1194 / #1195)。**既定を読めなかった
+    // サーバーでも、ここを通ったら `false` を送れるようにする（送らないと
+    // サーバー既定が当たって、外したつもりが外れない）。
+    _sensitiveExplicit = true;
+    _chosen.add(ComposeDraftStore.chosenSensitive);
+  });
 
   void _toggleLocalOnly() => setState(() => _localOnly = !_localOnly);
 
@@ -3163,19 +3493,32 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// フィールドで一度だけ組む（上の値等価の話と同じ理由）(#835)。
   late final Map<PostScope, VoidCallback> _scopeSetters = {
     for (final scope in PostScope.values)
-      scope: () => setState(() => _scope = scope),
+      scope: () => setState(() {
+        _scope = scope;
+        // ⚠⚠ **ここだけが「利用者が選んだ」(#1195)。**`_scope` はフォームを
+        // 開いた時点でアカウントの既定が入っているので、**値が入っていること
+        // は選択を意味しない**。印を付けないと、触っていない既定が下書きに
+        // 「選択」として保存され、サーバー側で既定を変えても古い値が残る。
+        _chosen.add(ComposeDraftStore.chosenScope);
+      }),
   };
 
   /// 投稿言語 / 引用許可のメニュー項目のコールバック (#971)。[_scopeSetters] と
   /// 同じ理由でフィールドに一度だけ組む。
   late final Map<String, VoidCallback> _languageSetters = {
     for (final code in _languageOptions.keys)
-      code: () => setState(() => _language = code),
+      code: () => setState(() {
+        _language = code;
+        _chosen.add(ComposeDraftStore.chosenLanguage);
+      }),
   };
 
   late final Map<String, VoidCallback> _quoteApprovalSetters = {
     for (final policy in _quoteApprovalLabels.keys)
-      policy: () => setState(() => _quoteApprovalPolicy = policy),
+      policy: () => setState(() {
+        _quoteApprovalPolicy = policy;
+        _chosen.add(ComposeDraftStore.chosenQuotePolicy);
+      }),
   };
 
   /// 添付 1 件ぶんのメニューコールバック (#941)。上 2 つと同じく、ビルドのたびに
@@ -3363,6 +3706,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           mediaIds: mediaIds,
           spoilerText: spoilerText?.isNotEmpty == true ? spoilerText : null,
           sensitive: _effectiveSensitive,
+          // ⚠ **`false` を送ってよいか (#1194)。**既定を読めたか、自分で切り替えた
+          // ときだけ明示する。常に送ると、`source` を返さないサーバーで
+          // 「サーバー既定に任せる」が壊れる。
+          sensitiveExplicit: _sensitiveExplicit,
           localOnly: _localOnly,
           channelId: _effectiveChannelId,
           visibleUserIds: visibleUserIds,
@@ -3475,6 +3822,51 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       return;
     }
 
+    // 🔴 **下書きを戻している最中は投稿しない**（リリース前レビューの Codex P1・
+    // 3 巡目・2026-10-06）。本文は添付より先に戻るので、その間に投稿すると
+    // **本文だけが出て、直後の `_clearDraft` が添付の控えを消す**。
+    //
+    // ⚠⚠ **`_draftAutoSave` を必ず条件に入れる。**下書きの復元が走るのは
+    // **新規の投稿画面だけ**（`initState`）で、返信・引用・テンプレート・
+    // 編集し直しでは `_draftRestored` は false のまま。条件から外すと、
+    // **それらの画面で永久に投稿できなくなる**。
+    if (_draftAutoSave && !_draftRestored) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('下書きを読み込んでいます。少し待ってから、もう一度お試しください。')),
+      );
+      return;
+    }
+
+    // 🔴 **戻せなかった添付がある回は、確かめてから投稿する**（同上）。
+    // 投稿すると下書きごと控えが消えるので、黙って進めない。
+    if (_unrestoredDraftAttachments.isNotEmpty) {
+      if (!mounted) return;
+      final count = _unrestoredDraftAttachments.length;
+      final proceed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('添付を復元できていません'),
+          content: Text(
+            '下書きにあった添付 $count 件を復元できませんでした。\n\n'
+            'このまま投稿すると、添付なしで投稿され、下書きに残っていた添付の'
+            '控えは破棄されます。',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('キャンセル'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('添付なしで投稿'),
+            ),
+          ],
+        ),
+      );
+      if (proceed != true) return;
+    }
+
     if (await ref.read(confirmBeforePostProvider.notifier).readPersisted()) {
       if (!mounted) return;
       final confirmed = await showDialog<bool>(
@@ -3559,6 +3951,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           mediaIds: mediaIds,
           spoilerText: spoilerText?.isNotEmpty == true ? spoilerText : null,
           sensitive: _effectiveSensitive,
+          // ⚠ **`false` を送ってよいか (#1194)。**既定を読めたか、自分で切り替えた
+          // ときだけ明示する。常に送ると、`source` を返さないサーバーで
+          // 「サーバー既定に任せる」が壊れる。
+          sensitiveExplicit: _sensitiveExplicit,
           localOnly: _localOnly,
           channelId: _effectiveChannelId,
           visibleUserIds: visibleUserIds,
@@ -3617,7 +4013,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           if (channelId != null) {
             // チャンネル投稿は両 TL を再取得（home への楽観挿入はしない）。
             ref.invalidate(timelineProvider);
-            ref.invalidate(channelTimelineProvider(channelId));
+            ref.invalidate(
+              channelTimelineProvider((
+                account: ref.read(currentAccountKeyProvider),
+                id: channelId,
+              )),
+            );
           } else if (posted != null) {
             // #717: 自分の投稿を TL 先頭へ楽観的に挿入する。invalidate の
             // REST 全再取得に依存しないため、サーバー伝播レースやストリーミング
@@ -3969,6 +4370,479 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     cwEnabled: _cwEnabled,
     cw: _cwController.text,
   );
+
+  /// ツールバーに並べるアイコンの操作 (#1167)。
+  ///
+  /// ⚠⚠ **並び順が「幅が狭いときに何が残るか」を決める。**[OverflowIconRow] は
+  /// 先頭から順に見せてあふれたぶんを畳むので、**よく使うものを前に置く**。
+  /// 添付 → 絵文字 → 閲覧注意 のように、投稿の形そのものを変えるものが前。
+  ///
+  /// ⚠ **出る顔ぶれはサーバーで変わる**（Mastodon / Misskey、モロヘイヤの有無、
+  /// ドライブ・アンケート・下書き・予約の対応）。何個入るかを決め打ちできないので、
+  /// 畳むのは [OverflowIconRow] に任せて、ここは「出す / 出さない」だけを決める。
+  ///
+  /// ⚠ `active` を渡したものは、畳まれても「…」に印が出る。**効いているのに
+  /// 画面のどこにも出ていない**状態を作らないため。
+  List<OverflowIconAction> _toolbarActions(BuildContext context) {
+    final adapter = ref.watch(currentAdapterProvider);
+    final mulukhiya = ref.watch(currentMulukhiyaProvider);
+    final accent = Theme.of(context).colorScheme.primary;
+    return [
+      // ソフトキーボードが出ている時だけ「しまう」ボタンを出す (#594)。
+      // Android ATOK のように IME 側に dismiss ボタンが無い環境向け。
+      // 画面幅でなくソフトキーボード有無で出し分けるため Platform 分岐不要
+      // (desktop では viewInsets.bottom が 0 で常に非表示)。
+      //
+      // Scaffold(resizeToAvoidBottomInset:true) は body を
+      // MediaQuery.removeViewInsets でラップするため、body 配下のここでは
+      // MediaQuery.viewInsets.bottom が 0 に剥がれて常に非表示になっていた。
+      // simple_post_bar と判定軸を揃え、View.of(context) で root view から
+      // 直接拾う (#635 / #630)。
+      //
+      // ⚠ **先頭に置く。**出ている間はいちばん押したいもので、畳まれると
+      // 「しまえない」になる。
+      if (View.of(context).viewInsets.bottom > 0)
+        OverflowIconAction(
+          key: 'keyboard-hide',
+          onPressed: () => FocusScope.of(context).unfocus(),
+          icon: const Icon(Icons.keyboard_hide),
+          tooltip: 'キーボードをしまう',
+        ),
+      OverflowIconAction(
+        key: 'media',
+        onPressed: _sending ? null : _pickMedia,
+        icon: const Icon(Icons.photo),
+        tooltip: 'メディアを添付',
+      ),
+      if (adapter is DriveSupport)
+        OverflowIconAction(
+          key: 'drive',
+          onPressed: _sending ? null : _pickDriveFiles,
+          icon: const Icon(Icons.cloud_outlined),
+          tooltip: 'ドライブ',
+        ),
+      OverflowIconAction(
+        key: 'emoji',
+        onPressed: _sending ? null : _showEmojiPicker,
+        icon: const Icon(Icons.emoji_emotions_outlined),
+        tooltip: '絵文字',
+      ),
+      OverflowIconAction(
+        key: 'cw',
+        onPressed: _sending ? null : _toggleCw,
+        icon: Icon(Icons.warning_amber, color: _cwEnabled ? accent : null),
+        tooltip: '閲覧注意',
+        active: _cwEnabled,
+      ),
+      if (_attachments.isNotEmpty)
+        OverflowIconAction(
+          key: 'sensitive',
+          onPressed: _sending ? null : _toggleSensitive,
+          icon: Icon(
+            _effectiveSensitive ? Icons.visibility_off : Icons.visibility,
+            color: _effectiveSensitive ? accent : null,
+          ),
+          tooltip: '閲覧注意メディア',
+          active: _effectiveSensitive,
+        ),
+      if (adapter is PollSupport)
+        OverflowIconAction(
+          key: 'poll',
+          onPressed: _sending ? null : _togglePoll,
+          icon: Icon(Icons.poll_outlined, color: _pollEnabled ? accent : null),
+          tooltip: 'アンケート',
+          active: _pollEnabled,
+        ),
+      // MFM 装飾の挿入メニュー (#688)。MFM 対応の Misskey でのみ出す
+      // （判定は ReactionSupport の有無、CLAUDE.md）。
+      if (adapter is ReactionSupport)
+        OverflowIconAction(
+          key: 'mfm',
+          onPressed: _sending ? null : _showMfmPicker,
+          icon: const Icon(Icons.palette_outlined),
+          tooltip: 'MFM 装飾',
+        ),
+      if (mulukhiya != null)
+        OverflowIconAction(
+          key: 'livecure',
+          onPressed: _sending ? null : _showTagsetSheet,
+          icon: const Icon(Icons.live_tv),
+          tooltip: '実況',
+        ),
+      // ナウプレ挿入 (#466)。取得源（Linux MPRIS / Windows SMTC / Spotify 連携）が
+      // この端末で使えるときだけ出す。
+      if (ref.watch(nowPlayingResolverProvider).hasAvailableSource)
+        OverflowIconAction(
+          key: 'nowplaying',
+          onPressed: (_sending || _insertingNowPlaying)
+              ? null
+              : _insertNowPlaying,
+          icon: _insertingNowPlaying
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.music_note),
+          tooltip: 'ナウプレを挿入',
+        ),
+      // 投稿テンプレート選択 (#767)。テンプレ機能提供サーバーのみ。
+      if (mulukhiya?.composeTemplatesEnabled == true)
+        OverflowIconAction(
+          key: 'template',
+          onPressed: _sending ? null : _showTemplateSheet,
+          icon: const Icon(Icons.description_outlined),
+          tooltip: '投稿テンプレート',
+        ),
+      // サーバー下書きの呼び戻し (#963)。保存側は AppBar のオーバーフローに残る。
+      // DraftSupport は現状 Misskey のみ。
+      if (adapter is DraftSupport)
+        OverflowIconAction(
+          key: 'draft',
+          onPressed: _sending ? null : _showDraftSheet,
+          icon: const Icon(Icons.edit_note),
+          tooltip: '下書き',
+        ),
+      // ⚠ 予約投稿は最後。設定した予約は下の行のチップにも出るので、畳まれても
+      // 「予約が効いている」は見える。
+      if (adapter is ScheduleSupport)
+        OverflowIconAction(
+          key: 'schedule',
+          onPressed: _sending ? null : _pickScheduleDate,
+          icon: Icon(
+            Icons.schedule,
+            color: _scheduledAt != null ? accent : null,
+          ),
+          tooltip: '予約投稿',
+          active: _scheduledAt != null,
+        ),
+    ];
+  }
+
+  /// 投稿画面の下のツールバー (#1167)。
+  ///
+  /// ⚠⚠ **横スクロールへ戻さない**（2026-09-26 pooza の案 3+2）。以前は
+  /// 「アイコン 11 個 + 公開範囲 + ローカル限定」を 1 行の横スクロールに並べて
+  /// いたが、**デスクトップは横スクロールに気付きにくく操作もしにくい**
+  /// （ホイールは縦にしか回らず、ドラッグでもスクロールしない）ので、はみ出た分は
+  /// 実質的に届かない場所になっていた。⚠ しかも**はみ出すのは公開範囲とローカル
+  /// 限定**——送る前に確かめたいものだった。
+  ///
+  /// ## 幅で 2 つの形を使い分ける（案 B・2026-09-28 pooza 決定）
+  ///
+  /// | 幅 | 形 |
+  /// | --- | --- |
+  /// | [kComposeToolbarTwoRowMinWidth] 以上 | **2 段**。アイコン列 + ラベル付きの設定を別行に（従来） |
+  /// | 下回る | **1 段**。設定を詰めてアイコン列の右端に固定し、畳むのはアイコンだけ |
+  ///
+  /// ⚠⚠ **1 段にしたのは高さのため。**案 3+2 のまま iPhone 13 mini（375pt）で
+  /// 使うと、**設定の行自体が折り返して 3 段になり**、1.x で節約してきた本文欄の
+  /// 高さが失われていた（2026-09-28 実測）。
+  ///
+  /// ⚠⚠ **どちらの形でも送信時の設定は畳まない。**「見えないまま効いている」は
+  /// #1167 の元の不具合そのもの。畳むのは [OverflowIconRow] に渡すアイコンだけで、
+  /// 効いているものが畳まれたときは「…」に印が出る。
+  Widget _buildToolbar(BuildContext context) {
+    final adapter = ref.watch(currentAdapterProvider);
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+    final accent = Theme.of(context).colorScheme.primary;
+
+    /// 送信時の設定。[compact] なら**現在値ぴったりの幅**に詰める。
+    ///
+    /// ⚠ **選択肢（開いたときのメニュー）はどちらの形でもフルラベル。**詰めるのは
+    /// 閉じている側だけなので、選ぶときは必ず正式な名前が見える (#1167)。
+    ///
+    /// ⚠⚠ **詰めた側で `DropdownButton` を使わない**（2026-09-30 の実測）。
+    /// `DropdownButton` は選択肢を `IndexedStack` に積む（`dropdown.dart` の
+    /// `innerItemsWidget`）ので、**いちばん長い選択肢の幅を常に確保する**。
+    /// 「公開」を選んでいても「非公開の…」ぶんの幅を取り続け、13 mini では
+    /// **設定だけで 375pt 中 300pt** を占めてアイコンが 1 つも出なくなっていた。
+    /// ⚠ **表示文字を詰めても幅は詰まらない** —— 検査が文字列だけを見ていたので
+    /// ここを捕まえられなかった。
+    List<Widget> settings({required bool compact}) => [
+      if (compact)
+        _compactMenu<PostScope>(
+          tooltip: '公開範囲: ${postScopeLabel(_scope, adapter)}',
+          child: _compactSetting(
+            icon: postScopeIcon(_scope, adapter),
+            label: compactSettingLabel(postScopeLabel(_scope, adapter)),
+          ),
+          // ⚠ メニューは**フルラベル**。`items` と同じ顔ぶれを [_scopeValues] から
+          // 引くので、送れない範囲が混ざることもない (#1043)。
+          items: [
+            for (final scope in _scopeValues(ref))
+              PopupMenuItem(
+                value: scope,
+                child: _compactSetting(
+                  icon: postScopeIcon(scope, adapter),
+                  label: postScopeLabel(scope, adapter),
+                ),
+              ),
+          ],
+          onSelected: (scope) => _scopeSetters[scope]!(),
+        )
+      else
+        DropdownButton<PostScope>(
+          value: _scope,
+          underline: const SizedBox.shrink(),
+          isDense: true,
+          style: TextStyle(fontSize: 13, color: onSurface),
+          onChanged: _sending
+              ? null
+              : (value) {
+                  if (value != null) _scopeSetters[value]!();
+                },
+          items: _scopeItems(ref),
+        ),
+      // ⚠ 間隔は `Wrap` の `spacing` が持つ (#1167)。以前は項目ごとに
+      // `Padding(left: 8)` を足していたが、畳まれない行にしたので二重になる。
+      if (adapter is ReactionSupport)
+        if (compact)
+          // ⚠ 狭い幅ではアイコンの切り替えにする（2026-09-28 pooza）。⚠⚠ **効いて
+          // いるかは色と絵の両方で出す** —— 色だけだとテーマやコントラストの設定で
+          // 読めなくなる端末がある。
+          IconButton(
+            key: const ValueKey('compose-local-only-compact'),
+            icon: Icon(
+              _localOnly ? Icons.link_off : Icons.link,
+              size: 20,
+              color: _localOnly ? accent : null,
+            ),
+            tooltip: 'ローカルのみ',
+            visualDensity: VisualDensity.compact,
+            onPressed: _sending ? null : _toggleLocalOnly,
+          )
+        else
+          FilterChip(
+            label: const Text('ローカルのみ'),
+            selected: _localOnly,
+            onSelected: _sending ? null : (_) => _toggleLocalOnly(),
+            visualDensity: VisualDensity.compact,
+          ),
+      if (_language != null)
+        if (compact)
+          // ⚠ 詰めた形は言語コード（`ja`）。⚠ 知らない言語を足す枝（#1113）が
+          // あるので、表示もメニューも `_languageEntries` から引く。
+          _compactMenu<String>(
+            tooltip: '言語: ${_languageEntries[_language] ?? _language!}',
+            child: Text(
+              _language!,
+              style: TextStyle(fontSize: 13, color: onSurface),
+            ),
+            items: [
+              for (final entry in _languageEntries.entries)
+                PopupMenuItem(
+                  value: entry.key,
+                  child: Text(
+                    entry.value,
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                ),
+            ],
+            onSelected: (v) => setState(() => _language = v),
+          )
+        else
+          DropdownButton<String>(
+            value: _language,
+            underline: const SizedBox.shrink(),
+            isDense: true,
+            onChanged: _sending
+                ? null
+                : (v) {
+                    if (v != null) setState(() => _language = v);
+                  },
+            items: _languageEntries.entries
+                .map(
+                  (e) => DropdownMenuItem(
+                    value: e.key,
+                    child: Text(e.value, style: const TextStyle(fontSize: 13)),
+                  ),
+                )
+                .toList(),
+          ),
+      if (adapter is MastodonAdapter)
+        if (compact)
+          // ⚠⚠ **未設定のときはアイコンだけ。**未設定＝サーバーの既定に任せる＝
+          // 何も効いていない状態なので、「引用許可」の 4 文字ぶん（約 100pt）を
+          // 常時確保するのは高すぎる。⚠ 効いているときは値を出す（short label）。
+          _compactMenu<String>(
+            tooltip: _quoteApprovalPolicy == null
+                ? '引用許可'
+                : '引用許可: ${_quoteApprovalLabels[_quoteApprovalPolicy]}',
+            child: _quoteApprovalPolicy == null
+                ? const Icon(Icons.format_quote, size: 16)
+                : _compactSetting(
+                    icon: _quoteApprovalIcons[_quoteApprovalPolicy]!,
+                    label:
+                        composeQuoteApprovalShortLabels[_quoteApprovalPolicy] ??
+                        _quoteApprovalLabels[_quoteApprovalPolicy]!,
+                  ),
+            items: [
+              for (final entry in _quoteApprovalLabels.entries)
+                PopupMenuItem(
+                  value: entry.key,
+                  child: _compactSetting(
+                    icon: _quoteApprovalIcons[entry.key]!,
+                    label: entry.value,
+                  ),
+                ),
+            ],
+            onSelected: (v) => setState(() => _quoteApprovalPolicy = v),
+          )
+        else
+          DropdownButton<String?>(
+            value: _quoteApprovalPolicy,
+            underline: const SizedBox.shrink(),
+            isDense: true,
+            hint: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.format_quote, size: 16),
+                SizedBox(width: 4),
+                Text('引用許可', style: TextStyle(fontSize: 13)),
+              ],
+            ),
+            onChanged: _sending
+                ? null
+                : (v) => setState(() => _quoteApprovalPolicy = v),
+            items: _quoteApprovalLabels.entries
+                .map(
+                  (e) => DropdownMenuItem(
+                    value: e.key,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(_quoteApprovalIcons[e.key], size: 16),
+                        const SizedBox(width: 4),
+                        Text(e.value, style: const TextStyle(fontSize: 13)),
+                      ],
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
+      // ⚠ 予約が効いていることはこのチップで見える。だから予約のアイコンが
+      // 「…」へ畳まれても「見えないまま効いている」にならない (#1167)。
+      // ⚠ 日時表記はもともと短いので詰めない。
+      if (_scheduledAt != null)
+        Chip(
+          avatar: const Icon(Icons.schedule, size: 16),
+          label: Text(
+            '${_scheduledAt!.month}/${_scheduledAt!.day} '
+            '${_scheduledAt!.hour.toString().padLeft(2, '0')}:'
+            '${_scheduledAt!.minute.toString().padLeft(2, '0')}',
+            style: const TextStyle(fontSize: 12),
+          ),
+          onDeleted: _sending
+              ? null
+              : () => setState(() => _scheduledAt = null),
+          visualDensity: VisualDensity.compact,
+        ),
+    ];
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth >= kComposeToolbarTwoRowMinWidth) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              OverflowIconRow(actions: _toolbarActions(context)),
+              const SizedBox(height: 4),
+              // ⚠ 送る前に確かめたいものは畳まない。`Wrap` なので行が増えるだけで、
+              // 切れて届かなくなることが無い。
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: settings(compact: false),
+              ),
+            ],
+          );
+        }
+        // ⚠⚠ **設定を先に置き、アイコン列に残りを渡す。**逆（アイコンを固定幅で
+        // 先に確保する）にすると、設定が入りきらないときに**設定が切れる**
+        // ——この Issue の元の不具合に戻る。
+        final settingsMaxWidth =
+            constraints.maxWidth - kComposeToolbarMinIconRowWidth;
+        return Row(
+          children: [
+            Expanded(
+              // ⚠⚠ **狭い幅では畳まず流す** (#1167・2026-09-30 の A+C)。畳む形
+              // ([OverflowIconRow]) は「何個入るか」を残り幅から決めるので、
+              // **設定に幅を取られるといちばん狭いところで 0 個になる** ——
+              // 13 mini で実際にそうなった（アイコンが 1 つも出ず「…」だけ）。
+              // ⚠ 流す形なら**残り幅が 1 つぶんでも全部のアイコンへ届く**。
+              // ⚠ 設定はこの中に入らない（引数が [OverflowIconAction] だけなので
+              // **型として入らない**）。
+              child: ScrollingIconRow(
+                actions: _toolbarActions(context),
+                controller: _toolbarScroll,
+              ),
+            ),
+            ConstrainedBox(
+              // ⚠ アイコン 1 つぶんは必ず残す。0 幅にするとアイコン列が消える。
+              constraints: BoxConstraints(
+                maxWidth: settingsMaxWidth > 0 ? settingsMaxWidth : 0,
+              ),
+              // ⚠ ここも `Wrap`。極端な幅（320px × テキストスケール 1.3 等）では
+              // **折り返してでも全部見せる**（切って隠すより段が増えるほうがまし）。
+              child: Wrap(
+                spacing: 4,
+                runSpacing: 4,
+                alignment: WrapAlignment.end,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: settings(compact: true),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// 設定 1 つの見た目（アイコン + 文字）。詰めた側とメニューの両方が使う。
+  Widget _compactSetting({required IconData icon, required String label}) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 16),
+        const SizedBox(width: 4),
+        Text(label, style: const TextStyle(fontSize: 13)),
+      ],
+    );
+  }
+
+  /// 詰めた設定の入口 (#1167・A+C)。
+  ///
+  /// ⚠⚠ **`DropdownButton` ではなく `PopupMenuButton`。**前者は選択肢を
+  /// `IndexedStack` に積むので**いちばん長い選択肢ぶんの幅を常に確保する**が、
+  /// こちらは**閉じているときの子の幅しか取らない**。13 mini で設定が 300pt を
+  /// 占めていた原因がこれで、ここが本 Issue の効き所。
+  ///
+  /// ⚠ [tooltip] には**フルラベル**を入れる（詰めた文字から正式な名前へ辿れる）。
+  Widget _compactMenu<T>({
+    required Widget child,
+    required List<PopupMenuEntry<T>> items,
+    required ValueChanged<T> onSelected,
+    required String tooltip,
+  }) {
+    return PopupMenuButton<T>(
+      tooltip: tooltip,
+      // ⚠ 送信中は開けない（畳んだ側も押せないのと揃える）。
+      enabled: !_sending,
+      padding: EdgeInsets.zero,
+      onSelected: onSelected,
+      itemBuilder: (_) => items,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          child,
+          // ⚠ 開けることが分かる印。`DropdownButton` の矢印より小さくしてある。
+          const Icon(Icons.arrow_drop_down, size: 18),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -4469,279 +5343,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                       ),
                     ),
                   const Divider(),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        // ソフトキーボードが出ている時だけ「しまう」ボタンを出す (#594)。
-                        // Android ATOK のように IME 側に dismiss ボタンが無い環境向け。
-                        // 画面幅でなくソフトキーボード有無で出し分けるため Platform 分岐
-                        // 不要 (desktop では viewInsets.bottom が 0 で常に非表示)。
-                        //
-                        // Scaffold(resizeToAvoidBottomInset:true) は body を
-                        // MediaQuery.removeViewInsets でラップするため、body 配下の
-                        // ここでは MediaQuery.viewInsets.bottom が 0 に剥がれて常に
-                        // 非表示になっていた。simple_post_bar と判定軸を揃え、
-                        // View.of(context) で root view から直接拾う (#635 / #630)。
-                        if (View.of(context).viewInsets.bottom > 0)
-                          IconButton(
-                            onPressed: () => FocusScope.of(context).unfocus(),
-                            icon: const Icon(Icons.keyboard_hide),
-                            tooltip: 'キーボードをしまう',
-                            visualDensity: VisualDensity.compact,
-                          ),
-                        IconButton(
-                          onPressed: _sending ? null : _pickMedia,
-                          icon: const Icon(Icons.photo),
-                          tooltip: 'メディアを添付',
-                          visualDensity: VisualDensity.compact,
-                        ),
-                        if (ref.watch(currentAdapterProvider) is DriveSupport)
-                          IconButton(
-                            onPressed: _sending ? null : _pickDriveFiles,
-                            icon: const Icon(Icons.cloud_outlined),
-                            tooltip: 'ドライブ',
-                            visualDensity: VisualDensity.compact,
-                          ),
-                        IconButton(
-                          onPressed: _sending ? null : _showEmojiPicker,
-                          icon: const Icon(Icons.emoji_emotions_outlined),
-                          tooltip: '絵文字',
-                          visualDensity: VisualDensity.compact,
-                        ),
-                        // MFM 装飾の挿入メニュー (#688)。MFM 対応の Misskey でのみ
-                        // 出す（判定は ReactionSupport の有無、CLAUDE.md）。
-                        if (ref.watch(currentAdapterProvider)
-                            is ReactionSupport)
-                          IconButton(
-                            onPressed: _sending ? null : _showMfmPicker,
-                            icon: const Icon(Icons.palette_outlined),
-                            tooltip: 'MFM 装飾',
-                            visualDensity: VisualDensity.compact,
-                          ),
-                        IconButton(
-                          onPressed: _sending ? null : _toggleCw,
-                          icon: Icon(
-                            Icons.warning_amber,
-                            color: _cwEnabled
-                                ? Theme.of(context).colorScheme.primary
-                                : null,
-                          ),
-                          tooltip: '閲覧注意',
-                          visualDensity: VisualDensity.compact,
-                        ),
-                        if (ref.watch(currentAdapterProvider) is PollSupport)
-                          IconButton(
-                            onPressed: _sending ? null : _togglePoll,
-                            icon: Icon(
-                              Icons.poll_outlined,
-                              color: _pollEnabled
-                                  ? Theme.of(context).colorScheme.primary
-                                  : null,
-                            ),
-                            tooltip: 'アンケート',
-                            visualDensity: VisualDensity.compact,
-                          ),
-                        if (_attachments.isNotEmpty)
-                          IconButton(
-                            onPressed: _sending ? null : _toggleSensitive,
-                            icon: Icon(
-                              _effectiveSensitive
-                                  ? Icons.visibility_off
-                                  : Icons.visibility,
-                              color: _effectiveSensitive
-                                  ? Theme.of(context).colorScheme.primary
-                                  : null,
-                            ),
-                            tooltip: '閲覧注意メディア',
-                            visualDensity: VisualDensity.compact,
-                          ),
-                        if (ref.watch(currentMulukhiyaProvider) != null)
-                          IconButton(
-                            onPressed: _sending ? null : _showTagsetSheet,
-                            icon: const Icon(Icons.live_tv),
-                            tooltip: '実況',
-                            visualDensity: VisualDensity.compact,
-                          ),
-                        // 投稿テンプレート選択 (#767)。テンプレ機能提供サーバーのみ。
-                        if (ref
-                                .watch(currentMulukhiyaProvider)
-                                ?.composeTemplatesEnabled ==
-                            true)
-                          IconButton(
-                            onPressed: _sending ? null : _showTemplateSheet,
-                            icon: const Icon(Icons.description_outlined),
-                            tooltip: '投稿テンプレート',
-                            visualDensity: VisualDensity.compact,
-                          ),
-                        // サーバー下書きの呼び戻し (#963)。保存側は AppBar の
-                        // オーバーフローに残る。DraftSupport は現状 Misskey のみ。
-                        if (ref.watch(currentAdapterProvider) is DraftSupport)
-                          IconButton(
-                            onPressed: _sending ? null : _showDraftSheet,
-                            icon: const Icon(Icons.edit_note),
-                            tooltip: '下書き',
-                            visualDensity: VisualDensity.compact,
-                          ),
-                        // ナウプレ挿入 (#466)。取得源（Linux MPRIS / Windows SMTC /
-                        // Spotify 連携）がこの端末で使えるときだけ出す。
-                        if (ref
-                            .watch(nowPlayingResolverProvider)
-                            .hasAvailableSource)
-                          IconButton(
-                            onPressed: (_sending || _insertingNowPlaying)
-                                ? null
-                                : _insertNowPlaying,
-                            icon: _insertingNowPlaying
-                                ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Icon(Icons.music_note),
-                            tooltip: 'ナウプレを挿入',
-                            visualDensity: VisualDensity.compact,
-                          ),
-                        if (ref.watch(currentAdapterProvider)
-                            is ScheduleSupport)
-                          IconButton(
-                            onPressed: _sending ? null : _pickScheduleDate,
-                            icon: Icon(
-                              Icons.schedule,
-                              color: _scheduledAt != null
-                                  ? Theme.of(context).colorScheme.primary
-                                  : null,
-                            ),
-                            tooltip: '予約投稿',
-                            visualDensity: VisualDensity.compact,
-                          ),
-                        const VerticalDivider(width: 16),
-                        DropdownButton<PostScope>(
-                          value: _scope,
-                          underline: const SizedBox.shrink(),
-                          isDense: true,
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Theme.of(context).colorScheme.onSurface,
-                          ),
-                          onChanged: _sending
-                              ? null
-                              : (value) {
-                                  if (value != null) _scopeSetters[value]!();
-                                },
-                          items: _scopeItems(ref),
-                        ),
-                        if (ref.watch(currentAdapterProvider)
-                            is ReactionSupport)
-                          Padding(
-                            padding: const EdgeInsets.only(left: 8),
-                            child: FilterChip(
-                              label: const Text('ローカルのみ'),
-                              selected: _localOnly,
-                              onSelected: _sending
-                                  ? null
-                                  : (_) => _toggleLocalOnly(),
-                              visualDensity: VisualDensity.compact,
-                            ),
-                          ),
-                        if (_language != null)
-                          Padding(
-                            padding: const EdgeInsets.only(left: 8),
-                            child: DropdownButton<String>(
-                              value: _language,
-                              underline: const SizedBox.shrink(),
-                              isDense: true,
-                              onChanged: _sending
-                                  ? null
-                                  : (v) {
-                                      if (v != null) {
-                                        setState(() => _language = v);
-                                      }
-                                    },
-                              items: _languageEntries.entries
-                                  .map(
-                                    (e) => DropdownMenuItem(
-                                      value: e.key,
-                                      child: Text(
-                                        e.value,
-                                        style: const TextStyle(fontSize: 13),
-                                      ),
-                                    ),
-                                  )
-                                  .toList(),
-                            ),
-                          ),
-                        if (ref.watch(currentAdapterProvider)
-                            is MastodonAdapter)
-                          Padding(
-                            padding: const EdgeInsets.only(left: 8),
-                            child: DropdownButton<String?>(
-                              value: _quoteApprovalPolicy,
-                              underline: const SizedBox.shrink(),
-                              isDense: true,
-                              hint: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.format_quote, size: 16),
-                                  const SizedBox(width: 4),
-                                  const Text(
-                                    '引用許可',
-                                    style: TextStyle(fontSize: 13),
-                                  ),
-                                ],
-                              ),
-                              onChanged: _sending
-                                  ? null
-                                  : (v) => setState(
-                                      () => _quoteApprovalPolicy = v,
-                                    ),
-                              items: _quoteApprovalLabels.entries
-                                  .map(
-                                    (e) => DropdownMenuItem(
-                                      value: e.key,
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(
-                                            _quoteApprovalIcons[e.key],
-                                            size: 16,
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            e.value,
-                                            style: const TextStyle(
-                                              fontSize: 13,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  )
-                                  .toList(),
-                            ),
-                          ),
-                        if (_scheduledAt != null)
-                          Padding(
-                            padding: const EdgeInsets.only(left: 8),
-                            child: Chip(
-                              avatar: const Icon(Icons.schedule, size: 16),
-                              label: Text(
-                                '${_scheduledAt!.month}/${_scheduledAt!.day} '
-                                '${_scheduledAt!.hour.toString().padLeft(2, '0')}:'
-                                '${_scheduledAt!.minute.toString().padLeft(2, '0')}',
-                                style: const TextStyle(fontSize: 12),
-                              ),
-                              onDeleted: _sending
-                                  ? null
-                                  : () => setState(() => _scheduledAt = null),
-                              visualDensity: VisualDensity.compact,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
+                  _buildToolbar(context),
                 ],
               ),
             ),

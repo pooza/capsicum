@@ -13,6 +13,42 @@ platform :android do
     )
   end
 
+  # ⚠⚠ Play の API 名は直感と逆で、`alpha` がクローズドテスト・`beta` が
+  # オープンテスト。取り違えると未出荷の版が誰でも入れられる状態になる (#1230)。
+  #
+  # ⚠ **招いた人に触ってもらう枠はこちら。**内部テスト (`internal`) は下の
+  # `release` が製品版へ昇格する元なので、外の人を入れると出荷直前の全ビルド
+  # （差し替えて捨てたものを含む）が流れる。
+  #
+  # ⚠⚠ **AAB を直接上げない。内部テストに載っている版を昇格する。**直接上げると
+  # 内部テストが古い版のまま取り残される（193 を直接上げて内部が 192 に
+  # なった・2026-10-05）。昇格にしておけば、ここに載る版は必ず内部にもある。
+  # 先に `fastlane internal` で上げてから `fastlane alpha version_code:<N>`。
+  #
+  # ⚠ `deactivate_on_promote` は既定が true で、元のトラック（内部テスト）を
+  # 無効化する。必ず false にする。
+  desc "Promote an internal testing build to closed testing (alpha)"
+  lane :alpha do |options|
+    version_code = options[:version_code].to_i
+    unless version_code > 0
+      UI.user_error!('version_code を渡す（例: fastlane alpha version_code:194）')
+    end
+    upload_to_play_store(
+      package_name: 'net.shrieker.capsicum',
+      track: 'internal',
+      track_promote_to: 'alpha',
+      version_code: version_code,
+      deactivate_on_promote: false,
+      skip_upload_aab: true,
+      skip_upload_apk: true,
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+      skip_upload_changelogs: true,
+      json_key: json_key_path,
+    )
+  end
+
   desc "Promote internal to production"
   lane :release do
     upload_to_play_store(

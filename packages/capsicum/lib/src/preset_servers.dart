@@ -54,3 +54,17 @@ List<PresetServer> visiblePresetServers() => kPresetServers
 final Set<String> kPresetServerHosts = kPresetServers
     .map((s) => s.host)
     .toSet();
+
+/// 「プリセットの利用者」に数えないアカウント名 (2026-10-08 pooza)。
+///
+/// プリセットサーバーの `@test` は動作確認用のアカウントで、**これしか入って
+/// いない端末は、プリセットを持たない人と同じ画面になる**（利用権の購入ボタンが
+/// 出る）。⚠⚠ **購入の導線を見られる環境が、ほかに作れない** —— 運営者が
+/// 持てるサーバーはステージングを含めてすべてプリセットで、ストアの審査担当へ
+/// 渡せるのもプリセットのアカウントだけ。
+///
+/// ⚠ **通知の配送は変わらない。**relay はホストで通すので、`@test` にも無償で
+/// 届く。変わるのは「課金の話を出すか」の側だけ。
+/// ⚠ ほかのプリセットのアカウントが 1 つでも入っていれば、従来どおり
+/// プリセットの利用者（[hasPresetAccountIn]）。
+const kPresetExemptUsername = 'test';

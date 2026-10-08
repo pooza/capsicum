@@ -4,6 +4,7 @@ import 'dart:developer' as developer;
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
 import 'package:fediverse_objects/fediverse_objects.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'client.dart';
 import 'extensions.dart';
@@ -132,12 +133,24 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         PushSubscriptionSupport,
         ScheduleSupport,
         CollectionsSupport,
+        // プロフィールの掲載タグ (#1075)。Misskey には無い。
+        FeaturedTagSupport,
         TimelineCacheSupport,
         MulukhiyaRepostSupport,
         TranslationSupport,
         MediaUpdateSupport {
   final MastodonClient client;
-  MastodonStreaming? _streaming;
+
+  /// 本線 TL の購読。キーごとに 1 本ずつソケットを張る (#1090)。
+  ///
+  /// ⚠ 以前は単数で持っており、2 本目の購読が 1 本目を黙って止めていた（B-1）。
+  /// ⚠ `subscribe` フレームで 1 本に多重化する方式にはしていない（設計書 2-C）。
+  /// 接続数が実測で問題になったら、呼び出し側を変えずにここだけ差し替えられる。
+  final Map<String, MastodonStreaming> _streamings = {};
+
+  /// 本線 TL の WebSocket を開く手段。**テスト用**（ローカルのサーバーへ向ける）。
+  /// null なら実際に [host] へ接続する。
+  WebSocketChannel Function(Uri uri)? timelineChannelFactory;
   MastodonNotificationStreaming? _notificationStreaming;
   bool _translationAvailable = false;
 
@@ -282,6 +295,28 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     ).results;
   }
 
+  @override
+  Future<List<FeaturedTag>> getFeaturedTags(String accountId) async {
+    final tags = await client.getFeaturedTags(accountId);
+    return tags.map((t) => t.toCapsicum()).toList();
+  }
+
+  @override
+  Future<FeaturedTag> featureTag(String name) async =>
+      (await client.createFeaturedTag(name)).toCapsicum();
+
+  @override
+  Future<void> unfeatureTag(String id) => client.deleteFeaturedTag(id);
+
+  @override
+  Future<List<String>> getFeaturedTagSuggestions() async {
+    final tags = await client.getFeaturedTagSuggestions();
+    return [
+      for (final t in tags)
+        if (!t.featuring) t.name,
+    ];
+  }
+
   Future<List<Post>> getPinnedPosts(String id) async {
     final statuses = await client.getAccountStatuses(id, pinned: true);
     return _safeConvert(
@@ -315,7 +350,11 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         quoteId: draft.quoteId,
         spoilerText: draft.spoilerText,
         mediaIds: draft.mediaIds.isNotEmpty ? draft.mediaIds : null,
-        sensitive: draft.sensitive ? true : null,
+        // ⚠ false を送るのは「既定を読めた」ときだけ (#1194)。常に送ると、
+        // source を返さないサーバーで「サーバー既定に任せる」が壊れる。
+        sensitive: draft.sensitive
+            ? true
+            : (draft.sensitiveExplicit ? false : null),
         language: draft.language,
         quoteApprovalPolicy: draft.quoteApprovalPolicy,
         extraHeaders: draft.skipMulukhiya ? {'X-Mulukhiya': 'capsicum'} : null,
@@ -330,7 +369,11 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         quoteId: draft.quoteId,
         spoilerText: draft.spoilerText,
         mediaIds: draft.mediaIds.isNotEmpty ? draft.mediaIds : null,
-        sensitive: draft.sensitive ? true : null,
+        // ⚠ false を送るのは「既定を読めた」ときだけ (#1194)。常に送ると、
+        // source を返さないサーバーで「サーバー既定に任せる」が壊れる。
+        sensitive: draft.sensitive
+            ? true
+            : (draft.sensitiveExplicit ? false : null),
         language: draft.language,
         pollOptions: draft.pollOptions,
         pollExpiresIn: draft.pollExpiresIn,
@@ -1019,11 +1062,48 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   // NotificationSupport
 
   @override
-  Future<NotificationResponse> getNotifications({TimelineQuery? query}) async {
+  Set<NotificationType> get filterableNotificationTypes =>
+      mastodonFilterableNotificationTypes;
+
+  /// このサーバーに `GET /api/v2/notifications` が無いと分かったか (#1048)。
+  ///
+  /// ⚠ **ページごとに v2 を叩き直さない。**1 ページ目で 404 を踏んだら、以降は
+  /// 最初から v1 で取る。立てっぱなしにしてよいのは、アダプタがアカウント
+  /// 1 つ・サーバー 1 台に対応しているため（サーバーが更新されたら再ログイン
+  /// までは v1 のまま、という保守側に倒れる）。
+  bool _groupingUnsupported = false;
+
+  @override
+  Future<NotificationResponse> getNotifications({
+    TimelineQuery? query,
+    NotificationQuery? filter,
+  }) async {
+    final excludeTypes = <String>[
+      for (final type in filter?.excludeTypes ?? const <NotificationType>{})
+        ...mastodonNotificationWireNames(type),
+    ];
+    if ((filter?.grouped ?? false) && !_groupingUnsupported) {
+      try {
+        return await _getGroupedNotifications(
+          query: query,
+          excludeTypes: excludeTypes,
+        );
+      } on DioException catch (e) {
+        // ⚠ **v2 が無いサーバーでは通知が丸ごと出なくなる**ので、必ず v1 へ
+        // 落とす。Mastodon 4.3 未満と、v1 だけ実装した互換サーバーが該当する。
+        // ⚠ 401 / 429 等は落とさない（認証切れやレート制限を「v2 が無い」と
+        // 読むと、グループ表示が一度の失敗で永久に無効化される）。
+        final status = e.response?.statusCode;
+        if (status != 404 && status != 400 && status != 501) rethrow;
+        _groupingUnsupported = true;
+      }
+    }
     final notifications = await client.getNotifications(
       maxId: query?.maxId,
       sinceId: query?.sinceId,
       limit: query?.limit,
+      excludeTypes: excludeTypes,
+      supportedTypes: mastodonSupportedNotificationTypes,
     );
     final converted = _safeConvert(
       notifications,
@@ -1035,6 +1115,43 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       rawCount: converted.rawCount,
       rawLastId: converted.rawLastId,
       skippedPosts: converted.skipped,
+    );
+  }
+
+  Future<NotificationResponse> _getGroupedNotifications({
+    TimelineQuery? query,
+    required List<String> excludeTypes,
+  }) async {
+    final grouped = await client.getGroupedNotifications(
+      maxId: query?.maxId,
+      sinceId: query?.sinceId,
+      limit: query?.limit,
+      excludeTypes: excludeTypes,
+      supportedTypes: mastodonSupportedNotificationTypes,
+    );
+    final accounts = {for (final a in grouped.accounts) a.id: a};
+    final statuses = {for (final st in grouped.statuses) st.id: st};
+    final converted = _safeConvert(
+      grouped.notificationGroups,
+      (g) => g.toCapsicum(
+        host,
+        accounts: accounts,
+        statuses: statuses,
+        adminRoleIds: _adminRoleIds,
+      ),
+      // ⚠⚠ **次ページのカーソルはグループ内の最も古い通知 ID。**
+      // `most_recent_notification_id` を渡すと、末尾のグループの古いぶんを
+      // 読み飛ばす。`group_key` では辿れない（`max_id` は通知 ID を取る）。
+      (g) => g.pageMinId ?? g.mostRecentNotificationId,
+    );
+    return NotificationResponse(
+      notifications: converted.results,
+      rawCount: converted.rawCount,
+      rawLastId: converted.rawLastId,
+      skippedPosts: converted.skipped,
+      // ⚠⚠ **グループ数と limit を比べてはいけない**理由は
+      // [NotificationResponse.hasMore] の doc が正本。
+      hasMore: grouped.notificationGroups.isNotEmpty,
     );
   }
 
@@ -1423,20 +1540,22 @@ class MastodonAdapter extends DecentralizedBackendAdapter
 
   @override
   Stream<Post> streamTimeline(
-    TimelineType type, {
+    String key,
+    TabType tab, {
     void Function(Object error, StackTrace stack)? onParseError,
     void Function(Object error, StackTrace stack)? onStreamError,
     void Function()? onReconnectExhausted,
     void Function(StreamConnectionState state)? onConnectionState,
     void Function(int? closeCode, String? closeReason)? onDisconnect,
   }) {
-    _streaming?.dispose();
-    // DM timeline has no dedicated stream; avoid falling back to 'user'
-    // which would mix non-DM posts into the DM tab.
-    if (type == TimelineType.directMessages) return const Stream.empty();
+    // 同じキーの前の購読だけを閉じる。他のキーには触らない (#1090)。
+    _streamings.remove(key)?.dispose();
+    // 対応するストリームが無いタブ (DM / チャンネル / AND 指定のタグ) では
+    // 接続そのものを作らない。'user' へ落とすと別の TL を隠れ購読する (#793)。
+    if (mastodonStreamTarget(tab) == null) return const Stream.empty();
     final token = client.accessToken;
     if (token == null) return const Stream.empty();
-    _streaming = MastodonStreaming(
+    final streaming = MastodonStreaming(
       host: host,
       accessToken: token,
       adminRoleIds: _adminRoleIds,
@@ -1445,14 +1564,15 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       onReconnectExhausted: onReconnectExhausted,
       onConnectionState: onConnectionState,
       onDisconnect: onDisconnect,
+      channelFactory: timelineChannelFactory,
     );
-    return _streaming!.connect(type);
+    _streamings[key] = streaming;
+    return streaming.connect(tab);
   }
 
   @override
-  void disposeStream() {
-    _streaming?.dispose();
-    _streaming = null;
+  void disposeStream(String key) {
+    _streamings.remove(key)?.dispose();
   }
 
   // NotificationStreamSupport (#569)
@@ -1654,7 +1774,15 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<void> unsubscribePush({String? endpoint}) async {
+  Future<void> unsubscribePush({
+    String? endpoint,
+    String? p256dh,
+    String? auth,
+  }) async {
+    // p256dh / auth も Misskey 用（2026.10.0 の所有確認・#1201）。Mastodon は
+    // OAuth トークンで対象が決まるので鍵は要らない。⚠ **endpoint と違って
+    // 警告も出さない** —— 呼び出し側は両 SNS 共通の経路で常に渡してくるので、
+    // 非 null が来るのは通常動作であって「無視していたことの失念」ではない。
     // endpoint は Misskey 用。Mastodon の DELETE /api/v1/push/subscription は
     // 現 OAuth トークンのサブスクリプションを対象とするため引数では絞れない。
     // 将来 endpoint を使いたくなった際に「実は無視していた」ことを失念しない

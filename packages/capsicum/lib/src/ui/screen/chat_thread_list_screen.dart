@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../provider/chat_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../util/oauth_scope_error.dart';
+import '../util/deck_navigation.dart';
 import '../util/op_error.dart';
 import '../util/relative_time.dart';
 import '../widget/bottom_safe_area.dart';
@@ -220,7 +221,7 @@ class _ChatThreadTile extends ConsumerWidget {
       ),
       subtitle: Text(preview, maxLines: 1, overflow: TextOverflow.ellipsis),
       trailing: _ThreadMetaColumn(thread: thread, ref: ref),
-      onTap: () => context.push('/chat/user/${otherUser.id}', extra: otherUser),
+      onTap: () => openChatWithUser(context, otherUser),
     );
   }
 

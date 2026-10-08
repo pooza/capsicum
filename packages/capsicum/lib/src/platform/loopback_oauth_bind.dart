@@ -17,6 +17,36 @@ class LoopbackPortOccupiedException implements Exception {
       'LoopbackPortOccupiedException(port: $port, lastError: $lastError)';
 }
 
+/// loopback サーバに届いたリクエストが、**今回の試行の**認可応答かを判定する
+/// (#790 / #1140)。
+///
+/// ⚠⚠ **最初に来たものを無条件に受け取らない。**ブラウザが「前回のセッションを
+/// 復元」すると、前回ログインしたときの callback タブ
+/// (`/oauth/callback?code=…&state=…` / `?session=…`) を読み込み直し、それが承認より
+/// 先に届く。受け取って閉じると、今回の試行は照合に落ち、本物の callback は
+/// 「接続が拒否されました」になる（#1140・Linux / Windows で再現）。
+///
+/// - [callbackPath] と違うパス（`/favicon.ico` 等）やクエリが空のものは対象外
+/// - [expectedState]（Mastodon）を渡したら、`state` が一致したものだけ
+/// - [expectedSession]（Misskey MiAuth）を渡したら、`session` が一致したものだけ。
+///   MiAuth は callback に `?session=` を付けて戻す
+bool isExpectedOAuthCallback(
+  Uri uri, {
+  required String callbackPath,
+  String? expectedState,
+  String? expectedSession,
+}) {
+  if (uri.path != callbackPath || uri.queryParameters.isEmpty) return false;
+  if (expectedState != null && uri.queryParameters['state'] != expectedState) {
+    return false;
+  }
+  if (expectedSession != null &&
+      uri.queryParameters['session'] != expectedSession) {
+    return false;
+  }
+  return true;
+}
+
 Duration _defaultBackoff(int attempt) => Duration(milliseconds: 150 * attempt);
 
 /// 固定ポート [port] に loopback (127.0.0.1) の [HttpServer] を bind する。

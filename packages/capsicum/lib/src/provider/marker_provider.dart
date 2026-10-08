@@ -11,7 +11,7 @@ final markersProvider = FutureProvider.autoDispose<MarkerSet?>((ref) async {
   final adapter = ref.watch(currentAdapterProvider);
   if (adapter == null || adapter is! MarkerSupport) return null;
   return (adapter as MarkerSupport).getMarkers();
-});
+}, dependencies: [currentAdapterProvider]);
 
 /// Debounced marker saver for home timeline.
 class HomeMarkerSaver {
@@ -83,11 +83,11 @@ final homeMarkerSaverProvider = Provider.autoDispose<HomeMarkerSaver>((ref) {
   final saver = HomeMarkerSaver(ref);
   ref.onDispose(saver.dispose);
   return saver;
-});
+}, dependencies: [currentAdapterProvider]);
 
 final notificationMarkerSaverProvider =
     Provider.autoDispose<NotificationMarkerSaver>((ref) {
       final saver = NotificationMarkerSaver(ref);
       ref.onDispose(saver.dispose);
       return saver;
-    });
+    }, dependencies: [currentAdapterProvider]);

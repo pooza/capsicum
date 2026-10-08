@@ -39,7 +39,8 @@ class ServerBadge extends StatelessWidget {
         label,
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
           fontSize: 11,
-          color: Colors.white,
+          // ⚠ 白に固定しない（#1240・明るい色のサーバーで読めなくなる）。
+          color: foregroundOnHostColor(color),
           fontWeight: FontWeight.w500,
         ),
         maxLines: 1,

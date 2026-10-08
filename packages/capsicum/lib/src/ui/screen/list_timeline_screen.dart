@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../provider/account_manager_provider.dart';
 import '../../provider/list_provider.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/post_tile.dart';
@@ -39,13 +40,21 @@ class _ListTimelineScreenState extends ConsumerState<ListTimelineScreen> {
   void _onScroll() {
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 600) {
-      ref.read(listTimelineProvider(widget.listId).notifier).loadMore();
+      final ListTimelineKey key = (
+        account: ref.read(currentAccountKeyProvider),
+        id: widget.listId,
+      );
+      ref.read(listTimelineProvider(key).notifier).loadMore();
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final timeline = ref.watch(listTimelineProvider(widget.listId));
+    final ListTimelineKey key = (
+      account: ref.watch(currentAccountKeyProvider),
+      id: widget.listId,
+    );
+    final timeline = ref.watch(listTimelineProvider(key));
 
     return Scaffold(
       appBar: AppBar(
@@ -58,7 +67,7 @@ class _ListTimelineScreenState extends ConsumerState<ListTimelineScreen> {
               ? const Center(child: Text('投稿がありません'))
               : RefreshIndicator(
                   onRefresh: () =>
-                      ref.refresh(listTimelineProvider(widget.listId).future),
+                      ref.refresh(listTimelineProvider(key).future),
                   child: ListView.separated(
                     controller: _scrollController,
                     itemCount:
@@ -82,7 +91,7 @@ class _ListTimelineScreenState extends ConsumerState<ListTimelineScreen> {
           error: (error, stack) => RetryErrorView(
             message: '読み込みに失敗しました',
             isRetrying: timeline.isLoading,
-            onRetry: () => ref.invalidate(listTimelineProvider(widget.listId)),
+            onRetry: () => ref.invalidate(listTimelineProvider(key)),
           ),
         ),
       ),

@@ -18,10 +18,30 @@ disable-model-invocation: true
 
 ⚠ 端末側の設定（`auto` モード・`autoMode` の書き分け）は同ファイルの「Claude Code の権限設定」が正本。**書き方を守っても設定が無ければ確認は消えない**ので、新しい端末では設定を先に済ませる。
 
+## 0-2. 進捗の出し方（無言にしない・#1228）
+
+⚠⚠ **数分に 1 回は何か文字が出ている状態を保つ。**2026-10-05 の同期で、約 30 分のあいだツール呼び出しが 35 回あったのに、出したテキストは 2 回だけだった。⚠ **並列でツールを投げるのは続けてよい** —— 切るのは無言の連鎖だけ。
+
+- **各ステップの区切りで 1 行出す。**「§2 の git / CI は緑。次は Issue を見ます」程度でよい
+- ⚠⚠ **手順から外れたことを始めるときは、始める前に必ず 1 行出す。**「Sentry に判定を作り直すべき山が 1 件あるので、母数を詰めます（数分かかります）」の形。**イレギュラーほど先に言う** —— 待っている側には、定形の 1 件と調査の 12 件が区別できない
+- **進捗が 0 件の回ほど効く。**何に時間を使ったかは step 10 で書くが、**待っている間は分からない**ので、最後の報告だけでは「30 分かけて変化なし」に見える
+
+⚠ これは新しい規約ではない（2026-08-10 指摘・メモリ `feedback_progress_updates_while_working`）。読んで守る側に置いたまま同期の場で破ったので、手順書へ移した。⚠⚠ **それでも破るなら、次は報告を step として番号で切る** —— 無言の長さは機械で測れないため、フック化では止まらない。
+
 ## 1. プロジェクトガイドの読み込み
 
 - `docs/CLAUDE.md` を読む（プロジェクトのルール・構造・履歴の正本）
 - インフラノート `/Volumes/extdata/repos/chubo2/docs/infra-note.md` を読む（サーバー構成・デプロイ手順）
+
+  ⚠⚠ **全文を読むのは chubo2 に差分があるときだけ**（#1227）。36KB あり、**変わっていない回も毎日読み直していた**。⚠ ステップ 8 の chubo2 の差分確認を、ここで先に済ませる:
+
+  ```sh
+  git -C ~/repos/chubo2 fetch origin && git -C ~/repos/chubo2 log HEAD..origin/main --oneline
+  ```
+
+  - **差分あり** → 全文を読む
+  - **差分なし** → 冒頭のドキュメント索引（表）と運用方針の節だけでよい
+  - ⚠⚠ **「読まない」にはしない。**インフラの前提を知らずに同期を回すと、relay のデプロイ判定を誤る。狙いは「変わっていないものを毎日読み直さない」ことだけ
 - `MEMORY.md` は自動ロードされるので、両者の整合性を意識する
 
 ## 2. リモートとの同期・状態確認
@@ -33,7 +53,29 @@ disable-model-invocation: true
 - `gh release list --limit 5` — 最近の GitHub Releases を確認
 - `gh api repos/pooza/capsicum/milestones --jq '.[] | "\(.title) \(.state) \(.closed_at // "open")"'` — マイルストーンの open/closed 状態を確認
 - **`gh run list --workflow=analyze.yml --branch develop --limit 3` で CI の緑/赤を確認する。**赤なら**その場で直す**。develop は PR を経ずコミットが積まれるため、`dart format` / `dart analyze` の失敗が誰にも気付かれないまま残りうる。2026-08-05 の同期で、#934 のコミット以降 2 日間 format 失敗のまま develop が進んでいたのを発見した
+
+  ⚠⚠ **この応答は push した瞬間の真実を返さない**（2026-10-01 に 2 つの形で踏んだ）。**件数で判断しないこと**:
+
+  - **push 直後は run がまだ無い。**「0 件になるのを待つ」形の待ち受けは、**登録される前に 0 件を返して即座に抜ける**。⚠ **待つ条件は `conclusion` の有無で書く**（`--json conclusion,headSha,event` + `--jq` で対象 SHA の `push` イベントを選び、値が出るまで待つ）
+  - **数週間前の run を最新として返すことがある。**同じ瞬間に `--json` で引くと正しい当日のものが出た。⚠⚠ **これを「誰かが push した」と読んで誤報を出した実績がある** —— リモートの状態は `git fetch` + `git log HEAD..origin/<branch>` が正本
+  - ⚠ **1 コミットにつき `push` と `pull_request` の 2 行**出る（後者は `skipped`）ので `--limit 3` では足りない。`--event push` で絞る
+  - ⚠ 自分の push が**後続の push にキャンセルされる**ことがある（同一 workflow の concurrency）。`cancelled` を「失敗」と読まず、**後続の SHA の run を見る**
 - 前回同期時点と比較して新しいリリースがあれば、実装ステータスやリリース計画セクションに反映する
+- **1 回で読めない大きさの docs を数える**（#1184）。⚠⚠ **ガードは「増えないこと」しか見ていない。**超過中のファイルは budget を持っているので**緑のまま**で、放っておくと 1 回で読めない状態が永久に続く。**減らす圧力はここでしか掛からない**ので、同期のたびに件数を出す:
+
+  ```sh
+  find docs -maxdepth 1 -name '*.md' -exec wc -c {} + | awk '$1 > 60000 && $2 != "total"' | sort -rn
+  ```
+
+  出たら報告に件数と最大のファイルを載せる。⚠ **その場で削らない**（同期は定形作業で、節の取捨は判断が要る）。削るのは **`/doc-maintenance` の step 6**。
+
+  ⚠ **capsicum-relay も同じ閾値で数える**（2026-10-06〜）。relay にはガードも CI も無く、開発ガイドが 72.7KB まで育っても誰も合図を出さなかった:
+
+  ```sh
+  find ~/repos/capsicum-relay/docs -maxdepth 1 -name '*.md' -exec wc -c {} + | awk '$1 > 60000 && $2 != "total"' | sort -rn
+  ```
+
+  ⚠⚠ **2026-09-30 に 0 件になった**（4 件を閾値以下へ落とし、ガードの `_budgets` も空になった）。**0 件なら報告では省いてよい**が、⚠ **この項目自体は畳まない** —— **超過は docs を書くたびに戻りうる**し、budget を持たせたファイルは緑のまま残るので、**減らす圧力はここにしか無い**という構図は変わっていない
 - **Flutter のバージョンが基準と合っているかを確認する**（[#836](https://github.com/pooza/capsicum/issues/836)）。端末が 3 つ以上あり、ズレたまま `flutter pub get` すると `pubspec.lock` が端末間で ping-pong するため、**着いた端末で最初に気付けるようにする**のが目的。正本は CI の pin:
 
   ```sh
@@ -62,6 +104,17 @@ disable-model-invocation: true
 
 - 美食丼の `#capsicum` タグタイムラインを取得: `curl -s "https://mstdn.b-shock.org/api/v1/timelines/tag/capsicum?limit=20"`
 - ダイスキーの capsicum チャンネル（delmulin 固有の capsicum 話題、`channelId=ak31f5utjv`、<https://misskey.delmulin.com/channels/ak31f5utjv>）を取得: `curl -s -X POST https://misskey.delmulin.com/api/channels/timeline -H 'Content-Type: application/json' -d '{"channelId":"ak31f5utjv","limit":20}'`
+- **capsicum のコミュニティ（`pf.korako.me` の `capsicum`）の新着を、本文まで読む**。⚠⚠ **タグ TL にはコミュニティの投稿が題名とリンクだけで載る**ので、題名を見て済ませると中身を丸ごと落とす（2026-10-06 に、デッキの発案者の要望 5 件を「題名しか載っていない」と報告して取りこぼした）:
+
+  ```sh
+  # 一覧（新しい順）。前回同期以降の投稿について、下の 2 本で本文と返信を読む
+  curl -s 'https://pf.korako.me/api/alpha/post/list?community_name=capsicum&sort=New&limit=15' \
+    | jq -r '.posts[] | "\(.post.published[0:16]) id=\(.post.id) comments=\(.counts.comments) \(.post.title[0:80])"'
+  curl -s 'https://pf.korako.me/api/alpha/post?id=<id>' | jq -r '.post_view.post.body'
+  curl -s 'https://pf.korako.me/api/alpha/comment/list?post_id=<id>&sort=Old&limit=20' | jq -r '.comments[] | .comment.body'
+  ```
+
+  ⚠ **本文に画像があれば開いて見る**（画面写真が要望の中身になっていることがある）。⚠ **箇条書きの要望は 1 行ずつ数える** —— 1 投稿 = 1 件ではない
 - バグ報告・機能要望・ユーザーからの質問がないか確認する
 - 未起票のバグ報告があれば GitHub Issue を起票する（報告元の投稿 URL を記載）
 - 好評・感想は報告のみ（Issue 化不要）
@@ -95,6 +148,14 @@ capsicum-relay の Issue・マイルストーンは、**capsicum 本体と同じ
 ## 6. Codex レビューコメントの確認
 
 - 最近マージされた PR（`gh pr list --state merged --limit 5`）を取得。**直近リリース PR（`develop` → `main` の merge）も merged にカウントされる**ため、リリース直後の同期では明示的にリリース PR が含まれていることを確認する（過去に #529 を見落としかけた経緯あり）
+- ⚠⚠ **対象は「前回同期以降にマージされた PR」だけ**（#1227）。`--limit 5` をそのまま引くと、**マージが止まっている時期は毎回同じ PR を読み直す**。2026-10-05 の同期では capsicum 2 本 + relay 4 本を読み直し、**うち 5 本は前回以前の同期で返信 + 👍 まで済んでいた**（残り 1 本はコメント 17 本の長文で、その回いちばん出力量が大きかった）。`mergedAt` で切る:
+
+  ```sh
+  gh pr list --state merged --limit 10 --json number,mergedAt,title \
+    --jq '.[] | select(.mergedAt > "<前回同期の日付>") | "#\(.number) \(.mergedAt[0:16]) \(.title)"'
+  ```
+
+  ⚠ **リリース PR の line comment を明示的に数える規約（この節の末尾）は残す。**あちらは「別系統だから取りこぼす」話で、ここで切るのは「同じものを 2 回読む」側。
 - 各 PR に対して `gh api repos/pooza/capsicum/pulls/{number}/comments`（line comments）+ `gh api repos/pooza/capsicum/pulls/{number}/reviews`（review 本体）の両方で Codex（`chatgpt-codex-connector[bot]`）のコメントを確認。**line comments と review comments は別 API** で、片方だけ見ると review 本体に書かれた指摘 (P2 レベル等) を取りこぼす
 - 各コメントについて以下を判定する:
   1. **未返信** → 指摘内容を確認し、対応が必要か判断。必要なら Issue 起票
@@ -116,28 +177,65 @@ capsicum-relay の Issue・マイルストーンは、**capsicum 本体と同じ
 - 調査用トークンが別枠なのは、capsicum ではリポジトリ root の `.sentryclirc` がデプロイ用トークンで占有されているため。スクリプトの `cli` は `SENTRY_AUTH_TOKEN` で調査用を明示するので、cwd に関係なく 403 にならない
 - ⚠ Windows（`sh` 不在）ではスクリプトが使えない。`sentry-cli` を `--org` 明示で叩く従来の形のまま
 - resolved 済みのイシューは報告不要
+- ⚠⚠ **pooza の普段遣いがプレリリース版のときは、その release で 1 回引く**（2026-10-05〜・メモリ `project_pooza_daily_driver_on_v20_beta`）。**回帰は新規イシューにならず既存へ積まれる**ことがあり、その場合**新着にも既知 warning の推移にも掛からない**。⚠ **クエリ 1 本で済む**（所要時間を増やさない・#1227）:
+
+  ```sh
+  .claude/scripts/sentry-api.sh cli issues list -p capsicum \
+    --query 'is:unresolved release:net.shrieker.capsicum@<版>+<ビルド>'
+  ```
+
+  ⚠ 見るのは **「基準の一覧に無いものが出ていないか」**と**日次の水準**（基準値はメモリ側）。⚠⚠ **累積の件数では判断しない。**⚠ 内部ベータを配っていない時期はこの項目を飛ばす。
+
+⚠⚠ **「新着」だけ見ると、縮退して成功している記録を永久に見落とす**（2026-10-03 に実際に取りこぼした）。`Push degraded` のように**処理は成功しているが品質が落ちている**記録は level が `warning` で止まり、**件数がどれだけ増えても新着にも error にも出てこない**。そして「意図どおりの degrade」という過去の判定が残っているので、毎回それを読んで通してしまう。**既知の `warning` は件数の推移で見る**:
+
+```sh
+# 過去に「起票しない」と判定した warning の、現在の件数と最終発生
+.claude/scripts/sentry-api.sh get /issues/{issue_id}/ | jq -r '"count=\(.count) users=\(.userCount) firstSeen=\(.firstSeen[0:16]) lastSeen=\(.lastSeen[0:16])"'
+```
+
+⚠ **判定時の件数より一桁増えていたら、判定ごと作り直す**（コメントに当時の件数が残っているので比べられる）。
+
+⚠⚠ **ただし作り直した判定を「累積の件数」で書かない。**`count` は**時間が経てば増える**ので、一桁増えたことは**増勢の証拠にならない**。⚠ **作り直すときは日次の推移を引いて、レートが変わったのかを見る**:
+
+```sh
+# 直近 14 日の日次件数（stats は 24h と 30d の 2 つだけ持つ）
+.claude/scripts/sentry-api.sh get /issues/{issue_id}/ | jq -r '.stats["30d"][-14:][] | "\(.[0] | strftime("%m-%d")) \(.[1])"'
+```
+
+⚠ **2026-10-04 に実際に紛れかけた。**`CAPSICUM-RELAY-3`（APNs のアイドル接続切断）は判定時 `count=3` → 252 件で **84 倍**だったが、日次は 1〜4 件で平らで、4 か月の平均（約 2 件/日）と一致していた ＝ **レートは判定時から変わっていない**。⚠⚠ **格上げ条件は「累積で N 件」ではなく「日次が N 件/日を超える」で書く** —— 累積で書くと、何もしなくても必ず到達する。
+
+⚠⚠ **`contexts` は `events/latest/` か `events/?full=true` でしか取れない**（`events/` の一覧には入らない）ので、実害の大きさを測るときはこちらを使う:
+
+```sh
+.claude/scripts/sentry-api.sh get '/issues/{issue_id}/events/?full=true' \
+  | jq -r '[.[] | select(.contexts.push != null) | .contexts.push.original_size] | sort'
+```
+
+⚠⚠ **同じ現象が複数のイシューに割れていることがある。**メッセージ文面を変えると fingerprint が変わるため、**リリースを境に片方が止まり、もう片方が始まる**。`lastSeen` が止まっているイシューを「収束した」と読む前に、**同じ時期に始まった別のイシューが無いか**を見る（2026-10-03 に `Push oversized degraded (ios)` 311 件と `Push degraded (ios)` 72 件が同一経路だったと判明し、78 件と見ていた規模が **383 件 / 7 週間**になった → [#1215](https://github.com/pooza/capsicum/issues/1215)）。
 
 ## 8. 関連リポジトリの同期確認
 
 - **mulukhiya-toot-proxy**: `git -C ~/repos/mulukhiya-toot-proxy fetch origin` + `git -C ~/repos/mulukhiya-toot-proxy log HEAD..origin/develop --oneline` でリモートとの差分を確認（`cd` しない理由は [dev-environment.md](../../../docs/dev-environment.md) の「コマンドの書き方」）。`docs/capsicum-requirements.md` や `docs/api.md` に変更があれば capsicum 側への影響を判断
 - **chubo2**: `git -C ~/repos/chubo2 fetch origin` + `git -C ~/repos/chubo2 log HEAD..origin/main --oneline` で差分を確認。`docs/infra-note.md` に変更があれば MEMORY.md のインフラセクションに反映が必要か判断
-- **capsicum-relay**: `git -C ~/repos/capsicum-relay fetch origin` + `git -C ~/repos/capsicum-relay log HEAD..origin/main --oneline` で差分を確認。Issue / PR は `gh issue list --repo pooza/capsicum-relay --state open --limit 30` / `gh pr list --repo pooza/capsicum-relay --state open` で確認（dependabot PR + security alert もここで拾う、`gh api repos/pooza/capsicum-relay/dependabot/alerts --jq '.[] | select(.state == "open") | "\(.security_advisory.severity) \(.dependency.package.name) fix=\(.security_vulnerability.first_patched_version.identifier)"'`）。リレーサーバーのデプロイ管理は Claude 担当（**接続先ホスト・SSH ユーザー・具体的な SSH コマンド列はメモリ `feedback_capsicum_relay_deploy_delegation` が正本**。ホスト構成・デプロイ手順の共有正本は chubo2 の `docs/infra-note.md`）、main 進行がありサーバー側の HEAD が遅れていたら SSH デプロイ（pull → 依存更新 → サービス再起動 → `/health` 確認）まで一連で実行。**稼働中の SHA は SSH せずに `/health` で分かる**（relay#37、v1.57 で出荷）ので、デプロイ要否の判定はこれ 1 回で済ませる:
+
+  ⚠ **chubo2 の差分確認はステップ 1 で先に済ませている**（#1227・infra-note を全文読むかの判定に要るため）。ここでは結果を使うだけでよい。
+- **capsicum-relay**: `git -C ~/repos/capsicum-relay fetch origin` + `git -C ~/repos/capsicum-relay log HEAD..origin/main --oneline` で差分を確認。Issue / PR は `gh issue list --repo pooza/capsicum-relay --state open --limit 30` / `gh pr list --repo pooza/capsicum-relay --state open` で確認（dependabot PR + security alert もここで拾う、`gh api repos/pooza/capsicum-relay/dependabot/alerts --jq '.[] | select(.state == "open") | "\(.security_advisory.severity) \(.dependency.package.name) fix=\(.security_vulnerability.first_patched_version.identifier)"'`）。リレーサーバーのデプロイ管理は Claude 担当（**接続先ホスト・SSH ユーザー・逐語のコマンド列は chubo2 `docs/infra-servers.md` の capsicum-relay 本番 / ステージングの節が正本**・private。委任の範囲と作業上の注意はメモリ `feedback_capsicum_relay_deploy_delegation`。⚠ 公開リポジトリなのでここには書かない）、main 進行がありサーバー側の HEAD が遅れていたら SSH デプロイ（pull → 依存更新 → サービス再起動 → `/health` 確認）まで一連で実行。**稼働中の SHA は SSH せずに `/health` で分かる**（relay#37、v1.57 で出荷）ので、デプロイ要否の判定はこれ 1 回で済ませる:
 
   ```sh
-  curl -s https://st.relay.capsicum.shrieker.net/health | jq -r .revision   # ステージング (triton)
-  curl -s https://relay.capsicum.shrieker.net/health | jq -r .revision      # 本番 (flauros)
+  curl -s https://st.relay.capsicum.shrieker.net/health | jq -r .revision   # ステージング
+  curl -s https://relay.capsicum.shrieker.net/health | jq -r .revision      # 本番
   ```
 
   ⚠ 返るのは**稼働中プロセス**の revision なので、docs / テストだけの commit を main へ入れた回は**意図的に遅れる**（本番再起動は in-memory の `/metrics` counter をゼロに戻すため、サーバー挙動が変わらない commit で再起動しない）。不一致を見つけたら `git log <revision>..origin/main` で中身を見て、コードに触っていなければデプロイ不要と判断する。
 
-  ⚠⚠ **デプロイは必ずステージング (triton) を先に通し、本番 (flauros) はその後**（2026-09-13 pooza 指示）。**両方の `/health` を並べて見るのは、本番だけが先に進んでいる逆転を検出するため。**2026-09-13 の同期で、relay#54 が **本番 `a9b8e90` / ステージング `b9ce14c`** という逆転のまま出ていたのを見つけた（ステージングが一度も新コードを踏んでいない）。
+  ⚠⚠ **デプロイは必ずステージングを先に通し、本番はその後**（2026-09-13 pooza 指示）。**両方の `/health` を並べて見るのは、本番だけが先に進んでいる逆転を検出するため。**2026-09-13 の同期で、relay#54 が **本番 `a9b8e90` / ステージング `b9ce14c`** という逆転のまま出ていたのを見つけた（ステージングが一度も新コードを踏んでいない）。
 
-  | 順 | ホスト | 確認 |
+  | 順 | 環境 | 確認 |
   | --- | --- | --- |
-  | 1 | `deploy@triton.b-shock.local` | `curl -s https://st.relay.capsicum.shrieker.net/health` の revision が origin/main と一致し、`status` が ok |
-  | 2 | `deploy@flauros.b-shock.co.jp` | 同上を本番 URL で |
+  | 1 | ステージング | `curl -s https://st.relay.capsicum.shrieker.net/health` の revision が origin/main と一致し、`status` が ok |
+  | 2 | 本番 | 同上を本番 URL で |
 
-  ⚠ **ステージングで確かめてから本番へ進む。**手順（pull → `bundle install` → `sudo -n systemctl restart capsicum-relay` → `/health`）は 2 台とも同じで、アプリは両方 `~/repos/capsicum-relay`・branch は `main`・unit 名も `capsicum-relay`。⚠ **変更系と確認系を同じ ssh セッションに混ぜない**（本番を意図せず再起動した事故がある）。⚠ **ステージングは購読数が小さく `supporters` が 0** なので、`/health` の数値が本番と違っても異常ではない。
+  ⚠ **ステージングで確かめてから本番へ進む。**手順（pull → 依存更新 → サービス再起動 → `/health`）は 2 台とも同じ（逐語は chubo2 側）。⚠ **変更系と確認系を同じ ssh セッションに混ぜない**（本番を意図せず再起動した事故がある）。⚠ **ステージングは購読数が小さく `supporters` が 0** なので、`/health` の数値が本番と違っても異常ではない。
 - **Mastodon / Misskey の現行バージョン確認**: 自前サーバーのソフトウェアは pooza フォークがリリース追従しているため、ローカルの fork を pull すれば現行バージョンを正確に確認できる（推測しない）。
   - Mastodon: `git -C ~/repos/mastodon pull --ff-only` → `lib/mastodon/version.rb` の major/minor/patch（または `git -C ~/repos/mastodon tag --sort=-creatordate | head` で `vX.Y.Z-bshockdon`）
   - Misskey: `git -C ~/repos/misskey pull --ff-only` → `package.json` の `version`（`jq -r .version ~/repos/misskey/package.json`）
@@ -146,8 +244,38 @@ capsicum-relay の Issue・マイルストーンは、**capsicum 本体と同じ
 ## 9. MEMORY.md の更新
 
 - 上記で検出した差分（Issue 状態、マイルストーン件数のズレ、リリース情報等）を反映
+- ⚠⚠ **進捗メモリは「現在地」節を上書きするだけにする。日付の節を足さない。**件数・残 Issue・稼働 SHA は GitHub と `/health` が正本なので**書き写さない**（`docs/doc-maintenance.md`「メモリは status を持たない」）。⚠ 同期のたびに「今回の現在地」を節ごと足した結果、進捗メモリは 9-29 / 10-01 / 10-06 と **3 回 60KB 前後まで膨らんで畳み直した**。経過を残したいときは Issue のコメントかマイルストーンの description（step 5）へ書く
+- **メモリのサイズを数える**（#1227）。⚠⚠ **1 回で読める上限は約 63.7KB。**2026-10-05 の同期は `project_v20_progress.md` が 63,472 バイトまで来ていたため、**同期分を書いた時点で超過し、その場で畳む判断作業が発生した**。⚠ 末尾のスラッシュを省くと symlink を辿らない（メモリディレクトリは symlink）:
+
+  ```sh
+  find ~/.claude/projects/-Volumes-extdata-repos-capsicum/memory/ -maxdepth 1 -name '*.md' \
+    -exec wc -c {} + | awk '$1 > 55000 && $2 != "total"' | sort -rn
+  ```
+
+  - 出たらファイル名とバイト数を報告に載せる
+  - ⚠ **その場で畳まない**（docs と同じ線。削るのは `/doc-maintenance` 側）
+  - ⚠⚠ **ただし同期分を書き足して超過するなら、超過させない範囲で削るのは可。**読めなくなると次のセッションが始まらない
+
+⚠⚠ **docs を書き換えたら push 前にガードのテストを通す**（`docs/CLAUDE.md`「docs / skills を触った回は、ガードのテストも通す」）。同期は **docs を触る定形作業**なので、ここで踏みやすい:
+
+```bash
+(cd packages/capsicum && flutter test test/docs_convention_guard_test.dart)
+```
+
+⚠ `dart format` / `dart analyze` は Markdown を見ない。⚠⚠ **CI は赤になるが、次の push に追い越されると `cancelled` になって表に出ない**（2026-10-03 に `b95ac00b` で実際に起きた）。
 
 ## 10. 同期結果の報告
 
-- 現在のブランチ・状態、前回以降にクローズされた Issue、マイルストーン別の残件数、未割り当て Issue 一覧、Sentry 新着イベント、Mastodon / Misskey の現行バージョン、各確認項目の結果をまとめて報告する
+- 現在のブランチ・状態、前回以降にクローズされた Issue、マイルストーン別の残件数、未割り当て Issue 一覧、Sentry 新着イベント、Mastodon / Misskey の現行バージョン、**1 回で読めない docs の件数**（#1184・0 件なら省略してよい）、各確認項目の結果をまとめて報告する
 - **capsicum と capsicum-relay の稼働中マイルストーンを、同じ見出しレベル・同じ粒度で並記する**（「relay を同列に扱う」節を参照）。relay の残件を末尾の 1 行に圧縮しない
+- **`verification-pending` の件数と内訳を必ず載せる**（2026-10-01 新設・規約は `docs/CLAUDE.md`「運用ルール」）。**「実装は済んでいて動作確認だけが残っている」Issue** で、pooza が**手が空いたときにまとめて消化する**ための枠:
+
+  ```sh
+  # ⚠⚠ `gh issue list --label` は検索インデックス経由で数十秒遅れる。REST を使う
+  gh api 'repos/pooza/capsicum/issues?labels=verification-pending&state=open&per_page=50' \
+    --jq '.[] | select(.pull_request == null) | "#\(.number)\t[\([.labels[].name] | join(","))]\t\(.title)"'
+  ```
+
+  ⚠ **端末ラベル（`Windows` / `Linux`）の有無で並べ替えて出す** —— 付いていなければ**手元の Mac で見られる**、付いていればその実機が要る。⚠ **0 件でもその旨を 1 行書く**（「数え忘れ」と「本当に 0」を区別するため）。
+- ⚠⚠ **実装済みなのに `verification-pending` が付いていない Issue を見つけたら、その場で付ける。**同期は Issue の状態を実測する唯一の定期作業なので、**ここで拾わないと札が腐る**。判定は「末尾のコメントが実装完了を報告していて、close されていない」。⚠ **検証困難なもの（race / fork 依存 / 再現条件が薄い）には付けない**（`docs/CLAUDE.md` の基準）。
+- ⚠ **今回の所要の内訳を書く**（#1228）。**定形ぶんと、今回だけの作業を分けて書く**（「定形 + Sentry の母数の作り直し 1 件 + メモリの畳み 1 件」の形）。⚠ 進捗が 0 件の回は、これが無いと「時間をかけて変化なし」に見える。

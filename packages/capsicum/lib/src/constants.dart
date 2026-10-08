@@ -11,6 +11,15 @@ const kPushRelayConnectTimeout = Duration(seconds: 10);
 /// capsicum-relay 向けの受信タイムアウト。
 const kPushRelayReceiveTimeout = Duration(seconds: 10);
 
+/// 利用権の発行（`POST /entitlements`）だけの受信タイムアウト。
+///
+/// ⚠⚠ **relay がストアへ問い合わせる上限より長く取る。**relay は応答の前に
+/// ストアを引き（Apple は本番 → サンドボックスの順で、それぞれ最大 15 秒）、
+/// その間は前景の枠（既定で 1 本）を握っている。既定の 10 秒で諦めると、
+/// **送り直した自分の要求が、まだ走っている自分の 1 本目に枠を取られて断られる**
+/// （2 回目の差分レビュー・2026-10-06）。待てば 1 本目が答えを持って帰る。
+const kRelayEntitlementIssueReceiveTimeout = Duration(seconds: 35);
+
 /// APNs / FCM のデバイストークン到着待ち（初回 subscribe 直後）。
 const kDeviceTokenWait = Duration(seconds: 10);
 
@@ -43,6 +52,20 @@ const kSecureStorageWriteTimeout = kSecureStorageReadTimeout;
 /// 取り直す。ServerMetadataCache の成功キャッシュと AccountManagerNotifier の
 /// モロヘイヤ自動再検出で同一の鮮度を共用する (#828)。
 const kServerMetadataFreshnessTtl = Duration(hours: 1);
+
+/// 現在アカウントのプロフィール (`User`) の鮮度 TTL (#1185)。Mastodon の
+/// `source.privacy`（既定の公開範囲）は起動時の `getMyself()` が読んだ値を保持
+/// するため、この期間を超えたら取り直す。
+///
+/// ⚠⚠ **[kServerMetadataFreshnessTtl]（1 時間）は当てられない。**サーバーの
+/// ソフトウェア版は月単位でしか動かないが、**既定の公開範囲は利用者がいつでも
+/// 変えられる**。しかも実害の形は「WebUI で変えて capsicum に戻る」＝復帰の
+/// 直前に変わるので、1 時間では取りこぼす。
+///
+/// ⚠ **0 にはできない。**デスクトップは**ウィンドウのフォーカスを取り戻すたび**
+/// に `AppLifecycleState.resumed` が来る（`inactive` が「前面に無いが可視」の
+/// 意味）ため、TTL を外すと alt-tab のたびに 1 往復する。
+const kUserProfileFreshnessTtl = Duration(minutes: 1);
 
 /// アプリ全体で使用する定数。
 class AppConstants {
@@ -87,6 +110,9 @@ class AppConstants {
   static final contactUrl = Uri.parse('https://contact.capsicum.shrieker.net');
   static final communityUrl = Uri.parse('https://pf.korako.me/c/capsicum');
   static final termsUrl = Uri.parse('https://capsicum.shrieker.net/terms');
+  static final privacyPolicyUrl = Uri.parse(
+    'https://capsicum.shrieker.net/privacy-policy',
+  );
 
   /// 特定商取引法に基づく表記 (#428 C-1/C-3 確定: 法人名義 有限会社ビーショック)。
   /// capsicum-site の法人名義ページを参照する。最終的な URL の整備 (ページ
@@ -230,6 +256,42 @@ class StickerLimits {
   /// スタンプは元画像の高さに対する比率（既定 0.2）で描かれるので、素材が元画像
   /// より高精細でも使い道がない。書き出し先はプリセット上限の 4K 級を想定し、
   /// その 1/2 を上限にしておけば拡大しても粗が出ない。
+  static const maxDecodeHeight = 2048;
+}
+
+/// 端末の画像をレイヤとして重ねるときの受け入れ上限 (#1178)。
+///
+/// ⚠⚠ **[StickerLimits] と数字が同じでも理由が違う。**スタンプの供給元は
+/// **サーバー由来の任意 URL** で、上限は「信用できない相手から受け取る量」の話。
+/// こちらの供給元は**利用者が自分で選んだ端末内のファイル**なので、守っているのは
+/// **こちらのメモリ**だけ。したがって「拒む」判断の重みも違い、**弾かれた利用者は
+/// 自分の写真を重ねられない**ことになる。
+class PictureLayerLimits {
+  /// 読み込みを受け入れるファイルサイズの上限バイト数。
+  ///
+  /// ⚠ **デコードを縮めても、ファイルを読む段の `readAsBytes` は原寸ぶん積む。**
+  /// この一時的な山が実害になるのは実測済みで、Sentry に
+  /// `WatchdogTermination: The OS watchdog terminated your app, possibly because
+  /// it overused RAM.` が出ている（iOS）。
+  ///
+  /// 32MB にしたのは、**端末の写真はここに入りきる**（HEIC 2〜4MB / JPEG 5〜10MB /
+  /// スクリーンショットの PNG 5MB 前後）一方で、桁の違う実体（一眼の現像結果・
+  /// 巨大な PNG）は弾けるため。⚠ **上限に当たったら黙って落とさず利用者に伝える**
+  /// —— 自分で選んだ画像が理由なく載らないのは「壊れている」と読まれる。
+  static const maxBytes = 32 * 1024 * 1024;
+
+  /// デコードして保持する最大高さ（px）。
+  ///
+  /// ⚠ **スタンプ（既定 0.2）と違い、画像レイヤは元画像の高さの
+  /// `kOverlayMaxPictureSizeFrac`（0.8）まで引き伸ばせる。**書き出し先をプリセット
+  /// 上限の 4K 級（高さ 2160px 相当）とすると、レイヤが占める高さの最大は
+  /// 2160 × 0.8 ≒ 1728px。2048 はそれを上回るので、**最大まで拡大しても
+  /// 引き伸ばしにならない**。
+  ///
+  /// ⚠⚠ **原寸で持たない理由は解放の都合ではなくメモリ。**4032×3024 の写真を
+  /// 原寸で展開すると 1 枚で約 48MB のピクセルバッファになり、レイヤを数枚重ねた
+  /// だけで端末が落ちる。**縮めた実体をそのまま控えのファイルにも使う**ので、
+  /// 下書きに残る複製もこの寸法になる。
   static const maxDecodeHeight = 2048;
 }
 

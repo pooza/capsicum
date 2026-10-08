@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/dart_source.dart';
+import 'support/source_files.dart';
 
 /// #1030: アプリ内のリンクのルーティングを 1 箇所に寄せたままにする。
 ///
@@ -41,13 +42,7 @@ void main() {
   /// で、それは下の [ContentRenderer] 検査が受け持つ (#1030)。
   const bypassCalls = <String>['launchInPreferredApp(', 'launchUrl('];
 
-  List<File> uiDartFiles() => Directory(uiRoot)
-      .listSync(recursive: true)
-      .whereType<File>()
-      .where((f) => f.path.endsWith('.dart'))
-      .where((f) => !f.path.endsWith('.g.dart'))
-      .where((f) => !f.path.endsWith('.freezed.dart'))
-      .toList();
+  List<File> uiDartFiles() => sourceFiles(uiRoot, skipGenerated: true);
 
   /// 行コメントを落とす。doc / コメントで関数名に言及しただけの行を指摘しない。
   ///

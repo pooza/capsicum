@@ -5,6 +5,7 @@ import 'package:capsicum/src/service/secret_service_probe.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/dart_source.dart';
+import 'support/source_files.dart';
 
 /// #1085: secure storage に**触る前に** Secret Service が応答するか聞く。
 ///
@@ -435,11 +436,7 @@ void main() {
     bool hasProbeStub(String code) =>
         code.contains('SecretServiceProbe.debugProbeOverride');
 
-    List<File> testFiles() => Directory('test')
-        .listSync(recursive: true)
-        .whereType<File>()
-        .where((f) => f.path.endsWith('_test.dart'))
-        .toList();
+    List<File> testFiles() => sourceFiles('test', extension: '_test.dart');
 
     test('探索が空振りしていない', () {
       final files = testFiles();

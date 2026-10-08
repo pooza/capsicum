@@ -7,4 +7,7 @@ abstract mixin class GallerySupport {
     String userId, {
     TimelineQuery? query,
   });
+
+  /// 投稿 1 つを id で引く (#1150)。デッキで読み戻したギャラリーのカラムが使う。
+  Future<GalleryPost> getGalleryPostById(String postId);
 }

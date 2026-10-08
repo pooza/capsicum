@@ -71,9 +71,9 @@ curl -s https://relay.capsicum.shrieker.net/health   # revision が origin/main 
 
 **Issue を消化しきったらビルドに入る前に回す。**⚠ ここを飛ばしてビルドに入らない。
 
-#### ⚠⚠ 5 観点を走らせる前に、リリース PR を ready にする（2026-09-17 追加）
+#### 5 観点を走らせる前に、リリース PR を ready にする（2026-09-17 追加）
 
-**`/release-review` を起動するのと同じタイミングで、develop → main のドラフト PR を ready にする。**
+⚠⚠ **`/release-review` を起動するのと同じタイミングで、develop → main のドラフト PR を ready にする。**
 
 ```sh
 gh pr ready <PR番号> --repo pooza/capsicum

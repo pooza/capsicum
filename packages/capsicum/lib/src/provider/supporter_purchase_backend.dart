@@ -16,6 +16,80 @@ const supporterTipProductIds = <String>[
   'supporter.tip.big', // ¥800 相当
 ];
 
+/// relay の `POST /entitlements` が受ける `purchase_id` を、ストアに合わせて選ぶ
+/// (#1220)。
+///
+/// ⚠⚠ **ストアごとに中身が違う。**relay 側（`routes/entitlements.rb`）の契約は
+/// **「Apple は StoreKit の transactionId、Google は purchaseToken」**で、relay は
+/// その値でストアの API を直接引く。
+///
+/// | ストア | 送る値 | relay の引き先 |
+/// | --- | --- | --- |
+/// | Apple（iOS / macOS） | [PurchaseDetails.purchaseID] ＝ transaction identifier | App Store Server API |
+/// | **Google** | ⚠⚠ **`verificationData.serverVerificationData` ＝ purchaseToken** | `purchases/subscriptionsv2/tokens/{token}` |
+///
+/// 🔴 **2026-10-04 に本番で踏んだ。**Android でも `purchaseID` を送っていたが、
+/// `in_app_purchase` の Android 実装はここに **orderId**（`GPA.…`）を入れる。
+/// purchaseToken ではないので Play の API が **404 = `not_found`** を返し、利用権が
+/// `unverified` のまま**ゲートに拒否された**（`reason=no_entitlement`）。
+/// ⚠ **RTDN も突き合わせられなかった**（`RENEWED (unknown_purchase)`）—— あちらは
+/// purchaseToken で届くので、保存した orderId と一致しない。
+///
+/// ⚠ **`_entitlementStoreName()`（`supporter_purchase_provider.dart`）と同じ軸で
+/// 分けること。**片方だけ変えると「store は google なのに Apple の値を送る」形に
+/// なり、同じ不具合に戻る。
+String? entitlementPurchaseId(PurchaseDetails purchase) =>
+    entitlementPurchaseIdFor(
+      store: entitlementStoreName(),
+      purchaseId: purchase.purchaseID,
+      serverVerificationData: purchase.verificationData.serverVerificationData,
+    );
+
+/// どのストアの購入か (#1122)。relay の `POST /entitlements` が受ける値
+/// （`Relay::Database::ENTITLEMENT_STORES`）。
+///
+/// ⚠ **macOS は `apple`。**iOS と Universal Purchase で同じ App レコードを
+/// 共有するので、購入も同じストアに属する。
+///
+/// ⚠⚠ **[entitlementPurchaseIdFor] と同じ軸である必要があるので、同じ場所に
+/// 置いてある (#1220)。**別々に持つと「store は google なのに Apple の値を送る」
+/// 形になり、**Play の検証と RTDN が黙って外れる。**
+String? entitlementStoreName() {
+  if (Platform.isIOS || Platform.isMacOS) return 'apple';
+  if (Platform.isAndroid) return 'google';
+  if (Platform.isWindows) return 'microsoft';
+  return null;
+}
+
+/// [entitlementPurchaseId] の判定そのもの。
+///
+/// ⚠ **`Platform` を見ないので単体で検証できる。**上の表の契約をここで固定する。
+String? entitlementPurchaseIdFor({
+  required String? store,
+  required String? purchaseId,
+  required String? serverVerificationData,
+}) {
+  if (store == 'google') {
+    // ⚠ 空文字は null に倒す。呼び出し側は「無ければ利用権を引けない」として
+    // 成功に見せない扱いをしている（`entitlement_missing_id`）。
+    final token = serverVerificationData;
+    return (token == null || token.isEmpty) ? null : token;
+  }
+  return purchaseId;
+}
+
+/// 有償リレーの利用権 SKU（月額 ¥200・単一階層・#597 / #1122）。
+///
+/// ⚠⚠ **投げ銭（消耗型）を置き換えるものではない。**設計書 決定済み事項 3 の
+/// とおり「既存の投げ銭は残したまま、サブスクを**追加**する」。
+///
+/// ⚠ **金額をコードに書かない。**表示は [ProductDetails.price] を使う
+/// （日本の価格点は ¥50 から 10 円刻みで、¥200 は実在する・2026-09-27 実測）。
+///
+/// ⚠ **階層を増やさない。**設計書 決定済み事項 5 の「単一階層」は、
+/// 「Misskey 対応は別料金」のような分岐を作らないための決定。
+const supporterSubscriptionProductId = 'supporter.relay.monthly';
+
 /// 購入ライフサイクルの 1 イベント（課金 backend 非依存）。
 ///
 /// `in_app_purchase` の [PurchaseDetails] や Windows.Services.Store の購入結果を
@@ -26,6 +100,16 @@ enum SupporterPurchaseEventStatus { pending, purchased, canceled, error }
 class SupporterPurchaseEvent {
   final String productId;
   final SupporterPurchaseEventStatus status;
+
+  /// ストアの購入（取引）識別子。`purchased` のときだけ入る (#1122)。
+  ///
+  /// ⚠⚠ **サブスクではこれが無いと利用権を発行できない。**relay の
+  /// `POST /entitlements` は `purchase_id` で購入を引く（[PushRelayClient
+  /// .issueEntitlementToken]）。⚠ 投げ銭（消耗型）は使わない —— **ストアを
+  /// 信頼してローカルにバッジを立てるだけ**なので、取引を名指す必要が無い。
+  ///
+  /// ⚠ **ログに出さない。**ストアの購入を名指しできる値。
+  final String? purchaseId;
 
   /// error 時のみ。ストア固有のエラーコード（fingerprint 用・機密は載せない）。
   final String? errorCode;
@@ -42,6 +126,7 @@ class SupporterPurchaseEvent {
   const SupporterPurchaseEvent({
     required this.productId,
     required this.status,
+    this.purchaseId,
     this.errorCode,
     this.needsCompletion = false,
     this.completionToken,
@@ -69,6 +154,32 @@ abstract class SupporterPurchaseBackend {
 
   /// 指定商品を消耗型として購入する。結果は [purchaseEvents] へ流す。
   Future<void> buy(ProductDetails product);
+
+  /// 指定商品を**サブスク**として購入する (#1122)。結果は [purchaseEvents] へ。
+  ///
+  /// ⚠ [buy] と分ける理由は**商品タイプが違う**こと —— 消耗型は買い切りで
+  /// 消費するが、サブスクは非消耗型として扱う（`buyNonConsumable`）。⚠⚠ **消耗型
+  /// として買うと、ストアが更新を扱えない。**
+  ///
+  /// ⚠ **課金経路がサブスクを扱えない OS では [UnsupportedError]。**Windows の
+  /// ストアはサブスクが消耗型と別経路で、既存の自前 channel から作り直しになる
+  /// ため**後回し**（設計書 フェーズ 4 のストア順序）。
+  Future<void> buySubscription(ProductDetails product);
+
+  /// ストアへ**過去の購入を流し直してもらう** (#1219)。結果は
+  /// [purchaseEvents] に `restored` として届く。
+  ///
+  /// ⚠⚠ **これが無いと利用権から抜けられない。**`POST /entitlements` は購入
+  /// イベントが流れたときだけ走るので、**起動し直しても再検証は起きない**。
+  /// 🔴 2026-10-04 に実機で固着した —— #1220 の前に買った購読が `unverified`
+  /// のまま残り、ゲートに拒否され続け、**アプリ内に抜け道が無かった**
+  /// （`hasEntitlement` が true なので購入ボタンも出ない）。
+  ///
+  /// ⚠ **機種変更・再インストールの復元もこれ。**利用権トークンは
+  /// `ThisDeviceOnly` の secure storage にあり**バックアップに含まれない**ので、
+  /// 新しい端末はストアから引き直すしか手段が無い（App Store のガイドライン
+  /// 3.1.1 が自動更新サブスクに求めているものでもある）。
+  Future<void> restore();
 
   /// ローカル永続化の成立後にストアトランザクションを確定させる
   /// （in_app_purchase は `completePurchase`、Windows は消費報告）。
@@ -133,6 +244,9 @@ class InAppPurchaseBackend implements SupporterPurchaseBackend {
         return SupporterPurchaseEvent(
           productId: p.productID,
           status: SupporterPurchaseEventStatus.purchased,
+          // ⚠ 復元 (`restored`) でも入る。⚠⚠ **サブスクはここが要**で、
+          // 機種変更や再インストールで復元された購入からも利用権を引き直せる。
+          purchaseId: entitlementPurchaseId(p),
           needsCompletion: p.pendingCompletePurchase,
           completionToken: p,
         );
@@ -159,6 +273,20 @@ class InAppPurchaseBackend implements SupporterPurchaseBackend {
       purchaseParam: PurchaseParam(productDetails: product),
     );
   }
+
+  @override
+  Future<void> buySubscription(ProductDetails product) {
+    // ⚠⚠ **`buyNonConsumable` を使う。**`in_app_purchase` はサブスクを
+    // 非消耗型として扱う（消耗型で買うと、ストアが更新を扱えない）。
+    return InAppPurchase.instance.buyNonConsumable(
+      purchaseParam: PurchaseParam(productDetails: product),
+    );
+  }
+
+  @override
+  // ⚠ 結果は `purchaseEvents` に `restored` として届く（`_eventFrom` が
+  // `PurchaseStatus.restored` を `purchased` と同じ扱いで流す）。
+  Future<void> restore() => InAppPurchase.instance.restorePurchases();
 
   @override
   Future<void> complete(SupporterPurchaseEvent event) async {
@@ -190,6 +318,12 @@ class _UnsupportedPurchaseBackend implements SupporterPurchaseBackend {
 
   @override
   Future<void> buy(ProductDetails product) async {}
+
+  @override
+  Future<void> buySubscription(ProductDetails product) async {}
+
+  @override
+  Future<void> restore() async {}
 
   @override
   Future<void> complete(SupporterPurchaseEvent event) async {}

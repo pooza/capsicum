@@ -12,6 +12,7 @@ import '../../provider/server_config_provider.dart';
 import '../../service/background_notification_service.dart';
 import '../util/op_error.dart';
 import '../widget/bottom_safe_area.dart';
+import '../widget/notification_filter_button.dart';
 import '../widget/notification_tile.dart';
 import '../widget/retry_error_view.dart';
 
@@ -25,6 +26,10 @@ class NotificationScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('通知'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        // 種別の絞り込み (#1042)。⚠ **設定はアプリ全体で 1 つ**なので、ここと
+        // ホームの通知タブ・「すべての通知」・デッキのカラム見出しは同じ値を
+        // 出し入れする。
+        actions: const [NotificationFilterButton()],
       ),
       // 下端 inset は [NotificationView] が自分で吸う。ここでは包まない
       // （包んでも [BottomSafeArea] は冪等なので壊れないが、吸う場所が

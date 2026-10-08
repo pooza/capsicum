@@ -8,6 +8,19 @@ class PostDraft {
   final List<String> mediaIds;
   final String? spoilerText;
   final bool sensitive;
+
+  /// [sensitive] の `false` を**明示的に送るか** (#1194)。
+  ///
+  /// ⚠⚠ **Mastodon は `sensitive` を省くとサーバー既定（`source.sensitive`）を
+  /// 当てる。**したがって `false` を送らないと、**既定が true の利用者は capsicum
+  /// から閲覧注意を外せない**（トグルが嘘になる）。
+  ///
+  /// ⚠ **常に送る形にはできない。**`source` を返さない / 既定を持たないサーバー
+  /// では、いままで効いていた「サーバー既定に任せる」が壊れる。**既定を読めた
+  /// ときだけ**明示する。
+  ///
+  /// ⚠ `true` のときは従来どおり常に送る（この旗に関わらず）。
+  final bool sensitiveExplicit;
   final bool localOnly;
   final String? channelId;
 
@@ -48,6 +61,7 @@ class PostDraft {
     this.mediaIds = const [],
     this.spoilerText,
     this.sensitive = false,
+    this.sensitiveExplicit = false,
     this.localOnly = false,
     this.channelId,
     this.skipMulukhiya = false,

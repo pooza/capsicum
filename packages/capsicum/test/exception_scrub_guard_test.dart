@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/dart_source.dart';
+import 'support/source_files.dart';
 
 /// #975: 例外を Sentry へ流す経路を機械で守る。
 ///
@@ -44,12 +45,7 @@ void main() {
   List<File> dartFiles() => [
     for (final root in roots)
       if (Directory(root).existsSync())
-        ...Directory(root)
-            .listSync(recursive: true)
-            .whereType<File>()
-            .where((f) => f.path.endsWith('.dart'))
-            .where((f) => !f.path.endsWith('.g.dart'))
-            .where((f) => !f.path.endsWith('.freezed.dart')),
+        ...sourceFiles(root, skipGenerated: true),
   ];
 
   /// [open]（[openChar] の位置）に対応する閉じ括弧の index。見つからなければ -1。
@@ -387,7 +383,7 @@ void main() {
   }
 
   String relativePath(File f) =>
-      f.path.replaceFirst('${Directory.current.path}/', '');
+      f.path.replaceFirst('${posixPath(Directory.current.path)}/', '');
 
   /// ログ経路に載せてはいけないアカウント識別子 (#1027-A3 / B)。
   ///

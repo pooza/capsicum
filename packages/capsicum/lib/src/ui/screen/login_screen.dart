@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
+import 'package:window_to_front/window_to_front.dart';
 
 import '../../constants.dart';
 import '../../model/account.dart';
@@ -53,7 +54,18 @@ const _oauthCallbackHtmlAndroid =
     'border-radius:8px;text-decoration:none">capsicum に戻る</a></p>'
     '</body></html>';
 
-/// macOS の自前 localhost OAuth フロー (#654) で、ユーザーが完了しなかった
+/// ブラウザが復元した前回の callback タブ (#1140) に返すページ。⚠ 今回の
+/// ログインは**まだ待っている**ので、承認画面へ戻れば続けられる。
+const _oauthStaleCallbackHtml =
+    '<!doctype html><html lang="ja"><head><meta charset="utf-8">'
+    '<meta name="viewport" content="width=device-width, initial-scale=1">'
+    '<title>capsicum</title></head>'
+    '<body style="font-family:-apple-system,sans-serif;text-align:center;'
+    'padding:48px"><h2>以前のログインのページです</h2>'
+    '<p>このタブは閉じてください。ログインは承認画面のタブで続けられます。</p>'
+    '</body></html>';
+
+/// 自前 localhost OAuth フロー (#654) で、ユーザーが完了しなかった
 /// （ブラウザを閉じた / タイムアウトした）ことを表す。既存の cancel 判定
 /// (`e.toString().contains('CANCELED')`) に合流させるため、toString に
 /// CANCELED を含める。
@@ -92,19 +104,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   /// (#489 / #496) を、Windows は MSIX に `flutter_web_auth_2` の native
   /// plugin が含まれない制約 (#423) を、いずれも localhost callback で
   /// 回避する。地域名でなく機能ベース命名を採用 (#507)。
-  // Linux / Windows / macOS でこの経路に入れる (#382)。挙動はプラット
-  // フォームで分かれる:
+  // Linux / Windows / macOS でこの経路に入れる (#382)。3 OS とも
+  // FlutterWebAuth2 を使わず `_authenticateViaLocalhostServer` で自前の
+  // HTTP サーバを立てて受ける。システムブラウザを使うので Bitwarden /
+  // 1Password 拡張が効く (#382)。localhost で受ける理由は OS で分かれる:
   // - Linux: desktop_webview_window の GLX 系 native crash 回避 (#489 /
-  //   #496)。flutter_web_auth_2 server impl で localhost callback を受ける
+  //   #496)
   // - Windows: MSIX に flutter_web_auth_2 の native plugin が含まれない
-  //   (#423) ため同じく server impl 経路
+  //   (#423)
   // - macOS: flutter_web_auth_2 4.x の macOS 実装は ASWebAuthentication
-  //   Session のみで localhost callback の server impl が無い。そこで
-  //   FlutterWebAuth2 を使わず `_authenticateViaLocalhostServer` で自前の
-  //   HTTP サーバを立てて受ける (#654)。システムブラウザを使うので
-  //   Bitwarden / 1Password 拡張が効く (#382)。
+  //   Session のみで localhost callback の server impl が無い (#654)。
   //   （旧実装は #642 で ASWebAuthenticationSession を意図的に CANCELED に
   //   して OOB の手動コード入力に落としていたが、#654 で通常フローへ復帰。）
+  // ⚠ Linux / Windows はかつて fwa2 の server impl で受けていたが、あちらは
+  //   **最初に来たリクエストを無条件に結果として返して閉じる**ので、ブラウザが
+  //   復元した前回の callback タブに先を越されてログインできなかった (#1140)。
   // Mac App Store ビルドは Sandbox 下で loopback の listen / bind が成立する
   // ために Release.entitlements に com.apple.security.network.server が必要。
   /// Android もデスクトップと同じく localhost ループバックで OAuth callback を
@@ -121,32 +135,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   String get _redirectUri => _useLocalhostCallback
       ? AppConstants.localhostOAuthCallbackUrl
       : AppConstants.customSchemeOAuthCallbackUrl;
-
-  /// `FlutterWebAuth2.authenticate` の `callbackUrlScheme` 引数。
-  ///
-  /// flutter_web_auth_2 4.1.0 の `_assertCallbackScheme` は Linux / Windows
-  /// のみスキップ対象で、それ以外 (macOS 含む) では URI scheme regex
-  /// (`^[a-z][a-z\d+.-]*$`) に通らないと `ArgumentError` を投げる。Linux /
-  /// Windows は `http://localhost:{port}/{path}` 形式を server impl が
-  /// callback URL として直接受けるが、macOS は ASWebAuthenticationSession
-  /// 経由のため、ここに渡すのは scheme として valid な文字列でなければ
-  /// ならない。
-  ///
-  /// macOS / Android は [_authenticateViaLocalhostServer]（システムブラウザ +
-  /// 自前 localhost HTTP サーバ・#654）で受けるので、このゲッターは自前サーバを
-  /// 立てない（fwa2 の server impl で受ける）分岐でのみ消費される。Linux /
-  /// Windows の localhost callback では fwa2 の server impl が完全な
-  /// `http://localhost:{port}/{path}` URL を期待するため、その URL を返す。
-  /// （自前サーバの OS で評価された場合のフォールバック値として custom scheme を
-  /// 残すが、現状は参照されない。）
-  String get _authCallbackUrlScheme {
-    // ⚠ UI 層に `Platform.isX` を直書きしない (#650 / #1144)。自前サーバを立てる
-    // macOS / Android はこのゲッターを通らないので、機能名の合成で同じ意味になる。
-    if (_useLocalhostCallback && !usesSelfHostedOAuthLoopbackServer) {
-      return AppConstants.localhostOAuthCallbackUrl;
-    }
-    return AppConstants.callbackUrlScheme;
-  }
 
   bool _isLoggingIn = false;
 
@@ -372,56 +360,29 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     );
   }
 
-  /// localhost callback 用のポート ([AppConstants.localhostOAuthPort]) が
-  /// 別プロセスに占有されているかを試し、占有時は専用エラー文を返す。
-  /// 空いていれば null を返す。TOCTOU はあるが、flutter_web_auth_2 側で
-  /// EADDRINUSE を握って authorization code を取り逃がす UX 劣化を
-  /// 識別可能な error に置き換えるための実用的な防御 (#503)。
-  Future<String?> _checkOAuthPortAvailability() async {
-    try {
-      final socket = await ServerSocket.bind(
-        InternetAddress.loopbackIPv4,
-        AppConstants.localhostOAuthPort,
-      );
-      await socket.close();
-      return null;
-    } on SocketException catch (e) {
-      // SocketException の OS メッセージは「Address already in use」等の固定文で、
-      // 上流の生データを持たない（#859 と同じ判断）。ポート占有の切り分けに要る。
-      // scrub-guard: allow
-      _logLoginStep(
-        'oauth_port.occupied',
-        data: {
-          'port': AppConstants.localhostOAuthPort,
-          'error': e.osError?.message ?? e.message,
-        },
-      );
-      return 'OAuth コールバック用ポート ${AppConstants.localhostOAuthPort} が'
-          '他プロセスに占有されています。占有中のアプリを閉じてから再試行してください。';
-    }
-  }
-
-  /// macOS の OAuth コールバックを自前 localhost HTTP サーバで受ける (#654)。
+  /// loopback OAuth のコールバックを自前 localhost HTTP サーバで受ける
+  /// (#276 / #654 / #1140)。デスクトップ 3 OS と Android の共通経路。
   ///
   /// [authorizationUrl] をシステムブラウザ (url_launcher) で開き、
   /// `http://localhost:7099/oauth/callback?code=...` へのリダイレクトを自前の
-  /// [HttpServer] で受けて認可コードを取り出す。flutter_web_auth_2 の macOS
-  /// 実装 (ASWebAuthenticationSession・localhost server impl 無し) に依存せず、
-  /// Linux / Windows の server impl 相当を自前化したもの。システムブラウザを
-  /// 使うので Bitwarden / 1Password 等の拡張が効く (#382)。OOB の手動コード
-  /// 入力を廃止する。
+  /// [HttpServer] で受けて認可コードを取り出す。システムブラウザを使うので
+  /// Bitwarden / 1Password 等の拡張が効く (#382)。
   ///
-  /// loopback の listen には Release.entitlements の
-  /// `com.apple.security.network.server` が必要。ポート占有は呼び出し前に
-  /// [_checkOAuthPortAvailability] で弾く前提。
-  /// [expectedState] を渡すと、callback の `state` が一致したリクエストだけを
-  /// 認可応答として受け付ける (#790)。Mastodon は認可/エラー応答に state を
-  /// エコーするため、同一端末の別アプリ/ページからのコード注入・DoS レースを
-  /// 受け流せる。Misskey MiAuth は state を使わず（`?session=` のみ・completeLogin
-  /// が inbound を無視するため非注入）null を渡して従来どおり受ける。
+  /// macOS の loopback の listen には Release.entitlements の
+  /// `com.apple.security.network.server` が必要。ポート占有は
+  /// [bindLoopbackOAuthServer] のリトライ → [LoopbackPortOccupiedException] で
+  /// 呼び出し側が友好エラーに昇格させる。
+  ///
+  /// ⚠⚠ **今回の試行の callback だけを受け取る**（[isExpectedOAuthCallback]）。
+  /// [expectedState]（Mastodon）は認可/エラー応答に state がエコーされるので、
+  /// 同一端末の別アプリ/ページからのコード注入・DoS レースを受け流せる (#790)。
+  /// [expectedSession]（Misskey MiAuth）は callback の `?session=` で照合する。
+  /// どちらも、**ブラウザが復元した前回の callback タブ**に先を越されないための
+  /// もの (#1140)。違うものは閉じずに捨てて、本物を待ち続ける。
   Future<String> _authenticateViaLocalhostServer(
     Uri authorizationUrl, {
     String? expectedState,
+    String? expectedSession,
   }) async {
     // 前回のログイン試行のサーバが残っていると同一ポートに再 bind できず
     // EADDRINUSE (errno98) になる (#813)。bind 前に必ず閉じてポートを解放する。
@@ -493,18 +454,22 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         // 無害なので握りつぶす。
         try {
           final uri = request.uri;
-          // コールバックパスへの非空クエリ付きリクエストを認可リダイレクトと
-          // みなす。favicon 等パスの異なるノイズ要求は 404 で受け流す。
-          final isCallback =
-              uri.path == callbackPath && uri.queryParameters.isNotEmpty;
-          // state 照合 (#790): expectedState 指定時（Mastodon）は inbound state が
-          // 一致したものだけを認可応答として受け付け、別アプリ/別ページからの
-          // コード注入・DoS レースは 404 で受け流して本物の callback を待ち続ける。
-          // expectedState が null（Misskey MiAuth）なら従来どおり最初の callback。
-          final stateOk =
-              expectedState == null ||
-              uri.queryParameters['state'] == expectedState;
-          final accept = isCallback && stateOk;
+          // 今回の試行の callback だけを受け取る (#790 / #1140)。favicon 等の
+          // ノイズや、復元された前回の callback タブは 404 で受け流して、本物の
+          // callback を待ち続ける。
+          final accept = isExpectedOAuthCallback(
+            uri,
+            callbackPath: callbackPath,
+            expectedState: expectedState,
+            expectedSession: expectedSession,
+          );
+          // 前回の callback タブには「古い」と伝える（白紙だと、承認が済んで
+          // いないのに何が起きたか分からない）。
+          final isStaleCallback =
+              !accept &&
+              uri.path == callbackPath &&
+              uri.queryParameters.isNotEmpty;
+          if (isStaleCallback) _logLoginStep('oauth_server.stale_callback');
           request.response
             ..statusCode = accept ? HttpStatus.ok : HttpStatus.notFound
             ..headers.contentType = ContentType.html
@@ -513,7 +478,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   ? (oauthCallbackNeedsAppReturn
                         ? _oauthCallbackHtmlAndroid
                         : _oauthCallbackHtml)
-                  : '<!doctype html>',
+                  : (isStaleCallback
+                        ? _oauthStaleCallbackHtml
+                        : '<!doctype html>'),
             );
           await request.response.close();
           if (accept && !completer.isCompleted) {
@@ -530,6 +497,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           const Duration(minutes: 5),
         );
         _logLoginStep('oauth_server.callback_received');
+        // fwa2 の server impl が前面化していたので、自前へ寄せても落とさない
+        // (#1140)。前面化の失敗でログインは止めない。
+        if (oauthCallbackRaisesAppWindow) {
+          try {
+            await WindowToFront.activate();
+          } catch (_) {}
+        }
         // completeLogin は code クエリだけ参照するので、redirect_uri と同じ
         // localhost URL に受信クエリを載せ替えて返す。
         return Uri.parse(
@@ -797,54 +771,32 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         }());
         _logLoginStep('authenticate.begin');
         reachedAuthenticate = true;
-        // flutter_web_auth_2 の server impl (Linux / Windows) は内部で 7099 に
-        // bind するが、EADDRINUSE を握って authorization code を取り逃がすだけで
-        // ポート競合と判別できない (#503)。authenticate 直前に短時間
-        // ServerSocket.bind を試して占有を専用エラーに昇格させる。self-hosted
-        // 経路 (Android / macOS) は _authenticateViaLocalhostServer 側が
-        // 旧サーバ close + bind リトライ + 友好エラーで自己完結するため、ここで
-        // 二重 bind して自己 TOCTOU を招かないよう precheck を掛けない (#813)。
         // ⚠ **認可へ進む前にも「まだ最新か」を確かめる**（Codex P2 / PR #1164）。
-        // 自前サーバーを立てない OS（Linux / Windows / iOS）は
-        // [_authenticateViaLocalhostServer] を通らないので、そこの確認が効かない。
-        // 追い越された試行がここを抜けると、fwa2 が 7099 を掴んで後の試行に
-        // 「他プロセスに占有されています」を出させる。
+        // iOS は [_authenticateViaLocalhostServer] を通らないので、そこの確認が
+        // 効かない。
         _throwIfAttemptSuperseded();
-        if (_useLocalhostCallback && !usesSelfHostedOAuthLoopbackServer) {
-          final portError = await _checkOAuthPortAvailability();
-          if (portError != null) {
-            if (mounted) setState(() => _error = portError);
-            return;
-          }
-        }
         final String resultUrl;
-        if (usesSelfHostedOAuthLoopbackServer) {
-          // macOS (#654): flutter_web_auth_2 に localhost server impl が無い。
-          // Android (#276): Custom Tab がカスタムスキーム / 検証済み App Link の
-          // どちらの redirect もアプリに引き渡さず bounce する (#187 同型)。
-          // 両者ともシステムブラウザ + 自前 localhost HTTP サーバで code を受ける
-          // loopback 方式に統一する（ブラウザの引き渡しに依存しない）。Android は
-          // コード受領後、callback ページが androidOAuthReturnUrl へ遷移して
-          // アプリを前面へ復帰させる（_authenticateViaLocalhostServer 内で処理）。
+        if (_useLocalhostCallback) {
+          // デスクトップ 3 OS と Android は、システムブラウザ + 自前 localhost
+          // HTTP サーバで code を受ける loopback 方式に統一する（ブラウザの
+          // 引き渡しに依存しない）。Android はコード受領後、callback ページが
+          // androidOAuthReturnUrl へ遷移してアプリを前面へ復帰させる
+          // （_authenticateViaLocalhostServer 内で処理）。ポート占有は bind の
+          // リトライ → 友好エラーで自己完結するので、事前の bind プローブは
+          // 掛けない（自己 TOCTOU を招く・#813）。
           resultUrl = await _authenticateViaLocalhostServer(
             startResult.authorizationUrl,
-            // Mastodon は startLogin で state を発行する。Misskey MiAuth は
-            // 発行しない（extra に 'state' 無し→null）ため従来どおり受ける。
+            // Mastodon は startLogin で state を、Misskey MiAuth は session を
+            // 発行する（無いほうは null で照合しない）。
             expectedState: startResult.extra['state'],
+            expectedSession: startResult.extra['session'],
           );
         } else {
-          // localhost callback では `desktop_webview_window` の GLX 系 native
-          // crash (#489 / #496) を回避するため useWebview: false で
-          // システムブラウザ + 自前 HTTP サーバ (flutter_web_auth_2 server impl)
-          // で受ける。callbackUrlScheme は server impl では完全な
-          // http://localhost:{port}/{path} URL を期待する仕様 (flutter_web_auth_2
-          // 4.1.0 の server.dart 参照)。
+          // iOS: ASWebAuthenticationSession でカスタムスキームが確実に戻る。
           resultUrl = await FlutterWebAuth2.authenticate(
             url: startResult.authorizationUrl.toString(),
-            callbackUrlScheme: _authCallbackUrlScheme,
-            options: _useLocalhostCallback
-                ? const FlutterWebAuth2Options(useWebview: false)
-                : const FlutterWebAuth2Options(preferEphemeral: true),
+            callbackUrlScheme: AppConstants.callbackUrlScheme,
+            options: const FlutterWebAuth2Options(preferEphemeral: true),
           );
         }
         authenticateReturned = true;

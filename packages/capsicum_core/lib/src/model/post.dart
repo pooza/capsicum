@@ -104,6 +104,22 @@ class Post {
   /// 作者だけで、本文中のメンションは足さない（`NoteCreateService.ts`）。
   final List<String> visibleUserIds;
 
+  /// サーバーが正規化して返したハッシュタグ (#1056・Mastodon `tag` / Misskey
+  /// `tags`)。`#` は含まない。
+  ///
+  /// ⚠⚠ **表示にそのまま使わない。**サーバーは**小文字へ正規化**して持っている
+  /// （索引のため）。2026-09-26 の実測では **230 投稿のうち 7 割で本文と大小が
+  /// 違った**（`github` / `GitHub`・`spotify` / `Spotify`）。両 SNS の Web UI も
+  /// 本文の形で出すので、そのまま出すと**見た目が劣化する**。
+  ///
+  /// ⚠ **「どのタグがあるか」の正本**として使い、**表示の形は本文のパースから**取る
+  /// （`mergeHashtags`）。実測ではタグの**集合**は 1 件もズレなかったので、これは
+  /// 取りこぼし（リンクにならずに連合してきたタグ）への備え。
+  ///
+  /// ⚠ 空はサーバーが返さなかった場合も含む。**空だからタグが無いとは限らない**
+  /// ので、本文のパースを落とさない。
+  final List<String> tags;
+
   const Post({
     required this.id,
     required this.postedAt,
@@ -146,6 +162,7 @@ class Post {
     this.editedAt,
     this.mentions = const [],
     this.visibleUserIds = const [],
+    this.tags = const [],
   });
 
   /// 派生オブジェクトを生成する。enrich パイプライン（IsCatEnricher 等）の
@@ -206,6 +223,7 @@ class Post {
     editedAt: editedAt,
     mentions: mentions,
     visibleUserIds: visibleUserIds,
+    tags: tags,
   );
 }
 

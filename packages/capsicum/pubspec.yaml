@@ -1,7 +1,7 @@
 name: capsicum
 description: Flutter-based Mastodon / Misskey client
 publish_to: none
-version: 1.66.1+188
+version: 2.0.0+197
 
 environment:
   sdk: ^3.11.0
@@ -42,6 +42,10 @@ dependencies:
   dio: ^5.8.0+1
   flutter_web_auth_2: ^4.0.0
   url_launcher: ^6.3.1
+  # OAuth の callback を受けたあと、Linux / Windows でウィンドウを前面へ戻す
+  # (#1140)。flutter_web_auth_2 の server impl が使っていたものを、自前サーバへ
+  # 寄せたあとも同じ挙動にするため直接依存にした（版は fwa2 経由で入っていたもの）。
+  window_to_front: ^0.0.4
   flutter_local_notifications: ^21.0.0
   image_picker: ^1.2.1
   # Linux / Windows のメディア選択は image_picker 非対応のため file_selector を

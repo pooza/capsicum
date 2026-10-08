@@ -9,7 +9,7 @@ final clipsProvider = FutureProvider.autoDispose<List<NoteClip>>((ref) async {
   final adapter = ref.watch(currentAdapterProvider);
   if (adapter == null || adapter is! ClipSupport) return [];
   return (adapter as ClipSupport).getClips();
-});
+}, dependencies: [currentAdapterProvider]);
 
 /// Notifier that manages paginated clip notes fetching.
 class ClipNotesNotifier
@@ -74,4 +74,7 @@ class ClipNotesNotifier
 }
 
 final clipNotesProvider = AsyncNotifierProvider.autoDispose
-    .family<ClipNotesNotifier, TimelineState, String>(ClipNotesNotifier.new);
+    .family<ClipNotesNotifier, TimelineState, String>(
+      ClipNotesNotifier.new,
+      dependencies: [currentAdapterProvider],
+    );

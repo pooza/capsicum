@@ -43,6 +43,7 @@ import 'src/service/window_state_service.dart';
 import 'src/service/wns_service.dart';
 import 'src/util/action_labels.dart';
 import 'src/util/exception_scrub.dart';
+import 'src/util/sensitive_fields.dart';
 import 'src/util/sentry_observability.dart';
 import 'src/util/sentry_tag_hash.dart';
 import 'src/util/shared_preferences_cache.dart';
@@ -435,7 +436,7 @@ Object? _scrubRequestData(Object? data) {
   if (data is Map) {
     final copy = Map<String, dynamic>.from(data);
     for (final key in copy.keys.toList()) {
-      if (_isSensitiveFieldName(key.toString())) copy[key] = '[Filtered]';
+      if (isSensitiveFieldName(key.toString())) copy[key] = '[Filtered]';
     }
     return copy;
   }
@@ -448,7 +449,7 @@ Object? _scrubRequestData(Object? data) {
         final copy = Map<String, dynamic>.from(parsed);
         var changed = false;
         for (final key in copy.keys.toList()) {
-          if (_isSensitiveFieldName(key)) {
+          if (isSensitiveFieldName(key)) {
             copy[key] = '[Filtered]';
             changed = true;
           }
@@ -458,26 +459,6 @@ Object? _scrubRequestData(Object? data) {
     } catch (_) {}
   }
   return data;
-}
-
-bool _isSensitiveFieldName(String key) {
-  const names = [
-    'i', // Misskey access token
-    'access_token',
-    'refresh_token',
-    'token', // FCM / APNs device token in relay register
-    'client_secret', // OAuth completeLogin の exchangeExtra (#528 manual fallback)
-    'p256dh', // Web Push ECDH public key
-    'auth', // Web Push auth secret
-    'endpoint', // push_token が URL に埋め込まれた relay endpoint
-    'publickey', // Misskey sw/register (VAPID / subscription 公開鍵)
-    'privatekey', // 万一リクエストに載った場合の保険
-  ];
-  final lower = key.toLowerCase();
-  // 完全一致または末尾一致（FormData の subscription[keys][p256dh] 等）
-  return names.any(
-    (n) => lower == n || lower.endsWith('[$n]') || lower.endsWith('.$n'),
-  );
 }
 
 void _startApp() {
@@ -735,6 +716,13 @@ void _routeFromNotificationPayload(String? payload) {
         _routeToAnnouncements(account);
         return;
       }
+      // 未払いの案内 (#1123)。⚠ **relay を経由しないローカル通知**なので
+      // account を持たない。行き先は登録ステータス画面（そこに直し方と
+      // 「登録し直す」ボタンがある）。
+      if (type == 'entitlement_unpaid') {
+        _routeToPushSettings();
+        return;
+      }
       _routeToNotificationsTab(account);
       return;
     }
@@ -923,6 +911,40 @@ void _routeToAnnouncements(String? accountString, {int attempt = 0}) {
     router.go('/home');
   }
   router.push('/announcements');
+}
+
+/// 未払いの案内をタップしたときの行き先 (#1123)。登録ステータス画面には
+/// 直し方と「購入を確認して登録し直す」ボタンがある。
+///
+/// ⚠ **アカウントの切り替えをしない。**利用権はストアのアカウントに紐づく
+/// （fedi のアカウントではない・設計書 2-A）ので、切り替える先が無い。
+void _routeToPushSettings({int attempt = 0}) {
+  const maxAttempts = 3600;
+  final context = rootNavigatorKey.currentContext;
+  if (context == null) {
+    if (attempt >= maxAttempts) return;
+    WidgetsBinding.instance.scheduleFrameCallback(
+      (_) => _routeToPushSettings(attempt: attempt + 1),
+    );
+    return;
+  }
+  final container = ProviderScope.containerOf(context);
+  if (!container.read(sessionsRestoredProvider)) {
+    if (attempt >= maxAttempts) return;
+    WidgetsBinding.instance.scheduleFrameCallback(
+      (_) => _routeToPushSettings(attempt: attempt + 1),
+    );
+    return;
+  }
+
+  final router = GoRouter.of(context);
+  final currentLocation = router.state.matchedLocation;
+  // ⚠ ゲートの最中（splash / EULA）に割り込まない。他の通知経路と同じ扱い。
+  if (currentLocation == '/splash' || currentLocation == '/eula') return;
+  if (currentLocation != '/home') {
+    router.go('/home');
+  }
+  router.push('/settings/push');
 }
 
 void _routeToNotificationsTab(String? accountString, {int attempt = 0}) {
@@ -1242,8 +1264,27 @@ class _CapsicumAppState extends ConsumerState<CapsicumApp>
     super.dispose();
   }
 
+  /// 直前に breadcrumb へ記録した lifecycle の状態名（#1199）。
+  String? _lastLifecycleBreadcrumb;
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    // macOS の App Hang（CAPSICUM-5V / 5W → #1199）が「表示が落ちている間に
+    // 出たのか」を切り分けるための観測。エンジン側は表示の構成変更で
+    // `CVDisplayLinkStop` をメインスレッドで同期に呼ぶため、hidden / paused と
+    // ハングが並ぶなら upstream 側、並ばないなら capsicum 側を疑う。
+    // ⚠ 状態名だけ。PII は載せない。間引きの規約は
+    // [shouldRecordLifecycleBreadcrumb] 側に置いてある。
+    if (shouldRecordLifecycleBreadcrumb(_lastLifecycleBreadcrumb, state.name)) {
+      _lastLifecycleBreadcrumb = state.name;
+      Sentry.addBreadcrumb(
+        Breadcrumb(
+          category: 'app.lifecycle',
+          message: state.name,
+          level: SentryLevel.info,
+        ),
+      );
+    }
     if (state == AppLifecycleState.resumed) {
       _checkSharedText();
     }

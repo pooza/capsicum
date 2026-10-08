@@ -170,4 +170,5 @@ class ServerInfoNotifier extends AutoDisposeAsyncNotifier<ServerInfoState> {
 final serverInfoProvider =
     AsyncNotifierProvider.autoDispose<ServerInfoNotifier, ServerInfoState>(
       ServerInfoNotifier.new,
+      dependencies: [currentAdapterProvider, currentMulukhiyaProvider],
     );

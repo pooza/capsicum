@@ -8,8 +8,10 @@ import 'package:emoji_picker_flutter/emoji_picker_flutter.dart'
 import 'package:emoji_picker_flutter/locales/default_emoji_set_locale.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../url_helper.dart';
+import '../util/reaction_acceptance.dart';
 import 'content_parser.dart';
 
 const _categoryLabels = <Category, String>{
@@ -75,6 +77,14 @@ class EmojiPicker extends ConsumerStatefulWidget {
   final String? accessToken;
   final bool forReaction;
 
+  /// リアクションを付ける対象の投稿 (#1081)。[forReaction] のときだけ意味を持つ。
+  ///
+  /// 渡すと、**受付条件で使えないカスタム絵文字を無効化**する（センシティブ・
+  /// ロール制限・ローカル限定）。⚠ **null なら制限しない** —— 対象が投稿でない
+  /// 経路（お知らせ・チャット）は受付条件そのものを持たないため。上流の
+  /// `MkEmojiPicker.vue` が `!props.targetNote || …` としているのと同じ。
+  final Post? reactionTarget;
+
   /// 開いた直後に選択しておくタブ (#971)。null なら先頭。
   ///
   /// **実在しないタブを指しても先頭にフォールバックする**。タブの有無はサーバー
@@ -91,6 +101,7 @@ class EmojiPicker extends ConsumerStatefulWidget {
     this.mulukhiya,
     this.accessToken,
     this.forReaction = false,
+    this.reactionTarget,
     this.initialTab,
   }) : assert(
          onSelected != null || onCustomEmojiSelected != null,
@@ -955,30 +966,71 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
     );
   }
 
+  /// リアクションに使えない絵文字を押せなくする (#1081)。
+  ///
+  /// ⚠⚠ **隠さずに無効化する。**上流の `MkEmojiPicker.vue` も `:disabled` で、
+  /// 隠してはいない。⚠ **非公開ロールで権限を持つ人を誤って弾く経路がある**
+  /// （[reactionRoleIdsOf] のコメント）ので、**押せないことが見えて報告して
+  /// もらえる**ほうがよい。消すと気付けない。
+  String? _reactionBlockReason(CustomEmoji emoji) {
+    final target = widget.reactionTarget;
+    if (!widget.forReaction || target == null) return null;
+    if (canReactWith(
+      emoji,
+      target,
+      myHost: widget.host,
+      myRoleIds: reactionRoleIdsOf(ref.read(currentAccountProvider)?.user),
+    )) {
+      return null;
+    }
+    // ⚠ 理由は 1 つに絞る。条件は AND なので複数外れうるが、並べても打ち手が
+    // 変わらない。いちばん手前で外れたものを出す（判定と同じ順）。
+    final authorHost = target.author.host;
+    if (emoji.localOnly && authorHost != null && authorHost != widget.host) {
+      return 'この絵文字はこのサーバー限定で、他のサーバーの投稿には付けられません';
+    }
+    if (emoji.isSensitive) {
+      return 'この投稿はセンシティブな絵文字のリアクションを受け付けていません';
+    }
+    return 'この絵文字は特定のロールの人だけが使えます';
+  }
+
   Widget _buildCustomEmojiTile(CustomEmoji emoji) {
     final onCustom = widget.onCustomEmojiSelected;
+    final blockedReason = _reactionBlockReason(emoji);
+    final image = ConstrainedBox(
+      constraints: const BoxConstraints(maxHeight: 32, maxWidth: 96),
+      child: Image.network(
+        emoji.url,
+        height: 32,
+        fit: BoxFit.contain,
+        errorBuilder: (_, _, _) => const Icon(Icons.broken_image, size: 32),
+      ),
+    );
     return InkWell(
       borderRadius: BorderRadius.circular(8),
       // スタンプモードでは「最近使った」へ記録しない (#883)。あの一覧は「本文へ
       // 挿入した絵文字」の履歴で、画像に貼っただけのものが混ざると挿入時の候補
       // が濁る。表示側では引き続き参照する（よく使う絵文字はスタンプでも近い）。
-      onTap: onCustom != null
+      onTap: blockedReason != null
+          ? null
+          : onCustom != null
           ? () => onCustom(emoji)
           : () => _selectEmoji(':${emoji.shortcode}:'),
       child: Tooltip(
-        message: ':${emoji.shortcode}:',
+        // ⚠ 使えないときは理由を出す。⚠⚠ **モバイルには hover が無い**ので、
+        // 長押しでも同じ文面が出るよう Tooltip に載せる（`triggerMode` の既定が
+        // タッチでは長押し）。
+        message: blockedReason == null
+            ? ':${emoji.shortcode}:'
+            : ':${emoji.shortcode}:\n$blockedReason',
         child: Padding(
           padding: const EdgeInsets.all(4),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 32, maxWidth: 96),
-            child: Image.network(
-              emoji.url,
-              height: 32,
-              fit: BoxFit.contain,
-              errorBuilder: (_, _, _) =>
-                  const Icon(Icons.broken_image, size: 32),
-            ),
-          ),
+          child: blockedReason == null
+              ? image
+              // 押せないことを見て分かるようにする。⚠ 透かすだけだと
+              // 「読み込み中」に見えるので、Opacity は強めに落とす。
+              : Opacity(opacity: 0.3, child: image),
         ),
       ),
     );

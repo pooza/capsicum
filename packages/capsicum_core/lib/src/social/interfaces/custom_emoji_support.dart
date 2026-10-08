@@ -17,6 +17,29 @@ class CustomEmoji {
   /// サーバーや featured 未指定の絵文字は false。
   final bool featured;
 
+  /// Misskey の `isSensitive` (#1081)。センシティブ指定のカスタム絵文字。
+  ///
+  /// ⚠ **受付条件が `nonSensitiveOnly` 系の投稿には使えない。**判定は
+  /// `reactionAcceptance` 単体ではできず、ここ（絵文字カタログ側）と突き合わせる
+  /// 必要がある。
+  ///
+  /// ⚠⚠ **`/api/emojis` は false のとき値ごと省く**（サーバーの
+  /// `EmojiEntityService.packSimple` が `emoji.isSensitive ? true : undefined`）。
+  /// **欠落は「不明」ではなく「センシティブでない」**として読む。
+  final bool isSensitive;
+
+  /// Misskey の `localOnly` (#1081)。ローカル限定のカスタム絵文字。
+  ///
+  /// ⚠ **リモートの投稿へのリアクションには使えない**（自ホストの投稿にだけ使える）。
+  /// ⚠ `isSensitive` と同じく **false のときは省かれる**。
+  final bool localOnly;
+
+  /// Misskey の `roleIdsThatCanBeUsedThisEmojiAsReaction` (#1081)。
+  ///
+  /// 空でなければ、**このロールのいずれかを持つ人だけ**がリアクションに使える。
+  /// ⚠ **空のときは省かれる**（＝制限なし）。
+  final List<String> reactionRoleIds;
+
   const CustomEmoji({
     required this.shortcode,
     required this.url,
@@ -24,6 +47,9 @@ class CustomEmoji {
     this.aliases = const [],
     this.visibleInPicker = true,
     this.featured = false,
+    this.isSensitive = false,
+    this.localOnly = false,
+    this.reactionRoleIds = const [],
   });
 }
 

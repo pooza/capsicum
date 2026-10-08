@@ -13,6 +13,7 @@ import '../constants.dart';
 import '../model/account.dart';
 import '../model/account_key.dart';
 import '../model/offline_account.dart';
+import '../preset_servers.dart';
 import '../service/account_storage.dart';
 import '../service/background_notification_service.dart';
 import '../service/compose_draft_store.dart';
@@ -152,6 +153,13 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
   final _mulukhiyaAutoRefreshedAt = <String, DateTime>{};
   static const _mulukhiyaAutoRefreshTtl = kServerMetadataFreshnessTtl;
 
+  /// アカウントごとの [User] 最終取得時刻。フォアグラウンド復帰のたびに
+  /// `getMyself()` を叩かないよう TTL で間引く (#1185)。
+  ///
+  /// ⚠ **host ではなく [AccountKey] で持つ。**同一 host に複数アカウントが
+  /// あるとき、片方の取得でもう片方の TTL を消費してはいけない。
+  final _currentUserRefreshedAt = <AccountKey, DateTime>{};
+
   /// 明示ログイン（[addAccount]）が完了したが、まだホームへ遷移していない
   /// (#1057)。
   ///
@@ -278,7 +286,12 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
 
     // プッシュ通知登録（ベストエフォート）。
     // 既存アカウントにプリセットサーバーがあれば、新規アカウントも登録対象。
-    final hasPreset = PushRegistrationService.hasPresetAmong(newAccounts);
+    // ⚠⚠ **届かないアカウントも数える**（[hasPresetAccountIn]）。プリセットの
+    // サーバーが落ちている間に外部サーバーを足した人を、登録から外さない。
+    final hasPreset = hasPresetAccountIn(
+      accounts: newAccounts.map((a) => a.key),
+      offlineAccounts: offline.map((o) => o.key),
+    );
     PushRegistrationService.registerAccount(enriched, eligible: hasPreset);
   }
 
@@ -468,6 +481,74 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
       refreshCurrentServerVersion(),
       refreshCurrentMulukhiya(),
     ]);
+  }
+
+  /// 現在アカウントの [User] を取り直して state へ反映する (#1185)。
+  ///
+  /// `Account.user` を作るのは [restoreSessions] の `getMyself()` で、**起動時の
+  /// 1 回だけ**。以後 `user` が差し替わるのは capsicum 内でプロフィールを編集した
+  /// とき（`profile_edit_screen` → [updateCurrentUser]）に限られていた。
+  ///
+  /// ⚠⚠ **腐るのは Mastodon の `source.privacy`（既定の公開範囲）だけ。**
+  /// capsicum はこれを `User.defaultScope` にして**投稿時に `visibility` を明示
+  /// 送信する**ので、WebUI で変えても再起動するまで古い値で投稿フォームが開いた。
+  /// `sensitive` / `language` / `quote_policy` は**読まない・送らない**（サーバー
+  /// 既定に任せる）ので腐らない。正本は `docs/server-settings-gap-inventory.md`
+  /// §5-2。
+  ///
+  /// ⚠ **契機がフォアグラウンド復帰なのは、実質デスクトップの問題だから。**
+  /// モバイルは OS がアプリを落とすので再起動で自然に直るが、デスクトップは
+  /// 常駐するので何日も古いままになりうる。
+  ///
+  /// TTL 内は no-op（[kUserProfileFreshnessTtl]）。[force] で TTL を無視する。
+  ///
+  /// ⚠ **取得に失敗したら既存値を維持する。**一過性の失敗で good な値を捨てない
+  /// （[refreshCurrentServerVersion] と同じ方針）。
+  Future<void> refreshCurrentUser({bool force = false}) async {
+    final before = state.current;
+    if (before == null) return;
+    final key = before.key;
+    final last = _currentUserRefreshedAt[key];
+    if (!force &&
+        last != null &&
+        DateTime.now().difference(last) < kUserProfileFreshnessTtl) {
+      return;
+    }
+    // 再入・多重呼び出しの抑止も兼ねて、実行前に時刻を記録する。TTL 内の失敗も
+    // 次の満了まで待つ（到達不能なサーバーで復帰のたびに叩かない）。
+    // [refreshCurrentMulukhiya] と同じ形。
+    _currentUserRefreshedAt[key] = DateTime.now();
+
+    final User user;
+    try {
+      user = await before.adapter.getMyself();
+    } catch (e) {
+      // ⚠ **storage key はログ呼び出しの外で作る。**`exception_scrub_guard_test`
+      // の `.toStorageKey()` 判定はログの引数を文字列で見るので、
+      // `sentrySafeAccountKey(key.toStorageKey())` と畳むと**安全な形でも落ちる**
+      // （厳しい側に倒れているだけなので、ガードは触らない）。
+      final storageKey = key.toStorageKey();
+      debugLogException(
+        'capsicum: refreshCurrentUser failed for '
+        '${sentrySafeAccountKey(storageKey)}',
+        e,
+      );
+      return;
+    }
+
+    // ⚠⚠ **await 中にアカウント切替 / ログアウトが起きうる。**[updateCurrentUser]
+    // は `state.current` をそのまま書き換えるので、ここから使うと**切替後の別
+    // アカウントへ他人の user を書き込む**。必ず key で引き直す
+    // （[refreshCurrentServerVersion] と同じ）。
+    final idx = state.accounts.indexWhere((a) => a.key == key);
+    if (idx < 0) return;
+    final updated = state.accounts[idx].copyWithUser(user);
+    final accounts = [...state.accounts];
+    accounts[idx] = updated;
+    state = state.copyWith(
+      accounts: accounts,
+      current: state.current?.key == updated.key ? updated : state.current,
+    );
   }
 
   /// [AccountKey] を `username@host` 形式に直す。capsicum-relay が push payload
@@ -1445,9 +1526,65 @@ final accountStorageProvider = Provider<AccountStorage>(
 );
 
 /// Convenience provider for the currently selected account.
+///
+/// ⚠⚠ **デッキのカラムはこれを `ProviderScope` で上書きする**（#1095・案 S）。
+/// これを直接・間接に読む provider は `dependencies:` の宣言が要る。宣言が無いと
+/// カラムの中でもルートの「現在のアカウント」で動く（別のアカウントとして投稿等が
+/// 外に出る・B-2）。宣言漏れは `provider_scope_dependencies_guard_test` が落とす。
 final currentAccountProvider = Provider<Account?>((ref) {
   return ref.watch(accountManagerProvider).current;
 });
+
+/// 現在のアカウントのキーだけ (#1088)。
+///
+/// TL の family キーを組み立てる側が watch する。[currentAccountProvider] を直接
+/// watch すると、同じアカウントのまま `Account` インスタンスが差し替わっただけ
+/// （プロフィール更新等）でも作り直しが走る。[AccountKey] は値で比較されるので、
+/// こちらはアカウントが変わったときだけ通知する。
+final currentAccountKeyProvider = Provider<AccountKey?>((ref) {
+  return ref.watch(currentAccountProvider)?.key;
+}, dependencies: [currentAccountProvider]);
+
+/// プリセットサーバーのアカウントを持っているか。**接続できていないものを含む。**
+///
+/// 🔴 **課金の話を出すかどうかは、必ずこれで決める**（リリース前レビュー・
+/// 2026-10-06）。以前は各所が `accountManagerProvider.accounts`（**接続できた
+/// アカウントだけ**）を見ていたので、**プリセットのサーバーに届かない状態で
+/// 起動すると、プリセットを持つ人が「持っていない人」として扱われ、購入を
+/// 促された**（サーバーが落ちた日に、外部サーバーと併用している人の全員が
+/// 踏む）。relay は同じ端末のプリセットの購読で通し続けるので、**通知は届いて
+/// いるのに画面だけが課金を促す**形だった。`docs/product-policy.md` の不変条件
+/// （プリセットの利用者に課金しない）の違反。
+///
+/// ⚠⚠ **`offlineAccounts` を必ず含める。**到達不能（背景で再接続を試みている）
+/// も、secret が読めず「未接続」になっているものも、**その人がプリセットの
+/// 利用者であることは変わらない**。⚠ 外すと、上の事故がそのまま戻る。
+///
+/// ⚠ **値が変わったら依存先が作り直される**ので、アカウントの追加・削除・
+/// 再接続に追随する（`entitlementStatusProvider` がこれを聞いている）。
+final hasPresetAccountProvider = Provider<bool>((ref) {
+  final state = ref.watch(accountManagerProvider);
+  return hasPresetAccountIn(
+    accounts: state.accounts.map((a) => a.key),
+    offlineAccounts: state.offlineAccounts.map((o) => o.key),
+  );
+});
+
+/// [hasPresetAccountProvider] の判定そのもの。
+///
+/// ⚠ **引数を 2 つに分けてあるのは、片方を渡し忘れられないようにするため**
+/// （`required`）。1 本のリストで受けると、呼ぶ側が `accounts` だけ渡して
+/// 同じ穴を開け直せる。
+bool hasPresetAccountIn({
+  required Iterable<AccountKey> accounts,
+  required Iterable<AccountKey> offlineAccounts,
+}) => accounts.any(_countsAsPreset) || offlineAccounts.any(_countsAsPreset);
+
+/// ⚠⚠ **動作確認用の `@test` は数えない**（[kPresetExemptUsername]）。
+/// ⚠ 大文字小文字は区別しない（Mastodon / Misskey のユーザー名と同じ）。
+bool _countsAsPreset(AccountKey key) =>
+    PushRegistrationService.isPresetServer(key.host) &&
+    key.username.toLowerCase() != kPresetExemptUsername;
 
 /// 到達不能でオフライン保持中のアカウント一覧 (#792)。
 final offlineAccountsProvider = Provider<List<OfflineAccount>>((ref) {
@@ -1457,12 +1594,12 @@ final offlineAccountsProvider = Provider<List<OfflineAccount>>((ref) {
 /// Convenience provider for the current adapter.
 final currentAdapterProvider = Provider<DecentralizedBackendAdapter?>((ref) {
   return ref.watch(currentAccountProvider)?.adapter;
-});
+}, dependencies: [currentAccountProvider]);
 
 /// Convenience provider for the current account's mulukhiya service.
 final currentMulukhiyaProvider = Provider<MulukhiyaService?>((ref) {
   return ref.watch(currentAccountProvider)?.mulukhiya;
-});
+}, dependencies: [currentAccountProvider]);
 
 /// `catch` の中から `account` を読むための、**投げない**読み取り (#1064)。
 ///

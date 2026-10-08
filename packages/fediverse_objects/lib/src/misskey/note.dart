@@ -37,6 +37,12 @@ class MisskeyNote {
   /// （新しい受付条件が上流に増えても投稿の変換ごと落とさないため）。
   final String? reactionAcceptance;
 
+  /// サーバーが正規化して返したハッシュタグ (#1056)。`#` は含まない。
+  ///
+  /// ⚠⚠ **小文字へ正規化されている**（索引のため）。表示には本文の MFM から
+  /// 拾った形を使う（`capsicum_core` の `Post.tags` の注記）。
+  final List<String>? tags;
+
   /// 指名（`specified`）ノートの宛先 (#1161)。それ以外の公開範囲では null。
   final List<String>? visibleUserIds;
 
@@ -63,6 +69,7 @@ class MisskeyNote {
     this.localOnly,
     this.reactionAcceptance,
     this.visibleUserIds,
+    this.tags,
   });
 
   factory MisskeyNote.fromJson(Map<String, dynamic> json) =>

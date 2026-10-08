@@ -46,6 +46,76 @@ dart run melos bootstrap
 
 実例は #836（3.41.9 → 3.44.6）のコミット 2 本がそのまま雛形になる。**iOS / macOS のビルド構成に影響する変更（3.44 の SwiftPM 移行など）を含む場合は、製品版昇格前に内部ベータで検証すること。**
 
+## Xcode の版は pin していない（Flutter と違って勝手に動く）
+
+⚠⚠ **`flutter-version` は CI 3 本と全端末で pin してあるが、Xcode は pin していない。**この非対称が定期的に事故を起こす。
+
+⚠⚠ **CI は iOS / macOS をビルドしない。**Apple 向けビルドは Mac でしか走らないので、**Xcode 由来の破損は手元でしか捕まらない**。リリース当日に初めて気づく経路が実在する。
+
+### 自動更新は止めてある（2026-09-17）
+
+```sh
+defaults write com.apple.commerce AutoUpdate -bool false   # 戻すなら -bool true
+```
+
+⚠ **App Store アプリ全体に効く**（Xcode だけを対象にする設定は無い）。⚠ **macOS 自体の自動更新は切っていない**（`AutomaticallyInstallMacOSUpdates = 1`）—— 入るのはマイナー / セキュリティ更新で、メジャーは明示同意なしには入らないため。
+
+### Xcode を上げたら、その場でスモークビルドを 1 本通す
+
+```sh
+cd packages/capsicum
+source ~/.config/capsicum/secrets.env
+flutter build ipa --release --dart-define=SENTRY_DSN=$SENTRY_DSN --dart-define=SENTRY_ENV=production --dart-define=RELAY_SECRET=$RELAY_SECRET
+flutter build macos --release --dart-define=...   # 同上
+xcodebuild -workspace macos/Runner.xcworkspace -scheme Runner -configuration Release \
+  -archivePath build/macos/capsicum.xcarchive -allowProvisioningUpdates archive
+```
+
+⚠⚠ **`flutter build ipa` は失敗しても exit 0 を返すことがある**（2026-09-17 実測）。**終了コードを信用せず、成果物の存在で判定する**:
+
+```sh
+ls -la build/ios/ipa/*.ipa
+```
+
+⚠ **リリース直後に上げる**のが良い。壊れても次のリリースまでの時間がそのまま復旧の余裕になる。
+
+### 2026-09-17 に Xcode 26 → 27 で踏んだ 3 つ（層が全部違う）
+
+⚠⚠ **1 つ直すと次が出る。**「1 つ直ったから大丈夫」と判断しないこと。
+
+| # | 症状 | 層 | 対処 |
+| --- | --- | --- | --- |
+| 1 | `Target Integrity: ... IPHONEOS_DEPLOYMENT_TARGET is set to 9.0, but the range of supported deployment target versions is 15.0 to 27.0.x` | **依存（podspec）** | iOS の `Podfile` の `post_install` で 15.0 未満を底上げ |
+| 2 | `Binary ... does not contain architectures "arm64 x86_64"` | **Flutter ツール（上流バグ）** | `/opt/flutter` へローカル patch（下記） |
+| 3 | `The macOS deployment target ... is set to 11.5, but the range of supported deployment target versions is 12.0 to 27.0.x`（**`Runner` 本体・ShareExtension・NSE**） | **アプリ本体** | **最低 macOS を 12.0 へ引き上げ**（製品判断・pooza 承認） |
+
+⚠ **1 と 3 は同じ形だが深刻度が違う。**1 は依存を宣言済みの値に揃えるだけだが、**3 はサポート対象 OS を切る話**なので製品判断が要る。
+
+⚠ **`Podfile` の `platform` は podspec が明示した値を上書きしない。**Flutter 標準の `flutter_additional_ios_build_settings` は **12.0 未満しか底上げしない**ので、13.0 を宣言しているもの（`flutter_web_auth_2`）は素通りする。
+
+### `/opt/flutter` にローカル patch がある（flutter/flutter#188461）
+
+⚠⚠ **Xcode 27 の `lipo` は `-verify_arch` に複数アーキテクチャを渡せない**（`lipo: -verify_arch requires exactly one input file` を出して exit 1）。Flutter 3.44.6 は 1 回でまとめて渡すため、**バイナリに両方揃っていても失敗する**。
+
+```
+packages/flutter_tools/lib/src/build_system/targets/darwin.dart  # thinFramework
+```
+
+⚠⚠ **エラーメッセージが実態と逆**（`does not contain architectures "arm64 x86_64"` と出るが、`lipo -info` は両方あると出す）。**patch が消えたときの手掛かりはこの文言**。
+
+⚠⚠ **patch を当てただけでは効かない。**`flutter_tools` はコンパイル済み snapshot として動き、**`.stamp` が一致していると再生成されない**。必ず落とす:
+
+```sh
+rm -f /opt/flutter/bin/cache/flutter_tools.{stamp,snapshot}
+flutter --version    # ここで Building flutter tool... が走れば再生成された
+```
+
+⚠ **これは紛らわしい失敗**。patch はファイルに残っているので `grep` では確認できてしまい、「当てたのに直らない＝patch が違う」と誤診する。実際には**当てたものが使われていない**。
+
+⚠ **消える経路**: `git checkout`（＝[基準版に追従する](#基準版に追従する各端末で普段やる方)の手順そのもの）/ SDK 入れ直し / 別の Mac には**最初から当たっていない**。
+
+⚠ **上流が修正したら patch を外して正規の版へ戻す。**判断は [flutter-upstream-watch.md](flutter-upstream-watch.md) の監視対象テーブルで追う。
+
 ## Debug ビルドと TestFlight の役割分担
 
 Debug ビルドは「コードを動かしてみるための環境」であり、本番相当の検証は TestFlight / 内部テストトラックで行う。Debug 環境で本番と同じ機能スイートが揃わなくても、TestFlight 経由で検証できるなら気にしない方針。
@@ -62,15 +132,59 @@ Debug ビルドは「コードを動かしてみるための環境」であり�
 
 ## `flutter run` の実行手順
 
+**普段は `tool/dev-run.sh`（Windows は `tool/dev-run.ps1`）を使う**（[#1179](https://github.com/pooza/capsicum/issues/1179)）。`secrets.env` の読み込み → `build_runner` → `packages/capsicum` で `flutter run --dart-define=RELAY_SECRET=...` までを 1 本で回し、下の罠を踏まない。`-d` などの残りの引数は `flutter run` へそのまま渡る。
+
+```sh
+tool/dev-run.sh -d macos          # build_runner から
+tool/dev-run.sh -s -d macos       # build_runner を飛ばす
+tool/dev-run.sh -n -d macos       # 流すコマンドを表示するだけ（秘密は伏せる）
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tool\dev-run.ps1 -d windows
+powershell -ExecutionPolicy Bypass -File tool\dev-run.ps1 -SkipBuildRunner -d windows
+```
+
+オプションの一覧（sh / ps1 の対応・`--dry-run` / `-DryRun` を含む）と、Windows 版の自前オプションが**完全一致だけ**である理由は [tool/README.md](../tool/README.md) にある（[#1192](https://github.com/pooza/capsicum/issues/1192)）。⚠ Windows 版は melos を通さず、`build_runner` に依存するパッケージで直接 `dart run build_runner build` する（下の Windows 節の注記と同じ理由）。
+
+中でやっていることは次の手順と同じ。
+
 ```sh
 source ~/.config/capsicum/secrets.env
 cd packages/capsicum
 flutter run -d <device-id> --dart-define=RELAY_SECRET=$RELAY_SECRET
 ```
 
-### ⚠ `--dart-define` を省くとプッシュが 401 で落ちる
+### `secrets.env` を置く（メンテナ向け・[#1180](https://github.com/pooza/capsicum/issues/1180)）
 
-`RELAY_SECRET` は `String.fromEnvironment` で読む **コンパイル時定数**（[`push_relay_client.dart`](../packages/capsicum/lib/src/service/push_relay_client.dart)）。**`secrets.env` を `source` して `export` しても Dart には届かない。**`--dart-define` で渡さないと空文字が焼き込まれ、relay の `authenticate!` が `halt 401` する。
+スクリプトもこの手順書も `~/.config/capsicum/secrets.env`（Windows は `%USERPROFILE%\.config\capsicum\secrets.env`）を読む。中身は sh の書式:
+
+```sh
+export RELAY_SECRET=...
+export SENTRY_DSN=...
+```
+
+- ⚠ **値そのものは公開リポジトリに書かない。**メンテナは共有ドライブから取る（メイン機では Google ドライブ上の実体への symlink で置いてある）
+- **debug で要るのは `RELAY_SECRET` だけ。**`SENTRY_DSN` はリリースビルドでしか使わない
+- ⚠ Windows 版スクリプトも**同じ sh 書式のファイル**を読む（`export` の有無とクォートは吸収する）
+- 置き場所を変えたいときは環境変数 `CAPSICUM_SECRETS` でファイルを指せる
+
+### 置かなくても動く（何が使えなくなるかだけ変わる）
+
+⚠⚠ **秘密を持てるのはメンテナだけなので、どれも「無いと止まる」にしない**（#1180）。無ければ警告を出して起動し、**使えなくなるのはプッシュ通知だけ**に揃えてある。
+
+| 置かないもの | 起動 | 使えなくなるもの |
+| --- | --- | --- |
+| `RELAY_SECRET` | する | **プッシュ通知だけ。**登録が 401 で落ちる（設定 → プッシュ通知に 401 と出る）。タイムライン・投稿などは影響なし |
+| `SENTRY_DSN` | する | クラッシュ報告が送られない。⚠ **debug ではもともと渡さない**ので、開発では差が無い |
+| `packages/capsicum/android/app/google-services.json` | する | **プッシュ通知だけ**（Android）。⚠ `.gitignore` で除外されているので、外部の開発者は持てない |
+
+- ⚠ **`google-services.json` は 2026-09-29 まで「無いとビルドごと落ちる」だった。**`android/app/build.gradle.kts` が `com.google.gms.google-services` を無条件に適用しており、`:app:processDebugGoogleServices` で失敗していた。**ファイルがあるときだけ `apply(plugin = ...)` する**形に変えて、上の表の他の行と揃えた
+- ⚠ 実行時に困らないのは、`_initFirebase()` が例外を握って rethrow しないため。**プラグインが無い ＝ プッシュ通知だけ使えない**に収まる
+
+### `--dart-define` を省くとプッシュが 401 で落ちる
+
+⚠ `RELAY_SECRET` は `String.fromEnvironment` で読む **コンパイル時定数**（[`push_relay_client.dart`](../packages/capsicum/lib/src/service/push_relay_client.dart)）。**`secrets.env` を `source` して `export` しても Dart には届かない。**`--dart-define` で渡さないと空文字が焼き込まれ、relay の `authenticate!` が `halt 401` する。
 
 症状の見え方:
 
@@ -81,11 +195,55 @@ flutter run -d <device-id> --dart-define=RELAY_SECRET=$RELAY_SECRET
 
 `SENTRY_DSN` は debug では**渡さない**のが既定。渡すと開発中の例外が本番プロジェクトへ流れる。
 
-### ⚠ リポジトリ root では iOS がデバイス候補に出ない
+### リポジトリ root では iOS がデバイス候補に出ない
 
-`flutter run` は**カレントのプロジェクトが対応するプラットフォームだけ**を候補に出す。リポジトリ root は melos の workspace（`name: capsicum_workspace`）で `ios/` も `macos/` も持たないため、**シミュレータを起動していても iOS が候補から落ちる**。
+⚠ `flutter run` は**カレントのプロジェクトが対応するプラットフォームだけ**を候補に出す。リポジトリ root は melos の workspace（`name: capsicum_workspace`）で `ios/` も `macos/` も持たないため、**シミュレータを起動していても iOS が候補から落ちる**。
 
 `flutter devices` は絞り込まずに全部並べるので、**「`flutter devices` には出るのに `flutter run` で選べない」**という食い違いが起きる。`packages/capsicum` へ `cd` してから実行する。
+
+## 課金 UI をストアなしで出す（StoreKit Configuration・#1122）
+
+`packages/capsicum/ios/Capsicum.storekit` に**ローカルの商品定義**がある。Xcode で有効にすると、**App Store Connect の状態に関係なく**購入 UI が出る。
+
+⚠⚠ **要るのは「審査用スクリーンショット」を撮るため。**App Store Connect のサブスクは商品ごとにこれを要求するが、⚠ **`MISSING_METADATA` のあいだ StoreKit は商品を返さない**ので、アプリ側の購入節は丸ごと隠れる（「押しても買えない入口を作らない」作り）。**鶏と卵になるのをこれで外す。**
+
+**有効にする**: Xcode → Product → Scheme → Edit Scheme → Run → Options → **StoreKit Configuration** に `Capsicum.storekit` を選ぶ。
+
+⚠ **共有スキーム（`Runner.xcscheme`）には入れていない。**入れると debug ビルドが常にローカル商品を使い、⚠⚠ **サンドボックスの実購入を一度も踏まないまま出荷しうる**。**撮るときだけ手で選ぶ。**
+
+### この GUI 操作は 2 つのことを同時にやっている（2026-10-03 実測）
+
+⚠⚠ **片方だけでは効かない。**
+
+| | 書かれる場所 |
+| --- | --- |
+| 1. `.storekit` を**プロジェクトに登録**する | `Runner.xcodeproj/project.pbxproj`（`PBXFileReference` + グループの `children`） |
+| 2. **スキームに参照を書く** | `Runner.xcscheme` の `<StoreKitConfigurationFileReference identifier = "../Capsicum.storekit">` |
+
+⚠ **`Capsicum.storekit` は `project.pbxproj` に登録されていない**（2026-10-03 時点）。なので**スキームだけ書いても Xcode が参照を解決できず、黙って無視される。**
+
+### 🔴 `flutter run` では効かない
+
+**スキームに書いても `flutter run` 経由では適用されない**（2026-10-03 実測）。あの設定は **Xcode の Run アクションが起動時に効かせる**もので、`flutter run` はビルド後に自前でインストール・起動するため通らない。⚠ **画面は出るが商品が 0 件**になり、「ストアに接続できないか、商品情報を取得できませんでした」と表示される。
+
+⚠ `xcodebuild test`（スキームの TestAction に同じ参照を書く）も試したが**効かなかった** —— アプリをホストにした unit test では適用されない模様。**撮影は Xcode の ▶︎ で起動する前提で組むこと。**
+
+### 画面の撮り方（操作を減らす）
+
+⚠ **外から `xcrun simctl io … screenshot` を撃つとビルド時間とレースになる**（2026-10-03 に 2 回外した）。⚠⚠ **`xcodebuild test` はシミュレータをクローンして走る**ので、アプリのサンドボックスへ書いたファイルは**クローンごと消える**（`-parallel-testing-enabled NO -disable-concurrent-destination-testing` で本体に寄せられる）。
+
+⚠ **到達に要るタップを減らす手がある。**`lib/src/router.dart` の `resolveRedirect` を素通しにし、`initialLocation` を `/settings/supporter` にすると、**起動直後に目的の画面が出る**（ログインも画面遷移も不要）。⚠⚠ **一時変更には目印を付け、絶対にコミットしないこと。**
+
+### 🔴 これで購入しても「動いた」ことにはならない
+
+| | |
+| --- | --- |
+| 出るもの | ✅ 商品名・価格・購入シート（**見た目は本物と同じ**） |
+| 出ないもの | 🔴 **ストアの本物のレシート** |
+
+⚠⚠ **relay の `POST /entitlements` は偽の `purchase_id` を受け取る**ので、App Store Server API の検証が通らず **`unverified` のまま**になる。**「購入 → 利用権が有効」の実測にはならない。**それはサンドボックス（本物の Apple ID のテスター）でやる。
+
+⚠ **投げ銭 3 種もこのファイルに入れてある。**StoreKit Configuration を有効にすると**そのファイルにある商品しか返らない**ので、抜くと投げ銭の節が消えて**画面が本番と違う形で写る**。
 
 ## Claude Code の権限設定（auto モード・全端末）
 
@@ -153,23 +311,80 @@ flutter run -d <device-id> --dart-define=RELAY_SECRET=$RELAY_SECRET
 
 | やらない | 代わりに |
 | --- | --- |
-| `python3 -c` / `perl -e` で JSON を捌く | **`jq`**。インタプリタは任意コード実行になるので allowlist に載せない方針で、載る見込みもない |
+| `python3 -c` / `perl -e` で JSON を捌く | **`jq`**。インタプリタは任意コード実行になるので allowlist に載せない方針で、載る見込みもない。⚠ **フックで拒否する**（下の「インタプリタは書き方で分ける」節） |
 | **シェルの `for` ループで複数対象を回す** | **1 対象 1 ツール呼び出しにして並列に投げる**。ループは丸ごと未知のコマンド扱いになる。並列のほうが速い |
 | 関数定義・`$(...)`・`while` 等をコマンドに混ぜる | 同上。**複合シェル構文が 1 つでも入ると、中身が全部 allowlist に載っていても確認になる** |
 | 他リポジトリへ `cd` してから `git` | **`git -C <path> <sub>`**。許可済みは `fetch` / `log` / `pull` / `status` / `tag` / `show` / `diff` / `rev-parse` / `rev-list` / `branch` / `describe` の 11 個。⚠⚠ **`cd` は次のツール呼び出しにも残る**（下の「`cd` は残る」節） |
+| **サブシェルの外に `cd` を書く**（単独の `cd X` も含む） | **`(cd X && cmd)`** —— サブシェルなら cwd は残らない。配置依存で `-C` 相当が無いもの（`flutter test` / `dart test` / `pod install`）はこの形で書く。⚠ **フックで拒否する**（下の「`cd` は残る」節） |
 | `gh` をリポジトリ指定なしで書き込む | **`gh <sub> --repo pooza/capsicum`**。⚠ **書き込み系（`issue comment` / `issue create` / `issue edit` / `pr comment`）は必ず付ける。**読み取りだけなら省略してよい |
 | 絶対パスでコマンドを呼ぶ | **素の名前で呼ぶ**。`Bash(sentry-cli *)` は `/Users/…/.local/bin/sentry-cli` には**当たらない**（別コマンド扱い）。絶対パスが要る環境では settings.local.json に実パスで足す |
 | `curl -sL` / `curl -sX` のように短縮を連結 | **`curl -s -L` / `curl -s -X`**。allowlist は `curl -s ` の後ろに空白を要求する |
 | `TOKEN=$(...)` の変数代入から始める | トークンは**単独のコマンドで 1 回読んで**、以降のコマンドへ直接埋める |
 | `pgrep -f <パターン>` / `pkill -f <パターン>` をそのまま叩く | **`ps -u "$(id -u)" -o pid=,cmd=` + `grep '[p]attern'`**（bracket trick）。⚠⚠ **`-f` は全コマンドラインを見るので、そのパターン文字列を含む自分のシェルにも一致する** —— `pgrep` は毎回違う PID を返して「プロセスが増殖している」ように見え、`pkill` は**自分を殺す**（2026-09-13 に両方踏んだ）。対象を絞るときは**プロセス名（`pgrep -x`）と併せて二重に**当てる。⚠ `comm` は **15 文字で切り詰められる**（`gnome-keyring-daemon` は `gnome-keyring-d`）ので、`-x` には切り詰め後の名前を渡す |
 
-### ⚠⚠ `cd` は次のツール呼び出しにも残る（外部リポジトリへの誤爆を起こした）
+### インタプリタは「書き方」で分ける（禁止ではない）
 
-**2026-09-04 に、上流の `mastodon/mastodon` へコメントを投稿する誤爆を起こした。**約 1 分で削除したが、**公開リポジトリに他プロジェクトのメモが載った**。
+⚠⚠ **禁じているのは「Python を使うこと」ではなく「Python に逃げること」。**
+`.claude/hooks/deny-interpreter-inline.sh` が **PreToolUse で機械的に弾く**
+（2026-09-28 に規約化。⚠ **2026-08-23 / 08-25 / 09-28 と 3 度破られた**ため、
+読んで守る仕組みから外した）。
+
+| 形 | 扱い |
+| --- | --- |
+| `python3 -c '...'` / `perl -e` / `ruby -e` / `node -e` | 🔴 **フックが拒否** |
+| `python3 - <<'PY'` / `python3 <<PY` | 🔴 **拒否**（コードが会話に残らない） |
+| `curl ... \| python3 -m json.tool` | 🔴 **拒否**（`jq` で書く） |
+| ✅ `python3 tool/foo.py` / `bundle exec ruby /tmp/probe.rb` | **通る** |
+| ✅ `bundle exec ruby -Ilib -Itest test/foo_test.rb` | **通る**（`-e` が無いオプション列は当たらない） |
+
+#### 例外の判定基準
+
+「Python のほうが**楽か**」ではなく、
+
+> ⚠⚠ **jq / Edit では *そもそも書けない* か**
+
+で判定する。書けるなら使わない。⚠ **複数行にまたがる置換は「書けない」に当たらない**
+——**そこは Edit ツールの出番**（この取り違えが 3 度の違反すべての原因だった）。
+
+本当に要る例:
+
+- 複数ファイルの横断解析・集計（jq で組めない join / 統計）
+- バイナリ・エンコーディングの検査（DER / base64 / 証明書の中身）
+- 使い捨ての検証スクリプト（例: 2026-09-28 の `vapid_probe.rb` —— 生の P-256
+  公開鍵から ES256 の検証鍵を組めるかを実測した）
+
+#### 使うときはスクリプトにする
+
+⚠ **Write でスクラッチパッドに書いてから実行する。**
+
+- **コードが差分として会話に残る**ので、何をしたか後から読める
+- ⚠ 許可確認が「**不透明な 1 行**」ではなく「**レビューできる 1 本**」に対して出る
+
+⚠ **確認は出る**（`python3 *` は allowlist に載せない方針）。そのぶん、**出る回数を
+例外の回数に抑える**のがこの規約の狙い。
+
+### 検査コマンドをパイプに繋がない（exit code が消える）
+
+⚠⚠ **2026-09-19 に、`dart analyze` の失敗を見落としたままコミットした**（push 前に気づいて直した）。
+
+```sh
+# ⚠ これは常に成功する。パイプラインの exit code は最後の tail のもの
+dart analyze packages 2>&1 | tail -2 && git commit ...
+```
+
+⚠⚠ **CI は `dart analyze --fatal-infos` なので、info 1 件でも赤になる。**このときは `unnecessary_brace_in_string_interps` が 3 件出ていたが、`| tail -2` で握り潰されて `git commit` まで通った。
+
+- **合否を見るコマンドは、そのまま実行する**（出力が長くても `tail` に繋がない）。長さが気になるなら `dart analyze packages; echo "exit=$?"` のように**終了コードを明示的に出す**
+- ⚠ **`&&` で後続に繋ぐときは特に危ない。**「検査 → コミット」を 1 行にすると、検査が実質無効になっていても気づけない
+- ⚠ `flutter test` も同じ。**`| tail -3` で「All tests passed!」だけを見る書き方は、失敗時に行が流れて見落とす**ので、失敗の有無は終了コードで確かめる
+
+### `cd` は次のツール呼び出しにも残る（外部リポジトリへの誤爆を起こした）
+
+⚠⚠ **2026-09-04 に、上流の `mastodon/mastodon` へコメントを投稿する誤爆を起こした。**約 1 分で削除したが、**公開リポジトリに他プロジェクトのメモが載った**。
 
 経緯:
 
-1. フォークを調べるため `cd /Volumes/extdata/repos/mastodon && git diff ...` を実行した（**この時点で `git -C` の規約に違反**）
+1. フォークを調べるため `cd ~/repos/mastodon && git diff ...` を実行した（**この時点で `git -C` の規約に違反**）
 2. Bash ツールの **working directory はツール呼び出しをまたいで持続する**
 3. 数手あとに `gh issue comment 1054 --body ...` を実行 → **`gh` は cwd の git remote を見る**ので `mastodon/mastodon` の #1054（無関係な PR）へ飛んだ
 
@@ -182,6 +397,19 @@ flutter run -d <device-id> --dart-define=RELAY_SECRET=$RELAY_SECRET
 - ⚠ **番号の衝突は日常的に起きる。**capsicum の #1054 は mastodon/mastodon にも存在した。**「番号が通ったから正しいリポジトリ」ではない**
 
 削除は `gh api -X DELETE repos/<owner>/<repo>/issues/comments/<id>`。実行後に同じ ID を GET して **404 を確認する**。
+
+#### サブシェルの外の `cd` は機械で止めている（2026-10-03・#1198）
+
+⚠⚠ **規約を置いても破られ続けた。**2026-09-29 に 3 回（[#1189](https://github.com/pooza/capsicum/issues/1189)）、2026-10-01 に 5 回、2026-10-03 にも 2 回。**読んで守る仕組みから外した。**
+
+- 実体: [`.claude/hooks/deny-bare-cd-chain.sh`](../.claude/hooks/deny-bare-cd-chain.sh)（`PreToolUse` / matcher `Bash`）。判定表は [`deny-bare-cd-chain.cases.sh`](../.claude/hooks/deny-bare-cd-chain.cases.sh)
+- 拒否するのは **行頭の `cd`**。⚠⚠ **単独の `cd X` も拒否する** —— 単独でも cwd は残り、**戻すためにまた `cd` を打つ**形になって目的（cwd を動かさない）を満たさないため（当初案は単独を通す線だったが、2026-10-03 に pooza 判断で強めた）
+- ⚠ **`(` で始まる行は通す。**`(cd X && cmd)` は cwd を残さない（CI の `analyze.yml` も既にこの形）。⚠⚠ **`flutter test` / `dart test` / `pod install` には `git -C` に相当するオプションが無い**ので、**ここが唯一の例外**
+- **heredoc の本文は検査しない**（この規約の話を文章として書くと、それ自身が拒否される）
+- ⚠ **既知の穴**: `cd` が行頭に無い形（`export FOO=1 && cd X && cmd`）は見ていない。実績のある形が全部行頭なので、まずそこだけ塞いだ
+- ⚠ **プライマリ作業ディレクトリと完全に同じパスへの `cd` は素通りする**（2026-10-03 実測）。ハーネスが no-op として畳むためスクリプトに届かない。**cwd が動かないので塞ぐ必要はない**が、⚠ **「単独の形は全部拒否される」と読むと誤診する** —— 1 階層下（`cd <repo>/docs && …`）は拒否されるので、素通りを見たら**移動先が cwd と同一か**を先に確かめる
+
+⚠ [#1189](https://github.com/pooza/capsicum/issues/1189) の [`deny-cd-then-git.sh`](../.claude/hooks/deny-cd-then-git.sh) とは**役割が違う**。あちらは「`cd` のあとの `git`」＝**誤爆の本体**、こちらは**その手前**で cwd が動くこと自体。両方効く。
 
 ### ループと関数定義は機械で止めている
 
@@ -229,311 +457,9 @@ Xcode でワークスペースを一度開いて自動署名させてもよい�
 
 ## 補助機（Linux / Windows）セットアップ
 
-v1.24 以降のデスクトップ向け作業（[#423](https://github.com/pooza/capsicum/issues/423) / [#424](https://github.com/pooza/capsicum/issues/424) / [#425](https://github.com/pooza/capsicum/issues/425)）専用。Apple / Google Play 関連のシークレットや署名鍵は持ち込まない。
+⚠ **別ファイルにある → [dev-environment-desktop.md](dev-environment-desktop.md)。**system 依存・ツールチェーン・内部ベータの導入経路・ARM / x64 の差・native クラッシュのトリアージ・bg task の実機確認手順はそちら。
 
-### その端末で拾う作業の探し方
-
-**`Windows` / `Linux` ラベルが「その実機でないと進まない」ものの目印。** メインの macOS では踏み込めない（再現確認が起点・修正案の選択が実機の挙動次第）ものだけを付ける。着いたらまずこれを引く:
-
-```sh
-gh issue list --state open --label Windows   # Windows 機で
-gh issue list --state open --label Linux     # Linux 機で
-```
-
-`desktop` ラベルとは別物であることに注意。`desktop` は 3 OS 共通のデスクトップ機能（メニューバー等）で、**macOS でも進められる**。ラベルの貼り替えは、実機で確認して「macOS でも書ける」と分かった時点で外す。
-
-対象が無くなったら、そのマイルストーンの残りをマイルストーン一覧から拾う。
-
-### 共通
-
-- リポジトリは `~/repos/capsicum` にクローン（全端末共通の配置ルール）
-- Flutter SDK（stable channel に固定）、Melos（`dart pub global activate melos`）、`gh` CLI
-- `sentry-cli` を GitHub Releases から `~/.local/bin/sentry-cli`（Windows は `%USERPROFILE%\.local\bin\sentry-cli.exe`）に直接配置（MacPorts / Homebrew / scoop 等のパッケージマネージャ不使用）
-- `~/.sentryclirc` に Issue 読み取り用トークンを配置（メインと同じ）
-- Google Drive クライアント（Drive for desktop 等）をインストールし、`~/.config/capsicum/secrets.env` を Google Drive 上の実体への symlink で配置
-- Claude Code の memory ディレクトリ（`~/.claude/projects/<project-key>/memory/`）も Google Drive 上の `claude-memory/` 実体への symlink で共有する。`<project-key>` は Claude Code 起動時に作業ディレクトリから自動生成されるため、起動後に確認してから symlink を張る
-
-### Linux 固有
-
-[#424](https://github.com/pooza/capsicum/issues/424) で実機検証して確定した system 依存:
-
-```sh
-sudo apt install -y \
-  clang cmake ninja-build pkg-config \
-  libgtk-3-dev libsecret-1-dev libwebkit2gtk-4.1-dev \
-  libcurl4-openssl-dev default-jdk-headless \
-  libmpv-dev libasound2-dev libayatana-appindicator3-dev \
-  libfuse2t64 patchelf
-```
-
-- `libgtk-3-dev` / `libsecret-1-dev`: Flutter desktop と flutter_secure_storage 用
-- `libwebkit2gtk-4.1-dev`: `flutter_web_auth_2` が transitive で引く `desktop_webview_window` の OAuth 用 WebView (#382 で OS デフォルトブラウザ方式に切り替えれば不要になる候補)
-- `libcurl4-openssl-dev`: sentry-native の HTTP 送信
-- `default-jdk-headless`: `sentry_flutter` が transitive で引く `jni` のヘッダ (ビルド時のみ。実行時は使われない)
-- `libmpv-dev`: `media_kit_video`（[#492](https://github.com/pooza/capsicum/issues/492) media_kit 移行 v1.30）が cmake で `PkgConfig::mpv` を要求。同梱 libmpv があってもビルド時に system 側が要る
-- `libasound2-dev`: `volume_controller` が ALSA（`find_package(ALSA)`）を要求
-- `libayatana-appindicator3-dev`: `tray_manager`（デスクトップ常駐トレイ [#752](https://github.com/pooza/capsicum/issues/752)）が `ayatana-appindicator3-0.1` を要求
-- `libfuse2t64` / `patchelf`: AppImage 起動と linuxdeploy の依存解決
-
-なお、上記 system 依存に加えて、フレッシュな checkout では **`melos bootstrap` + `melos run build_runner`（`fediverse_objects` の `*.g.dart` 生成）が済んでいないと `flutter build/run linux` が `_$XxxFromJson` 未定義でコンパイル失敗**する。melos は Pub Cache bin が PATH 外だと解決に失敗するため `export PATH="$PATH:$HOME/.pub-cache/bin"` を通しておく（Windows 固有節の build_runner 注記と同型）。
-
-配布パイプライン作業時の `linuxdeploy` / `linuxdeploy-plugin-gtk.sh` / `appimagetool` は GitHub Releases から `~/.local/bin/` に直接配置（`sentry-cli` と同じ運用）。具体手順は [distribution/linux/appimage/README.md](../distribution/linux/appimage/README.md)。
-
-### Windows 固有
-
-- 検証端末は 2 系統: (1) **Parallels Desktop 上の Windows 11 VM（ARM、メイン macOS に同居）** — v1.25 配布パイプライン [#423](https://github.com/pooza/capsicum/issues/423) の実装・MSIX 自己署名インストール検証はこの VM 上で行う。(2) **x64 実機 Windows 11**（2026-06-12 に ARM 環境から移行して追加）— 下記のローカルソースビルド（`flutter build windows`）が通るのはこちら
-- Visual Studio 2022 Build Tools（"Desktop development with C++" workload）
-- MSIX packaging tool（[#423](https://github.com/pooza/capsicum/issues/423) の MSIX 生成用）
-- Microsoft Partner Center アカウント（Microsoft Store 登録用）
-- 内部ベータ検証経路: GitHub Actions の `Windows Release` workflow を develop で `workflow_dispatch` 起動 → artifact (`capsicum.msix` + `capsicum-signing.cer`) を Parallels VM 内で [install-internal-beta.ps1](../distribution/windows/install-internal-beta.ps1)（`gh run download` + `Import-Certificate` + `Add-AppxPackage` を管理者昇格つき 1 コマンドに畳んだもの）で導入。タグ駆動の draft Release ([store-release スキル §4.6](../.claude/skills/store-release/windows.md)) と同じ MSIX が出るため、本番判定にも流用できる。**自己署名 MSIX 直配はあくまで内部ベータ / 開発検証用**でエンドユーザーには案内しない（Windows の公式配布は Microsoft Store 単独・[#760](https://github.com/pooza/capsicum/issues/760)）
-- **ローカルソースビルドは ARM Windows（上記 VM）では通らない**ため、ARM 環境での検証は上記 CI artifact の MSIX で行う。ARM で詰まる箇所: `flutter_secure_storage_windows` / `flutter_local_notifications_windows` が ATL ヘッダ（`atlstr.h` / `atlbase.h`、VS Build Tools に「C++ ATL for v143」追加が必要）、`jni` が `jni.h`（JDK 未導入）、`sentry-native`（crashpad）が x64 ターゲットビルド中に ARM64 専用 marmasm targets を踏む。前 2 つは追加導入で解決余地があるが crashpad の ARM/x64 不整合が残るため深追いしない
-- **x64 実機では `flutter build windows --release` が通る**（2026-06-12 確認。crashpad の ARM/x64 不整合は x64 ネイティブでは発生しない）。必要なツールチェーン: VS Build Tools 2022 の「C++ によるデスクトップ開発」ワークロード + **C++ ATL** + **C++ CMake tools** + **Windows 11 SDK**（`Microsoft.VisualStudio.Workload.VCTools --includeRecommended` で一括導入可。GUI が白画面で開けない場合は `setup.exe modify ... --quiet` で CLI 導入。`--wait` は modify では不可）、`jni.h` 用の **JDK**（`JAVA_HOME` 設定）、**Windows 開発者モード ON**（無効だとシンボリックリンク作成で失敗）、`melos bootstrap` + コード生成（`build_runner` が必要なのは `fediverse_objects` のみ。`melos run build_runner` は Pub Cache bin が PATH 外だと内部の `melos` 解決に失敗するため、当該パッケージで直接 `dart run build_runner build` する）
-- MSIX は release build なので、debug では確認できない OS 連携系（`window_manager` の位置・サイズ復元 #559 / OAuth の OS デフォルトブラウザ起動 #382 系 / OS スキーム・ネイティブダイアログ）も artifact MSIX 経由で内部ベータ同等に先行検証できる（x64 MSIX は ARM Windows 上でエミュレーション動作する）
-- ⚠ **MSIX を入れる前に、既存インストールと発行元が一致するかを必ず確認する**（2026-08-16 #978 の検証で確立）。一致すれば `Add-AppxPackage` は**その場アップグレード**になり `LocalState`（push 鍵・観測スロット）もアカウント設定も残るが、**一致しないと Windows が上書きを拒否し、アンインストール（＝ログイン状態と設定の消失）が必要になる**。CI は Repository Secrets の PFX が未投入だと ephemeral cert にフォールバックするため、発行元は黙って変わりうる。
-
-  ```powershell
-  Add-Type -AssemblyName System.IO.Compression.FileSystem
-  $z = [System.IO.Compression.ZipFile]::OpenRead($msix)
-  $e = $z.Entries | Where-Object { $_.FullName -eq 'AppxManifest.xml' }
-  $sr = New-Object System.IO.StreamReader($e.Open())
-  $xml = [xml]$sr.ReadToEnd(); $sr.Close(); $z.Dispose()
-  $xml.Package.Identity.Publisher -eq (Get-AppxPackage -Name '9AFBB08E.capsicum').Publisher
-  ```
-
-- **native クラッシュ（minidump）のトリアージは `.sentry-native` を直接見る**（2026-08-16 [#773](https://github.com/pooza/capsicum/issues/773) で確立）。置き場は **MSIX のパッケージコンテナではなく実体の `%APPDATA%\net.shrieker\capsicum\.sentry-native\`** — capsicum は FullTrust で動くため `getApplicationSupportDirectory()` が `LocalCache` 側に落ちない（`LocalState` の push 系ファイルとは別階層なので探し間違えやすい）。見るもの:
-  - `last_crash` … 最後にクラッシュした時刻（UTC）。Sentry のイベント時刻と突き合わせれば**その端末が発生元かどうか**が確定する
-  - `reports` / `attachments` … **空なら滞留なし＝取れた分は送信済み**。ここに溜まっていれば「クラッシュが止まった」ではなく「送れていない」
-  - `installation_id` … 作成時刻＝この端末で native 計装が始まった時刻
-
-  「Sentry に native crash が来なくなった」ときは、まずこの 3 つで**クラッシュが止まったのか報告が止まったのか**を切り分ける。報告側の生存確認は、crashpad バイナリ（`crashpad_handler.exe` / `crashpad_wer.dll` / `sentry.dll`）が MSIX に同梱されているかと、他プラットフォームの minidump が届き続けているかでも取れる。
-
-- **bg task（アプリ完全終了中の push）の実機確認手順**（#474 フェーズ C / #978）。単体テストは `web_push_receive` のレイヤまでしか届かず、`push_background_task.cpp` の `Run()` だけは WinRT 依存で自動テストできないため、ここを触ったら実機で 1 往復する:
-  1. MSIX を導入（上記の発行元チェックつき）し、**一度起動して終了する** — 起動時に鍵が `LocalState\push_keys.json` へ同期され、bg task が新しい DLL で再登録される。同時に未消費の観測スロットが Sentry へフラッシュされる
-  2. `capsicum.exe` が終了していることを確認したうえで、**別経路（Web UI 等）から通知を 1 通発生させる**
-  3. トーストが出ること、`%LOCALAPPDATA%\Packages\9AFBB08E.capsicum_8ekzzj58251a2\LocalState\push_diag.json` に `bgtask.shown` が新規記録されることを見る。アプリ未起動のまま記録されていれば in-process 受信ではなく bg task 経路と確定できる
-- **Windows runner の純ロジック C++ テストは Mac の clang でも走る**。`windows/runner/notification_tag_test.cpp` / `notification_dedup_test.cpp` は Windows 固有 API に依存しないので、`cd packages/capsicum/windows/runner && clang++ -std=c++17 -o /tmp/t notification_tag_test.cpp notification_tag.cpp && /tmp/t`（dedup も同様）で macOS から検証できる（2026-08-10 実行・全通過）。テストのヘッダは `cl`（VS Developer 環境）しか案内していないため Windows CI 待ちにしがちだが、ロジックだけの変更ならここで即確認できる
-- **WinRT に触る TU は「単体コンパイル」で数秒で検査できる**（`flutter build windows` を待たなくてよい）。`wns_push.cpp` / `push_background_task.cpp` のように WinRT 依存で Mac に持っていけないものは、`vcvars64.bat` を通したうえで **実ビルドと同じ厳格設定**でコンパイルだけ回す（2026-08-12 #957 で確立）:
-
-  ```bat
-  cl /nologo /c /W4 /WX /wd4100 /EHsc /std:c++17 ^
-     /DUNICODE /D_UNICODE /DNOMINMAX /D_HAS_EXCEPTIONS=0 ^
-     wns_push.cpp
-  ```
-
-  フラグは `windows/CMakeLists.txt` の `APPLY_STANDARD_SETTINGS` に合わせてある（`/WX` があるので警告 1 個で CI が落ちる）。CMakeLists への新ファイル追加や実際のリンクまで見たいときだけ `flutter build windows --debug` を回す（x64 実機で約 195 秒。`capsicum.exe` と `push_background_task.dll` の両ターゲットが出る）。
-  - ⚠ **cmd の `cl /Fo:"%~dp0"` は壊れる**。`%~dp0` が `\` で終わるため `\"` がクォートのエスケープとして食われ、`error D8003: ソース ファイル名がありません` になる。出力先を分けたいなら `/Fo` を使わず出力ディレクトリへ `cd` してから絶対パスのソースを渡す
-  - ⚠ ビルドした exe は **`.\` を付けて起動する**（この端末では cwd が exe 検索パスに入っていない）。CI (`windows-release.yml`) が `.\xxx_test.exe` と書いているのと同じ理由
-
-#### トラブルシュート: RustDesk 経由で capsicum が真っ白
-
-Linux 機から RustDesk で Windows 実機を操作していると、capsicum のウィンドウが真っ白になることがある。**RustDesk（画面キャプチャ）側の現象で capsicum のバグではない**。Flutter の Windows 版は ANGLE（OpenGL ES → Direct3D 11）+ DirectComposition で画面を出しており、キャプチャ側がその面を拾えないとクリアカラー（白）だけが取り込まれる。描画自体は GPU 上で正しく走っていて、取り込みだけが空になっている。「実機で操作すると直る」のはこのため。
-
-**capsicum 側の対応は不要**（環境側の再発防止メモとしてここに置く。Issue は起こしていない）。**2026-08-10 に原因を特定**し、**2026-08-13 に HDMI ダミープラグで解決した**（下記）。以降の記述は再発時・同じ構成を組み直すときのための記録。
-
-##### 原因（2026-08-10 確定）
-
-**蓋のセンサーが「閉じている」と判定し、Windows が内蔵パネルを落としていた。** この端末は蓋を閉じない運用だが、**蓋の間に CD の空ケース（数ミリ）を挟んで開けていた**ため、磁気式の蓋センサーには「閉じている」と見えていた。`LIDACTION` は AC / DC とも **0 = 何もしない**なのでスリープはせず、**パネルだけが消える**。結果、アクティブな出力がゼロになりキャプチャが壊れる。
-
-**裏取り**（同日実測）:
-
-| 蓋の状態 | `Get-CimInstance -Namespace root\wmi WmiMonitorBasicDisplayParams` |
-| --- | --- |
-| CD ケースで数ミリ開放（白抜け発生中） | **0 件**（アクティブなモニターなし） |
-| 大きく開けた直後 | `DISPLAY\AUO562D\...` **Active=True** |
-
-このとき `\\.\DISPLAY1 1920x1080` はどちらの状態でも残っており、GPU も 1920x1080 と報告していた。**描画先はあるのに実在するモニターがゼロ**という状態がキャプチャを壊す。**再発時はまずこの WMI クエリを撃つ**のが最短。0 件なら出力側の問題で確定し、capsicum も RustDesk の設定も見なくてよい。
-
-##### 対策: HDMI ダミープラグ（2026-08-13 導入・解決）
-
-**HDMI ダミープラグを挿し、蓋を完全に閉じる運用に移行した。** Windows が外部モニターを認識し続けるのでアクティブな出力がゼロにならず、白抜けの前提条件が消える。CD ケースも不要になった。ソフト的な仕掛けが要らず保守もゼロ。
-
-導入時の実測（この順で確認した）:
-
-| 手順 | `WmiMonitorBasicDisplayParams` の Active | デスクトップ |
-| --- | --- | --- |
-| 挿す前・蓋は CD ケースで開放 | 1 件（内蔵 `AUO562D`） | 1920x1080 |
-| ダミーを挿す（蓋は開けたまま） | **2 件**（内蔵 + ダミー `BBC0104`） | 1920x1080 |
-| **蓋を閉じる** | **1 件（ダミーのみ）** — 0 件にならない | **3840x2160 に跳ねる**（下記） |
-| 解像度を戻して再起動 | **1 件（ダミーのみ）** | 1920x1080 で復帰 |
-
-同日、蓋を閉じた状態で capsicum を起動して**白画面が出ないことを実測**し、対策の有効性を確定した。
-
-**表示モードは「複製」のままでよい。** 蓋を閉じれば出力は 1 枚になるので拡張との差が消える上、蓋を開けて実機で直接触るときにウィンドウを見失わない。
-
-⚠ **4K に跳ねる罠**: このダミーの EDID は **preferred が 3840x2160**（`WmiMonitorListedSupportedSourceModes` で確認できる）。内蔵との複製中は 1920x1080 に落ち着くが、**蓋を閉じてダミー単独になった瞬間に 4K へ切り替わる**。UHD 620 で 4K デスクトップは RustDesk が重く、文字も極小になる。解像度の記憶は**ディスプレイ構成（topology）ごと**なので、**蓋を閉じた状態で 1920x1080 を設定し直す**必要がある。設定 UI が使えない状況なら `ChangeDisplaySettings` を `CDS_UPDATEREGISTRY`（`0x01`）付きで呼べば永続化でき、再起動後も保持される（実測済み）。
-
-代替案（採らなかった）: 仮想ディスプレイドライバ（ハード不要・リモート導入可。物理アクセスが取れるまでの繋ぎとしては有効）と RDP への移行（物理ディスプレイに非依存だが実機画面の共有ができず描画経路も変わる）。
-
-##### 蓋を閉じたまま再起動できるか（2026-08-13 実証）
-
-Windows Update の再起動は日常的に発生するので、**蓋を閉じたまま再起動しても RustDesk で戻ってこられる**ことまで確認しないと運用が閉じない。物理アクセスが取れるうちに一度通しておくこと。事前に潰す関門は次の 4 つ:
-
-| 関門 | 確認方法 | この端末の実測 |
-| --- | --- | --- |
-| 起動前の BitLocker PIN 入力 | `HKLM\SOFTWARE\Policies\Microsoft\FVE` の有無 | ポリシー自体が無い = pre-boot PIN の強制なし |
-| サインイン画面に RustDesk が出るか | `Get-Service RustDesk` | Running / **Automatic**（サービスなのでログイン前でも接続を受けられる） |
-| 接続に承認クリックが要るか | `RustDesk2.toml` の `verification-method` | `use-permanent-password` = 無人で入れる |
-| 更新後の自動サインイン | Winlogon の `AutoLogonSID` / `DisableAutomaticRestartSignOn` | ARSO 有効（不発でもロック画面から入れるので退路は二重） |
-
-実測結果: 蓋を閉じたまま更新の再起動を通し、**アクティブなモニター 1 件・1920x1080・RustDesk 接続いずれも復帰**した。**更新中の進捗画面も RustDesk 越しに見えた**（サービスモードでログイン前セッションを拾えることと、ダミーで出力が絶えないことの合わせ技）。再起動・セッション切り替えのタイミングで接続が 3 回切れるが、いずれも正常な挙動。
-
-⚠ **踏んだ罠**: 1 回目の再起動は**失敗した**（イベント 1074 で開始 → 約 1 分後にイベント 1073 `restart/shutdown failed`）。2 回目は通ったので一過性と見ているが、次の 2 点に注意する。
-
-- **再起動したかどうかは `(Get-CimInstance Win32_OperatingSystem).LastBootUpTime` で判定する**。画面が一度いなくなって戻ってくるので、体感では再起動したように見える。シェルセッションの生死は判定材料にならない（セッションは再開されうる）。`CBS RebootPending`（`HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending`）が True のままかどうかも併せて見る。
-- **失敗すると Google ドライブ（G:）がアンマウントされたまま残る**。シャットダウン処理の途中で dokan がアンマウントされ、再起動が失敗しても再マウントされない。`secrets.env` は Google ドライブ上の実体への symlink なので、**気付かずにビルド系の作業へ進むと黙って壊れる**。`Get-PSDrive -PSProvider FileSystem` で G: の有無を確認する。
-
-##### なぜ Flutter の窓だけが白くなるのか
-
-**白くなるのは Flutter 製のウィンドウだけ**で、エクスプローラー等の従来型ウィンドウやデスクトップは正常に映る。**RustDesk 自身の UI も Flutter 製**（1.2 以降）のため、capsicum と RustDesk の窓が揃って白くなる。共通点は「RustDesk かどうか」ではなく「Flutter かどうか」。
-
-これと整合する機序は、**RustDesk が DXGI Desktop Duplication ではなく GDI（BitBlt）キャプチャで取り込んでいる**というもの。GDI キャプチャは、ディスプレイ出力が生きている間は DWM が実フロントバッファへ合成するので DirectComposition の中身も一緒に取れるが、**出力が落ちると GPU 合成分の更新が止まり、GDI で自前描画する従来型ウィンドウだけが映り続けて Flutter のウィンドウが白く抜ける**。「実機で操作すると直る」も説明できる。
-
-**2026-08-10、その GDI 経路が「フォールバック」ではなく設定だったことが判明した。** `enable-directx-capture = 'N'` が書かれており、**DXGI Desktop Duplication が明示的に無効化されていた**（既定値なら書かれないキー）。
-
-**この `'N'` を書いたのは RustDesk 自身**と見てよい。**設定 UI にこの項目は存在しない**ので人手では設定できず、DXGI キャプチャの失敗時に自動で無効化されたと考えるのが自然。つまり **`'N'` はこの端末にとって正しい落としどころだった**。同日いったん `'Y'` へ変えて検証したが、**`'N'` に戻して確定**（下記のとおり `'Y'` だと出力が無い間は接続そのものが張れず、`'N'` なら白いだけで操作は続けられるため。**`'N'` が安全側**）。なお `enable-hwcodec = 'N'` のほうは UI に項目があるので人手の可能性がある。
-
-**ただし、これは本丸ではなかった。** ディスプレイが落ちている間、`'N'`（GDI）では Flutter の窓が白抜け、`'Y'`（DXGI）では**接続そのものが張れない**。**どちらの経路でも壊れる**なら、共通の原因はキャプチャ方式ではなく「アクティブな出力が無いこと」自体である。
-
-**Modern Standby のスロットリングを示す実測**: ディスプレイを強制オフした状態で `Start-Sleep -Seconds 25` を回すと、実測 **66 秒 / 70 秒**（2 回とも）かかった。ディスプレイオフを契機に低電力アイドル（DRIPS）へ入り、プロセスが絞られている。RustDesk のサーバープロセスも同様に絞られていれば、接続を受けられないのは当然で、**キャプチャ設定をどういじっても届かない**。
-
-##### RustDesk の設定を変えるときの注意（2026-08-10 に踏んだ）
-
-- **正本はサービス（LocalService）側の config**: `C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\RustDesk\config\RustDesk2.toml`。`%APPDATA%\RustDesk\config\RustDesk2.toml` はここから同期されて**上書きされる**（ログの `config2 synced`）。ユーザー側だけ書き換えると 1 分ほどで消える。両方書き換え、サービスを再起動する（要管理者）。
-- 1.4.7+65 / 1.4.9+67 とも**設定 UI に DirectX キャプチャの項目が見当たらない**ため、ファイル直編集が要る。
-- **RustDesk は自動アップデートする**（2026-08-10 のセッション中に 1.4.7+65 → 1.4.9+67 へ勝手に上がり、MSI インストールで接続が切れた）。切断の原因を切り分けるときは、まず `%APPDATA%\RustDesk\log\RustDesk_rCURRENT.log` で更新が走っていないかを見る。
-- **観測の成否はログで裏取りできる**: `%APPDATA%\RustDesk\log\cm\RustDesk_rCURRENT.log` に接続の open / close が出る。テスト時間帯に接続が無ければその検証は空振り。
-
-| 観測 | この仮説での説明 |
-| --- | --- |
-| Flutter のウィンドウだけ白い | DirectComposition が GDI キャプチャに映らない |
-| 他のアプリ・デスクトップは正常 | 従来型ウィンドウは GDI で取れる |
-| 実機で操作すると直る | ディスプレイ出力が復帰し Desktop Duplication に戻る |
-| ディスプレイ電源オフを止めても再発 | 出力が落ちる理由は電源設定以外にもある |
-| RustDesk 自身の窓も白い | RustDesk の UI も Flutter |
-
-##### 潰した原因・取り下げた仮説
-
-- **ロック経由（`VIDEOCONLOCK`）— 2026-08-10 に否定**。同日 AC=0 を適用したが、その後に再現した。常駐ログ（`display-watch`）で**白くなっている最中も `lock` は全行 `no`**＝ロック画面は出ていない。設定自体は害がないので 0 のまま残す。
-- **Modern Standby のスロットリング — 2026-08-10 に否定**。同じ時間帯の `drift` が全行 30 秒ちょうどで、低電力アイドルに落ちていない。ディスプレイオフ中に `Start-Sleep` が伸びる現象は**強制オフしたときには起きた**が、実際の再現時には起きていない＝別経路。
-- **待機タイマー（`VIDEOIDLE` / `STANDBYIDLE`）— 対象外**。AC 側は両方 0 で、そもそも発火しない。
-
-- **AC 時のディスプレイ電源オフ（2026-07-23 に対策済み・これだけでは直らない）**: この端末は AC 電源時に 60 分でディスプレイの電源が切れる設定だった。`powercfg /change monitor-timeout-ac 0` を適用済みで、2026-08-06 に AC=0x0 のまま生きていることを実測確認した。**それでも再発する**ため、当時「特定した主因」と書いたのは言い過ぎで、実際には出力面が消える経路の 1 つを潰しただけだった。逆戻しは `60` を入れる。
-- **バッテリー駆動時のディスプレイ電源オフ / スリープ（DC=180 秒のまま）**: `monitor-timeout-ac` は AC 側しか変えないため DC には残っているが、**この端末はバッテリー駆動で使わない**運用なので対象外。
-- **スクリーンセーバー**: `ScreenSaveActive=1` だがセーバー本体もタイムアウトも未設定で、実質動いていない。
-- **MPO（マルチプレーン オーバーレイ）**: `HKLM\SOFTWARE\Microsoft\Windows\Dwm` の `OverlayTestMode=5` で無効化する案を検討したが、**複数の Flutter ウィンドウが揃って白くなる説明が苦しい**ため取り下げ（オーバーレイ面への昇格は本数が限られる）。現在 `OverlayTestMode` は未設定＝MPO 有効のまま。GPU は Intel UHD Graphics 620、ドライバは 2024-08-13 版。
-- **RustDesk の「ハードウェアコーデック」トグル**: エンコード＝送信側の設定であり、キャプチャ取り込み経路とは別。切り分けから外してよい。
-
-##### 切り分けの手順
-
-1. **白いのは Flutter 製ウィンドウだけか**を最初に見る。デスクトップ全体が白いなら上記の見立ては外れで、キャプチャ経路そのものの停止を疑う。
-2. **判別テスト**（キャプチャ由来か app 由来か）: 白い時にウィンドウを**リサイズ or 最小化→復元**して中身が出れば = キャプチャ由来（app バグではない）。その時刻の **Sentry イベントの有無**でも切り分けられる（あれば app 由来を疑う）。
-3. **常駐ログを読む**: `C:\Users\user\display-watch\watch.log`（2026-08-10 に仕掛けた。30 秒ごとに 1 行・最長 48 時間で自動終了）。列の意味は `drift`（前回からの実経過秒。30 のはずが大きく飛んでいたら低電力アイドルでスロットリングされた証拠。`<-- THROTTLED` が付く）/ `lock`（`LogonUI.exe` の有無。`YES` が出れば `VIDEOCONLOCK` 経路が実在すると裏付けられる）/ `idle`（最終入力からの秒数）/ `power`。**白くなった時刻と突き合わせる**のが使い方。止めるときは該当 PowerShell プロセスを終了するだけ。再開はスクリプトを再実行する（スクリプト本体は Claude のスクラッチパッドにあるので、必要なら作り直す）。**2026-08-13 の再起動で常駐は消えている**ので、再び観察するなら仕掛け直しが要る。
-
-**再現を待つときの注意**: この端末は AC 接続かつ `VIDEOIDLE` / `STANDBYIDLE` とも AC=0 なので、**放置しても Windows の待機タイマーでは消えない**。手元で再現させたいなら `SC_MONITORPOWER` で強制的に消す（`WM_SYSCOMMAND` を `HWND_BROADCAST` へ。管理者権限不要）。ただし**復帰は入力で起きる**ため、RustDesk 越しにマウスを動かすとその時点でテストが終わる。オフ中は触らず、自動復帰させる作りにすること。**接続が張られていない時間帯にテストしても空振り**になるので、`%APPDATA%\RustDesk\log\cm\RustDesk_rCURRENT.log` で接続の有無を必ず確認する（2026-08-10 に 2 回空振りした）。
-
-##### 対策候補（2 を採用して解決済み）
-
-**方針: 出力を絶やさない側で解く。** キャプチャ方式の切り替えでは両経路とも壊れることが分かったので、対策は「常にアクティブな出力を持たせる」「ディスプレイを落とさせない」に寄せる。**2026-08-13 に 2 の HDMI ダミープラグを採用して解決した**ため、以下は再発時・別端末で組むときの選択肢として残す。
-
-1. **仮想ディスプレイドライバ** — 物理パネルの電源状態と無関係に、常時アクティブな出力を 1 枚持たせる。**リモートから導入できる**ので、実機に触れないこの端末では本命。ダミープラグと違い物理アクセスが要らない。
-2. **HDMI ダミープラグ** — 同じ効果を物理で得る。確実だが**物理アクセスが要る**。**← これを採用**（手順と実測値は上の「対策: HDMI ダミープラグ」を参照）
-3. **ディスプレイが落ちる側を塞ぐ**: `VIDEOIDLE` は AC=0 済みだが、**GUI に出ない `VIDEOCONLOCK`（ロック中のディスプレイ電源オフ）が未設定＝既定 60 秒**で残っていた。**2026-08-10 に AC=0 を適用済み**（`powercfg /setacvalueindex SCHEME_CURRENT SUB_VIDEO 8EC4B3A5-6868-48c2-BE75-4F3044BE88A7 0` → `powercfg /S SCHEME_CURRENT`）。ロックが実際に掛かっている証拠は未取得だが、犯人を特定せずに経路をまとめて塞げるため先に打った。**効果は観察待ち**。
-4. **Modern Standby を切る**（`HKLM\SYSTEM\CurrentControlSet\Control\Power` の `PlatformAoAcOverride=0`・要再起動）— スロットリングごと無効化できるが影響範囲が大きい。1〜3 で足りなければ。
-5. その場復帰: リサイズ / RustDesk 再接続 / ホスト再起動。
-6. **GPU ドライバの更新**（現在 2024-08-13 版）。
-
-##### この端末の電源設定の実測値（2026-08-10）
-
-Latitude 5300（ノート・Modern Standby 機）。再現待ちを空振りさせないための前提。
-
-- `VIDEOIDLE`（ディスプレイ電源オフ）: **AC = 0**（無効）/ DC = 180 秒
-- `STANDBYIDLE`（スリープ）: **AC = 0**（無効）/ DC = 180 秒
-- 電源: **AC 接続中**。したがって**放置してもディスプレイは自動では切れない**（再現を待つのは無駄）
-- 直近 5 日間、**Kernel-Power のスリープ/復帰イベントがゼロ** = システムは寝ておらず、落ちているのはディスプレイだけ
-- Dell Optimizer / ExpressSign-in（近接センサーの Walk Away Lock）は**未導入**（Dell Touchpad のみ）。この線は消えた
-- `LIDACTION`（蓋を閉じたとき）: AC / DC とも **0 = 何もしない**（2026-08-13 に再確認）。**2026-08-13 以降は蓋を完全に閉じた運用**（HDMI ダミープラグ導入）。それ以前は「蓋を閉じない運用だから蓋起因の線は無い」と書いていたが、**CD ケースを挟んだ半開きが磁気センサーには閉じて見えており、これが白抜けの主因だった**。⚠ `LIDACTION` も `powercfg /query SCHEME_CURRENT SUB_BUTTONS` の出力に現れない（隠し属性）。確認するならレジストリを直読みする: `HKLM\SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes\<scheme>\4f971e89-...\5ca83367-...` の `ACSettingIndex` / `DCSettingIndex`
-- `VIDEOCONLOCK`（ロック中のディスプレイ電源オフ）: 既定 60 秒のままだったので **2026-08-10 に AC=0 を適用**。`VIDEOIDLE` とは別タイマーで、`VIDEOIDLE = 0` はロック画面に適用されない。「放置していると消えるのに、スリープ設定は 0」という食い違いはこれで説明が付く
-- **`VIDEOCONLOCK` は電源オプションの UI に存在しない**。`Attributes` を 1（隠す）→ 0 にしても、このビルドの詳細設定ダイアログには現れなかった（`control powercfg.cpl,,3` で確認）。**`powercfg` でしか触れない設定**として扱う
-- `UNATTENDSLEEP` は未設定で既定のまま
-
-##### capsicum 側から寄せられる範囲（2026-08-10 実測）
-
-**2026-08-13 に環境側（HDMI ダミープラグ）で解決したため、現時点でこの緩和は不要**。以下は同種の問題が再燃したときのための調査記録として残す。**製品版の描画経路は変えない**という結論は変わらない。
-
-長期化した場合に capsicum 側の緩和で凌げないかを、手元の Flutter 3.44.6（engine `d3a3293399`）のエンジン成果物を直接読んで確認した。**結論: debug / profile は今日から追加コードなしで試せる。release / MSIX は capsicum からは手が出ない。**
-
-| ビルド | ソフトウェアレンダリングへの切り替え | 根拠 |
-| --- | --- | --- |
-| debug / profile | **可能・コード変更不要** | 環境変数 `FLUTTER_ENGINE_SWITCHES` / `FLUTTER_ENGINE_SWITCH_n` をエンジンが読む（`bin/cache/artifacts/engine/windows-x64/flutter_windows.dll` に当該文字列あり） |
-| release | **不可** | 同じ文字列が `windows-x64-release/flutter_windows.dll` に**無い**（エンジンの env スイッチ読み取りが `FLUTTER_RELEASE` で落とされている） |
-
-debug で試すときの起動前設定（PowerShell）:
-
-```powershell
-$env:FLUTTER_ENGINE_SWITCHES = "1"
-$env:FLUTTER_ENGINE_SWITCH_1 = "enable-software-rendering"
-```
-
-release で不可な理由は環境変数だけでなく **API 経路も塞がっている**こと。公開 embedder API の `FlutterDesktopEngineProperties`（[flutter_windows.h](https://github.com/flutter/flutter/blob/master/engine/src/flutter/shell/platform/windows/public/flutter_windows.h)）が持つのは assets / icu / aot パス・Dart entrypoint と argv・`gpu_preference`・`ui_thread_policy`・`accessibility_mode` だけで、**エンジンスイッチを渡すフィールドが無い**。runner の `set_dart_entrypoint_arguments`（[main.cpp](../packages/capsicum/windows/runner/main.cpp)）が渡すのは Dart の `main(List<String>)` 引数でエンジンには届かない。ソフトウェアコンポジタのコード自体は release DLL にも入っている（`SetDIBitsToDevice` / `CreateDIBSection` あり）が、**点火する手段が無い**。エンジンにパッチを当てる話になるので採らない。
-
-付随して分かったこと:
-
-- **DirectComposition を使っているのは裏取り済み**（両 DLL に `DCompositionCreateDevice`）。上記の見立ての前提はここは合っている。
-- ソフトウェア経路は GDI へ blit する（`SetDIBitsToDevice`）ので、**GDI キャプチャなら映るはず**というのが期待できる理屈。ただし**実際に白画面が直るかは未検証**で、そこが最大の未知数。
-- release DLL に `ANGLE_DEFAULT_PLATFORM` が残っているが、バックエンドを差し替えても提示は DirectComposition のままなので本筋ではない。
-- エンジンに `Impeller backend does not support software rendering` の文字列がある。ソフトウェアレンダリングを試すときは Impeller が有効なら同時に落とす必要がある。
-
-**効果の範囲**: この緩和が効くのは debug / profile 起動時のみで、**OS 連携系の検証で使う release MSIX 経路（[Windows ローカル検証](#windows-固有)）は救えない**。ただし**リモートで動かすのは debug 版が多い**（2026-08-10 の pooza 判断）ため、debug 限定でも日常の支障はかなり削れる見込み。release MSIX での検証を取り戻すには、別途、環境側（仮想ディスプレイドライバ / HDMI ダミープラグ・GPU ドライバ更新・RustDesk のキャプチャ方式）の対策が要る。
-
-ストア版は物理 GPU ＋ アクティブ画面で描画するため**この現象は非該当**（実ユーザーが真っ白になる原因は別で、その場合は Sentry に痕跡が出る）。**製品版の描画経路は変えない。**
-
-#### WHEA（PCIe 訂正可能エラー）でイベントログが埋まる
-
-**2026-08-13 に発見・同日 ASPM を切って解決。** `Microsoft-Windows-WHEA-Logger` のイベント 17（`A corrected hardware error has occurred`）が**毎分 11.6 件**という頻度で出続けていた。
-
-```text
-Component: PCI Express Root Port
-Error Source: Advanced Error Reporting (PCI Express)
-PCI バス 0, デバイス 29, 機能 0 → Intel PCI Express Root Port #10
-  └ Qualcomm QCA61x4A 802.11ac Wireless Adapter（配下はこの 1 台のみ）
-```
-
-**実害は訂正可能エラーそのものではなく、System イベントログが埋まること。** 発見時は全 12,881 レコード中 **12,259 件（95%）が WHEA** で、20MB の循環ログが **2.5 日で一周**していた。Windows の障害調査は System ログが起点なので、この状態だと何かあっても遡れない（実際、同日の再起動失敗を調べたときに 8/10 より前が見られなかった）。**発生開始時期も、ログが自分で自分を押し流すため特定不能だった。**
-
-対処（この順で適用・いずれも管理者権限が要る）:
-
-1. **System ログを 128MB へ拡大** — `wevtutil sl System /ms:134217728`。現在のペースなら約 16 日分。観測性の回復が目的で、リスクはない
-2. **PCIe の ASPM をオフ** — 既定が「**最大限の省電力**」（3 段階で最も攻めた設定）だった。これを切ったところ **9.9 分間で 0 件**（直前まで 11.6 件/分）と、完全に停止した
-
-```powershell
-powercfg /setacvalueindex SCHEME_CURRENT SUB_PCIEXPRESS ASPM 0
-powercfg /setdcvalueindex SCHEME_CURRENT SUB_PCIEXPRESS ASPM 0
-powercfg /S SCHEME_CURRENT
-```
-
-**無線 LAN アダプタの無効化は選択肢に入れない。** エラーは止まるが、蓋を閉じて画面もない端末にとって**唯一の予備経路**を失う。有線が抜けただけでリモートから消える。有線（`Ethernet 3` / メトリック 25）が主・無線（メトリック 35）が自動フェイルオーバー、という現在の構成を維持する。
-
-##### この端末の保守宿題（2026-08-13 時点・急ぎではない）
-
-中古で入手した個体で、**出荷時のファームウェアのまま**だった。Windows Update の任意ドライバは **設定 → Windows Update → 詳細オプション → オプションの更新プログラム → ドライバー更新プログラム**（Windows 11 で場所が変わっている）。
-
-| 対象 | 現在 | 提示されている版 |
-| --- | --- | --- |
-| **System Firmware (BIOS)** | **1.4.1（2019-07-05）** | 1.37.0（2025-08-05） |
-| Intel UHD Graphics 620 | 31.0.101.2130（2024-08-13） | 31.0.101.2135（2025-03-06） |
-| Intel Serial IO I2C | 30.100.1929.1（2019-07-15） | 30.100.2020.7（2020-05-12） |
-
-**Qualcomm QCA61x4A のドライバは Windows Update に出てこない**（現在 `12.0.0.1118` / 2021-06-15）。更新するなら Dell のサポートサイトか Dell Command Update 経由。ただし ASPM オフで WHEA は止まったので、**更新する動機は現時点でない**。
-
-⚠ **BIOS 更新は蓋を開けて・物理アクセスがあるときに行う。** 更新は再起動後の UEFI 段階で走るため **RustDesk では一切見えず**、蓋を閉じていると内蔵パネルも消えていて、HDMI ダミープラグは画面ではないので**どこにも進行が表示されない**。AC を挿したまま実施すること。
-
-### 持ち込まないもの
-
-- Apple toolchain（Xcode / fastlane / Apple Distribution 証明書 / `AuthKey_*.p8`）
-- Android 署名鍵（`android/key.properties`）/ Google Play サービスアカウント JSON
-- リポジトリルートの `.sentryclirc`（dSYM アップロード用、iOS/Android/macOS 専用）
-
-リリース判定・ストア公開・iOS/Android/macOS の dSYM アップロードはすべてメインの macOS で行うため、補助機にこれらを置く必要はない。
+**この 2 機でも、上の「[コマンドの書き方](#コマンドの書き方許可確認を出さないための約束)」と「[Claude Code の権限設定](#claude-code-の権限設定auto-モード全端末)」はそのまま効く。**⚠ 端末で拾う作業の探し方（`Windows` / `Linux` ラベル）も同ファイルにある。
 
 ## Sentry
 
@@ -559,6 +485,18 @@ powercfg /S SCHEME_CURRENT
 
 - 実機接続時は Parallels Desktop を終了させること（Parallels が USB デバイスを横取りするため）
 - iOS アップデート後にデベロッパモードがリセットされることがある → 設定 → プライバシーとセキュリティ → デベロッパモード で再有効化
+
+### 画面をコマンドで撮る（シミュレータ / USB 実機）
+
+| 対象 | コマンド |
+| --- | --- |
+| シミュレータ | `xcrun simctl io <UDID> screenshot /tmp/x.png` |
+| USB 実機 | `xcrun devicectl device capture screenshot --device <UDID> --destination /tmp/x.png` |
+
+- ⚠ `devicectl` は **`--destination` が必須**（パス直指定だと `Missing expected argument` になる）
+- ⚠⚠ **実機はロックを解除しておく。**ロック中は**エラーにならず真っ黒な PNG が返る**（数十 KB と極端に小さい。中身があれば数百 KB）ので、「撮れていない」ことに気づきにくい
+- ⚠ **入力（タップ・スワイプ・テキスト）は送れない。**`devicectl device` に入力系のサブコマンドが無い
+- Xcode 27 で `Simulator.app` は `Xcode.app/Contents/Applications/DeviceHub.app` に替わった（GUI の入口が替わっただけで `simctl` は健在）
 
 ### iOS シミュレータで書き出したファイルを Mac から読む
 

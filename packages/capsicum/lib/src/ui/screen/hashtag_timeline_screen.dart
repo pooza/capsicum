@@ -23,6 +23,16 @@ class _HashtagTimelineScreenState extends ConsumerState<HashtagTimelineScreen> {
   final _scrollController = ScrollController();
   bool? _following;
 
+  /// フォローの対象になるタグ名。単独のタグのときだけ非 null。
+  ///
+  /// ⚠⚠ **[HashtagTimelineScreen.hashtag] は spec**（`c%2B%2B` / `a+b`）なので、
+  /// そのままサーバーへ渡さない (#1159)。`#c%2B%2B` という別のタグをフォロー
+  /// してしまう。⚠ AND 指定はサーバー側に「組のフォロー」が無いので出さない。
+  String? get _followTarget {
+    final tags = hashtagSpecTags(widget.hashtag);
+    return tags.length == 1 ? tags.single : null;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -39,10 +49,11 @@ class _HashtagTimelineScreenState extends ConsumerState<HashtagTimelineScreen> {
 
   Future<void> _loadFollowState() async {
     final adapter = ref.read(currentAdapterProvider);
-    if (adapter is! HashtagSupport) return;
+    final target = _followTarget;
+    if (adapter is! HashtagSupport || target == null) return;
     try {
       final following = await (adapter as HashtagSupport).isFollowingHashtag(
-        widget.hashtag,
+        target,
       );
       if (mounted) setState(() => _following = following);
     } catch (_) {
@@ -52,9 +63,11 @@ class _HashtagTimelineScreenState extends ConsumerState<HashtagTimelineScreen> {
 
   Future<void> _toggleFollow() async {
     final adapter = ref.read(currentAdapterProvider);
-    if (adapter is! HashtagSupport || _following == null) return;
+    final hashtag = _followTarget;
+    if (adapter is! HashtagSupport || _following == null || hashtag == null) {
+      return;
+    }
 
-    final hashtag = widget.hashtag;
     final support = adapter as HashtagSupport;
     try {
       if (_following!) {
@@ -99,21 +112,27 @@ class _HashtagTimelineScreenState extends ConsumerState<HashtagTimelineScreen> {
         _scrollController.position.maxScrollExtent - 600) {
       // 継続エラー時 (loadMoreError) は自動再試行を止める (#678)。回復は
       // pull-to-refresh で build() 再実行時。
-      final state = ref
-          .read(hashtagTimelineProvider(widget.hashtag))
-          .valueOrNull;
+      final HashtagTimelineKey key = (
+        account: ref.read(currentAccountKeyProvider),
+        spec: widget.hashtag,
+      );
+      final state = ref.read(hashtagTimelineProvider(key)).valueOrNull;
       if (state != null && state.loadMoreError != null) return;
-      ref.read(hashtagTimelineProvider(widget.hashtag).notifier).loadMore();
+      ref.read(hashtagTimelineProvider(key).notifier).loadMore();
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final timeline = ref.watch(hashtagTimelineProvider(widget.hashtag));
+    final HashtagTimelineKey key = (
+      account: ref.watch(currentAccountKeyProvider),
+      spec: widget.hashtag,
+    );
+    final timeline = ref.watch(hashtagTimelineProvider(key));
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('#${widget.hashtag}'),
+        title: Text(hashtagSpecLabel(widget.hashtag)),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
           _buildPinButton(),
@@ -132,9 +151,8 @@ class _HashtagTimelineScreenState extends ConsumerState<HashtagTimelineScreen> {
               data: (state) => state.posts.isEmpty
                   ? const Center(child: Text('投稿がありません'))
                   : RefreshIndicator(
-                      onRefresh: () => ref.refresh(
-                        hashtagTimelineProvider(widget.hashtag).future,
-                      ),
+                      onRefresh: () =>
+                          ref.refresh(hashtagTimelineProvider(key).future),
                       child: ListView.separated(
                         controller: _scrollController,
                         itemCount:
@@ -158,15 +176,13 @@ class _HashtagTimelineScreenState extends ConsumerState<HashtagTimelineScreen> {
               error: (error, stack) => RetryErrorView(
                 message: '読み込みに失敗しました',
                 isRetrying: timeline.isLoading,
-                onRetry: () =>
-                    ref.invalidate(hashtagTimelineProvider(widget.hashtag)),
+                onRetry: () => ref.invalidate(hashtagTimelineProvider(key)),
               ),
             ),
           ),
           SimplePostBar(
-            hashtag: widget.hashtag,
-            onPosted: () =>
-                ref.invalidate(hashtagTimelineProvider(widget.hashtag)),
+            hashtags: hashtagSpecTags(widget.hashtag),
+            onPosted: () => ref.invalidate(hashtagTimelineProvider(key)),
           ),
         ],
       ),
