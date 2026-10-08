@@ -66,6 +66,8 @@ class DesktopNotificationDispatcher {
   DateTime? _lastParseCapture;
   DateTime? _lastConnectCapture;
   static const _captureThrottle = Duration(seconds: 60);
+  static const _captureThrottleAfterExhausted = Duration(hours: 1);
+  bool _reconnectExhaustedReported = false;
 
   /// ログインアカウントの変化を listen し、購読集合を合わせる。
   /// desktop 以外では何もしない。
@@ -264,8 +266,14 @@ class DesktopNotificationDispatcher {
       ),
     );
     final now = DateTime.now();
+    // ⚠ **再接続を諦めなくなった (#1249) ので、失敗が続くかぎりここへ来続ける。**
+    // 連続失敗を 1 度報告したあとは間隔を広げる（トークン失効やサーバーの
+    // 長期停止で、1 台から毎分 1 件が無期限に積もらないように）。
+    final throttle = _reconnectExhaustedReported
+        ? _captureThrottleAfterExhausted
+        : _captureThrottle;
     if (_lastConnectCapture != null &&
-        now.difference(_lastConnectCapture!) < _captureThrottle) {
+        now.difference(_lastConnectCapture!) < throttle) {
       return;
     }
     _lastConnectCapture = now;
@@ -283,8 +291,10 @@ class DesktopNotificationDispatcher {
   }
 
   void _onStreamReconnectExhausted() {
-    // 無言で「起動中も通知が来なくなった」状態。#588 (streaming 再接続枯渇の
-    // UI 可視化) の観測起点。host 分岐は入れない。
+    // 「再接続に連続で失敗している」状態。⚠ #1249 以降は**諦めた合図ではない**
+    // （試行は続く）。つながり直すと数え直すので、切断のたびに 1 件出る。
+    // #588 (streaming 再接続枯渇の UI 可視化) の観測起点。host 分岐は入れない。
+    _reconnectExhaustedReported = true;
     Sentry.captureMessage(
       'push.desktop.stream.reconnect_exhausted',
       level: SentryLevel.warning,
