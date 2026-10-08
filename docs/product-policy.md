@@ -160,7 +160,7 @@ probing の結果、基本的な機能が欠けているサーバーに対して
 
 ## 運営元
 
-capsicum の運営元は有限会社ビーショック（<https://www.b-shock.co.jp>）。課金（投げ銭サブスクは v1.27 で実装済み・外部ユーザー向け通知リレーの有償提供は v2.0 で実装中・[#597](https://github.com/pooza/capsicum/issues/597)）を前提に、商品扱いとする方針。
+capsicum の運営元は有限会社ビーショック（<https://www.b-shock.co.jp>）。課金（投げ銭サブスクは v1.27 で実装済み・外部ユーザー向け通知リレーの有償提供は v2.0 で提供を始めた・[#597](https://github.com/pooza/capsicum/issues/597)）を前提に、商品扱いとする方針。
 
 - サイト運営・問い合わせ窓口・特商法表示は法人名義（capsicum-site / Google Workspace アドレス経由）
 - 著作権表記は個人名義のままで問題なし

@@ -16,7 +16,7 @@ capsicum/
       release-review/     # リリース前レビュー（5 観点・赤黄緑の送り分け）
       store-release/      # 毎回のリリース手順（⚠ 工程ごとの補助ファイルつき）
     hooks/                # 守らせたいものの機械化（4 本。⚠ 規約は docs/dev-environment.md が正本）
-    scripts/              # 許可確認を出さずに回すための道具（sentry-api.sh: トークンを画面に出さず Sentry を叩く / asc-status.rb: App Store Connect の審査・課金商品・TestFlight の状態を読む）
+    scripts/              # 許可確認を出さずに回すための道具（sentry-api.sh: トークンを画面に出さず Sentry を叩く / asc-status.rb: App Store Connect の審査・課金商品・TestFlight の状態を読む / play-status.rb: Google Play の各トラックに載っている版を読む）
   docs/                   # 開発ドキュメント（下の表）
   packages/               # モノレポ構成（Melos。⚠ 中身は下の「パッケージ構成」）
 ```
