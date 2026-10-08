@@ -78,6 +78,29 @@ class _SlowBackend extends _HangingBackend {
   ];
 }
 
+/// 呼ばれた回ごとに振る舞いを変えるストア (#1248)。
+///
+/// in_app_purchase の OS と同じく、`queryProducts()` もストアへ問い合わせる
+/// （＝ここでも待つ）形を作る。
+class _ScriptedBackend extends _SlowBackend {
+  _ScriptedBackend({required this.availabilityDelays, required this.queryHangs})
+    : super(Duration.zero);
+
+  final List<Duration> availabilityDelays;
+  final List<bool> queryHangs;
+  int _queryCalls = 0;
+
+  @override
+  Future<bool> isAvailable() =>
+      Future<bool>.delayed(availabilityDelays[availabilityCalls++], () => true);
+
+  @override
+  Future<List<ProductDetails>> queryProducts(Set<String> ids) =>
+      queryHangs[_queryCalls++]
+      ? Completer<List<ProductDetails>>().future
+      : super.queryProducts(ids);
+}
+
 void main() {
   group('#1248 時間切れのあとに届いた答えを捨てない', () {
     ProviderContainer containerWith(SupporterPurchaseBackend backend) {
@@ -137,7 +160,7 @@ void main() {
         final container = containerWith(backend);
         container.read(supporterPurchaseProvider);
 
-        // 1 回目が時間切れ（16 秒）。20 秒の時点で読み直す。
+        // 1 回目が時間切れ（15 秒）。20 秒の時点で読み直す。
         async.elapse(const Duration(seconds: 20));
         unawaited(
           container.read(supporterPurchaseProvider.notifier).loadProducts(),
@@ -155,11 +178,42 @@ void main() {
         async.elapse(const Duration(seconds: 11));
         final state = container.read(supporterPurchaseProvider);
         expect(state.isAvailable, isFalse, reason: '古い世代の答えは反映しない');
-        expect(state.isLoadingProducts, isFalse, reason: '2 回目も時間切れ（36 秒）');
+        expect(state.isLoadingProducts, isFalse, reason: '2 回目も時間切れ（35 秒）');
 
         // 61 秒: 2 回目の答えが届く ＝ こちらは最新の世代なので反映する。
         async.elapse(const Duration(seconds: 20));
         expect(container.read(supporterPurchaseProvider).isAvailable, isTrue);
+      });
+    });
+
+    test('⚠⚠ 遅れて届いた続きが商品を待っている間に読み直しが済んだら、'
+        'あとから返った古い時間切れで巻き戻さない', () {
+      fakeAsync((async) {
+        // 1 回目: 「利用可能」が 40 秒で届き、商品の問い合わせは返ってこない。
+        // 2 回目: どちらもすぐ返る。
+        final backend = _ScriptedBackend(
+          availabilityDelays: const [Duration(seconds: 40), Duration.zero],
+          queryHangs: const [true, false],
+        );
+        final container = containerWith(backend);
+        container.read(supporterPurchaseProvider);
+
+        // 42 秒: 1 回目の続きが商品を待っている。ここで読み直す。
+        async.elapse(const Duration(seconds: 42));
+        unawaited(
+          container.read(supporterPurchaseProvider.notifier).loadProducts(),
+        );
+        async.elapse(const Duration(seconds: 1));
+        var state = container.read(supporterPurchaseProvider);
+        expect(state.isAvailable, isTrue, reason: '前提: 読み直しは成功している');
+        expect(state.products, hasLength(1));
+
+        // 55 秒: 1 回目の商品の問い合わせが時間切れになる。
+        // 🔴 直す前は、ここで「利用不可」へ巻き戻っていた。
+        async.elapse(const Duration(seconds: 20));
+        state = container.read(supporterPurchaseProvider);
+        expect(state.isAvailable, isTrue, reason: '古い世代の失敗は反映しない');
+        expect(state.products, hasLength(1));
       });
     });
   });

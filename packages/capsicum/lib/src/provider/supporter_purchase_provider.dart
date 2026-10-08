@@ -237,6 +237,8 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
       },
     );
     ref.onDispose(() {
+      // 待っている読み込みの続きを、破棄後に `state` へ書かせない (#1248)。
+      _loadGeneration++;
       _sub?.cancel();
       _backend.dispose();
     });
@@ -261,13 +263,16 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
         _adoptLateAvailability(availability, generation, elapsed);
         rethrow;
       }
+      if (generation != _loadGeneration) return;
       if (!available) {
         state = state.copyWith(isAvailable: false, isLoadingProducts: false);
         return;
       }
-      await _loadAvailableProducts();
+      await _loadAvailableProducts(generation);
     } catch (e, st) {
       _reportLoadFailure(e, st);
+      // ⚠ 読み直しが始まっていれば、そちらの結果を古い失敗で巻き戻さない。
+      if (generation != _loadGeneration) return;
       state = state.copyWith(isAvailable: false, isLoadingProducts: false);
     }
   }
@@ -300,38 +305,63 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
       final bool available;
       try {
         available = await availability;
-      } catch (_) {
+      } catch (e) {
         // 遅れて失敗した。時間切れの時点で「利用不可」にしてあるので、そのまま。
+        if (generation == _loadGeneration) {
+          _reportLateAvailability(
+            'load_products_late_failed',
+            elapsed,
+            errorType: e.runtimeType.toString(),
+          );
+        }
         return;
       }
       // 待っている間に読み直しが始まっていれば、そちらが正。
-      if (generation != _loadGeneration || !available) return;
-      Sentry.captureMessage(
-        'supporter.purchase.load_products_late',
-        level: SentryLevel.info,
-        withScope: (scope) {
-          scope.setTag('supporter.purchase', 'load_products_late');
-          scope.fingerprint = ['supporter.purchase.load_products_late'];
-          // ⚠ 上限を決め直す材料（Microsoft Store の往復は未実測）。
-          scope.setContexts('supporter_purchase', {
-            'available_after_ms': elapsed.elapsedMilliseconds,
-          });
-        },
-      );
+      if (generation != _loadGeneration) return;
+      // ⚠⚠ **「採用した」以外の結末も残す。**この修正は Windows 実機で確かめて
+      // おらず、時間切れの記録は効いた回にも出るので、**残さないと「まだ返って
+      // いない」と「返ったが使えなかった」が Sentry から見分けられない**。
+      if (!available) {
+        _reportLateAvailability('load_products_late_unavailable', elapsed);
+        return;
+      }
+      _reportLateAvailability('load_products_late', elapsed);
       try {
-        await _loadAvailableProducts();
+        await _loadAvailableProducts(generation);
       } catch (e, st) {
         _reportLoadFailure(e, st);
-        // provider が破棄済みなら state へは書けない（終了中）。
-        try {
-          state = state.copyWith(isAvailable: false, isLoadingProducts: false);
-        } catch (_) {}
+        if (generation != _loadGeneration) return;
+        state = state.copyWith(isAvailable: false, isLoadingProducts: false);
       }
     }());
   }
 
+  void _reportLateAvailability(
+    String outcome,
+    Stopwatch elapsed, {
+    String? errorType,
+  }) {
+    Sentry.captureMessage(
+      'supporter.purchase.$outcome',
+      level: SentryLevel.info,
+      withScope: (scope) {
+        scope.setTag('supporter.purchase', outcome);
+        scope.fingerprint = ['supporter.purchase.$outcome'];
+        // ⚠ 上限を決め直す材料（Microsoft Store の往復は未実測）。
+        scope.setContexts('supporter_purchase', {
+          'available_after_ms': elapsed.elapsedMilliseconds,
+          'error_type': ?errorType,
+        });
+      },
+    );
+  }
+
   /// ストアが利用可能と分かったあとの続き: 商品を取り、利用権を反映する。
-  Future<void> _loadAvailableProducts() async {
+  ///
+  /// ⚠⚠ **待つたびに [generation] を見直す** (#1248)。入口で 1 回見るだけでは、
+  /// 商品を待っている間に始まった読み直しの結果を、**あとから返った古い続きが
+  /// 上書きする**（成功なら古い商品で、時間切れなら「利用不可」で）。
+  Future<void> _loadAvailableProducts(int generation) async {
     // ⚠ **投げ銭とサブスクを 1 回の問い合わせで取る** (#1122)。分けると
     // 往復が 2 倍になるうえ、⚠⚠ **片方だけ失敗した状態**を扱う分岐が増える。
     final products = await _backend
@@ -340,6 +370,7 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
           if (subscriptionPurchaseSupported) supporterSubscriptionProductId,
         })
         .timeout(storeTimeout);
+    if (generation != _loadGeneration) return;
     final byId = {for (final p in products) p.id: p};
     // 定義順（金額昇順）に整列。ストアに存在しない ID は黙って除外する。
     final ordered = [
@@ -364,6 +395,7 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
     // 書くと、Dart は**レシーバの `state` を先に評価する**ので、待っている間に
     // 変わった `purchaseInProgress` / `lastOutcome` を古い値で巻き戻す。
     final hasEntitlement = await _loadEntitlement();
+    if (generation != _loadGeneration) return;
     state = state.copyWith(hasEntitlement: hasEntitlement);
   }
 
