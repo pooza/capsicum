@@ -739,6 +739,21 @@ class MastodonClient {
     // `DioException` ではないので、アダプタの v1 への切り替えにも入らない。
     // v1 の [getNotifications] と同じく、壊れた要素だけ読み飛ばす。
     final data = response.data as Map<String, dynamic>;
+    final rawGroups = data['notification_groups'];
+    final notificationGroups = _parseEach(
+      rawGroups,
+      MastodonNotificationGroup.fromJson,
+      'notification group',
+    );
+    // ⚠⚠ **1 つも読めないページは、空のページとして返さない。**呼び出し側は
+    // 空を「通知が無い / ここで終わり」と読むので、サーバーがグループを返して
+    // いるのに全滅した回は、**通知が黙って消えて手掛かりも残らない**。
+    // 飛ばすのは「読めるものが残っている」ときだけにし、全滅は失敗として返す。
+    if (notificationGroups.isEmpty &&
+        rawGroups is List &&
+        rawGroups.isNotEmpty) {
+      throw const FormatException('no readable notification group in the page');
+    }
     return MastodonGroupedNotifications(
       accounts: _parseEach(
         data['accounts'],
@@ -750,11 +765,7 @@ class MastodonClient {
         MastodonStatus.fromJson,
         'grouped notification status',
       ),
-      notificationGroups: _parseEach(
-        data['notification_groups'],
-        MastodonNotificationGroup.fromJson,
-        'notification group',
-      ),
+      notificationGroups: notificationGroups,
     );
   }
 

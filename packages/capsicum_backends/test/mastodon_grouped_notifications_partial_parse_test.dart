@@ -125,6 +125,33 @@ void main() {
     expect(grouped.notificationGroups, hasLength(1));
   });
 
+  test('⚠⚠ グループが 1 つも読めないページは、空ではなく失敗として返す', () async {
+    // 空で返すと、呼び出し側は「通知が無い / ここで終わり」と読む ＝ サーバーが
+    // 返している通知が黙って消える。
+    final adapter = await adapterReturning({
+      'accounts': [account('1')],
+      'statuses': [status('100')],
+      'notification_groups': [
+        {'type': 'favourite', 'notifications_count': 1},
+        'not a map',
+      ],
+    });
+    await expectLater(
+      adapter.client.getGroupedNotifications(),
+      throwsFormatException,
+    );
+  });
+
+  test('グループがもともと 0 件のページは、空のまま返す（失敗にしない）', () async {
+    final adapter = await adapterReturning({
+      'accounts': <Object>[],
+      'statuses': <Object>[],
+      'notification_groups': <Object>[],
+    });
+    final grouped = await adapter.client.getGroupedNotifications();
+    expect(grouped.notificationGroups, isEmpty);
+  });
+
   test('配列そのものが無い / 配列でない応答でも落ちない', () async {
     final adapter = await adapterReturning({
       'accounts': null,
