@@ -24,7 +24,7 @@ gh issue list --state open --label Linux     # Linux 機で
 - `sentry-cli` を GitHub Releases から `~/.local/bin/sentry-cli`（Windows は `%USERPROFILE%\.local\bin\sentry-cli.exe`）に直接配置（MacPorts / Homebrew / scoop 等のパッケージマネージャ不使用）
 - `~/.sentryclirc` に Issue 読み取り用トークンを配置（メインと同じ）
 - Google Drive クライアント（Drive for desktop 等）をインストールし、`~/.config/capsicum/secrets.env` を Google Drive 上の実体への symlink で配置
-- Claude Code の memory ディレクトリ（`~/.claude/projects/<project-key>/memory/`）も Google Drive 上の `claude-memory/` 実体への symlink で共有する。`<project-key>` は Claude Code 起動時に作業ディレクトリから自動生成されるため、起動後に確認してから symlink を張る
+- Claude Code の memory ディレクトリ（`~/.claude/projects/<project-key>/memory/`）も Google Drive 上の実体（プロジェクトのフォルダ配下の `memory/`）への symlink で共有する。⚠ **リンク先のフォルダ名は `memory`。**`claude-memory` という名前を指してリンク切れになった事故が 2 端末で起きている（張ったあと `ls` で中身が見えることを確かめる。実パスは端末固有なのでここには書かない）。`<project-key>` は Claude Code 起動時に作業ディレクトリから自動生成されるため、起動後に確認してから symlink を張る
 
 ## Linux 固有
 
