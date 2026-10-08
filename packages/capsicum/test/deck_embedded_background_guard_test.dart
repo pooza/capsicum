@@ -21,7 +21,9 @@ void main() {
 
   test('走査が空振りしていない（埋め込める画面を拾えている）', () {
     final paths = embeddableScreens().map((f) => f.path).toList();
-    expect(paths.length, greaterThanOrEqualTo(4), reason: 'デッキに埋め込む画面の数');
+    // ⚠ 実数（2.0.1 時点で 11）に近い下限にする。低いと、拾う側の判定が
+    // 壊れて大半が対象から落ちても緑のままになる。
+    expect(paths.length, greaterThanOrEqualTo(10), reason: 'デッキに埋め込む画面の数');
     expect(
       paths,
       contains(endsWith('post_detail_screen.dart')),
