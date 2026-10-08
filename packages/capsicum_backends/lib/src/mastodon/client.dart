@@ -733,9 +733,52 @@ class MastodonClient {
         if (supportedTypes.isNotEmpty) 'supported_types[]': supportedTypes,
       },
     );
-    return MastodonGroupedNotifications.fromJson(
-      response.data as Map<String, dynamic>,
+    // ⚠⚠ **一括で `fromJson` しない** (#1236)。`accounts[]` / `statuses[]` /
+    // `notification_groups[]` のどれか 1 要素が読めないだけで、そのページを含む
+    // 通知一覧が丸ごとエラーになる。⚠ 投げられるのは `TypeError` 等で
+    // `DioException` ではないので、アダプタの v1 への切り替えにも入らない。
+    // v1 の [getNotifications] と同じく、壊れた要素だけ読み飛ばす。
+    final data = response.data as Map<String, dynamic>;
+    return MastodonGroupedNotifications(
+      accounts: _parseEach(
+        data['accounts'],
+        MastodonAccount.fromJson,
+        'grouped notification account',
+      ),
+      statuses: _parseEach(
+        data['statuses'],
+        MastodonStatus.fromJson,
+        'grouped notification status',
+      ),
+      notificationGroups: _parseEach(
+        data['notification_groups'],
+        MastodonNotificationGroup.fromJson,
+        'notification group',
+      ),
     );
+  }
+
+  /// [raw] の各要素を [fromJson] で読み、読めない要素だけ飛ばす (#1236)。
+  ///
+  /// ⚠ 生の例外を出さない（#1035-B3・[getNotifications] の説明）。
+  List<T> _parseEach<T>(
+    Object? raw,
+    T Function(Map<String, dynamic>) fromJson,
+    String what,
+  ) {
+    if (raw is! List) return const [];
+    final out = <T>[];
+    for (final e in raw) {
+      try {
+        out.add(fromJson(e as Map<String, dynamic>));
+      } catch (err) {
+        developer.log(
+          'skipping malformed $what: ${describeConversionFailure(err)}',
+          name: 'capsicum',
+        );
+      }
+    }
+    return out;
   }
 
   /// GET /api/v1/conversations
