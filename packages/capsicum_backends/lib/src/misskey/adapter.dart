@@ -1126,6 +1126,11 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   /// 理由は Mastodon 側の同名フィールドの doc が正本。
   bool _groupingUnsupported = false;
 
+  /// このサーバーが 400 で断った `excludeTypes` の組 (#1236)。同じ組をもう一度
+  /// 送らないために覚える。⚠ 組が変われば（利用者が絞り込みを変えれば）
+  /// あらためて送る —— 通る組なら、絞り込みはサーバー側に載せたい。
+  String? _rejectedExcludeKey;
+
   @override
   Future<NotificationResponse> getNotifications({
     TimelineQuery? query,
@@ -1135,39 +1140,66 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       for (final type in filter?.excludeTypes ?? const <NotificationType>{})
         ...misskeyNotificationWireNames(type),
     ];
-    final grouped = (filter?.grouped ?? false) && !_groupingUnsupported;
+    final excludeKey = excludeTypes.join(',');
+    var grouped = (filter?.grouped ?? false) && !_groupingUnsupported;
+    // このサーバーが断ったことのある除外指定は、最初から送らない（ページごとに
+    // 400 を踏み直さない）。
+    var sentExclude = excludeKey == _rejectedExcludeKey
+        ? const <String>[]
+        : excludeTypes;
     List<MisskeyNotification> notifications;
-    try {
-      notifications = await client.getNotifications(
-        sinceId: query?.sinceId,
-        untilId: query?.maxId,
-        limit: query?.limit,
-        excludeTypes: excludeTypes,
-        grouped: grouped,
-      );
-    } on DioException catch (e) {
-      // ⚠ エンドポイントが無いサーバーでは通知が丸ごと出なくなるので、必ず
-      // 非グループへ落とす。⚠ Misskey は未知のエンドポイントに 404 を返す。
-      // 401 / 429 等は落とさない（Mastodon 側と同じ理由）。
-      final status = e.response?.statusCode;
-      if (!grouped || (status != 404 && status != 400 && status != 501)) {
+    while (true) {
+      try {
+        notifications = await client.getNotifications(
+          sinceId: query?.sinceId,
+          untilId: query?.maxId,
+          limit: query?.limit,
+          excludeTypes: sentExclude,
+          grouped: grouped,
+        );
+        break;
+      } on DioException catch (e) {
+        final status = e.response?.statusCode;
+        // ⚠⚠ **400 を先に「除外の指定が通らなかった」と読む** (#1236)。
+        // `excludeTypes` は enum で検証されるので、その種別を持たない古い
+        // Misskey は 400 を返す。以前はこれを「グループ化のエンドポイントが
+        // 無い」と読んで [_groupingUnsupported] を立て、同じ `excludeTypes` で
+        // 非グループを試してまた 400 になっていた ＝ **通知が出ず、除外を外しても
+        // グループ化が戻らない**。除外を外して同じ経路をもう一度試す（絞り込みは
+        // 下で手元に倒す）。⚠ 版では分岐しない（対応バージョン方針）。
+        if (status == 400 && sentExclude.isNotEmpty) {
+          _rejectedExcludeKey = excludeKey;
+          sentExclude = const [];
+          continue;
+        }
+        // ⚠ エンドポイントが無いサーバーでは通知が丸ごと出なくなるので、必ず
+        // 非グループへ落とす。⚠ Misskey は未知のエンドポイントに 404 を返す。
+        // 401 / 429 等は落とさない（Mastodon 側と同じ理由）。
+        if (grouped && (status == 404 || status == 400 || status == 501)) {
+          _groupingUnsupported = true;
+          grouped = false;
+          continue;
+        }
         rethrow;
       }
-      _groupingUnsupported = true;
-      notifications = await client.getNotifications(
-        sinceId: query?.sinceId,
-        untilId: query?.maxId,
-        limit: query?.limit,
-        excludeTypes: excludeTypes,
-      );
     }
     final converted = _safeConvert(
       notifications,
       (n) => n.toCapsicum(host, adminRoleIds: _adminRoleIds),
       (n) => n.id,
     );
+    // サーバーへ除外を送れなかった回は、手元で落とす（外したはずの種別が
+    // 並ばないように）。⚠ カーソルと件数（rawLastId / rawCount）は落とす前の
+    // ものを使うので、ページングはずれない。
+    final excluded = filter?.excludeTypes ?? const <NotificationType>{};
+    final results = sentExclude.isEmpty && excluded.isNotEmpty
+        ? [
+            for (final n in converted.results)
+              if (!excluded.contains(n.type)) n,
+          ]
+        : converted.results;
     return NotificationResponse(
-      notifications: converted.results,
+      notifications: results,
       rawCount: converted.rawCount,
       rawLastId: converted.rawLastId,
       skippedPosts: converted.skipped,
