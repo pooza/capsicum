@@ -2,8 +2,47 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import 'supporter_purchase_backend.dart';
+
+/// ネイティブの商品問い合わせ（`windows_store_iap.cpp` の `QueryStoreProducts`）が
+/// どこまで進んだかを、Sentry へ載せる形にまとめる (#1248)。
+///
+/// `stage` の読み方:
+///
+/// | 値 | 意味 |
+/// | --- | --- |
+/// | `ok` | 返った。`associated_count` が 0 ならアプリに add-on が紐づいていない、1 以上で `matched_count` が 0 なら SKU の綴りが合っていない |
+/// | `no_context` | `StoreContext` を取れない（Store 版でない） |
+/// | `timeout` | Store が 10 秒で返らない |
+/// | `extended_error` / `exception` | Store が断った。`hresult` に理由 |
+/// | `no_reply` | ネイティブが null を返した |
+/// | `unknown` | 段階を返さない古いネイティブ |
+///
+/// ⚠ **`hresult` は 16 進の文字列にする。**Sentry の画面で検索語として読める形
+/// （`0x803F6107` など）にしておく。
+Map<String, Object> windowsStoreProbeDiagnostics(
+  Map<String, dynamic>? result, {
+  required int matchedCount,
+}) {
+  if (result == null) {
+    return {'stage': 'no_reply', 'matched_count': matchedCount};
+  }
+  final hresult = result['hresult'];
+  final elapsedMs = result['elapsedMs'];
+  final associatedCount = result['associatedCount'];
+  return {
+    'stage': result['stage'] is String ? result['stage'] as String : 'unknown',
+    'is_store_version': result['isStoreVersion'] == true,
+    'matched_count': matchedCount,
+    if (hresult is int && hresult != 0)
+      'hresult':
+          '0x${hresult.toUnsigned(32).toRadixString(16).toUpperCase().padLeft(8, '0')}',
+    'elapsed_ms': ?(elapsedMs is int ? elapsedMs : null),
+    'associated_count': ?(associatedCount is int ? associatedCount : null),
+  };
+}
 
 /// Windows.Services.Store を叩く投げ銭 backend（#599 §E-1/§E-3）。
 ///
@@ -11,7 +50,14 @@ import 'supporter_purchase_backend.dart';
 /// ラップし、[SupporterPurchaseBackend] 契約に合わせる。購入は request/response
 /// のため、結果を [purchaseEvents] へ流して in_app_purchase の stream 型に揃える。
 class WindowsStoreBackend implements SupporterPurchaseBackend {
+  /// [onProbe] は問い合わせ 1 回ごとの結末の送り先（既定は Sentry）。テストで
+  /// 差し替える。
+  WindowsStoreBackend({void Function(Map<String, Object> diagnostics)? onProbe})
+    : _onProbe = onProbe ?? _reportProbeToSentry;
+
   static const _channel = MethodChannel('capsicum/store_iap');
+
+  final void Function(Map<String, Object> diagnostics) _onProbe;
 
   final StreamController<SupporterPurchaseEvent> _events =
       StreamController<SupporterPurchaseEvent>.broadcast();
@@ -58,6 +104,7 @@ class WindowsStoreBackend implements SupporterPurchaseBackend {
     if (result == null) {
       _lastIsStoreVersion = false;
       _lastProducts = const [];
+      _onProbe(windowsStoreProbeDiagnostics(null, matchedCount: 0));
       return;
     }
     _lastIsStoreVersion = result['isStoreVersion'] == true;
@@ -85,6 +132,28 @@ class WindowsStoreBackend implements SupporterPurchaseBackend {
       for (final id in supporterTipProductIds)
         if (byId[id] != null) byId[id]!,
     ];
+    _onProbe(
+      windowsStoreProbeDiagnostics(result, matchedCount: _lastProducts.length),
+    );
+  }
+
+  /// 🔴 **製品版 2.0.0 / 2.0.1 で、この問い合わせが 1 回も返らなかった (#1248)。**
+  /// Windows は内部ベータを配らないので、確かめられるのは製品版だけ。
+  /// ⚠⚠ **成功した回も送る** —— 失敗だけ送ると、直ったことを「記録が無い」で
+  /// しか読めず、「誰も画面を開いていない」と区別できない。問い合わせは投げ銭
+  /// 画面を開いたときにしか走らないので、件数は少ない。
+  static void _reportProbeToSentry(Map<String, Object> diagnostics) {
+    final stage = diagnostics['stage'];
+    Sentry.captureMessage(
+      'supporter.purchase.windows_probe.$stage',
+      level: stage == 'ok' ? SentryLevel.info : SentryLevel.warning,
+      withScope: (scope) {
+        scope.setTag('supporter.purchase', 'windows_probe');
+        scope.setTag('supporter.windows_probe.stage', '$stage');
+        scope.fingerprint = ['supporter.purchase.windows_probe', '$stage'];
+        scope.setContexts('windows_store_probe', diagnostics);
+      },
+    );
   }
 
   /// [_events] へイベントを流す。購入ダイアログ (RequestPurchaseAsync) は

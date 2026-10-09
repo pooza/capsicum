@@ -210,8 +210,10 @@ bool FlutterWindow::OnCreate() {
               }
             }
           }
-          DispatchStoreWork(std::move(result),
-                            [ids]() { return QueryStoreProducts(ids); });
+          HWND hwnd = GetHandle();
+          DispatchStoreWork(std::move(result), [hwnd, ids]() {
+            return QueryStoreProducts(hwnd, ids);
+          });
         } else if (method == "purchase" || method == "reportFulfillment") {
           // args: EncodableMap { "storeId": String }。
           std::string store_id;

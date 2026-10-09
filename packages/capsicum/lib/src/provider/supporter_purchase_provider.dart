@@ -23,10 +23,10 @@ export 'supporter_purchase_backend.dart'
 /// (同一 App レコード) のため ASC の消耗型 3 商品をそのまま共有し、
 /// `in_app_purchase` も macOS を in_app_purchase_storekit で公式サポートする。
 /// Windows は #599 でストア IAP（Microsoft Store）を解放するが、購入は
-/// **Store からインストールされたコピーでのみ**成立するため、入口の可否は
+/// **Store からインストールされたコピーでのみ**成立するため、買えるかどうかは
 /// 実行時に商品問い合わせが通るか（[SupporterPurchaseState.isAvailable]）で
-/// 決める。この getter はコンパイル時に backend の有無だけを表す。Linux は
-/// ストア IAP 不在。
+/// 決まる（⚠ 入口は問い合わせに繋がず常に出す・[supporterEntryVisibleProvider]）。
+/// この getter はコンパイル時に backend の有無だけを表す。Linux はストア IAP 不在。
 bool get supporterPurchaseSupported =>
     Platform.isIOS || Platform.isAndroid || Platform.isMacOS;
 
@@ -915,17 +915,22 @@ final supporterPurchaseProvider =
 
 /// 設定に投げ銭エントリ（購入導線）を出すか (#428 D-1 / #599 §E-2)。
 ///
-/// iOS / Android / macOS は常に出す（[supporterPurchaseSupported]）。Windows は
-/// 購入が **Microsoft Store からインストールされたコピーでのみ**成立するため、
-/// 商品問い合わせが通って利用可能になった（= Store 版）ときだけ出す。直配版
-/// （自己署名 MSIX）や非対応 OS では隠す（§E-2(a)・空振りの入口を出さない）。
-/// mobile では `supporterPurchaseSupported` で短絡し、購入 provider を余計に
-/// 起動しない。
+/// iOS / Android / macOS は常に出す（[supporterPurchaseSupported]）。
+///
+/// ⚠⚠ **Windows も常に出す (#1248・2026-10-10 pooza)。**🔴 以前は「商品の
+/// 問い合わせが通った（= Store 版）ときだけ出す」（#599 §E-2(a)）だったが、
+/// **製品版 2.0.0 / 2.0.1 で問い合わせが返らず、入口が丸ごと消えた。**入口を
+/// 問い合わせの成否に繋ぐと、問い合わせが壊れた回に**読み直しの口（投げ銭画面の
+/// 中にある）へも行けなくなる**。
+///
+/// - 守る相手だった自己署名 MSIX の直配は #760 で公式案内をやめており、製品として
+///   配っているのは Store 版だけ。買えない入口が出るのは開発ビルドと手で入れた
+///   `.msix` に限られ、そこでは投げ銭画面が「ご利用いただけません」と伝える。
+/// - ⚠ **ここで購入 provider を watch しない。**watch すると起動のたびに Store へ
+///   問い合わせる。問い合わせは投げ銭画面を開いたときだけでよい。
 final supporterEntryVisibleProvider = Provider<bool>((ref) {
   if (supporterPurchaseSupported) return true;
-  if (Platform.isWindows) {
-    return ref.watch(supporterPurchaseProvider.select((s) => s.isAvailable));
-  }
+  if (Platform.isWindows) return true;
   // 課金 backend が無い OS（現状 Linux）は Web の支援先を案内するので、入口
   // 自体は出す (#893)。ストア版に Web リンクを出さない判断は投げ銭画面側で行う。
   // backend 非提供のターゲットが増えても追従漏れしないよう、Platform.isLinux

@@ -396,6 +396,12 @@ federation が存在しない**（iOS StoreKit / Android Play Billing / macOS St
 バージョン依存なので商品取得可否を一次情報にする。**(c) は要望が出たら追加**
 （overridable）。
 
+⚠⚠ **2026-10-10 に (b) へ切り替えた（pooza・[#1248](https://github.com/pooza/capsicum/issues/1248)）。**製品版 2.0.0 / 2.0.1 で商品の問い合わせが返らず、(a) では入口が丸ごと消えた。入口を問い合わせの成否に繋ぐと、問い合わせが壊れた回に**読み直しの口（投げ銭画面の中）へも行けなくなる**。
+
+- (b) を退けた理由（直配版での空振り）は、直配の公式案内をやめた時点（[#760](https://github.com/pooza/capsicum/issues/760)）でほぼ消えている。空振りが出るのは開発ビルドと手で入れた `.msix` だけ。
+- 問い合わせは起動時ではなく、投げ銭画面を開いたときに走る。
+- ⚠ **入口を再び問い合わせに繋がない。**繋ぐなら、問い合わせが返らない回の逃げ道を先に用意する。
+
 ### E-3. 抽象層への接続（UI 無改修を目標）
 
 UI（[supporter_screen.dart](../packages/capsicum/lib/src/ui/screen/settings/supporter_screen.dart)）は
