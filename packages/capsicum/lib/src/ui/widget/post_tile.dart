@@ -1622,7 +1622,7 @@ class _PostTileState extends ConsumerState<PostTile> {
     // Mastodon の `POST /api/v1/reports` は account_id が必須・status_ids が
     // 任意、Misskey の `report-abuse` に至っては投稿を渡す口が無い。
     // 「投稿だけが通報された」と読める文面にしない。
-    final comment = await showReportCommentDialog(
+    final input = await showReportCommentDialog(
       context,
       message:
           'この$postLabelを添えて '
@@ -1630,15 +1630,19 @@ class _PostTileState extends ConsumerState<PostTile> {
           // 「@alice」としか出ず、同名の別サーバーのユーザーと区別が付かない
           // まま通報させることになる。組み立ての正本は [userAcct]。
           '@${userAcct(targetPost.author)} をサーバー管理者に通報しますか？',
+      forwardHost: (adapter as ReportSupport).reportForwardHost(
+        targetPost.author,
+      ),
     );
-    if (comment == null) return;
+    if (input == null) return;
 
     await _runVoidAction(
       messenger,
       () => (adapter as ReportSupport).reportPost(
         targetPost.id,
         targetPost.author.id,
-        comment: comment.isNotEmpty ? comment : null,
+        comment: input.comment.isNotEmpty ? input.comment : null,
+        forward: input.forward,
       ),
       '通報しました',
     );

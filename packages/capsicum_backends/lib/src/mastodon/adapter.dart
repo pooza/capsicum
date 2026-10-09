@@ -1747,15 +1747,38 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     String postId,
     String authorId, {
     String? comment,
+    bool forward = false,
   }) async {
-    await client.createReport(authorId, statusIds: [postId], comment: comment);
+    await client.createReport(
+      authorId,
+      statusIds: [postId],
+      comment: comment,
+      forward: forward ? true : null,
+    );
   }
 
   @override
-  Future<void> reportUser(String userId, {String? comment}) async {
+  Future<void> reportUser(
+    String userId, {
+    String? comment,
+    bool forward = false,
+  }) async {
     // status_ids を省くと「アカウントに対する通報」になる。空配列ではなく
     // 未送信にする必要がある (#998)。
-    await client.createReport(userId, comment: comment);
+    await client.createReport(
+      userId,
+      comment: comment,
+      forward: forward ? true : null,
+    );
+  }
+
+  @override
+  String? reportForwardHost(User user) {
+    // ローカルの相手は host に自分のサーバーが入る（`toCapsicum` が
+    // `atHost ?? localHost` で埋める）。転送する先が無いので出さない。
+    final userHost = user.host;
+    if (userHost == null || userHost.isEmpty || userHost == host) return null;
+    return userHost;
   }
 
   // MediaUpdateSupport

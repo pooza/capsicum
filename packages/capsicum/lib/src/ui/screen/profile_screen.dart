@@ -1724,18 +1724,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     // controller の寿命はダイアログ側が持つ (Codex P2 / PR #1013)。ここで
     // `finally` 破棄すると、閉じるアニメーションの途中で `TextField` が破棄済み
     // controller に触れる。文面以外は投稿の通報と同じなので widget ごと共通。
-    final comment = await showReportCommentDialog(
+    final input = await showReportCommentDialog(
       context,
       message: '@${userAcct(widget.user)} をサーバー管理者に通報しますか？',
+      forwardHost: (adapter as ReportSupport).reportForwardHost(widget.user),
     );
-    if (comment == null) return;
+    if (input == null) return;
 
     try {
       // try の中では `is!` ガードの型昇格が効かないため明示キャストする。
       // `post_tile.dart` の `_confirmReport` も同じ形。
       await (adapter as ReportSupport).reportUser(
         widget.user.id,
-        comment: comment.isNotEmpty ? comment : null,
+        comment: input.comment.isNotEmpty ? input.comment : null,
+        forward: input.forward,
       );
       messenger.showSnackBar(const SnackBar(content: Text('通報しました')));
     } catch (e) {

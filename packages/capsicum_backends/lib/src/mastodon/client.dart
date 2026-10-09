@@ -1070,10 +1070,14 @@ class MastodonClient {
   }
 
   /// POST /api/v1/reports
+  ///
+  /// ⚠⚠ **[forward] を送らないと、リモートの相手のサーバーへは届かない**
+  /// (#1203)。サーバーの既定は「転送しない」。
   Future<void> createReport(
     String accountId, {
     List<String>? statusIds,
     String? comment,
+    bool? forward,
   }) async {
     await dio.post(
       '/api/v1/reports',
@@ -1081,6 +1085,7 @@ class MastodonClient {
         'account_id': accountId,
         'status_ids': ?statusIds,
         'comment': ?comment,
+        'forward': ?forward,
       },
     );
   }
