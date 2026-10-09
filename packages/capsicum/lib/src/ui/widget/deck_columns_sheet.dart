@@ -134,12 +134,18 @@ class _DeckColumnsSheetState extends ConsumerState<DeckColumnsSheet> {
                           index: index,
                           child: const Icon(Icons.drag_handle),
                         ),
-                        title: DeckAccountScope(
-                          account: column.account,
-                          child: _TabTitle(tab: column.tab),
-                        ),
+                        // ⚠ アカウントをまたぐカラムは、現在のアカウントの
+                        // スコープで題を引き、アカウント名は出さない (#1259)。
+                        title: column.tab.spansAccounts
+                            ? _TabTitle(tab: column.tab)
+                            : DeckAccountScope(
+                                account: column.account,
+                                child: _TabTitle(tab: column.tab),
+                              ),
                         subtitle: Text(
-                          '@${column.account.username}@${column.account.host}',
+                          column.tab.spansAccounts
+                              ? 'すべてのアカウント'
+                              : '@${column.account.username}@${column.account.host}',
                         ),
                         trailing: IconButton(
                           icon: const Icon(Icons.delete_outline),
@@ -385,7 +391,14 @@ class _DeckColumnCandidatesState extends ConsumerState<_DeckColumnCandidates> {
       const NotificationsTab(),
       // すべてのアカウントの通知 (#1173・決定済み事項 7-3)。⚠ アカウントが 1 つ
       // なら上の「通知」と中身が同じになるので出さない。
-      if (ref.watch(accountManagerProvider).accounts.length > 1)
+      //
+      // ⚠ **既に列にあれば出さない** (#1259)。アカウントをまたぐカラムは列に
+      // 1 本だけなので、足しても増えない。出したままだと、アカウントごとの
+      // 候補に「押しても何も起きない行」が並ぶ。
+      if (ref.watch(accountManagerProvider).accounts.length > 1 &&
+          !ref
+              .watch(deckColumnsProvider)
+              .any((c) => c.tab is AllNotificationsTab))
         const AllNotificationsTab(),
       const AnnouncementsTab(),
       // 検索 (#1216・決定済み事項 9-2-2)。⚠ **荷物を持たないので候補に出せる** ——

@@ -277,7 +277,11 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
         .firstOrNull;
     if (column == null) return;
     // 現在のアカウントのカラムはルートのコンテナのまま（未決事項 10）。
-    final container = column.account == ref.read(currentAccountKeyProvider)
+    // ⚠ アカウントをまたぐカラムにフォーカスしているときも、現在のアカウントで
+    // 開く (#1259・`DeckColumn.effective`)。
+    final container =
+        column.effective(ref.read(currentAccountKeyProvider)).account ==
+            ref.read(currentAccountKeyProvider)
         ? _root
         : _containers[column.account];
     if (container == null) return;
@@ -472,9 +476,17 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final columns = ref.watch(deckColumnsProvider);
-    final minColumnWidth = ref.watch(deckColumnWidthProvider);
     final currentKey = ref.watch(currentAccountKeyProvider);
+    // ⚠⚠ **アカウントをまたぐカラム（「すべての通知」）は、現在のアカウントで
+    // 動かす** (#1259)。保存されているアカウントは見ない —— 開いたときの
+    // アカウントに縛ると、そのアカウントをログアウトした時点でカラムごと
+    // 「表示できません」になる。ここで読み替えておけば、スコープ・簡易投稿バー・
+    // 見出しは下流でそのまま現在のアカウントを見る。
+    final columns = [
+      for (final column in ref.watch(deckColumnsProvider))
+        column.effective(currentKey),
+    ];
+    final minColumnWidth = ref.watch(deckColumnWidthProvider);
     final accounts = ref.watch(accountManagerProvider).accounts;
 
     final used = <AccountKey>{};

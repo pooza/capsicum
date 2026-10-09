@@ -6,6 +6,16 @@ import 'timeline_type.dart';
 /// Each subclass defines a distinct tab category. Serialized to/from a
 /// compact string form for SharedPreferences persistence.
 sealed class TabType {
+  /// 中身が特定のアカウントのものではなく、**全アカウントをまたぐ**か (#1259)。
+  ///
+  /// true のカラムは:
+  /// - **列に 1 本だけ**（どのアカウントにフォーカスして開いても同じもの）
+  /// - 見出しにアカウントを出さない（中身と対応しない）
+  /// - **現在のアカウント**のスコープで動く（保存されているアカウントは見ない。
+  ///   開いたときのアカウントに縛ると、そのアカウントをログアウトした時点で
+  ///   カラムごと表示できなくなる）
+  bool get spansAccounts => false;
+
   const TabType();
 
   /// Serialize to a compact string for persistence.
@@ -262,8 +272,17 @@ class SearchTab extends DeckOnlyTab {
 /// （`currentAccountProvider` の上書き）と簡易投稿バーの宛先を決めるため。
 ///
 /// ⚠ 列に 1 本だけあれば足りるので、ベルは**既にあればそこへ送る**。
+///
+/// ⚠⚠ **アカウントをまたぐカラム**（[TabType.spansAccounts]・#1259）。保存形式の
+/// 都合でアカウントを 1 つ持つが、**その値は表示にも同一性の判定にも使わない**。
+/// 当初は「アカウントを含むキーで判定すれば足りる」と整理していたため、
+/// フォーカスしているアカウントごとに別のカラムができ（中身は同じ）、見出しにも
+/// そのアカウントが出ていた。
 class AllNotificationsTab extends DeckOnlyTab {
   const AllNotificationsTab();
+
+  @override
+  bool get spansAccounts => true;
 
   @override
   String toKey() => 'all_notifications';

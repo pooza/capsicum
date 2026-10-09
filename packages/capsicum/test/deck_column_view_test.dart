@@ -273,4 +273,36 @@ void main() {
       );
     });
   });
+
+  group('アカウントをまたぐカラムの見出し (#1259)', () {
+    testWidgets('⚠ 「すべての通知」にはアカウント（アイコン・表示名）を出さない', (tester) async {
+      await pump(tester, const AllNotificationsTab());
+      await tester.pump();
+
+      expect(find.byTooltip('すべてのアカウント'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byTooltip('すべてのアカウント'),
+          matching: find.byType(UserAvatar),
+        ),
+        findsNothing,
+        reason: '中身は全アカウントのもの。出すと「このアカウントの通知」に見える',
+      );
+      expect(find.byTooltip('@me@misskey.example'), findsNothing);
+    });
+
+    testWidgets('前提: ふつうの通知カラムにはアカウントを出す', (tester) async {
+      await pump(tester, const NotificationsTab());
+      await tester.pump();
+
+      expect(find.byTooltip('@me@misskey.example'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byTooltip('@me@misskey.example'),
+          matching: find.byType(UserAvatar),
+        ),
+        findsOneWidget,
+      );
+    });
+  });
 }

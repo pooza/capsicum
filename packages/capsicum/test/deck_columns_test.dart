@@ -558,4 +558,125 @@ void main() {
       expect(columns.first.tab, const HashtagTab('one'));
     });
   });
+
+  /// #1259: アカウントをまたぐカラム（「すべての通知」）は、列に 1 本だけ。
+  ///
+  /// ⚠ 以前はアカウントを含むキーで見分けていたので、**フォーカスしていた
+  /// アカウントごとに、同じ中身のカラムが増えていた**。
+  group('アカウントをまたぐカラムは列に 1 本だけ (#1259)', () {
+    const other = AccountKey(
+      type: BackendType.mastodon,
+      host: 'mstdn.example',
+      username: 'other',
+    );
+
+    Future<ProviderContainer> makeContainer([
+      Map<String, Object> initial = const {},
+    ]) async {
+      SharedPreferences.setMockInitialValues(initial);
+      initSharedPreferencesCache(await SharedPreferences.getInstance());
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      return container;
+    }
+
+    test('中身のキーにアカウントを含めない', () {
+      const a = DeckColumn(id: '1', account: _me, tab: AllNotificationsTab());
+      const b = DeckColumn(id: '2', account: other, tab: AllNotificationsTab());
+
+      expect(a.contentKey, b.contentKey);
+      // ⚠ ふつうのカラムは従来どおりアカウントで分かれる。
+      const n1 = DeckColumn(id: '3', account: _me, tab: NotificationsTab());
+      const n2 = DeckColumn(id: '4', account: other, tab: NotificationsTab());
+      expect(n1.contentKey, isNot(n2.contentKey));
+    });
+
+    test('⚠⚠ 別のアカウントのカラムから開いても、2 本目を作らない', () async {
+      final container = await makeContainer();
+      final notifier = container.read(deckColumnsProvider.notifier);
+      final home = await notifier.add(
+        _me,
+        const TimelineTab(TimelineType.home),
+      );
+      final theirs = await notifier.add(
+        other,
+        const TimelineTab(TimelineType.home),
+      );
+      final first = await notifier.insertAfter(
+        home.id,
+        _me,
+        const AllNotificationsTab(),
+      );
+
+      // 別のアカウントのカラムにフォーカスして、もう一度通知を開いた。
+      final again = await notifier.insertAfter(
+        theirs.id,
+        other,
+        const AllNotificationsTab(),
+      );
+
+      expect(again.id, first.id, reason: 'フォーカスしていたアカウントごとに増えていた');
+      expect(
+        container
+            .read(deckColumnsProvider)
+            .where((c) => c.tab is AllNotificationsTab),
+        hasLength(1),
+      );
+    });
+
+    test('カラム編集から足しても、2 本目を作らない', () async {
+      final container = await makeContainer();
+      final notifier = container.read(deckColumnsProvider.notifier);
+      final first = await notifier.add(_me, const AllNotificationsTab());
+
+      final again = await notifier.add(other, const AllNotificationsTab());
+
+      expect(again.id, first.id);
+      expect(container.read(deckColumnsProvider), hasLength(1));
+    });
+
+    test('前提: ふつうのカラムは、カラム編集から重複して足せる（6-2 のまま）', () async {
+      final container = await makeContainer();
+      final notifier = container.read(deckColumnsProvider.notifier);
+      await notifier.add(_me, const NotificationsTab());
+      await notifier.add(_me, const NotificationsTab());
+
+      expect(container.read(deckColumnsProvider), hasLength(2));
+    });
+
+    test('⚠ 既に複数本できている列は、読み込み時にいちばん左だけを残す', () async {
+      final container = await makeContainer({
+        'deck_columns': [
+          'a|misskey://me@misskey.example|timeline:home',
+          'b|mastodon://other@mstdn.example|all_notifications',
+          'c|misskey://me@misskey.example|notifications',
+          'd|misskey://me@misskey.example|all_notifications',
+        ],
+      });
+
+      final columns = container.read(deckColumnsProvider);
+
+      expect(columns.map((c) => c.id), ['a', 'b', 'c']);
+    });
+
+    test('動かすアカウントは現在のアカウント（保存されているものは見ない）', () {
+      const stored = DeckColumn(
+        id: '1',
+        account: other,
+        tab: AllNotificationsTab(),
+      );
+
+      expect(stored.effective(_me).account, _me);
+      expect(stored.effective(_me).id, '1', reason: '列の中の同じカラムのまま');
+      // 現在のアカウントが無いあいだ（ログアウト直後）は、そのまま。
+      expect(stored.effective(null).account, other);
+      // ⚠ ふつうのカラムは読み替えない。
+      const normal = DeckColumn(
+        id: '2',
+        account: other,
+        tab: NotificationsTab(),
+      );
+      expect(normal.effective(_me).account, other);
+    });
+  });
 }

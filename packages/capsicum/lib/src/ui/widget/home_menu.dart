@@ -126,6 +126,8 @@ String deckColumnMenuLabel(
       adapter != null &&
       !adapter.capabilities.supportedTimelines.contains(TimelineType.social);
   final label = tabLabel(ref, column.tab, isMastodon, adapter, allLists);
+  // ⚠ アカウントをまたぐカラムには、アカウント名を添えない (#1259)。
+  if (column.tab.spansAccounts) return label;
   final who =
       account?.user.displayName ??
       account?.user.username ??

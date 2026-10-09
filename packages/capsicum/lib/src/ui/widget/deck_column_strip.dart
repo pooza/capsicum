@@ -108,14 +108,20 @@ class _DeckColumnStripState extends ConsumerState<DeckColumnStrip> {
           itemBuilder: (context, index) {
             final column = widget.columns[index];
             final focused = column.id == widget.focusedId;
-            final background = resolveHostColor(
-              hostColors,
-              column.account.host,
-            );
-            final foreground = foregroundOnHostColor(background);
+            // ⚠ アカウントをまたぐカラムには、特定のアカウントの色を付けない
+            // (#1259)。
+            final spansAccounts = column.tab.spansAccounts;
+            final background = spansAccounts
+                ? theme.colorScheme.surfaceContainerHighest
+                : resolveHostColor(hostColors, column.account.host);
+            final foreground = spansAccounts
+                ? theme.colorScheme.onSurface
+                : foregroundOnHostColor(background);
             final account = column.account;
             return Tooltip(
-              message: 'カラム ${index + 1}（@${account.username}@${account.host}）',
+              message: spansAccounts
+                  ? 'カラム ${index + 1}（すべてのアカウント）'
+                  : 'カラム ${index + 1}（@${account.username}@${account.host}）',
               child: Semantics(
                 selected: focused,
                 button: true,

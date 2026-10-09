@@ -276,16 +276,21 @@ class _DeckColumnHeader extends ConsumerWidget {
     // アイコンを出さず、アカウント名だけにする。
     final current = ref.watch(currentAccountProvider);
     final user = current?.key == account ? current!.user : null;
+    // ⚠⚠ **アカウントをまたぐカラムの見出しには、アカウントを出さない** (#1259)。
+    // 中身は全アカウントのもので、カラムが持つアカウントと対応しない。出すと
+    // 「このアカウントの通知」に見える。アイコン・表示名・サーバーの色を外す。
+    final spansAccounts = column.tab.spansAccounts;
     // ⚠ 背景はカラムのアカウントのサーバーの色 (#1152・2026-09-22 pooza)。
     // サーバーバッジと同じ [resolveHostColor] を使う。
     // ⚠⚠ **文字とアイコンを白に固定しない (#1240)。**モロヘイヤの色はそのまま
     // 返るので、サーバーが明るい色を設定していると白では読めない。背景の
     // 明るさから選ぶ（[foregroundOnHostColor]）。
-    final background = resolveHostColor(
-      ref.watch(hostThemeColorProvider),
-      account.host,
-    );
-    final foreground = foregroundOnHostColor(background);
+    final background = spansAccounts
+        ? theme.colorScheme.surfaceContainerHighest
+        : resolveHostColor(ref.watch(hostThemeColorProvider), account.host);
+    final foreground = spansAccounts
+        ? theme.colorScheme.onSurface
+        : foregroundOnHostColor(background);
     final titleStyle = theme.textTheme.titleSmall?.copyWith(color: foreground);
     final subStyle = theme.textTheme.bodySmall?.copyWith(
       color: foreground.withValues(alpha: 0.8),
@@ -320,10 +325,10 @@ class _DeckColumnHeader extends ConsumerWidget {
             children: [
               Expanded(
                 child: Tooltip(
-                  message: acct,
+                  message: spansAccounts ? 'すべてのアカウント' : acct,
                   child: Row(
                     children: [
-                      if (user != null) ...[
+                      if (user != null && !spansAccounts) ...[
                         UserAvatar(user: user, size: 24, compact: true),
                         const SizedBox(width: 8),
                       ],
@@ -335,24 +340,25 @@ class _DeckColumnHeader extends ConsumerWidget {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      Text(' · ', style: subStyle),
-                      Flexible(
-                        child: user != null
-                            ? EmojiText(
-                                user.displayName ?? user.username,
-                                emojis: user.emojis,
-                                fallbackHost: user.host,
-                                style: subStyle,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              )
-                            : Text(
-                                acct,
-                                style: subStyle,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                      ),
+                      if (!spansAccounts) Text(' · ', style: subStyle),
+                      if (!spansAccounts)
+                        Flexible(
+                          child: user != null
+                              ? EmojiText(
+                                  user.displayName ?? user.username,
+                                  emojis: user.emojis,
+                                  fallbackHost: user.host,
+                                  style: subStyle,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                )
+                              : Text(
+                                  acct,
+                                  style: subStyle,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                        ),
                     ],
                   ),
                 ),

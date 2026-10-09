@@ -631,11 +631,18 @@ class DeckColumnsNotifier extends Notifier<List<DeckColumn>> {
     if (saved == null) return const [];
     final columns = <DeckColumn>[];
     final seenIds = <String>{};
+    final seenSpanning = <String>{};
     for (final line in saved) {
       final column = DeckColumn.deserialize(line);
       // 読めない行と、id が重複する行（手編集等）は黙って捨てる。⚠ 重複 id を
       // 残すと、並べ替え・削除が 2 本のどちらを指すか決まらない。
       if (column == null || !seenIds.add(column.id)) continue;
+      // ⚠ **アカウントをまたぐカラムは列に 1 本だけ** (#1259)。以前はアカウントを
+      // 含むキーで見分けていたので、フォーカスしていたアカウントごとに同じ中身の
+      // カラムが増えていた。既にできている列は、いちばん左を残して畳む。
+      if (column.tab.spansAccounts && !seenSpanning.add(column.contentKey)) {
+        continue;
+      }
       columns.add(column);
     }
     return columns;
@@ -657,8 +664,17 @@ class DeckColumnsNotifier extends Notifier<List<DeckColumn>> {
   }
 
   /// 末尾にカラムを足す。⚠ **同じ中身が既にあっても足す**（重複を許す・6-2）。
+  ///
+  /// ⚠⚠ **例外はアカウントをまたぐカラム**（「すべての通知」・#1259）。中身が
+  /// 1 つしか無いので、2 本目は置かず既にあるものを返す。
   Future<DeckColumn> add(AccountKey account, TabType tab) async {
     final column = DeckColumn(id: _newId(), account: account, tab: tab);
+    if (tab.spansAccounts) {
+      final existing = state
+          .where((c) => c.contentKey == column.contentKey)
+          .firstOrNull;
+      if (existing != null) return existing;
+    }
     state = [...state, column];
     await _save();
     return column;
