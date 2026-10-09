@@ -109,6 +109,15 @@ class _NotificationViewState extends ConsumerState<NotificationView>
             .read(notificationMarkerSaverProvider)
             .save(state.notifications[minIndex].id);
       }
+    } else if (adapter is NotificationReadSupport &&
+        state.notifications.isNotEmpty &&
+        positions.any((p) => p.index == 0)) {
+      // 位置を持たないバックエンド（Misskey）は、一番新しい通知が見えたときに
+      // 全既読を返す (#1205)。⚠ **先頭が見えていない間は返さない** —— 途中から
+      // 読んでいる利用者の、まだ見ていない新着まで既読にしてしまう。
+      ref
+          .read(notificationReadSaverProvider)
+          .markSeen(state.notifications.first.id);
     }
   }
 

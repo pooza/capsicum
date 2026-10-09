@@ -67,6 +67,7 @@ export 'src/social/interfaces/login_support.dart';
 export 'src/social/interfaces/marker_support.dart';
 export 'src/social/interfaces/media_update_support.dart';
 export 'src/social/interfaces/mulukhiya_repost_support.dart';
+export 'src/social/interfaces/notification_read_support.dart';
 export 'src/social/interfaces/notification_stream_support.dart';
 export 'src/social/interfaces/notification_support.dart';
 export 'src/social/interfaces/pages_support.dart';

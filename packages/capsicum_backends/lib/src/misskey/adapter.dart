@@ -107,6 +107,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         FollowSupport,
         FollowRequestSupport,
         NotificationSupport,
+        // 既読を全部の単位で返す (#1205)。Mastodon は位置で返せるので
+        // MarkerSupport の側。
+        NotificationReadSupport,
         SearchSupport,
         ReactionSupport,
         CustomEmojiSupport,
@@ -1213,6 +1216,12 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
 
   @override
   Future<void> clearAllNotifications() => throw UnimplementedError();
+
+  // NotificationReadSupport
+
+  @override
+  Future<void> markAllNotificationsRead() =>
+      client.markAllNotificationsAsRead();
 
   // SearchSupport
 
