@@ -135,6 +135,44 @@ String deckColumnMenuLabel(
   return '$label · $who';
 }
 
+/// フォーカス中のカラムの隣のカラムの id (#1258)。移る先が無ければ null。
+///
+/// - **端では止める**（回り込まない）。右端で「次」を押して左端へ飛ぶと、
+///   どこへ行ったかを見失う。
+/// - フォーカスがまだ無い（[focusedId] が null か、列に無い）ときは、どちらの
+///   向きでも**先頭のカラム**へ移る。最初の 1 打で、どこかへは入れるように。
+String? adjacentDeckColumnId(
+  List<String> columnIds,
+  String? focusedId, {
+  required bool forward,
+}) {
+  if (columnIds.isEmpty) return null;
+  final index = focusedId == null ? -1 : columnIds.indexOf(focusedId);
+  if (index < 0) return columnIds.first;
+  final next = forward ? index + 1 : index - 1;
+  if (next < 0 || next >= columnIds.length) return null;
+  return columnIds[next];
+}
+
+const _deckColumnDigitKeys = [
+  LogicalKeyboardKey.digit1,
+  LogicalKeyboardKey.digit2,
+  LogicalKeyboardKey.digit3,
+  LogicalKeyboardKey.digit4,
+  LogicalKeyboardKey.digit5,
+  LogicalKeyboardKey.digit6,
+  LogicalKeyboardKey.digit7,
+  LogicalKeyboardKey.digit8,
+  LogicalKeyboardKey.digit9,
+];
+
+/// 左から [index] 本目（0 始まり）のカラムへ直接移るショートカット (#1258)。
+/// 主修飾 + 1〜9。10 本目以降は null（メニューから選ぶか、隣へ送る）。
+MenuShortcut? deckColumnDigitShortcut(int index) =>
+    index >= 0 && index < _deckColumnDigitKeys.length
+    ? MenuShortcut(_deckColumnDigitKeys[index])
+    : null;
+
 /// Persist the currently selected tab to SharedPreferences.
 void saveLastTab(WidgetRef ref) {
   final account = ref.read(currentAccountProvider);
@@ -695,7 +733,45 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
           MenuSubmenuEntry(
             label: 'カラム',
             children: [
-              for (final column in deckColumns)
+              // 隣のカラムへフォーカスを移す (#1258)。⌘N と Ctrl+R は「フォーカス中の
+              // カラム」に効くのに、**その宛先を変える操作だけがキーボードに
+              // 無かった**。
+              //
+              // ⚠ **キーは主修飾 + `[` / `]`。**矢印は一覧のキーボード操作と
+              // テキストの選択が使っており、Ctrl+Alt+矢印は GNOME がワーク
+              // スペースの切り替えに取る（アプリまで届かない）。
+              // ⚠ **端では止める**（回り込まない）—— カラムは左右に並んでいるので、
+              // 右端で「次」を押して左端へ飛ぶと、どこへ行ったかを見失う。
+              MenuActionEntry(
+                label: '前のカラム',
+                icon: Icons.chevron_left,
+                shortcut: const MenuShortcut(LogicalKeyboardKey.bracketLeft),
+                globalShortcut: true,
+                onSelected: switch (adjacentDeckColumnId(
+                  [for (final c in deckColumns) c.id],
+                  focusedColumnId,
+                  forward: false,
+                )) {
+                  final id? => () => deckActions.revealAndFocus(id),
+                  null => null,
+                },
+              ),
+              MenuActionEntry(
+                label: '次のカラム',
+                icon: Icons.chevron_right,
+                shortcut: const MenuShortcut(LogicalKeyboardKey.bracketRight),
+                globalShortcut: true,
+                onSelected: switch (adjacentDeckColumnId(
+                  [for (final c in deckColumns) c.id],
+                  focusedColumnId,
+                  forward: true,
+                )) {
+                  final id? => () => deckActions.revealAndFocus(id),
+                  null => null,
+                },
+              ),
+              const MenuGroupSeparator(),
+              for (final (index, column) in deckColumns.indexed)
                 MenuActionEntry(
                   label: deckColumnMenuLabel(
                     ref,
@@ -704,6 +780,9 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
                     allLists,
                   ),
                   checked: column.id == focusedColumnId,
+                  // 左から 9 本目までは、主修飾 + 数字で直接移れる (#1258)。
+                  shortcut: deckColumnDigitShortcut(index),
+                  globalShortcut: index < _deckColumnDigitKeys.length,
                   onSelected: () => deckActions.revealAndFocus(column.id),
                 ),
               if (deckColumns.isNotEmpty) const MenuGroupSeparator(),
