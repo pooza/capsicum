@@ -78,6 +78,10 @@ class _TextOverlayItem extends _OverlayItem {
   String text;
   Color color = Colors.white;
 
+  /// 複数行のときの行揃え (#1183)。⚠ **見る側は 2 箇所** —— プレビューの `Text` と
+  /// 書き出しの `TextPainter`。片方だけだと、編集中の見た目と投稿される画像が違う。
+  TextAlign align = TextAlign.center;
+
   @override
   String get label => text;
 
@@ -373,7 +377,8 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
         case TextOverlayLayerSpec():
           restored.add(
             _TextOverlayItem(id: _nextId++, text: spec.text)
-              ..color = spec.color,
+              ..color = spec.color
+              ..align = spec.align,
           );
         case StickerOverlayLayerSpec():
           try {
@@ -457,6 +462,7 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
     _TextOverlayItem() => TextOverlayLayerSpec(
       text: item.text,
       color: item.color,
+      align: item.align,
       nx: item.nx,
       ny: item.ny,
       sizeFrac: item.sizeFrac,
@@ -838,7 +844,7 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
         text: item.text,
         style: _textStyle(item.color, item.sizeFrac * h),
       ),
-      textAlign: TextAlign.center,
+      textAlign: item.align,
       textDirection: TextDirection.ltr,
     );
     // 画像幅の 96% を上限に折り返す。
@@ -1140,7 +1146,7 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
         child: switch (item) {
           _TextOverlayItem() => Text(
             item.text,
-            textAlign: TextAlign.center,
+            textAlign: item.align,
             style: _textStyle(item.color, item.sizeFrac * dispH),
           ),
           // ⚠ 素材の出どころが違うだけなので、**プレビューも 1 本**にする (#1178)。
@@ -1414,9 +1420,38 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
               ),
             ),
           ),
+        const Spacer(),
+        // 行揃え (#1183)。⚠ **ボタンは 1 つで、押すたびに 左 → 中央 → 右 と回す。**
+        // 3 つ並べると、色 6 つと合わせて 320px 幅に収まらない。行を足すと
+        // 背の低い画面で縦に破綻する（この列は既に 4 行ある）。
+        IconButton(
+          key: overlayTextAlignButtonKey,
+          icon: Icon(_alignIcon(item.align), color: Colors.white),
+          tooltip: '行揃え: ${_alignLabel(item.align)}（押すと切り替え）',
+          visualDensity: VisualDensity.compact,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          onPressed: _canModify(item)
+              ? () => setState(
+                  () => item.align = nextOverlayTextAlign(item.align),
+                )
+              : null,
+        ),
       ],
     );
   }
+
+  static IconData _alignIcon(TextAlign align) => switch (align) {
+    TextAlign.left => Icons.format_align_left,
+    TextAlign.right => Icons.format_align_right,
+    _ => Icons.format_align_center,
+  };
+
+  static String _alignLabel(TextAlign align) => switch (align) {
+    TextAlign.left => '左',
+    TextAlign.right => '右',
+    _ => '中央',
+  };
 
   /// 回転角の操作行 (#946)。
   ///

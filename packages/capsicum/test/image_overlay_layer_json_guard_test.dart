@@ -60,6 +60,7 @@ void main() {
       const spec = TextOverlayLayerSpec(
         text: 'プリキュア実況中',
         color: Color(0xFF3366CC),
+        align: TextAlign.right,
         nx: 0.25,
         ny: 0.75,
         sizeFrac: 0.31,
@@ -74,6 +75,7 @@ void main() {
       final text = restored! as TextOverlayLayerSpec;
       expect(text.text, 'プリキュア実況中');
       expect(text.color.toARGB32(), 0xFF3366CC);
+      expect(text.align, TextAlign.right);
       expect(text.nx, 0.25);
       expect(text.ny, 0.75);
       expect(text.sizeFrac, 0.31);
@@ -81,6 +83,39 @@ void main() {
       expect(text.opacity, 0.6);
       expect(text.visible, isFalse);
       expect(text.locked, isTrue);
+    });
+
+    // #1183: 行揃えを足す前に保存された下書きを、復元できないものにしない。
+    test('⚠ 行揃えの欄が無い旧形式の文字レイヤは、中央として読める', () {
+      final json = const TextOverlayLayerSpec(
+        text: '旧形式',
+        color: Color(0xFFFFFFFF),
+        align: TextAlign.left,
+        nx: 0.5,
+        ny: 0.5,
+        sizeFrac: 0.1,
+        angle: 0,
+        opacity: 1,
+        visible: true,
+        locked: false,
+      ).toJson()..remove('align');
+
+      final restored = OverlayLayerSpec.fromJson(json);
+      expect(restored, isA<TextOverlayLayerSpec>(), reason: '欄が無くても落とさない');
+      expect((restored! as TextOverlayLayerSpec).align, TextAlign.center);
+    });
+
+    test('⚠ 知らない行揃えは中央に倒す（選べるのは左・中央・右だけ）', () {
+      expect(overlayTextAlignFromName('justify'), TextAlign.center);
+      expect(overlayTextAlignFromName(42), TextAlign.center);
+      expect(overlayTextAlignFromName('left'), TextAlign.left);
+      expect(overlayTextAlignFromName('right'), TextAlign.right);
+    });
+
+    test('切り替えは 左 → 中央 → 右 → 左 と回る', () {
+      expect(nextOverlayTextAlign(TextAlign.left), TextAlign.center);
+      expect(nextOverlayTextAlign(TextAlign.center), TextAlign.right);
+      expect(nextOverlayTextAlign(TextAlign.right), TextAlign.left);
     });
 
     test('スタンプレイヤは全項目が戻る', () {
