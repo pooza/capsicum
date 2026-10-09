@@ -803,7 +803,16 @@ class MastodonClient {
   /// GET /api/v1/conversations
   /// Returns the last_status from each conversation (DM thread) along with
   /// the conversation ID of the last entry for cursor-based pagination.
-  Future<({List<MastodonStatus> statuses, String? lastConversationId})>
+  ///
+  /// `conversations` は、`last_status` を持つ会話ごとの id と未読 (#1206)。
+  /// 既読・削除は会話に対する操作なので、投稿から会話を引けるように返す。
+  Future<
+    ({
+      List<MastodonStatus> statuses,
+      String? lastConversationId,
+      List<({String id, bool unread, String lastStatusId})> conversations,
+    })
+  >
   getConversations({String? maxId, String? sinceId, int? limit}) async {
     final response = await dio.get(
       '/api/v1/conversations',
@@ -816,17 +825,43 @@ class MastodonClient {
     final conversations = response.data as List;
     String? lastConversationId;
     final statuses = <MastodonStatus>[];
+    final refs = <({String id, bool unread, String lastStatusId})>[];
     for (final e in conversations) {
       final m = e as Map<String, dynamic>;
-      lastConversationId = m['id']?.toString();
+      final id = m['id']?.toString();
+      lastConversationId = id;
       final lastStatus = m['last_status'];
       if (lastStatus != null) {
-        statuses.add(
-          MastodonStatus.fromJson(lastStatus as Map<String, dynamic>),
+        final status = MastodonStatus.fromJson(
+          lastStatus as Map<String, dynamic>,
         );
+        statuses.add(status);
+        if (id != null) {
+          refs.add((
+            id: id,
+            unread: m['unread'] == true,
+            lastStatusId: status.id,
+          ));
+        }
       }
     }
-    return (statuses: statuses, lastConversationId: lastConversationId);
+    return (
+      statuses: statuses,
+      lastConversationId: lastConversationId,
+      conversations: refs,
+    );
+  }
+
+  /// POST /api/v1/conversations/:id/read (#1206)
+  Future<void> markConversationRead(String id) async {
+    await dio.post('/api/v1/conversations/$id/read');
+  }
+
+  /// DELETE /api/v1/conversations/:id (#1206)
+  ///
+  /// ⚠ 消えるのは自分の一覧の会話だけで、投稿そのものは消えない。
+  Future<void> deleteConversation(String id) async {
+    await dio.delete('/api/v1/conversations/$id');
   }
 
   /// POST /api/v2/media

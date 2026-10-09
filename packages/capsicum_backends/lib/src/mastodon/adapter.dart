@@ -121,6 +121,8 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         SearchSupport,
         // 検索の続き (#1202)。Misskey は続きの口が種別ごとに違うので未対応。
         SearchPagingSupport,
+        // DM の会話の既読・削除 (#1206)。Misskey の DM は chat で別実装。
+        ConversationSupport,
         CustomEmojiSupport,
         ListSupport,
         HashtagSupport,
@@ -428,6 +430,34 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     await client.deleteStatus(id);
   }
 
+  // ConversationSupport
+
+  /// DM 一覧で取得した投稿 id → その会話 (#1206)。
+  ///
+  /// ⚠ **投稿のモデルに持たせない理由**は [ConversationSupport.conversationOf]。
+  /// DM 一覧を取得するたびに上書きするので、未読は最後に取得した時点の値。
+  final Map<String, ConversationRef> _conversations = {};
+
+  @override
+  ConversationRef? conversationOf(String postId) => _conversations[postId];
+
+  @override
+  Future<void> markConversationRead(String conversationId) async {
+    await client.markConversationRead(conversationId);
+    // ⚠ 手元も既読へ倒す。倒さないと、同じ DM を開くたびに呼び直す。
+    _conversations.updateAll(
+      (_, ref) => ref.id == conversationId
+          ? ConversationRef(id: ref.id, unread: false)
+          : ref,
+    );
+  }
+
+  @override
+  Future<void> deleteConversation(String conversationId) async {
+    await client.deleteConversation(conversationId);
+    _conversations.removeWhere((_, ref) => ref.id == conversationId);
+  }
+
   @override
   Future<TimelineResponse> getTimeline(
     TimelineType type, {
@@ -440,6 +470,12 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         sinceId: query?.sinceId,
         limit: query?.limit,
       );
+      for (final c in result.conversations) {
+        _conversations[c.lastStatusId] = ConversationRef(
+          id: c.id,
+          unread: c.unread,
+        );
+      }
       final converted = _safeConvert(
         result.statuses,
         (s) => s.toCapsicum(host, adminRoleIds: _adminRoleIds),

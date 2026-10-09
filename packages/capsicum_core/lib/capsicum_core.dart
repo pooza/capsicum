@@ -52,6 +52,7 @@ export 'src/social/interfaces/channel_support.dart';
 export 'src/social/interfaces/chat_support.dart';
 export 'src/social/interfaces/clip_support.dart';
 export 'src/social/interfaces/collections_support.dart';
+export 'src/social/interfaces/conversation_support.dart';
 export 'src/social/interfaces/custom_emoji_support.dart';
 export 'src/social/interfaces/draft_support.dart';
 export 'src/social/interfaces/drive_support.dart';
