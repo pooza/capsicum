@@ -22,6 +22,7 @@ import '../../service/account_storage.dart';
 import '../../url_helper.dart';
 import '../../util/exception_scrub.dart';
 import '../../util/login_error.dart';
+import '../../util/web_auth_presenter.dart';
 import '../util/launch_url_toast.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/content_parser.dart';
@@ -793,10 +794,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           );
         } else {
           // iOS: ASWebAuthenticationSession でカスタムスキームが確実に戻る。
-          resultUrl = await FlutterWebAuth2.authenticate(
-            url: startResult.authorizationUrl.toString(),
-            callbackUrlScheme: AppConstants.callbackUrlScheme,
-            options: const FlutterWebAuth2Options(preferEphemeral: true),
+          // ⚠ **閉じかけのシートが片づくのを待って開く (#1260)。**キャンセル直後の
+          // 自動のやり直し（下の silent retry）は、同じ瞬間にここへ来る。
+          resultUrl = await openWebAuthWhenPresenterReady(
+            () => FlutterWebAuth2.authenticate(
+              url: startResult.authorizationUrl.toString(),
+              callbackUrlScheme: AppConstants.callbackUrlScheme,
+              options: const FlutterWebAuth2Options(preferEphemeral: true),
+            ),
+            beforeRetry: (attempt) {
+              _logLoginStep(
+                'authenticate.presenter_busy_retry',
+                data: {'attempt': attempt},
+              );
+              _throwIfAttemptSuperseded();
+            },
           );
         }
         authenticateReturned = true;
@@ -1050,6 +1062,25 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           'login.silent_retry.end',
           data: {'completed': _loginCompleted},
         );
+        return;
+      }
+
+      // 待っても認証シートを開けなかった (#1260)。⚠ **手入力のフォールバックへ
+      // 進めない** —— ブラウザを開いていないので、貼るコードを利用者が持って
+      // いるはずがない。🔴 以前はここを素通りして、キャンセルしただけの人に
+      // 「認可コードを貼ってください」と出していた。
+      if (isWebAuthPresenterBusy(e)) {
+        Sentry.captureException(
+          scrubException(e),
+          stackTrace: st,
+          withScope: (scope) {
+            scope.setTag('login.failure_kind', 'presenter_busy');
+            scope.setTag('login.backend', widget.backendType.name);
+          },
+        );
+        if (mounted) {
+          setState(() => _error = 'ログイン画面を開けませんでした。もう一度お試しください。');
+        }
         return;
       }
 
