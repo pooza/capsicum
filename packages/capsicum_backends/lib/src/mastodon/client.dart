@@ -8,6 +8,18 @@ import 'package:http_parser/http_parser.dart';
 import '../network_timeouts.dart';
 import '../rate_limit_interceptor.dart';
 
+/// `GET /api/v2/notifications` が、束ねた通知の形（Map）を返さなかった (#1251)。
+///
+/// 応答は 200 なので [DioException] にはならない。アダプターはこれを「v2 が
+/// 無い」と同じに扱い、v1 へ落とす。
+class MastodonGroupedNotificationsUnsupported implements Exception {
+  const MastodonGroupedNotificationsUnsupported();
+
+  @override
+  String toString() =>
+      'MastodonGroupedNotificationsUnsupported: response is not a map';
+}
+
 /// Link ヘッダの rel="next" から offset を取り出す（offset ページング、#802）。
 /// Collections API 用。次ページが無い / Link が無い / 解析不能なら null。
 /// テスト可能なようトップレベルに切り出す。
@@ -675,6 +687,7 @@ class MastodonClient {
     int? limit,
     List<String> excludeTypes = const [],
     List<String> supportedTypes = const [],
+    List<SkippedPost>? skipped,
   }) async {
     final response = await dio.get(
       '/api/v1/notifications',
@@ -690,25 +703,13 @@ class MastodonClient {
     // 壊れた通知だけ skip する（タイムライン側の _safeConvert と同じ方針）。
     // Mastodon 4.6 の collection (#741) など新フィールドを非準拠サーバーが
     // 非整形で返したときに通知一覧が丸ごと空になるのを防ぐ。
-    final notifications = <MastodonNotification>[];
-    for (final e in response.data as List) {
-      try {
-        notifications.add(
-          MastodonNotification.fromJson(e as Map<String, dynamic>),
-        );
-      } catch (err) {
-        // ⚠ 生の `$err` を出さない (#1035-B3)。FormatException は source
-        // （＝生 JSON の断片＝投稿本文）を、NoSuchMethodError は receiver の
-        // toString を含む。`developer.log` は Sentry breadcrumb にはならないが、
-        // Linux の `~/.local/share/capsicum/logs/` や logcat / Console.app に
-        // 残る。アダプタ側の `_safeConvert` (#1027-A5) と同じ形に揃える。
-        developer.log(
-          'skipping malformed notification: ${describeConversionFailure(err)}',
-          name: 'capsicum',
-        );
-      }
-    }
-    return notifications;
+    // ⚠ 読み飛ばしの本体は [_parseEach]（v2 と同じヘルパー・#1251）。
+    return _parseEach(
+      response.data,
+      MastodonNotification.fromJson,
+      'notification',
+      skipped: skipped,
+    );
   }
 
   /// GET /api/v2/notifications — 束ねられた通知 (#1048)。
@@ -730,6 +731,7 @@ class MastodonClient {
     int? limit,
     List<String> excludeTypes = const [],
     List<String> supportedTypes = const [],
+    List<SkippedPost>? skipped,
   }) async {
     final response = await dio.get(
       '/api/v2/notifications',
@@ -746,12 +748,21 @@ class MastodonClient {
     // 通知一覧が丸ごとエラーになる。⚠ 投げられるのは `TypeError` 等で
     // `DioException` ではないので、アダプタの v1 への切り替えにも入らない。
     // v1 の [getNotifications] と同じく、壊れた要素だけ読み飛ばす。
-    final data = response.data as Map<String, dynamic>;
+    //
+    // ⚠ **200 で Map 以外が返ることがある** (#1251)。v2 のパスに v1 の形（配列）を
+    // 返す互換サーバー等。`as Map` で受けると `TypeError` になり、アダプタの
+    // v1 への切り替え（`DioException` を見ている）に入らないまま通知が出ない。
+    final data = response.data;
+    if (data is! Map<String, dynamic>) {
+      throw const MastodonGroupedNotificationsUnsupported();
+    }
     final rawGroups = data['notification_groups'];
     final notificationGroups = _parseEach(
       rawGroups,
       MastodonNotificationGroup.fromJson,
       'notification group',
+      skipped: skipped,
+      idKey: 'group_key',
     );
     // ⚠⚠ **1 つも読めないページは、空のページとして返さない。**呼び出し側は
     // 空を「通知が無い / ここで終わり」と読むので、サーバーがグループを返して
@@ -767,11 +778,13 @@ class MastodonClient {
         data['accounts'],
         MastodonAccount.fromJson,
         'grouped notification account',
+        skipped: skipped,
       ),
       statuses: _parseEach(
         data['statuses'],
         MastodonStatus.fromJson,
         'grouped notification status',
+        skipped: skipped,
       ),
       notificationGroups: notificationGroups,
     );
@@ -779,21 +792,37 @@ class MastodonClient {
 
   /// [raw] の各要素を [fromJson] で読み、読めない要素だけ飛ばす (#1236)。
   ///
-  /// ⚠ 生の例外を出さない（#1035-B3・[getNotifications] の説明）。
+  /// ⚠ 生の例外を出さない（#1035-B3）。FormatException は source（＝生 JSON の
+  /// 断片＝投稿本文）を、NoSuchMethodError は receiver の toString を含む。
+  /// `developer.log` は Sentry breadcrumb にはならないが、Linux の
+  /// `~/.local/share/capsicum/logs/` や logcat / Console.app に残る。
+  ///
+  /// [skipped] を渡すと、飛ばした要素をそこへ積む (#1251)。⚠ **開発ログだけに
+  /// 残すと Sentry に届かない。**アダプター層で落ちたぶん（`_safeConvert`）は
+  /// `skipped_in_batch` つきで出るので、同じ「読めない通知」でも層によって
+  /// 見えたり見えなかったりしていた。呼び出し側が応答の `skippedPosts` へ
+  /// 合流させる。[idKey] は要素の id を引くキー（グループは `group_key`）。
   List<T> _parseEach<T>(
     Object? raw,
     T Function(Map<String, dynamic>) fromJson,
-    String what,
-  ) {
+    String what, {
+    List<SkippedPost>? skipped,
+    String idKey = 'id',
+  }) {
     if (raw is! List) return const [];
     final out = <T>[];
     for (final e in raw) {
       try {
         out.add(fromJson(e as Map<String, dynamic>));
       } catch (err) {
-        developer.log(
-          'skipping malformed $what: ${describeConversionFailure(err)}',
-          name: 'capsicum',
+        final reason = describeConversionFailure(err);
+        developer.log('skipping malformed $what: $reason', name: 'capsicum');
+        skipped?.add(
+          SkippedPost(
+            // ⚠ id が読めない要素もある（要素が Map ですらない等）。
+            id: e is Map ? (e[idKey]?.toString() ?? '?') : '?',
+            error: '$what: $reason',
+          ),
         );
       }
     }

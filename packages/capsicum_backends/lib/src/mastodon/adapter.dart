@@ -1154,14 +1154,22 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         final status = e.response?.statusCode;
         if (status != 404 && status != 400 && status != 501) rethrow;
         _groupingUnsupported = true;
+      } on MastodonGroupedNotificationsUnsupported {
+        // ⚠ 200 で束ねた形（Map）以外が返った (#1251)。v2 のパスに別の形を返す
+        // 互換サーバーで、「v2 が無い」と同じ扱いにする。
+        _groupingUnsupported = true;
       }
     }
+    // クライアント層（fromJson）で読めなかった要素 (#1251)。アダプター層の
+    // `_safeConvert` が落としたぶんと合わせて返し、Sentry まで届ける。
+    final unreadable = <SkippedPost>[];
     final notifications = await client.getNotifications(
       maxId: query?.maxId,
       sinceId: query?.sinceId,
       limit: query?.limit,
       excludeTypes: excludeTypes,
       supportedTypes: mastodonSupportedNotificationTypes,
+      skipped: unreadable,
     );
     final converted = _safeConvert(
       notifications,
@@ -1172,7 +1180,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       notifications: converted.results,
       rawCount: converted.rawCount,
       rawLastId: converted.rawLastId,
-      skippedPosts: converted.skipped,
+      skippedPosts: [...unreadable, ...converted.skipped],
     );
   }
 
@@ -1180,15 +1188,27 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     TimelineQuery? query,
     required List<String> excludeTypes,
   }) async {
+    // クライアント層で読めなかった要素（グループ / アカウント / 投稿）(#1251)。
+    final unreadable = <SkippedPost>[];
     final grouped = await client.getGroupedNotifications(
       maxId: query?.maxId,
       sinceId: query?.sinceId,
       limit: query?.limit,
       excludeTypes: excludeTypes,
       supportedTypes: mastodonSupportedNotificationTypes,
+      skipped: unreadable,
     );
     final accounts = {for (final a in grouped.accounts) a.id: a};
     final statuses = {for (final st in grouped.statuses) st.id: st};
+    // ⚠ **参照先だけ欠けたグループは、黙って痩せる** (#1251)。`accounts[]` の
+    // 1 件が読めないと顔ぶれから無言で外れ、`statuses[]` の 1 件が読めないと
+    // 投稿なしの通知になる。グループ自体は出す（落とすより情報が残る）が、
+    // 痩せたことは記録する。
+    final thinned = <SkippedPost>[
+      for (final g in grouped.notificationGroups)
+        if (_missingReferences(g, accounts, statuses) case final missing?)
+          SkippedPost(id: g.groupKey, error: missing),
+    ];
     final converted = _safeConvert(
       grouped.notificationGroups,
       (g) => g.toCapsicum(
@@ -1206,11 +1226,28 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       notifications: converted.results,
       rawCount: converted.rawCount,
       rawLastId: converted.rawLastId,
-      skippedPosts: converted.skipped,
+      skippedPosts: [...unreadable, ...thinned, ...converted.skipped],
       // ⚠⚠ **グループ数と limit を比べてはいけない**理由は
       // [NotificationResponse.hasMore] の doc が正本。
       hasMore: grouped.notificationGroups.isNotEmpty,
     );
+  }
+
+  /// [group] が指しているのに応答に無いアカウント / 投稿があれば、その説明を返す
+  /// (#1251)。揃っていれば null。⚠ id は載せない（件数だけ）。
+  static String? _missingReferences(
+    MastodonNotificationGroup group,
+    Map<String, MastodonAccount> accounts,
+    Map<String, MastodonStatus> statuses,
+  ) {
+    final missingAccounts = group.sampleAccountIds
+        .where((id) => !accounts.containsKey(id))
+        .length;
+    final statusId = group.statusId;
+    final missingStatus = statusId != null && !statuses.containsKey(statusId);
+    if (missingAccounts == 0 && !missingStatus) return null;
+    return 'notification group shown with missing references: '
+        'accounts=$missingAccounts status=${missingStatus ? 1 : 0}';
   }
 
   @override

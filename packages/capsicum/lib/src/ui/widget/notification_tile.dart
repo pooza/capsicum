@@ -11,10 +11,10 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../service/tco_resolver.dart';
-import '../../url_helper.dart';
 import '../util/deck_navigation.dart';
 import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
+import '../util/launch_url_toast.dart';
 import '../util/moderation_notification_text.dart';
 import '../util/notification_detail_text.dart';
 import '../util/notification_group_text.dart';
@@ -143,7 +143,10 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
       );
       return;
     }
-    await launchUrlSafely(Uri.parse(url));
+    // ⚠ **開けなかったことも伝える** (#1251)。`launchUrlSafely` の裸呼び出しは
+    // 失敗を黙って捨てるので、タップが効かないのと区別できない。
+    if (!context.mounted) return;
+    await launchUrlOrToast(context, Uri.parse(url));
   }
 
   /// 実績一覧を開く (#918)。実績は自分のものしか通知されないので、対象は
@@ -206,7 +209,7 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
           // 関係の切断・モデレーション警告 (#1084): 対応する画面が capsicum に
           // 無いので、WebUI の「詳細を確認」と同じページをブラウザで開く。
           : moderationUri != null
-          ? () => launchUrlSafely(moderationUri)
+          ? () => unawaited(launchUrlOrToast(context, moderationUri))
           : null,
       onLongPress: notification.post != null
           ? () => _showActionMenu(context)

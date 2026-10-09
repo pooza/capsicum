@@ -32,11 +32,20 @@ class NotificationResponse {
   /// （最終ページの次に空の 1 回が走るのは許容する）。
   final bool? hasMore;
 
+  /// 種別の絞り込みを、サーバーではなく手元で掛けたページか (#1251)。
+  ///
+  /// サーバーが除外の指定を断った（古い Misskey は新しい種別を知らない）回に
+  /// 立つ。⚠ **このページは `notifications` が `rawCount` より大きく減りうる**
+  /// —— 20 件取って数件しか残らないページが続くので、呼び出し側は追加読み込みを
+  /// 連打しないよう間を置く。
+  final bool filteredLocally;
+
   const NotificationResponse({
     required this.notifications,
     required this.rawCount,
     this.rawLastId,
     this.skippedPosts = const [],
     this.hasMore,
+    this.filteredLocally = false,
   });
 }

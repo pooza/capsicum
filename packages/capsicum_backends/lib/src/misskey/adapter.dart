@@ -99,6 +99,33 @@ class MisskeyCapabilities extends AdapterCapabilities {
   PostLengthRule get postLengthRule => PostLengthRule.codePoints;
 }
 
+/// 400 の本文が「`excludeTypes` に知らない種別が入っていた」を指しているか
+/// (#1251)。
+///
+/// Misskey は引数の検証に落ちると
+/// `{error: {code: 'INVALID_PARAM', info: {param: '#/properties/excludeTypes/items/enum', …}}}`
+/// を返す（`endpoint-base.ts`）。古い版は新しい通知種別を enum に持たないので、
+/// 除外に入れるとこれが返る。
+///
+/// - `INVALID_PARAM` で `param` が `excludeTypes` を指している → true
+/// - `INVALID_PARAM` だが `param` が別の引数 → false（別の原因）
+/// - `code` が別のもの → false
+/// - ⚠ **本文から読み取れないときは true**（`info` を返さないフォーク向け。
+///   読み取れないからと false にすると、そのサーバーでは通知が出なくなる ——
+///   広く読むほうの最悪は「絞り込みが手元処理になる」で、狭く読むほうの最悪は
+///   「通知が出ない」）
+bool misskeyRejectedExcludeTypes(Object? body) {
+  final error = body is Map ? body['error'] : null;
+  if (error is! Map) return true;
+  final code = error['code'];
+  if (code is! String) return true;
+  if (code != 'INVALID_PARAM') return false;
+  final info = error['info'];
+  final param = info is Map ? info['param'] : null;
+  if (param is! String) return true;
+  return param.contains('excludeTypes');
+}
+
 class MisskeyAdapter extends DecentralizedBackendAdapter
     with
         AchievementSupport,
@@ -1171,9 +1198,21 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         // 非グループを試してまた 400 になっていた ＝ **通知が出ず、除外を外しても
         // グループ化が戻らない**。除外を外して同じ経路をもう一度試す（絞り込みは
         // 下で手元に倒す）。⚠ 版では分岐しない（対応バージョン方針）。
-        if (status == 400 && sentExclude.isNotEmpty) {
+        //
+        // ⚠ **400 なら何でも、とは読まない** (#1251)。別の原因の 400 でこの覚えが
+        // 立つと、アダプターの寿命のあいだ絞り込みが手元処理に倒れる（グループ
+        // 経路ではグループ化も無効になる）。本文で絞る（[misskeyRejectedExcludeTypes]）。
+        if (status == 400 &&
+            sentExclude.isNotEmpty &&
+            misskeyRejectedExcludeTypes(e.response?.data)) {
           _rejectedExcludeKey = excludeKey;
           sentExclude = const [];
+          // ⚠ 記録に残す。どのサーバーで手元の絞り込みに倒れているかが、これが
+          // 無いと分からない（`host` はログの文脈で分かるので載せない）。
+          developer.log(
+            'misskey rejected notification excludeTypes; filtering locally',
+            name: 'capsicum',
+          );
           continue;
         }
         // ⚠ エンドポイントが無いサーバーでは通知が丸ごと出なくなるので、必ず
@@ -1212,6 +1251,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       // 「同じノートへの 20 件のリアクション」は limit 20 に対して 1 件で返る。
       // `rawCount >= limit` で切ると**そこで読み止まる**。
       hasMore: grouped ? notifications.isNotEmpty : null,
+      filteredLocally: sentExclude.isEmpty && excluded.isNotEmpty,
     );
   }
 
