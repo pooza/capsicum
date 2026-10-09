@@ -117,6 +117,28 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('設定への入口がある (#1242)', (tester) async {
+    // ⚠ アイコンが 6 つになったので、狭幅で潰れていないことも一緒に見る。
+    await pumpDeck(tester, size: const Size(375, 700));
+
+    expect(find.byTooltip('設定'), findsOneWidget);
+    expect(find.byTooltip('タブ表示に切り替え'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('⚠ 題は見えないが、読み上げには画面名を渡している (#1242)', (tester) async {
+    final handle = tester.ensureSemantics();
+    await pumpDeck(tester);
+
+    expect(find.text('デッキ'), findsNothing, reason: '見える題は置かない');
+    expect(
+      find.bySemanticsLabel('デッキ'),
+      findsOneWidget,
+      reason: '題を外すと、デッキへ入ったときに何も読み上げられない',
+    );
+    handle.dispose();
+  });
+
   group('検索 (#1173・決定済み事項 7-3)', () {
     testWidgets('⚠⚠ 全画面ではなく、フォーカス中のカラムの右隣にカラムとして開く', (tester) async {
       final container = await pumpDeck(tester, columnIds: const ['a', 'b']);

@@ -256,4 +256,21 @@ void main() {
       expect(dot, findsNothing);
     });
   });
+
+  group('見出しの大きさ (#1242)', () {
+    testWidgets('アイコンは 20dp・ボタンの枠は 36dp（AppBar より一回り小さい）', (tester) async {
+      await pump(tester, const TimelineTab(TimelineType.home));
+      await tester.pump();
+
+      final close = find.widgetWithIcon(IconButton, Icons.close);
+      expect(close, findsOneWidget);
+      expect(tester.getSize(close), const Size.square(36));
+      expect(
+        tester.getSize(
+          find.descendant(of: close, matching: find.byIcon(Icons.close)),
+        ),
+        const Size.square(20),
+      );
+    });
+  });
 }

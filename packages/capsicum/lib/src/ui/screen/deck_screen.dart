@@ -453,6 +453,15 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
         automaticallyImplyLeading: false,
         // ⚠ **題は置かない (#1242・2026-10-06 pooza)。**デッキ画面であることは
         // 見れば分かるので、自己紹介のような題で幅を使わない。
+        //
+        // ⚠ **見えない題は置く。**`AppBar` は `title` を画面名として読み上げに
+        // 渡すので、題を外すとデッキへ入ったときに何も読まれなくなる。見た目を
+        // 変えずに画面名だけ渡す（`namesRoute`）。
+        title: Semantics(
+          namesRoute: true,
+          label: 'デッキ',
+          child: const SizedBox.shrink(),
+        ),
         actions: [
           // ⚠ アイコンが増えたので、タブ UI と同じコンパクト枠に詰める (#1173)。
           // 既定の 48px タップ枠のままだと、狭幅（375px）にアイコン 5 つが収まらない。
@@ -517,6 +526,17 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
                     // `mounted` と `hasClients` を見る。
                     if (id != null) _revealAndFocus(id);
                   },
+                ),
+                // 設定 (#1242・2026-10-09 pooza)。デッキには設定への入口が無く、
+                // 開くにはタブ UI へ戻る必要があった。⚠ **メニューに畳まない**
+                // （1 タップで開けることを取った。アイコンは 6 つになるが、36px
+                // の枠なら 375px に収まる）。
+                // ⚠ 設定は全画面で開く（カラムにしない）。アカウントに依らない
+                // 画面なので、スコープを持ち込む必要も無い。
+                IconButton(
+                  icon: const Icon(Icons.settings_outlined),
+                  tooltip: '設定',
+                  onPressed: () => context.push('/settings'),
                 ),
                 // タブ表示への切り替え (#1153)。タブ UI の AppBar の「デッキ表示に
                 // 切り替え」と対になる。⚠ **`go('/home')` は下に残っている

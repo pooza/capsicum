@@ -296,98 +296,120 @@ class _DeckColumnHeader extends ConsumerWidget {
     // 行から外し、ツールチップで見られるようにした。
     // ⚠ 色だけに意味を持たせない（同じサーバーの別アカウントは同じ色になる）。
     // アカウントの区別はアイコンと表示名が担う。
+    //
+    // ⚠ **帯は 40dp**（#1242・2026-10-07 pooza「アイコンが大きい。AppBar より
+    // 気持ち小さくてもいい」「padding が大きいのかも」）。以前は 48dp で、アイコン
+    // 24dp・ボタンの枠 40dp・上下 4dp だった。アイコンを 20dp、枠を 36dp、上下を
+    // 2dp にしてある。⚠ **枠をこれ以上詰めない**（押せる範囲も一緒に狭くなる）。
     return ColoredBox(
       color: background,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(8, 4, 4, 4),
-        child: Row(
-          children: [
-            Expanded(
-              child: Tooltip(
-                message: acct,
-                child: Row(
-                  children: [
-                    if (user != null) ...[
-                      UserAvatar(user: user, size: 24, compact: true),
-                      const SizedBox(width: 8),
-                    ],
-                    Flexible(
-                      child: Text(
-                        label,
-                        style: titleStyle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+      child: IconButtonTheme(
+        data: IconButtonThemeData(
+          style: IconButton.styleFrom(
+            iconSize: kDeckColumnHeaderIconSize,
+            minimumSize: const Size.square(kDeckColumnHeaderButtonSize),
+            fixedSize: const Size.square(kDeckColumnHeaderButtonSize),
+            padding: EdgeInsets.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 2, 4, 2),
+          child: Row(
+            children: [
+              Expanded(
+                child: Tooltip(
+                  message: acct,
+                  child: Row(
+                    children: [
+                      if (user != null) ...[
+                        UserAvatar(user: user, size: 24, compact: true),
+                        const SizedBox(width: 8),
+                      ],
+                      Flexible(
+                        child: Text(
+                          label,
+                          style: titleStyle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                    ),
-                    Text(' · ', style: subStyle),
-                    Flexible(
-                      child: user != null
-                          ? EmojiText(
-                              user.displayName ?? user.username,
-                              emojis: user.emojis,
-                              fallbackHost: user.host,
-                              style: subStyle,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            )
-                          : Text(
-                              acct,
-                              style: subStyle,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                    ),
-                  ],
+                      Text(' · ', style: subStyle),
+                      Flexible(
+                        child: user != null
+                            ? EmojiText(
+                                user.displayName ?? user.username,
+                                emojis: user.emojis,
+                                fallbackHost: user.host,
+                                style: subStyle,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              )
+                            : Text(
+                                acct,
+                                style: subStyle,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-            // ⚠ 出す条件はタブ UI の AppBar と共有する (#793)。DM には出さない。
-            if (streamIndicatorTimelineType(column.tab) case final type?
-                when account == ref.watch(currentAccountKeyProvider))
-              // カラムのスコープの中なので、別アカウントのカラムでもここは一致する。
-              _DeckStreamDot(
-                key: ValueKey(type),
-                timelineKey: (account: account, type: type),
-              ),
-            // 新規投稿の入口（案 A・#1172・決定済み事項 10）。⚠ **このカラムの
-            // アカウント**で開く。誰として投稿するかは、すぐ左の見出し（アイコン・
-            // 表示名・サーバーの色・#1152）が見せている。
-            // ⚠ カラムの種類ごとの初期状態（タグ・チャンネル）は
-            // [deckComposeExtra] が持つ。
-            // ⚠ `user != null` ＝ カラムのスコープの割り当てが生きている（本体の
-            // `_body` と同じ判定）。誰のアカウントか出せない状態で投稿の入口を
-            // 出すと、別のアカウントとして操作が外に出る。
-            if (user != null && canComposeFromColumn(column.tab, adapter))
+              // ⚠ 出す条件はタブ UI の AppBar と共有する (#793)。DM には出さない。
+              if (streamIndicatorTimelineType(column.tab) case final type?
+                  when account == ref.watch(currentAccountKeyProvider))
+                // カラムのスコープの中なので、別アカウントのカラムでもここは一致する。
+                _DeckStreamDot(
+                  key: ValueKey(type),
+                  timelineKey: (account: account, type: type),
+                ),
+              // 新規投稿の入口（案 A・#1172・決定済み事項 10）。⚠ **このカラムの
+              // アカウント**で開く。誰として投稿するかは、すぐ左の見出し（アイコン・
+              // 表示名・サーバーの色・#1152）が見せている。
+              // ⚠ カラムの種類ごとの初期状態（タグ・チャンネル）は
+              // [deckComposeExtra] が持つ。
+              // ⚠ `user != null` ＝ カラムのスコープの割り当てが生きている（本体の
+              // `_body` と同じ判定）。誰のアカウントか出せない状態で投稿の入口を
+              // 出すと、別のアカウントとして操作が外に出る。
+              if (user != null && canComposeFromColumn(column.tab, adapter))
+                IconButton(
+                  icon: Icon(Icons.edit_outlined, color: foreground),
+                  tooltip: 'このアカウントで投稿',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => openDeckCompose(context, ref, column),
+                ),
+              // 通知の種別の絞り込み (#1042)。⚠ **通知のカラムにだけ出す。**
+              // ⚠⚠ **設定はアプリ全体で 1 つ**なので、カラムごとに別の絞り込みには
+              // ならない（カラムごとに持たせるのは #1042 の要求に無く、カラムの
+              // 保存形式から作り直しになる）。同じ絞り込みが全カラムに効く。
+              // ⚠ 色は引数で渡す。`IconTheme` で囲んでも M3 の IconButton には
+              // 効かない（`NotificationFilterButton.color` の doc が正本）。
+              if (column.tab is NotificationsTab ||
+                  column.tab is AllNotificationsTab)
+                NotificationFilterButton(color: foreground),
+              // カラムから開いたカラムは使い捨てなので、ヘッダーで閉じられるようにする
+              // (#1148)。⚠ 列から外すだけで購読は止めない（autoDispose に任せる・#1093）。
               IconButton(
-                icon: Icon(Icons.edit_outlined, color: foreground),
-                tooltip: 'このアカウントで投稿',
+                icon: Icon(Icons.close, color: foreground),
+                tooltip: 'カラムを閉じる',
                 visualDensity: VisualDensity.compact,
-                onPressed: () => openDeckCompose(context, ref, column),
+                onPressed: () =>
+                    ref.read(deckColumnsProvider.notifier).remove(column.id),
               ),
-            // 通知の種別の絞り込み (#1042)。⚠ **通知のカラムにだけ出す。**
-            // ⚠⚠ **設定はアプリ全体で 1 つ**なので、カラムごとに別の絞り込みには
-            // ならない（カラムごとに持たせるのは #1042 の要求に無く、カラムの
-            // 保存形式から作り直しになる）。同じ絞り込みが全カラムに効く。
-            // ⚠ 色は引数で渡す。`IconTheme` で囲んでも M3 の IconButton には
-            // 効かない（`NotificationFilterButton.color` の doc が正本）。
-            if (column.tab is NotificationsTab ||
-                column.tab is AllNotificationsTab)
-              NotificationFilterButton(color: foreground),
-            // カラムから開いたカラムは使い捨てなので、ヘッダーで閉じられるようにする
-            // (#1148)。⚠ 列から外すだけで購読は止めない（autoDispose に任せる・#1093）。
-            IconButton(
-              icon: Icon(Icons.close, color: foreground),
-              tooltip: 'カラムを閉じる',
-              visualDensity: VisualDensity.compact,
-              onPressed: () =>
-                  ref.read(deckColumnsProvider.notifier).remove(column.id),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 }
+
+/// カラム見出しのアイコンの大きさ (#1242)。AppBar（24dp）より一回り小さい。
+const double kDeckColumnHeaderIconSize = 20;
+
+/// カラム見出しのボタンの枠 (#1242)。⚠ 押せる範囲なので、これ以上詰めない。
+const double kDeckColumnHeaderButtonSize = 36;
 
 /// id から取り直す中身 (#1148)。開いた時点の中身（[seed]）があればそのまま描く。
 ///
