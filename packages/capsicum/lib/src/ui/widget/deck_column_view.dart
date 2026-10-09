@@ -35,6 +35,7 @@ import 'home_menu.dart' show tabLabel;
 import 'notification_filter_button.dart';
 import 'post_tile.dart';
 import 'retry_error_view.dart';
+import 'scroll_jump_buttons.dart';
 import 'user_avatar.dart';
 
 /// デッキのカラム 1 本 (#1092)。ヘッダーと中身。
@@ -612,12 +613,22 @@ class _DeckTimelineBodyState extends ConsumerState<_DeckTimelineBody> {
     super.dispose();
   }
 
+  void _jumpTo(double offset) {
+    if (!_scrollController.hasClients) return;
+    _scrollController.animateTo(
+      offset,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+    );
+  }
+
   void _onScroll() {
     final position = _scrollController.position;
     final nearTop = isNearTop(position);
-    if (widget.setNearTop != null && nearTop != _nearTop) {
-      _nearTop = nearTop;
-      widget.setNearTop!(ref, nearTop);
+    if (nearTop != _nearTop) {
+      // ⚠ △ の出し分けに使うので、`setNearTop` が無いカラムでも追う (#1244)。
+      setState(() => _nearTop = nearTop);
+      widget.setNearTop?.call(ref, nearTop);
     }
     if (shouldLoadMore(position)) {
       // 継続エラー時は自動再試行を止める (#678)。回復は引っ張って更新。
@@ -665,11 +676,29 @@ class _DeckTimelineBodyState extends ConsumerState<_DeckTimelineBody> {
                 child: Text('新着 ${state.pendingCount} 件'),
               ),
             Expanded(
-              child: RefreshIndicator(
-                // メニュー / `Ctrl+R` からも同じ弧を起こす (#1157 / #1170)。
-                key: _refreshKey,
-                onRefresh: () => widget.refresh(ref),
-                child: list,
+              child: Stack(
+                children: [
+                  RefreshIndicator(
+                    // メニュー / `Ctrl+R` からも同じ弧を起こす (#1157 / #1170)。
+                    key: _refreshKey,
+                    onRefresh: () => widget.refresh(ref),
+                    child: list,
+                  ),
+                  // 先頭・末尾へ飛ぶ (#1244・2026-10-09 pooza)。⚠ **カラムごと**に
+                  // 置く（画面に 1 組だけ置いてフォーカス中のカラムへ効かせる案は
+                  // 採っていない —— どのカラムが動くかが押すまで分からない）。
+                  if (state.posts.isNotEmpty)
+                    Positioned(
+                      right: 8,
+                      bottom: 8,
+                      child: ScrollJumpButtons(
+                        showTop: _nearTop == false,
+                        onTop: () => _jumpTo(0),
+                        onBottom: () =>
+                            _jumpTo(_scrollController.position.maxScrollExtent),
+                      ),
+                    ),
+                ],
               ),
             ),
           ],

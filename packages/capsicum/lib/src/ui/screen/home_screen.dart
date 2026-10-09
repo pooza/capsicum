@@ -42,6 +42,7 @@ import '../widget/livecure_filter_button.dart';
 import '../widget/notification_bell_button.dart';
 import '../widget/notification_filter_button.dart';
 import '../widget/post_tile.dart';
+import '../widget/scroll_jump_buttons.dart';
 import '../widget/server_badge.dart';
 import '../widget/simple_post_bar.dart';
 import '../widget/tab_management_sheet.dart';
@@ -73,6 +74,48 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   String? _pendingListRestore;
   Timer? _throttleTimer;
   bool _showScrollTop = false;
+
+  /// いま描いている一覧の行数 (#1244)。▽ の行き先と、ボタンを出すかの判定に使う。
+  /// 一覧を描いていない（読み込み中・失敗・通知タブ等）あいだは 0。
+  int _listItemCount = 0;
+
+  /// 一覧を組むときに行数を控える。⚠ build の最中なので、ボタンの出し分けが
+  /// 変わるとき（0 ⇔ 1 以上）だけ、フレームの後で描き直す。
+  int _noteListItemCount(int count) {
+    _listBuiltThisBuild = true;
+    final wasEmpty = _listItemCount == 0;
+    _listItemCount = count;
+    if (wasEmpty != (count == 0)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() {});
+      });
+    }
+    return count;
+  }
+
+  /// この build() で一覧を組んだか。組まなかった回（通知タブ・読み込み中・失敗）
+  /// は [_listItemCount] を 0 へ戻す。
+  bool _listBuiltThisBuild = false;
+
+  /// タブの中身を組む前に呼ぶ。⚠ 一覧を組まない分岐が多い（専用ビューのタブ・
+  /// 読み込み中・失敗・空）ので、分岐ごとではなく「組まなかったら戻す」で見る。
+  void _resetListItemCountUnlessBuilt() {
+    _listBuiltThisBuild = false;
+    if (_listItemCount == 0) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _listBuiltThisBuild || _listItemCount == 0) return;
+      setState(() => _listItemCount = 0);
+    });
+  }
+
+  void _scrollToIndex(int index) {
+    if (!_itemScrollController.isAttached || index < 0) return;
+    _itemScrollController.scrollTo(
+      index: index,
+      duration: const Duration(milliseconds: 300),
+    );
+  }
+
   // pull-to-refresh 実行中だけ true。文脈切替（アカウント/タブ切替）の reload と
   // 区別し、リフレッシュ中は現データを残す（リスト消失を防ぐ）ため (#758)。
   bool _pullRefreshing = false;
@@ -805,19 +848,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         ),
       ),
       drawer: wideLayout ? null : drawerWidget,
-      floatingActionButton: _showScrollTop
+      // 先頭・末尾へ飛ぶ (#1244)。⚠ ▽ は 2.1 で足した（デッキのカラムと揃える）。
+      // ⚠ **一覧が無いあいだは出さない。**通知タブ等（この画面の一覧ではない
+      // もの）や読み込み中は、飛ぶ先が無い。
+      floatingActionButton: _listItemCount > 0
           ? Padding(
               padding: const EdgeInsets.only(bottom: 56),
-              child: FloatingActionButton.small(
-                onPressed: () {
-                  if (!_itemScrollController.isAttached) return;
-                  _itemScrollController.scrollTo(
-                    index: 0,
-                    duration: const Duration(milliseconds: 300),
-                  );
-                },
-                tooltip: '先頭へ',
-                child: const Icon(Icons.arrow_upward),
+              child: ScrollJumpButtons(
+                showTop: _showScrollTop,
+                onTop: () => _scrollToIndex(0),
+                // 読み込み済みの末尾へ。そこが続きを読みに行く位置なので、
+                // 飛んだ先で追加読み込みが起きる。
+                onBottom: () => _scrollToIndex(_listItemCount - 1),
               ),
             )
           : null,
@@ -884,6 +926,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     String? selectedHashtag,
     AsyncValue<dynamic> timeline,
   ) {
+    _resetListItemCountUnlessBuilt();
     // アカウント別背景画像は、タブとして表示される全タブに一律で回す（#832）。
     // 通知/お知らせ/チャンネルのビューはいずれも不透明背景を持たない（透過の
     // Column/list）ので、背景 Container で包めば画像が透ける。空表示の
@@ -1044,8 +1087,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   child: ScrollablePositionedList.separated(
                     itemScrollController: _itemScrollController,
                     itemPositionsListener: _itemPositionsListener,
-                    itemCount:
-                        tlState.posts.length + (tlState.isLoadingMore ? 1 : 0),
+                    itemCount: _noteListItemCount(
+                      tlState.posts.length + (tlState.isLoadingMore ? 1 : 0),
+                    ),
                     separatorBuilder: (_, _) => const Divider(height: 1),
                     itemBuilder: (context, index) {
                       if (index >= tlState.posts.length) {
