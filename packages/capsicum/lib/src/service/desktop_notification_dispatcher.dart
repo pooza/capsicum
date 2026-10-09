@@ -22,6 +22,7 @@ import 'bounded_key_set.dart';
 import 'delivered_push_cleaner.dart';
 import 'notification_dedup_channel.dart';
 import 'notification_tag.dart';
+import 'stream_connect_failure_reporter.dart';
 
 /// デスクトップ 3 OS (macOS / Linux / Windows) で、ログイン中の各アカウントの
 /// WebSocket 通知ストリーミング ([NotificationStreamSupport]) を OS ローカル
@@ -105,7 +106,8 @@ class DesktopNotificationDispatcher {
       _subs[account.key] = (adapter as NotificationStreamSupport)
           .streamNotifications(
             onParseError: _onStreamParseError,
-            onStreamError: _onStreamConnectError,
+            onStreamError: (e, st) =>
+                _onStreamConnectError(e, st, account.key.host),
             onReconnectExhausted: _onStreamReconnectExhausted,
           )
           .listen(
@@ -257,7 +259,7 @@ class DesktopNotificationDispatcher {
     );
   }
 
-  void _onStreamConnectError(Object e, StackTrace st) {
+  void _onStreamConnectError(Object e, StackTrace st, String host) {
     Sentry.addBreadcrumb(
       Breadcrumb(
         category: 'push.desktop.stream.connect',
@@ -277,16 +279,14 @@ class DesktopNotificationDispatcher {
       return;
     }
     _lastConnectCapture = now;
-    Sentry.captureException(
-      scrubException(e),
+    // ⚠ ここの間引き（連続失敗のあとは間隔を広げる・#1249）を通ったぶんだけを、
+    // アプリ全体の報告役へ渡す (#1246)。タイムライン側の失敗と同じ瞬間なら
+    // 1 件にまとまる。
+    streamConnectFailureReporter.report(
+      category: 'push.desktop.stream.connect',
+      error: e,
       stackTrace: st,
-      withScope: (scope) {
-        scope.setTag('push.desktop.stream.connect', 'failed');
-        scope.fingerprint = [
-          'push.desktop.stream.connect',
-          e.runtimeType.toString(),
-        ];
-      },
+      host: host,
     );
   }
 

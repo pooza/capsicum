@@ -7,6 +7,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import '../../main.dart' show appLaunchStopwatch;
 import '../model/account.dart';
 import '../model/account_key.dart';
+import '../service/stream_connect_failure_reporter.dart';
 import '../service/timeline_cache.dart';
 import '../util/conversion_skip_report.dart';
 import '../util/exception_scrub.dart';
@@ -967,7 +968,6 @@ mixin TimelineLiveIngest<Arg>
   // listener 経路の例外 (_applyWordFilter 異常等) が出ても抑制しないように、
   // _lastListenCapture を独立に持つ。
   DateTime? _lastParseCapture;
-  DateTime? _lastConnectCapture;
   DateTime? _lastListenCapture;
   // 切断 (onDone) の closeCode 観測用バケット (#788)。性質が違うので
   // connect/parse/listen とは独立に持つ。
@@ -1021,22 +1021,14 @@ mixin TimelineLiveIngest<Arg>
             message: e.runtimeType.toString(),
           ),
         );
-        final now = DateTime.now();
-        if (_lastConnectCapture != null &&
-            now.difference(_lastConnectCapture!) < _captureThrottle) {
-          return;
-        }
-        _lastConnectCapture = now;
-        Sentry.captureException(
-          scrubException(e),
+        // ⚠ **イベントにするかは、アプリ全体で 1 つの報告役が決める** (#1246)。
+        // 購読ごとに間引いていた頃は、回線が 1 回切れるたびに接続の本数だけ
+        // error が飛んでいた（デッキで 4 ホスト 7 本なら 7 件）。
+        streamConnectFailureReporter.report(
+          category: 'timeline.stream.connect',
+          error: e,
           stackTrace: st,
-          withScope: (scope) {
-            scope.setTag('timeline.stream.connect', 'failed');
-            scope.fingerprint = [
-              'timeline.stream.connect',
-              e.runtimeType.toString(),
-            ];
-          },
+          host: host,
         );
       },
       onReconnectExhausted: () {
