@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../util/oauth_scope_error.dart';
 import '../util/pages_error.dart';
+import '../util/scroll_thresholds.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/oauth_scope_error_view.dart';
 import '../widget/page_card.dart';
@@ -74,8 +75,7 @@ class _PagesScreenState extends ConsumerState<PagesScreen> {
   }
 
   void _onScroll() {
-    if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 600) {
+    if (shouldLoadMore(_scrollController.position)) {
       _loadMoreLiked();
     }
   }

@@ -644,7 +644,24 @@ mixin TimelineLiveIngest<Arg>
   /// ⚠ **前の文脈（アカウント / 種別）の新着を [flushPending] 経由で次の TL へ
   /// 漏らさないため**、一覧そのものより先に捨てる。接続状態・ギャップ補完の
   /// 起点・切断カウンタも同じ理由で build() が持ち越さない。
-  void resetLiveIngestState() {
+  ///
+  /// 返すのは、この build() の**ライブ購読の世代**。初回接続のとき
+  /// [startLiveStreamIfEnabled] へ渡す。
+  int resetLiveIngestState() {
+    _resetLiveIngestFields();
+    return ++_liveGeneration;
+  }
+
+  /// ライブ購読の世代 (#1235)。build() の開始と破棄のたびに進む。
+  ///
+  /// ⚠⚠ **`ref.onDispose` は await の途中でも走る。**初回取得を待っている間に
+  /// autoDispose されると、後始末（[disposeLiveStream]）は先に済んでしまい、
+  /// await 明けに張った購読を**閉じる者がいない**。再接続を諦めない作りなので
+  /// 生き続け、live になるたびにギャップ補完の REST も打つ。世代が動いていたら
+  /// 張らない。
+  int _liveGeneration = 0;
+
+  void _resetLiveIngestFields() {
     _pendingPosts.clear();
     _isNearTop = true;
     _streamConnectionState = StreamConnectionState.connecting;
@@ -860,7 +877,15 @@ mixin TimelineLiveIngest<Arg>
   }
 
   /// 取得が終わったあとの初回接続。OFF のときは張らない (#854)。
-  void startLiveStreamIfEnabled(StreamSupport adapter) {
+  ///
+  /// [generation] は build() の先頭で [resetLiveIngestState] が返した値。
+  /// ⚠ **取得を待っている間に破棄 / 作り直しがあったら張らない** (#1235)。
+  /// `ref.read` も破棄後は投げるので、世代の照合を先に置く。
+  void startLiveStreamIfEnabled(
+    StreamSupport adapter, {
+    required int generation,
+  }) {
+    if (generation != _liveGeneration) return;
     if (!ref.read(streamingEnabledProvider)) return;
     _startStreaming(adapter);
   }
@@ -868,6 +893,8 @@ mixin TimelineLiveIngest<Arg>
   /// 破棄時の後始末。⚠ **このインスタンスのキーの購読だけ**を閉じる
   /// (#1089 / #1090)。同じアカウントの別のカラムの購読には触らない。
   void disposeLiveStream(StreamSupport adapter) {
+    // この build() が待っている初回接続を無効にする (#1235)。
+    _liveGeneration++;
     _streamSubscription?.cancel();
     adapter.disposeStream(liveStreamKey);
   }
@@ -1442,7 +1469,13 @@ class TimelineNotifier
     // フェッチ・スクロール位置リセット・_pendingPosts.clear 等）を誘発し、可視の
     // スクロールジャンプを起こす (#904)。切替の張り/解除は build() 側の listen。
     if (adapter is StreamSupport) {
-      startLiveStreamIfEnabled(adapter as StreamSupport);
+      // ⚠ 本線は直前の `_isStale` で「破棄 / 世代進み / 文脈変更」を落として
+      // あるので、ここまで来た時点の世代をそのまま渡す（タグ / リスト /
+      // チャンネルは `_isStale` を持たないので、build() の先頭で控えた値を渡す）。
+      startLiveStreamIfEnabled(
+        adapter as StreamSupport,
+        generation: _liveGeneration,
+      );
     }
 
     fetchSw?.stop();

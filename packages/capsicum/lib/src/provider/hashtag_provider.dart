@@ -99,7 +99,7 @@ class HashtagTimelineNotifier
   @override
   Future<TimelineState> build(HashtagTimelineKey key) async {
     // 前のタグ / アカウントの新着を、このカラムへ漏らさない (#1098)。
-    resetLiveIngestState();
+    final liveGeneration = resetLiveIngestState();
     // 🔴 `Account` 全体ではなく、解決したアダプタだけを見る（本線の
     // `TimelineNotifier.build` と同じ理由。全体を見ると、復帰のたびに読み直す）。
     final adapter = ref.watch(
@@ -133,7 +133,10 @@ class HashtagTimelineNotifier
     );
     seedLiveIngestAnchor(result.posts);
     if (adapter is StreamSupport) {
-      startLiveStreamIfEnabled(adapter as StreamSupport);
+      startLiveStreamIfEnabled(
+        adapter as StreamSupport,
+        generation: liveGeneration,
+      );
     }
     return result.copyWith(
       contextKey: contextKey,

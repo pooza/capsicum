@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/hashtag_provider.dart';
 import '../../provider/preferences_provider.dart';
+import '../util/scroll_thresholds.dart';
 import '../widget/post_tile.dart';
 import '../widget/retry_error_view.dart';
 import '../widget/simple_post_bar.dart';
@@ -38,7 +39,19 @@ class _HashtagTimelineScreenState extends ConsumerState<HashtagTimelineScreen> {
     super.initState();
     _scrollController.addListener(_onScroll);
     _loadFollowState();
+    // ⚠ 開いた時点で「先頭に居る」と名乗る (#1235)。理由は
+    // `list_timeline_screen.dart` の同じ箇所。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ref.read(hashtagTimelineProvider(_key).notifier).setNearTop(true);
+      }
+    });
   }
+
+  final _nearTopTracker = NearTopTracker();
+
+  HashtagTimelineKey get _key =>
+      (account: ref.read(currentAccountKeyProvider), spec: widget.hashtag);
 
   @override
   void dispose() {
@@ -108,14 +121,17 @@ class _HashtagTimelineScreenState extends ConsumerState<HashtagTimelineScreen> {
   }
 
   void _onScroll() {
-    if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 600) {
+    // 読み進めている間は、ライブの新着を未表示バッファへ退避させる (#1235)。
+    // ⚠ 流量の多いタグ（実況）ほど、退避しないと読んでいる行が動き続ける。
+    _nearTopTracker.update(
+      _scrollController.position,
+      (nearTop) =>
+          ref.read(hashtagTimelineProvider(_key).notifier).setNearTop(nearTop),
+    );
+    if (shouldLoadMore(_scrollController.position)) {
       // 継続エラー時 (loadMoreError) は自動再試行を止める (#678)。回復は
       // pull-to-refresh で build() 再実行時。
-      final HashtagTimelineKey key = (
-        account: ref.read(currentAccountKeyProvider),
-        spec: widget.hashtag,
-      );
+      final key = _key;
       final state = ref.read(hashtagTimelineProvider(key)).valueOrNull;
       if (state != null && state.loadMoreError != null) return;
       ref.read(hashtagTimelineProvider(key).notifier).loadMore();

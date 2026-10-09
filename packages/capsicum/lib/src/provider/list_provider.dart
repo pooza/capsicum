@@ -65,7 +65,7 @@ class ListTimelineNotifier
   @override
   Future<TimelineState> build(ListTimelineKey key) async {
     // 前のリスト / アカウントの新着を、このカラムへ漏らさない (#1098)。
-    resetLiveIngestState();
+    final liveGeneration = resetLiveIngestState();
     // 🔴 `Account` 全体ではなく、解決したアダプタだけを見る（本線の
     // `TimelineNotifier.build` と同じ理由。全体を見ると、復帰のたびに読み直す）。
     final adapter = ref.watch(
@@ -96,7 +96,10 @@ class ListTimelineNotifier
     );
     seedLiveIngestAnchor(result.posts);
     if (adapter is StreamSupport) {
-      startLiveStreamIfEnabled(adapter as StreamSupport);
+      startLiveStreamIfEnabled(
+        adapter as StreamSupport,
+        generation: liveGeneration,
+      );
     }
     return result.copyWith(
       contextKey: contextKey,

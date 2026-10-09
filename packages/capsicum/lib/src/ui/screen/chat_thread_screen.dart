@@ -12,6 +12,7 @@ import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
 import '../util/op_error.dart';
 import '../util/relative_time.dart';
+import '../util/scroll_thresholds.dart';
 import '../widget/chat_compose_row.dart';
 import '../widget/chat_reaction_bar.dart';
 import '../widget/content_parser.dart';
@@ -59,8 +60,7 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
   }
 
   void _onScroll() {
-    if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 600) {
+    if (shouldLoadMore(_scrollController.position)) {
       ref.read(chatThreadProvider(widget.otherUser.id).notifier).loadMore();
     }
   }

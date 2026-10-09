@@ -34,6 +34,7 @@ import '../util/deck_navigation.dart';
 import '../util/keyboard_list_navigation.dart';
 import '../util/mouse_drag_scroll_behavior.dart';
 import '../util/offline_account_display.dart';
+import '../util/stream_connection_display.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/emoji_text.dart';
 import '../widget/home_menu.dart';
@@ -285,10 +286,33 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
     // Notify timeline notifier whether the user is near the top so that
     // streaming posts can be queued while scrolling (#296).
-    if (selectedHashtag == null && selectedList == null) {
+    //
+    // ⚠ **タグ / リストを選んでいるときも伝える** (#1235)。#1098 でこの 2 系統
+    // にもライブ購読が載ったが、ここが本線だけだったので、読み進めている最中も
+    // 新着が先頭へ直接入っていた（流量の多い実況タグほど頻発する）。
+    final nearTop = minIndex <= 1;
+    if (selectedHashtag != null) {
+      ref
+          .read(
+            hashtagTimelineProvider((
+              account: accountKey,
+              spec: selectedHashtag,
+            )).notifier,
+          )
+          .setNearTop(nearTop);
+    } else if (selectedList != null) {
+      ref
+          .read(
+            listTimelineProvider((
+              account: accountKey,
+              id: selectedList.id,
+            )).notifier,
+          )
+          .setNearTop(nearTop);
+    } else {
       ref
           .read(timelineProvider(ref.read(currentTimelineKeyProvider)).notifier)
-          .setNearTop(minIndex <= 1);
+          .setNearTop(nearTop);
     }
 
     // Save marker (home timeline only, debounced).
@@ -1869,19 +1893,8 @@ class _StreamStatusIndicatorState
     // 値だけを正直に出すため）。
     final st = (async.isLoading || stale) ? null : async.valueOrNull;
     final conn = st?.streamConnectionState ?? StreamConnectionState.connecting;
-    final (Color baseColor, String label) = switch (conn) {
-      StreamConnectionState.live => (Colors.green, 'ライブ更新中'),
-      StreamConnectionState.connecting => (Colors.amber, '接続中…'),
-      StreamConnectionState.disconnected => (Colors.orange, '切断 — 再接続中'),
-      // #784 で give-up しなくなったため「停止」ではなく「不安定・再試行中」。
-      StreamConnectionState.exhausted => (
-        Theme.of(context).colorScheme.error,
-        '接続が不安定 — 再試行中',
-      ),
-      // ユーザーが設定でライブ更新を OFF にしている (#854)。エラーではないので
-      // 灰色で「オフ」と正直に出す。pull-to-refresh / タブ再選択で更新できる。
-      StreamConnectionState.disabled => (Colors.grey, 'ライブ更新オフ'),
-    };
+    // 色とラベルの正本は `stream_connection_display.dart`（デッキと共有・#1235）。
+    final (color: baseColor, :label) = streamConnectionDisplay(context, conn);
     // 速い再接続でも見えるよう、flash 中は live でも切断色を見せる (#782)。
     final color = (_flashing && conn == StreamConnectionState.live)
         ? Colors.orange
@@ -1893,7 +1906,7 @@ class _StreamStatusIndicatorState
     final showDetail = ref.watch(showStreamReconnectDetailProvider);
     final count = st?.reconnectCount ?? 0;
     final lastAt = st?.lastDisconnectedAt;
-    final tooltip = StringBuffer('ライブ更新: $label');
+    final tooltip = StringBuffer(streamConnectionTooltip(label));
     if (showDetail && count > 0) {
       tooltip.write('\n再接続 $count 回');
       if (lastAt != null) tooltip.write('・直近切断 ${_fmtTime(lastAt)}');

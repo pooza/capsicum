@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../service/sentry_op_failure.dart';
 import '../util/deck_navigation.dart';
+import '../util/scroll_thresholds.dart';
 import '../widget/account_multi_select_sheet.dart';
 import '../widget/bottom_safe_area.dart';
 
@@ -61,8 +62,7 @@ class _CollectionsListScreenState extends ConsumerState<CollectionsListScreen> {
   }
 
   void _onScroll() {
-    if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 600) {
+    if (shouldLoadMore(_scrollController.position)) {
       _loadMore();
     }
   }

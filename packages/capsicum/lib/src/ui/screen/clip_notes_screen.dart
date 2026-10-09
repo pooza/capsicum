@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/clip_provider.dart';
+import '../util/scroll_thresholds.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/post_tile.dart';
 import '../widget/retry_error_view.dart';
@@ -33,8 +34,7 @@ class _ClipNotesScreenState extends ConsumerState<ClipNotesScreen> {
   }
 
   void _onScroll() {
-    if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 600) {
+    if (shouldLoadMore(_scrollController.position)) {
       ref.read(clipNotesProvider(widget.clipId).notifier).loadMore();
     }
   }

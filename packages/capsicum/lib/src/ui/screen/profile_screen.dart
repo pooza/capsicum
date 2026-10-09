@@ -23,6 +23,7 @@ import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
 import '../util/provider_scope_carrier.dart';
 import '../util/relative_time.dart';
+import '../util/scroll_thresholds.dart';
 import '../util/visible_timeline.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/content_parser.dart';
@@ -192,8 +193,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   }
 
   void _onScroll() {
-    if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 600) {
+    if (shouldLoadMore(_scrollController.position)) {
       final tabs = _visibleTabs;
       if (_tabController.index >= tabs.length) return;
       switch (tabs[_tabController.index]) {

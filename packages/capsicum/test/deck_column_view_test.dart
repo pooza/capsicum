@@ -238,9 +238,10 @@ void main() {
   });
 
   group('接続ドット (#793)', () {
-    const labels = {'ライブ更新中', '接続中…', '切断 — 再接続中', '接続が不安定 — 再試行中', 'ライブ更新オフ'};
+    // ⚠ ツールチップは「ライブ更新: 」を前置きする (#1235)。色とラベルの正本は
+    // `stream_connection_display.dart` で、タブ UI と同じ文面になる。
     final dot = find.byWidgetPredicate(
-      (w) => w is Tooltip && labels.contains(w.message),
+      (w) => w is Tooltip && (w.message ?? '').startsWith('ライブ更新: '),
     );
 
     testWidgets('本線のカラムには出す', (tester) async {

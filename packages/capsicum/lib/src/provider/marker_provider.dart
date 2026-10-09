@@ -15,14 +15,23 @@ final markersProvider = FutureProvider.autoDispose<MarkerSet?>((ref) async {
 }, dependencies: [currentAdapterProvider]);
 
 /// Debounced marker saver for home timeline.
+///
+/// ⚠ **アダプターは [save] の時点で掴む** (#1235)。`dispose` から呼ばれる
+/// `_flush` で `ref.read` すると、スコープごと破棄される経路（デッキのカラムを
+/// 閉じたとき等）で「破棄済みの container を読んだ」と投げ、最後の 1 回の保存を
+/// 落とす。
 class HomeMarkerSaver {
   final Ref _ref;
   Timer? _timer;
   String? _pendingId;
+  MarkerSupport? _pendingAdapter;
 
   HomeMarkerSaver(this._ref);
 
   void save(String lastReadId) {
+    final adapter = _ref.read(currentAdapterProvider);
+    if (adapter is! MarkerSupport) return;
+    _pendingAdapter = adapter as MarkerSupport;
     _pendingId = lastReadId;
     _timer?.cancel();
     _timer = Timer(const Duration(seconds: 5), _flush);
@@ -30,14 +39,13 @@ class HomeMarkerSaver {
 
   void _flush() {
     final id = _pendingId;
-    if (id == null) return;
+    final adapter = _pendingAdapter;
+    if (id == null || adapter == null) return;
     _pendingId = null;
-    final adapter = _ref.read(currentAdapterProvider);
-    if (adapter is MarkerSupport) {
-      (adapter as MarkerSupport).saveHomeMarker(id).catchError((Object e) {
-        debugLogException('Failed to save home marker', e);
-      });
-    }
+    _pendingAdapter = null;
+    adapter.saveHomeMarker(id).catchError((Object e) {
+      debugLogException('Failed to save home marker', e);
+    });
   }
 
   void dispose() {
@@ -47,14 +55,20 @@ class HomeMarkerSaver {
 }
 
 /// Debounced marker saver for notifications.
+///
+/// ⚠ アダプターを [save] の時点で掴む理由は [HomeMarkerSaver] と同じ (#1235)。
 class NotificationMarkerSaver {
   final Ref _ref;
   Timer? _timer;
   String? _pendingId;
+  MarkerSupport? _pendingAdapter;
 
   NotificationMarkerSaver(this._ref);
 
   void save(String lastReadId) {
+    final adapter = _ref.read(currentAdapterProvider);
+    if (adapter is! MarkerSupport) return;
+    _pendingAdapter = adapter as MarkerSupport;
     _pendingId = lastReadId;
     _timer?.cancel();
     _timer = Timer(const Duration(seconds: 5), _flush);
@@ -62,16 +76,13 @@ class NotificationMarkerSaver {
 
   void _flush() {
     final id = _pendingId;
-    if (id == null) return;
+    final adapter = _pendingAdapter;
+    if (id == null || adapter == null) return;
     _pendingId = null;
-    final adapter = _ref.read(currentAdapterProvider);
-    if (adapter is MarkerSupport) {
-      (adapter as MarkerSupport).saveNotificationMarker(id).catchError((
-        Object e,
-      ) {
-        debugLogException('Failed to save notification marker', e);
-      });
-    }
+    _pendingAdapter = null;
+    adapter.saveNotificationMarker(id).catchError((Object e) {
+      debugLogException('Failed to save notification marker', e);
+    });
   }
 
   void dispose() {

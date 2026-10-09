@@ -146,7 +146,7 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
     _scrollController.removeListener(_syncFocusToVisibleColumn);
     _scrollController.dispose();
     for (final container in _containers.values) {
-      container.dispose();
+      ProviderScopeLeases.disposeWhenReleased(container);
     }
     super.dispose();
   }
@@ -340,9 +340,12 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
       _containerAccounts.remove(k);
     }
     // ⚠ このフレームではまだ古いコンテナを読むウィジェットが居るので、後で捨てる。
+    // ⚠⚠ **`used` が数えているのはカラムと簡易投稿バーだけ。**push 先（投稿
+    // フォーム・メディアビューア）に渡したコンテナは [ProviderScopeLeases] が
+    // 数えており、貸している間は破棄を先送りする (#1235)。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       for (final container in doomed) {
-        container.dispose();
+        ProviderScopeLeases.disposeWhenReleased(container);
       }
     });
   }

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../provider/list_provider.dart';
+import '../util/scroll_thresholds.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/post_tile.dart';
 import '../widget/retry_error_view.dart';
@@ -23,11 +24,23 @@ class ListTimelineScreen extends ConsumerStatefulWidget {
 
 class _ListTimelineScreenState extends ConsumerState<ListTimelineScreen> {
   final _scrollController = ScrollController();
+  final _nearTopTracker = NearTopTracker();
+
+  ListTimelineKey get _key =>
+      (account: ref.read(currentAccountKeyProvider), id: widget.listId);
 
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    // ⚠ **開いた時点で「先頭に居る」と名乗る** (#1235)。同じ TL を見ている別の
+    // 画面（デッキのカラム等）が離れた位置のまま残していると、こちらが先頭に
+    // 居ても新着が未表示バッファへ入り続ける。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ref.read(listTimelineProvider(_key).notifier).setNearTop(true);
+      }
+    });
   }
 
   @override
@@ -38,13 +51,15 @@ class _ListTimelineScreenState extends ConsumerState<ListTimelineScreen> {
   }
 
   void _onScroll() {
-    if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 600) {
-      final ListTimelineKey key = (
-        account: ref.read(currentAccountKeyProvider),
-        id: widget.listId,
-      );
-      ref.read(listTimelineProvider(key).notifier).loadMore();
+    // 読み進めている間は、ライブの新着を未表示バッファへ退避させる (#1235)。
+    // 先頭へ戻ると notifier がまとめて取り込む。
+    _nearTopTracker.update(
+      _scrollController.position,
+      (nearTop) =>
+          ref.read(listTimelineProvider(_key).notifier).setNearTop(nearTop),
+    );
+    if (shouldLoadMore(_scrollController.position)) {
+      ref.read(listTimelineProvider(_key).notifier).loadMore();
     }
   }
 

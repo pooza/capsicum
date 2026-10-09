@@ -9,6 +9,7 @@ import '../../provider/drive_provider.dart';
 import '../../util/text_length.dart';
 import '../util/drive_error.dart';
 import '../util/op_error.dart';
+import '../util/scroll_thresholds.dart';
 import '../util/text_length_counter.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/desktop_menu_model.dart';
@@ -73,8 +74,7 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
   }
 
   void _onScroll() {
-    if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 600) {
+    if (shouldLoadMore(_scrollController.position)) {
       ref.read(driveContentsProvider(_currentFolderId).notifier).loadMore();
     }
   }

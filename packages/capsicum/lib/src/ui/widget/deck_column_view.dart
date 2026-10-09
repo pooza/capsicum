@@ -11,6 +11,7 @@ import '../../provider/list_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
+import '../../util/exception_scrub.dart';
 import '../screen/achievement_screen.dart';
 import '../screen/announcement_screen.dart';
 import '../screen/chat_thread_screen.dart';
@@ -27,6 +28,8 @@ import '../screen/unified_notification_screen.dart';
 import '../screen/user_list_screen.dart';
 import '../util/deck_compose.dart';
 import '../util/deck_tabs.dart';
+import '../util/scroll_thresholds.dart';
+import '../util/stream_connection_display.dart';
 import 'emoji_text.dart';
 import 'home_menu.dart' show tabLabel;
 import 'notification_filter_button.dart';
@@ -422,8 +425,16 @@ class _DeckSeededBodyState<T extends Object>
         : widget.fetch(adapter);
     // ⚠ 再試行では setState の中で作るので、FutureBuilder が購読するのは次の
     // フレーム。それより先に失敗すると「未処理の例外」として上がる（テストで
-    // 実際に踏んだ）。エラーは FutureBuilder が拾うので、ここでは握っておくだけ。
-    future.ignore();
+    // 実際に踏んだ）。画面への反映は FutureBuilder が拾うので、ここでは握る。
+    //
+    // ⚠ **握るだけにしない** (#1235)。利用者には「読み込みに失敗しました」と
+    // 再試行の口が出るが、何で失敗したかがどこにも残らないと、回線断と恒常的な
+    // 失敗（API の形が変わった等）を後から区別できない。
+    future.then<void>(
+      (_) {},
+      onError: (Object e, StackTrace st) =>
+          debugLogException('Deck column load error (${T.toString()})', e, st),
+    );
     _future = future;
   }
 
@@ -461,15 +472,9 @@ class _DeckStreamDot extends ConsumerWidget {
         ? StreamConnectionState.connecting
         : async.valueOrNull?.streamConnectionState ??
               StreamConnectionState.connecting;
-    final (Color color, String label) = switch (state) {
-      StreamConnectionState.live => (Colors.green, 'ライブ更新中'),
-      StreamConnectionState.connecting => (Colors.amber, '接続中…'),
-      StreamConnectionState.disconnected => (Colors.orange, '切断 — 再接続中'),
-      StreamConnectionState.exhausted => (Colors.red, '接続が不安定 — 再試行中'),
-      StreamConnectionState.disabled => (Colors.grey, 'ライブ更新オフ'),
-    };
+    final (:color, :label) = streamConnectionDisplay(context, state);
     return Tooltip(
-      message: label,
+      message: streamConnectionTooltip(label),
       child: Padding(
         padding: const EdgeInsets.all(8),
         child: Container(
@@ -552,7 +557,15 @@ class _DeckTimelineBodyState extends ConsumerState<_DeckTimelineBody> {
     // Riverpod の assert に当たる（`desktopTimelineRefreshProvider` の登録も
     // 同じ理由で post-frame にしてある）。
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _refreshRegistry?.register(widget.columnId, _showRefresh);
+      if (!mounted) return;
+      _refreshRegistry?.register(widget.columnId, _showRefresh);
+      // ⚠ **開いた時点で「先頭に居る」と名乗る** (#1235)。`_isNearTop` は
+      // notifier に 1 つしか無く、同じ TL を見ている別の画面（重複カラム・下に
+      // 残るタブ UI）と共有している。名乗らないと、前に見ていた側が離れた位置の
+      // まま残した値を引き継ぎ、先頭に居るのに新着が溜まり続ける。
+      // ⚠ 「最後に現れたか、閾値をまたいだ側の値が効く」が、共有したままで
+      // 取れるいちばん素直な規則（いま操作している画面がたいてい勝つ）。
+      widget.setNearTop?.call(ref, true);
     });
   }
 
@@ -579,12 +592,12 @@ class _DeckTimelineBodyState extends ConsumerState<_DeckTimelineBody> {
 
   void _onScroll() {
     final position = _scrollController.position;
-    final nearTop = position.pixels <= 200;
+    final nearTop = isNearTop(position);
     if (widget.setNearTop != null && nearTop != _nearTop) {
       _nearTop = nearTop;
       widget.setNearTop!(ref, nearTop);
     }
-    if (position.pixels >= position.maxScrollExtent - 600) {
+    if (shouldLoadMore(position)) {
       // 継続エラー時は自動再試行を止める (#678)。回復は引っ張って更新。
       final state = ref.read(widget.timeline).valueOrNull;
       if (state == null || state.loadMoreError != null) return;
