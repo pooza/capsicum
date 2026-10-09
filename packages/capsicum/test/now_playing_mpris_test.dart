@@ -78,7 +78,7 @@ void main() {
       expect(info, isNull);
     });
 
-    test('mpris:artUrl は http(s) のときだけ artworkUrl に入る', () {
+    test('mpris:artUrl は http(s) と file のとき artworkUrl に入る (#1133)', () {
       final http = nowPlayingFromMprisMetadata({
         'xesam:title': 'Song',
         'mpris:artUrl': 'https://i.scdn.co/image/abc',
@@ -89,7 +89,14 @@ void main() {
         'xesam:title': 'Song',
         'mpris:artUrl': 'file:///tmp/cover.png',
       }, sourceAppName: 'VLC');
-      expect(file!.artworkUrl, isNull); // file:// は拾わない
+      // ⚠ v1.33 では添付しなかったので捨てていた。添付するようになったので拾う。
+      expect(file!.artworkUrl, Uri.parse('file:///tmp/cover.png'));
+
+      final other = nowPlayingFromMprisMetadata({
+        'xesam:title': 'Song',
+        'mpris:artUrl': 'data:image/png;base64,AAAA',
+      }, sourceAppName: 'X');
+      expect(other!.artworkUrl, isNull, reason: 'ほかのスキームは拾わない');
     });
 
     test('想定外の型（数値等）の title は無視して null 扱い', () {

@@ -1177,7 +1177,11 @@ class MulukhiyaService {
   /// [prefer] は URL 優先プロバイダ (#681、`apple_music` / `spotify`)。モロヘイヤ
   /// 側のプロバイダ優先3段連鎖 (`prefer` > `source_app_name` > サーバー既定
   /// `apple_music`) の最上位ヒントとして毎回送る。null なら省略しサーバー既定に倒す。
-  Future<Uri?> resolveNowPlaying({
+  ///
+  /// 返すのは共有 URL と、ジャケット画像の URL (#1133・モロヘイヤ 5.39.0〜の
+  /// `artwork_url`)。⚠ **`artwork_url` は古いモロヘイヤでは返らない**（キーごと
+  /// 無い）ので、無ければ null のまま。共有 URL が取れなかった回は全体が null。
+  Future<({Uri url, Uri? artworkUrl})?> resolveNowPlaying({
     required String accessToken,
     required String title,
     String? artist,
@@ -1197,23 +1201,30 @@ class MulukhiyaService {
         },
         options: _bearerOptions(accessToken),
       );
-      final url = response.data is Map<String, dynamic>
-          ? (response.data as Map<String, dynamic>)['url']
-          : null;
-      if (url is! String || url.isEmpty) return null;
-      final uri = Uri.tryParse(url);
+      final data = response.data;
+      if (data is! Map<String, dynamic>) return null;
       // 投稿本文に挿入されるため、http/https 以外（javascript: / data: 等）は
       // 弾く。モロヘイヤは信頼境界内だが、共有 URL 判定（composeSharedNowPlaying）
       // と同じスキーム規律に揃える。
-      if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
-        return null;
-      }
-      return uri;
+      final uri = _httpUri(data['url']);
+      if (uri == null) return null;
+      // ⚠ ジャケットは取りに行く URL なので、こちらも http/https だけ。
+      return (url: uri, artworkUrl: _httpUri(data['artwork_url']));
     } on DioException {
       // enrich は任意の上積みなので、未提供・認証失効・サーバ不調・network いずれも
       // null に倒して URL なし整形へフォールバックする（UX を止めない）。
       return null;
     }
+  }
+
+  /// [value] が http / https の URL ならそれを返す。それ以外は null。
+  static Uri? _httpUri(Object? value) {
+    if (value is! String || value.isEmpty) return null;
+    final uri = Uri.tryParse(value);
+    if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
+      return null;
+    }
+    return uri;
   }
 
   /// POST /mulukhiya/api/nowplaying/resolve-url (#729 / mulukhiya #4415)

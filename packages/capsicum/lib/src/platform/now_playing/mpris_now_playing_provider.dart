@@ -133,9 +133,11 @@ NowPlayingInfo? nowPlayingFromMprisMetadata(
     title: title,
     artist: artist,
     album: album,
-    // mpris:artUrl は http(s) のときだけ拾う（file:// ローカルパスは投稿に
-    // 使えない）。v1.33 では添付しないが、モデルにだけ持たせておく。
-    artworkUrl: _httpUri(metadata['mpris:artUrl']),
+    // ジャケット (#1133)。http(s) に加えて **`file://` も拾う** —— ローカルの
+    // プレイヤー（VLC 等）はキャッシュした画像のパスを返す。v1.33 では添付
+    // しなかったので捨てていたが、添付するようになったので拾い直した。
+    // ⚠ 画像かどうか・大きさは、取得する側（`fetchNowPlayingArtwork`）が見る。
+    artworkUrl: _artworkUri(metadata['mpris:artUrl']),
     // MPRIS は文字情報源として扱う（URL 源は Spotify provider が担う）。
     url: null,
   );
@@ -165,9 +167,9 @@ String? _joinArtists(Object? value) {
   return _trimmedString(value);
 }
 
-Uri? _httpUri(Object? value) {
+Uri? _artworkUri(Object? value) {
   if (value is! String) return null;
   final uri = Uri.tryParse(value.trim());
   if (uri == null) return null;
-  return (uri.scheme == 'http' || uri.scheme == 'https') ? uri : null;
+  return const {'http', 'https', 'file'}.contains(uri.scheme) ? uri : null;
 }

@@ -26,6 +26,7 @@ import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../../service/compose_draft_attachment.dart';
 import '../../service/compose_draft_store.dart';
+import '../../service/now_playing_artwork.dart';
 import '../../service/sentry_op_failure.dart';
 import '../../url_helper.dart';
 import '../../util/exception_scrub.dart';
@@ -2807,6 +2808,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       info = await _enrichNowPlayingUrl(info);
       if (!mounted) return;
       _appendToBody(formatNowPlayingFallback(info));
+      // ジャケットを添付する (#1133)。本文を先に入れてから取りに行く（取得を
+      // 待っている間も、何が入るかは見えている）。
+      await _attachNowPlayingArtwork(info);
     } finally {
       if (mounted) setState(() => _insertingNowPlaying = false);
     }
@@ -2881,7 +2885,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     if (title == null || title.trim().isEmpty) {
       return info; // resolve は title 必須。
     }
-    final url = await mulukhiya.resolveNowPlaying(
+    final resolved = await mulukhiya.resolveNowPlaying(
       accessToken: account.userSecret.accessToken,
       title: title,
       artist: info.artist,
@@ -2889,7 +2893,58 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       sourceAppName: info.sourceAppName,
       prefer: ref.read(nowPlayingUrlProviderProvider).apiValue,
     );
-    return url == null ? info : info.copyWith(url: url);
+    if (resolved == null) return info;
+    // ジャケットの URL も一緒に受け取る (#1133)。⚠ **源が自前で持っている
+    // アートワーク（MPRIS 等）を優先する** —— いま鳴っている音源そのものの絵で、
+    // 検索で引いた絵より確か。モロヘイヤのぶんは、源が持っていないときの補い。
+    return info.copyWith(
+      url: resolved.url,
+      artworkUrl: info.artworkUrl ?? resolved.artworkUrl,
+    );
+  }
+
+  /// このフォームで既に添付したナウプレのアートワーク (#1133)。⚠ 「ナウプレを
+  /// 挿入」を続けて押したとき、同じジャケットを 2 枚添付しない。
+  final Set<Uri> _attachedNowPlayingArtwork = {};
+
+  /// ナウプレのアートワーク（ジャケット画像）を添付に足す (#1133)。
+  ///
+  /// ⚠⚠ **目的は「再生中の曲のジャケットを、どの環境でも添付できる」こと**
+  /// （2026-10-09 pooza）。以前は「URL を持つ源には添付しない」と決めていたが、
+  /// それは手段で、補完で URL が付いた回に添付を諦める理由にならない。
+  /// Mastodon は添付のある投稿にプレビューカードを出さないので、同じ絵が 2 枚
+  /// 並ぶこともない。
+  ///
+  /// ⚠ **失敗しても投稿は止めない。**ジャケットは上積みで、取れなければ本文
+  /// だけのナウプレになる（従来と同じ）。
+  ///
+  /// ⚠ リサイズ / 形式変換はしない（決定事項 3）。モロヘイヤが返すのは一辺
+  /// 480px 程度で、添付としてそのまま使える大きさ。
+  Future<void> _attachNowPlayingArtwork(NowPlayingInfo info) async {
+    final uri = info.artworkUrl;
+    if (uri == null || _attachedNowPlayingArtwork.contains(uri)) return;
+    // ⚠ 投票とメディアは同居できない（Mastodon）。自動で足して投稿を失敗させない。
+    if (_pollEnabled) return;
+    final XFile? file;
+    try {
+      file = await fetchNowPlayingArtwork(
+        uri,
+        tempDir: await getTemporaryDirectory(),
+      );
+    } catch (e) {
+      // 契約では null に倒すが、破られても投稿フォームを巻き込まない。
+      debugLogException('nowplaying artwork fetch error', e);
+      return;
+    }
+    if (file == null || !mounted) return;
+    final before = _attachments.length;
+    await _addLocalMedia([file]);
+    if (!mounted || _attachments.length == before) return;
+    _attachedNowPlayingArtwork.add(uri);
+    // 読み上げに何も出ない添付にしない。⚠ 利用者が書いた ALT は上書きしない
+    // （ここで足した直後の 1 枚にだけ入れる）。
+    setState(() => _attachments.last.description = nowPlayingArtworkAlt(info));
+    _scheduleDraftSave();
   }
 
   /// 本文末尾に [snippet] を追記する。直前が改行でなければ改行を 1 つ挟む。
