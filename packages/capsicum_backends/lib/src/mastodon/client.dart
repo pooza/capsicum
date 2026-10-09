@@ -550,9 +550,16 @@ class MastodonClient {
   }
 
   /// GET /api/v1/scheduled_statuses
-  Future<List<ScheduledPost>> getScheduledStatuses() async {
-    final response = await dio.get('/api/v1/scheduled_statuses');
-    return (response.data as List).map((e) {
+  ///
+  /// ⚠ **`limit` を送らないと 20 件で黙って切れる** (#1202)。上限は 40
+  /// （`DEFAULT_STATUSES_LIMIT * 2`）。続きは `Link` ヘッダの `max_id`。
+  Future<({List<ScheduledPost> posts, String? nextMaxId})>
+  getScheduledStatuses({String? maxId, int? limit}) async {
+    final response = await dio.get(
+      '/api/v1/scheduled_statuses',
+      queryParameters: {'max_id': ?maxId, 'limit': ?limit},
+    );
+    final posts = (response.data as List).map((e) {
       final json = e as Map<String, dynamic>;
       final params = json['params'] as Map<String, dynamic>? ?? {};
       return ScheduledPost(
@@ -568,6 +575,7 @@ class MastodonClient {
             [],
       );
     }).toList();
+    return (posts: posts, nextMaxId: _parseLinkNextMaxId(response));
   }
 
   /// DELETE /api/v1/scheduled_statuses/:id
@@ -1093,12 +1101,18 @@ class MastodonClient {
   }
 
   /// GET /api/v2/search
+  ///
+  /// ⚠⚠ **`offset` は `type` を指定したときしか効かない** (#1202)。サーバーの
+  /// `SearchService` が `type` 無しのとき offset を 0 に落とすので、種別を
+  /// 混ぜたまま送ると**同じ 1 ページ目が返り続ける**。
   Future<Map<String, dynamic>> search(
     String query, {
     String? type,
     bool? resolve,
     int? limit,
+    int? offset,
   }) async {
+    assert(offset == null || type != null, 'offset は type と一緒に送る');
     final response = await dio.get(
       '/api/v2/search',
       queryParameters: {
@@ -1106,6 +1120,7 @@ class MastodonClient {
         'type': ?type,
         'resolve': ?resolve,
         'limit': ?limit,
+        'offset': ?offset,
       },
     );
     return response.data as Map<String, dynamic>;
@@ -1186,8 +1201,15 @@ class MastodonClient {
   }
 
   /// GET /api/v1/lists/:id/accounts
+  ///
+  /// ⚠⚠ **`limit=0` を外さない** (#1202)。送らないと 40 人で黙って切れ、
+  /// 41 人目以降が「居ない」ように見える。`0` は「全件」を意味する
+  /// Mastodon 固有の約束（`Lists::AccountsController#unlimited?`）。
   Future<List<MastodonAccount>> getListAccounts(String listId) async {
-    final response = await dio.get('/api/v1/lists/$listId/accounts');
+    final response = await dio.get(
+      '/api/v1/lists/$listId/accounts',
+      queryParameters: {'limit': 0},
+    );
     return (response.data as List)
         .map((e) => MastodonAccount.fromJson(e as Map<String, dynamic>))
         .toList();

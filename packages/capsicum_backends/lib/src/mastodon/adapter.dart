@@ -119,6 +119,8 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         FollowRequestSupport,
         NotificationSupport,
         SearchSupport,
+        // 検索の続き (#1202)。Misskey は続きの口が種別ごとに違うので未対応。
+        SearchPagingSupport,
         CustomEmojiSupport,
         ListSupport,
         HashtagSupport,
@@ -394,8 +396,27 @@ class MastodonAdapter extends DecentralizedBackendAdapter
 
   @override
   Future<List<ScheduledPost>> getScheduledPosts() async {
-    return client.getScheduledStatuses();
+    // ⚠ **全件を読み切る** (#1202)。素の 1 回だと 20 件で黙って切れる。
+    // サーバーは予約投稿の総数を 300 件に制限している
+    // （`ScheduledStatus::TOTAL_LIMIT`）ので、40 件ずつなら 8 回で終わる。
+    // 回数の上限は、`Link` が同じ `max_id` を返し続けた場合の歯止め。
+    final posts = <ScheduledPost>[];
+    String? maxId;
+    for (var page = 0; page < _scheduledMaxPages; page++) {
+      final result = await client.getScheduledStatuses(
+        maxId: maxId,
+        limit: _scheduledPageSize,
+      );
+      posts.addAll(result.posts);
+      final next = result.nextMaxId;
+      if (next == null || next == maxId) break;
+      maxId = next;
+    }
+    return posts;
   }
+
+  static const _scheduledPageSize = 40;
+  static const _scheduledMaxPages = 10;
 
   @override
   Future<void> cancelScheduledPost(String id) async {
@@ -1166,8 +1187,12 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     final data = await client.search(
       query,
       resolve: isUrl ? true : null,
-      limit: 20,
+      limit: searchPageSize,
     );
+    return _searchResultsFrom(data);
+  }
+
+  SearchResults _searchResultsFrom(Map<String, dynamic> data) {
     final accounts = (data['accounts'] as List? ?? [])
         .map((e) => MastodonAccount.fromJson(e as Map<String, dynamic>))
         .map((a) => a.toCapsicum(host, adminRoleIds: _adminRoleIds))
@@ -1180,6 +1205,32 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         .map((e) => (e as Map<String, dynamic>)['name'] as String)
         .toList();
     return SearchResults(users: accounts, posts: statuses, hashtags: hashtags);
+  }
+
+  // SearchPagingSupport
+
+  @override
+  int get searchPageSize => 20;
+
+  @override
+  Future<SearchResults> searchMore(
+    String query,
+    SearchKind kind, {
+    required int offset,
+  }) async {
+    // ⚠ **`resolve` は送らない。**URL の解決は 1 件を返す操作で、続きが無い
+    // （サーバーも offset が正のときは解決結果を混ぜない）。
+    final data = await client.search(
+      query,
+      type: switch (kind) {
+        SearchKind.users => 'accounts',
+        SearchKind.posts => 'statuses',
+        SearchKind.hashtags => 'hashtags',
+      },
+      limit: searchPageSize,
+      offset: offset,
+    );
+    return _searchResultsFrom(data);
   }
 
   @override

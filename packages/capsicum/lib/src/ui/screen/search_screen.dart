@@ -43,6 +43,22 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
   bool _notestockLoading = false;
   String? _notestockNextUrl;
 
+  // サーバー検索の続き (#1202)。
+  //
+  // ⚠ **検索のたびに世代を進める。**続きを待っている間に別の語で検索し直すと、
+  // 古い語の続きが新しい結果の末尾に混ざる。
+  int _searchGeneration = 0;
+  SearchPagingSupport? _pagingAdapter;
+  String _serverQuery = '';
+
+  /// 種別ごとの、サーバーへ送る次の offset。
+  ///
+  /// ⚠ **表示中の件数から出さない。**重複を落としているので、表示件数で送ると
+  /// 落としたぶんだけ同じ行を読み直す。
+  final Map<SearchKind, int> _offsets = {};
+  final Set<SearchKind> _exhausted = {};
+  final Set<SearchKind> _moreLoading = {};
+
   @override
   void initState() {
     super.initState();
@@ -84,6 +100,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
 
     if (query.isEmpty) return;
 
+    final generation = ++_searchGeneration;
     setState(() {
       _error = null;
       _queryType = queryType;
@@ -91,10 +108,20 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
       _notestockResults = [];
       _notestockLoading = queryType == _QueryType.fulltext;
       _serverLoading = true;
+      _pagingAdapter = null;
+      _offsets.clear();
+      _exhausted.clear();
+      _moreLoading.clear();
     });
 
     // サーバー検索を非同期で開始（レスポンスを待たずに結果UIへ遷移）
-    _searchServer(adapter as SearchSupport, queryType, query, rawQuery);
+    _searchServer(
+      adapter as SearchSupport,
+      queryType,
+      query,
+      rawQuery,
+      generation,
+    );
 
     // 全文検索時は notestock も並行して呼び出す
     if (queryType == _QueryType.fulltext) {
@@ -107,21 +134,109 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     _QueryType queryType,
     String query,
     String rawQuery,
+    int generation,
   ) async {
-    try {
-      final results = await adapter.search(
+    final serverQuery =
         queryType == _QueryType.account || queryType == _QueryType.hashtag
-            ? query
-            : rawQuery,
-      );
-      if (mounted) setState(() => _results = results);
+        ? query
+        : rawQuery;
+    try {
+      final results = await adapter.search(serverQuery);
+      if (!mounted || generation != _searchGeneration) return;
+      setState(() {
+        _results = results;
+        // ⚠ **URL の解決には続きが無い**（1 件を引く操作）ので口を出さない。
+        if (adapter is SearchPagingSupport && queryType != _QueryType.url) {
+          final paging = adapter as SearchPagingSupport;
+          _pagingAdapter = paging;
+          _serverQuery = serverQuery;
+          _notePage(SearchKind.users, results.users.length, paging);
+          _notePage(SearchKind.posts, results.posts.length, paging);
+          _notePage(SearchKind.hashtags, results.hashtags.length, paging);
+        }
+      });
     } catch (e) {
       debugLogException('Search error', e);
-      if (mounted) setState(() => _error = '検索に失敗しました');
+      if (mounted && generation == _searchGeneration) {
+        setState(() => _error = '検索に失敗しました');
+      }
     } finally {
-      if (mounted) setState(() => _serverLoading = false);
+      if (mounted && generation == _searchGeneration) {
+        setState(() => _serverLoading = false);
+      }
     }
   }
+
+  /// 1 ページ読んだ結果を、次の offset と終端の判定へ反映する。
+  ///
+  /// ⚠ **サーバーは総数を返さない**ので、1 ページに満たなければ終端とみなす。
+  void _notePage(SearchKind kind, int fetched, SearchPagingSupport paging) {
+    _offsets[kind] = (_offsets[kind] ?? 0) + fetched;
+    if (fetched < paging.searchPageSize) _exhausted.add(kind);
+  }
+
+  bool _hasMore(SearchKind kind) =>
+      _pagingAdapter != null && !_exhausted.contains(kind);
+
+  Future<void> _loadMore(SearchKind kind) async {
+    final paging = _pagingAdapter;
+    final current = _results;
+    if (paging == null || current == null || _moreLoading.contains(kind)) {
+      return;
+    }
+    final generation = _searchGeneration;
+    setState(() => _moreLoading.add(kind));
+    try {
+      final more = await paging.searchMore(
+        _serverQuery,
+        kind,
+        offset: _offsets[kind] ?? 0,
+      );
+      if (!mounted || generation != _searchGeneration) return;
+      final base = _results ?? current;
+      final userIds = {for (final u in base.users) u.id};
+      final postIds = {for (final p in base.posts) p.id};
+      final tags = base.hashtags.toSet();
+      setState(() {
+        _notePage(kind, switch (kind) {
+          SearchKind.users => more.users.length,
+          SearchKind.posts => more.posts.length,
+          SearchKind.hashtags => more.hashtags.length,
+        }, paging);
+        _results = SearchResults(
+          users: [...base.users, ...more.users.where((u) => userIds.add(u.id))],
+          posts: [...base.posts, ...more.posts.where((p) => postIds.add(p.id))],
+          hashtags: [...base.hashtags, ...more.hashtags.where(tags.add)],
+          postSearchUnavailable: base.postSearchUnavailable,
+        );
+      });
+    } catch (e) {
+      debugLogException('Search more error', e);
+      // ⚠ **終端にしない。**失敗で口を消すと、押し直す手段が無くなる。
+      if (mounted && generation == _searchGeneration) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('続きを読み込めませんでした')));
+      }
+    } finally {
+      if (mounted && generation == _searchGeneration) {
+        setState(() => _moreLoading.remove(kind));
+      }
+    }
+  }
+
+  /// 一覧の末尾に置く「もっと読む」。
+  Widget _moreFooter(SearchKind kind) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(12),
+      child: _moreLoading.contains(kind)
+          ? const CircularProgressIndicator()
+          : TextButton(
+              onPressed: () => _loadMore(kind),
+              child: const Text('もっと読む'),
+            ),
+    ),
+  );
 
   Future<void> _searchNotestock(String query, {String? nextUrl}) async {
     final account = ref.read(currentAccountProvider);
@@ -381,10 +496,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     if (users.isEmpty) {
       return const Center(child: Text('アカウントが見つかりませんでした'));
     }
+    final hasMore = _hasMore(SearchKind.users);
     return ListView.separated(
-      itemCount: users.length,
+      itemCount: users.length + (hasMore ? 1 : 0),
       separatorBuilder: (_, _) => const Divider(height: 1),
       itemBuilder: (context, index) {
+        if (index == users.length) return _moreFooter(SearchKind.users);
         final user = users[index];
         return ListTile(
           onTap: () => openProfile(context, user),
@@ -410,10 +527,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     if (hashtags.isEmpty) {
       return const Center(child: Text('ハッシュタグが見つかりませんでした'));
     }
+    final hasMore = _hasMore(SearchKind.hashtags);
     return ListView.separated(
-      itemCount: hashtags.length,
+      itemCount: hashtags.length + (hasMore ? 1 : 0),
       separatorBuilder: (_, _) => const Divider(height: 1),
       itemBuilder: (context, index) {
+        if (index == hashtags.length) return _moreFooter(SearchKind.hashtags);
         final tag = hashtags[index];
         return ListTile(
           leading: const Icon(Icons.tag),
@@ -524,10 +643,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     if (posts.isEmpty) {
       return Center(child: Text('${ref.watch(postLabelProvider)}が見つかりませんでした'));
     }
+    final hasMore = _hasMore(SearchKind.posts);
     return ListView.separated(
-      itemCount: posts.length,
+      itemCount: posts.length + (hasMore ? 1 : 0),
       separatorBuilder: (_, _) => const Divider(height: 1),
-      itemBuilder: (context, index) => PostTile(post: posts[index]),
+      itemBuilder: (context, index) => index == posts.length
+          ? _moreFooter(SearchKind.posts)
+          : PostTile(post: posts[index]),
     );
   }
 }

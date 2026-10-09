@@ -240,7 +240,7 @@ grep -rhoE "\['[a-zA-Z_][a-zA-Z0-9_]*'\]" packages/capsicum_backends/lib/src/mis
 
 | | 内容 | 行き先 |
 | --- | --- | --- |
-| **13-1 ★★** | 一覧 3 経路が既定件数で**黙って打ち切られる**（リストメンバー 40 / 予約投稿 20 / 検索 20・ページングも `limit` も送っていない）。⚠ **Misskey 側は打ち切られないので非対称** | [#1202](https://github.com/pooza/capsicum/issues/1202) `bug` |
+| **13-1 ★★** | 一覧 3 経路が既定件数で**黙って打ち切られる**（リストメンバー 40 / 予約投稿 20 / 検索 20・ページングも `limit` も送っていない）。⚠ **Misskey 側は打ち切られないので非対称** | [#1202](https://github.com/pooza/capsicum/issues/1202) `bug`・✅ v2.1 で実装（リストは `limit=0` / 予約投稿は `Link` を辿って全件 / 検索は種別ごとの「もっと読む」。⚠ **検索の `offset` は `type` と一緒でないと効かない**） |
 | **13-2 ★** | 通報に `forward` を送っておらず、**リモートの利用者を通報しても相手のサーバーに届かない**（`category` / `rule_ids` も未使用） | [#1203](https://github.com/pooza/capsicum/issues/1203) `bug` |
 | **13-3 ★★** | プッシュの購読種別が **7 / 17**（画面は 30 種扱っている）。🔴 重いのは `moderation_warning` / `admin.report` / `quote` / `severed_relationships`。✅ 直しはキーを足すだけ | [#1204](https://github.com/pooza/capsicum/issues/1204) `bug` |
 | **13-4 ★** | 未読数を `notifications/unread_count` に訊かずクライアント側で数えている（**両 SNS 対称**）。⚠ **層① の取りこぼしで、層② の目で見たから出た** | [#1207](https://github.com/pooza/capsicum/issues/1207) `enhancement` |
