@@ -17,10 +17,35 @@ import 'provider_scope_carrier.dart';
 /// 中身も「表示できません」になる。投稿の入口も出さない。
 bool canComposeFromColumn(TabType tab, DecentralizedBackendAdapter? adapter) {
   if (adapter == null) return false;
+  // ⚠ **既定を置かない** (#1255)。`_ => true` だと、種別を足したときに黙って
+  // 入口が出る。足した人がここで「誰として投稿するかが見出しから読めるか」を
+  // 決める。
   return switch (tab) {
     MessagesTab() => false,
     ChannelTab() => adapter is ChannelSupport,
-    _ => true,
+    // ⚠⚠ **アカウントを横断するカラムには出さない** (#1255・2026-10-08 pooza)。
+    // この入口は「このカラムのアカウントで投稿する」もので、誰として投稿するかを
+    // 見出しが見せている前提で置いてある（決定済み事項 10）。全アカウントの通知が
+    // 混ざるカラムでは、見出しのアカウントは中身と対応しないので前提が崩れる。
+    AllNotificationsTab() => false,
+    // ⚠ 以下は「カラムのアカウントのもの」を出しているカラム。見出しのアカウント
+    // と中身が対応するので、入口を出す（#1255 より前の挙動のまま）。
+    TimelineTab() ||
+    ListTab() ||
+    HashtagTab() ||
+    NotificationsTab() ||
+    AnnouncementsTab() ||
+    SearchTab() ||
+    PostThreadTab() ||
+    ProfileTab() ||
+    UserListTab() ||
+    QuotesTab() ||
+    AchievementsTab() ||
+    CollectionsTab() ||
+    CollectionTab() ||
+    GalleryPostTab() ||
+    FlashTab() ||
+    ChatUserTab() => true,
   };
 }
 
