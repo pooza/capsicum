@@ -48,6 +48,21 @@ String deckOnlyTabLabel(
   AllNotificationsTab() => 'すべての通知',
 };
 
+/// カラムの種別のアイコン。カラム編集のシートと、下の帯 (#1241) が共有する。
+///
+/// ⚠ **2 か所で別々に持たない。**同じカラムが場所によって違うアイコンになると、
+/// 帯で見たものをシートで探せない。
+IconData deckTabIcon(TabType tab) => switch (tab) {
+  TimelineTab() => Icons.forum_outlined,
+  ListTab() => Icons.list,
+  HashtagTab() => Icons.tag,
+  ChannelTab() => Icons.forum,
+  NotificationsTab() => Icons.notifications_outlined,
+  AnnouncementsTab() => Icons.campaign_outlined,
+  MessagesTab() => Icons.chat_bubble_outline,
+  final DeckOnlyTab t => deckOnlyTabIcon(t),
+};
+
 IconData deckOnlyTabIcon(DeckOnlyTab tab) => switch (tab) {
   PostThreadTab() => Icons.forum_outlined,
   ProfileTab() => Icons.person_outline,

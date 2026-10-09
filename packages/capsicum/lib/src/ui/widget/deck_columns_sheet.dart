@@ -287,17 +287,6 @@ class _DeckSheetSectionHeader extends StatelessWidget {
   }
 }
 
-IconData _tabIcon(TabType tab) => switch (tab) {
-  TimelineTab() => Icons.forum_outlined,
-  ListTab() => Icons.list,
-  HashtagTab() => Icons.tag,
-  ChannelTab() => Icons.forum,
-  NotificationsTab() => Icons.notifications_outlined,
-  AnnouncementsTab() => Icons.campaign_outlined,
-  MessagesTab() => Icons.chat_bubble_outline,
-  final DeckOnlyTab t => deckOnlyTabIcon(t),
-};
-
 /// 周りのスコープのアカウントで [tab] のラベルを出す。
 String _labelInScope(WidgetRef ref, TabType tab) {
   final adapter = ref.watch(currentAdapterProvider);
@@ -320,7 +309,7 @@ class _TabTitle extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) => Row(
     children: [
-      Icon(_tabIcon(tab), size: 18),
+      Icon(deckTabIcon(tab), size: 18),
       const SizedBox(width: 8),
       Expanded(child: Text(_labelInScope(ref, tab))),
     ],
@@ -484,7 +473,7 @@ class _DeckColumnCandidatesState extends ConsumerState<_DeckColumnCandidates> {
 
   Widget _candidateTile(TabType tab) => ListTile(
     key: ValueKey('candidate-${tab.toIdentityKey()}'),
-    leading: Icon(_tabIcon(tab)),
+    leading: Icon(deckTabIcon(tab)),
     title: Text(_labelInScope(ref, tab)),
     trailing: const Icon(Icons.add),
     onTap: () => _add(tab),

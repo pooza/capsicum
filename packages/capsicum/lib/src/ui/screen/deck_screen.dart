@@ -19,6 +19,7 @@ import '../util/mouse_drag_scroll_behavior.dart';
 import '../util/provider_scope_carrier.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/deck_column_focus.dart';
+import '../widget/deck_column_strip.dart';
 import '../widget/deck_column_view.dart';
 import '../widget/deck_columns_sheet.dart';
 import '../widget/livecure_filter_button.dart';
@@ -453,14 +454,21 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
 
   /// [content] の下に [postBar] を置く。バーが無いときは下端の inset を
   /// [BottomSafeArea] で吸う（#1037 / #1062・上の `body` の注記）。
-  Widget _withPostBar(Widget? postBar, Widget content) => postBar == null
-      ? BottomSafeArea(child: content)
-      : Column(
-          children: [
-            Expanded(child: content),
-            postBar,
-          ],
-        );
+  /// 中身の下に、カラムへ飛ぶ帯 (#1241) と簡易投稿バーを並べる。
+  ///
+  /// ⚠ 下端の inset は**いちばん下に来るもの**が吸う。簡易投稿バーは自分で
+  /// 吸う設計（`SimplePostBar`）なので、バーが無いときだけここで包む。
+  Widget _withBottomBars(Widget? strip, Widget? postBar, Widget content) {
+    if (strip == null && postBar == null) return BottomSafeArea(child: content);
+    final column = Column(
+      children: [
+        Expanded(child: content),
+        ?strip,
+        ?postBar,
+      ],
+    );
+    return postBar == null ? BottomSafeArea(child: column) : column;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -483,6 +491,27 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
     // 見えていない状況でコンテナを畳んでしまう）。
     final postBar = _postBar(focusedColumn, currentKey, accounts, used);
     _disposeUnused(used);
+
+    // 見たいカラムへ 1 回で飛べる帯 (#1241・2026-10-09 pooza)。
+    // ⚠⚠ **カラムが 1 本ずつしか見えない幅のときだけ出す。**広幅ではカラムが
+    // 並んで見えているので、縦を使ってまで出す理由が無い。⚠ 1 本しか無いなら
+    // 飛ぶ先も無い。
+    // ⚠ 幅は画面幅で見る（中身の `LayoutBuilder` と同じ値。デッキ画面は左右に
+    // 何も置かないので一致する）。
+    final narrow =
+        computeDeckLayout(
+          availableWidth: MediaQuery.sizeOf(context).width,
+          columnCount: columns.length,
+          minColumnWidth: minColumnWidth,
+        ).visibleColumns ==
+        1;
+    final strip = narrow && columns.length > 1
+        ? DeckColumnStrip(
+            columns: columns,
+            focusedId: focusedId,
+            onSelected: _revealAndFocus,
+          )
+        : null;
 
     // ⚠⚠ デスクトップでは引っ張って更新ができなかった (#1157)。マウスと
     // トラックパッドは既定の dragDevices に入っておらず、2 本指スクロールは
@@ -607,7 +636,8 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
       // **バーが inset を吸う**（`SimplePostBar` が `padding.bottom` を自分で
       // 足す設計・`bottom_safe_area.dart`）ので、ここでは包まない。包むと
       // バーの上に無駄な余白が入る。
-      body: _withPostBar(
+      body: _withBottomBars(
+        strip,
         postBar,
         columns.isEmpty
             ? Center(
