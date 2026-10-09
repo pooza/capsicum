@@ -16,15 +16,49 @@ class UnreadBadge {
   bool get hasUnread => total > 0;
 }
 
+/// [adapter] のアカウントの未読を、サーバーの値で引く (#1207)。
+///
+/// ⚠ **片方が失敗しても、もう片方は出す。**バッジは補助的な表示なので、
+/// 取れなかったぶんは 0 として握る（古いサーバーに未読数の口が無い・一時的に
+/// 繋がらない、のどちらでも一覧ごと落とさない）。
+Future<UnreadBadge> fetchUnreadBadge(
+  DecentralizedBackendAdapter adapter,
+) async {
+  var notifications = 0;
+  if (adapter is NotificationUnreadCountSupport) {
+    try {
+      notifications = await (adapter as NotificationUnreadCountSupport)
+          .getUnreadNotificationCount();
+    } catch (_) {
+      // Non-critical — skip on failure.
+    }
+  }
+
+  var announcements = 0;
+  if (adapter is AnnouncementSupport) {
+    try {
+      final list = await (adapter as AnnouncementSupport).getAnnouncements();
+      announcements = list.where((a) => !a.read).length;
+    } catch (_) {
+      // Non-critical — skip on failure.
+    }
+  }
+
+  return UnreadBadge(
+    notifications: notifications,
+    announcements: announcements,
+  );
+}
+
 /// Provides unread badge counts for all non-current accounts.
 ///
 /// Returns a map from account storage key to [UnreadBadge].
 /// Refreshes periodically (every 30 seconds) so the drawer stays current.
 ///
-/// v1.19 現在、[UnreadBadge.notifications] は常に 0。#348 で workmanager /
-/// iOS BGTask 経路を撤去した時点で unread_count を書き込む経路も消えたため。
-/// プッシュペイロード復号実装（#336）でリレー経由の受信時に値を書く経路が
-/// 整ったら再有効化する。現状はアナウンス未読のみ反映する。
+/// ⚠ **通知の未読数はサーバーの値** (#1207)。クライアント側では数えない。
+/// v1.19 で workmanager / iOS BGTask 経路を撤去してから常に 0 だった欄を、
+/// サーバーへの問い合わせで埋め直した。値が減るのは、capsicum が既読を
+/// サーバーへ返しているから（Mastodon は marker・Misskey は #1205）。
 class UnreadBadgeNotifier
     extends AutoDisposeAsyncNotifier<Map<String, UnreadBadge>> {
   Timer? _refreshTimer;
@@ -51,23 +85,9 @@ class UnreadBadgeNotifier
     final badges = <String, UnreadBadge>{};
 
     for (final account in otherAccounts) {
-      final storageKey = account.key.toStorageKey();
-
-      // Announcement count from server.
-      var announcementCount = 0;
-      final adapter = account.adapter;
-      if (adapter is AnnouncementSupport) {
-        try {
-          final announcements = await (adapter as AnnouncementSupport)
-              .getAnnouncements();
-          announcementCount = announcements.where((a) => !a.read).length;
-        } catch (_) {
-          // Non-critical — skip on failure.
-        }
-      }
-
-      if (announcementCount > 0) {
-        badges[storageKey] = UnreadBadge(announcements: announcementCount);
+      final badge = await fetchUnreadBadge(account.adapter);
+      if (badge.hasUnread) {
+        badges[account.key.toStorageKey()] = badge;
       }
     }
 

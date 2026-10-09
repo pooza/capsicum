@@ -118,6 +118,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         FollowSupport,
         FollowRequestSupport,
         NotificationSupport,
+        NotificationUnreadCountSupport,
         SearchSupport,
         // 検索の続き (#1202)。Misskey は続きの口が種別ごとに違うので未対応。
         SearchPagingSupport,
@@ -1214,6 +1215,12 @@ class MastodonAdapter extends DecentralizedBackendAdapter
 
   @override
   Future<void> clearAllNotifications() => throw UnimplementedError();
+
+  // NotificationUnreadCountSupport
+
+  @override
+  Future<int> getUnreadNotificationCount() =>
+      client.getNotificationUnreadCount();
 
   // SearchSupport
 

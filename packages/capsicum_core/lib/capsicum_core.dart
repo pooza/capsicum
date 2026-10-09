@@ -71,6 +71,7 @@ export 'src/social/interfaces/mulukhiya_repost_support.dart';
 export 'src/social/interfaces/notification_read_support.dart';
 export 'src/social/interfaces/notification_stream_support.dart';
 export 'src/social/interfaces/notification_support.dart';
+export 'src/social/interfaces/notification_unread_count_support.dart';
 export 'src/social/interfaces/pages_support.dart';
 export 'src/social/interfaces/pin_support.dart';
 export 'src/social/interfaces/poll_support.dart';

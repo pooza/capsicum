@@ -1104,6 +1104,18 @@ class MastodonClient {
     await dio.delete('/api/v1/statuses/$id');
   }
 
+  /// GET /api/v1/notifications/unread_count (#1207)
+  ///
+  /// サーバーが marker（`last_read_id`）より新しい通知を数えて返す。capsicum は
+  /// 通知一覧で marker を保存しているので、読んだぶんはここから減る。
+  /// ⚠ **上限つき**（既定 100 件で頭打ち）。バッジの数字としては足りる。
+  /// ⚠ 4.3 より前のサーバーには無い（404）。呼び出し側で握る。
+  Future<int> getNotificationUnreadCount() async {
+    final response = await dio.get('/api/v1/notifications/unread_count');
+    final data = response.data as Map<String, dynamic>;
+    return (data['count'] as num?)?.toInt() ?? 0;
+  }
+
   /// POST /api/v1/reports
   ///
   /// ⚠⚠ **[forward] を送らないと、リモートの相手のサーバーへは届かない**

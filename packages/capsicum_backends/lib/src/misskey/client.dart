@@ -79,6 +79,17 @@ class MisskeyClient {
     return MisskeyUser.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// POST /api/i の `unreadNotificationsCount` (#1207)。
+  ///
+  /// ⚠ [MisskeyUser] には載せていない（自分についてしか返らない値で、他人の
+  /// `User` と形を分けたくない）ので、生の応答から読む。古いサーバーで欠けて
+  /// いれば 0。
+  Future<int> getUnreadNotificationsCount() async {
+    final response = await dio.post('/api/i', data: createBody());
+    final data = response.data as Map<String, dynamic>;
+    return (data['unreadNotificationsCount'] as num?)?.toInt() ?? 0;
+  }
+
   /// POST /api/users — 最古のローカルユーザーの `createdAt` を返す（設立日の
   /// 近似、#804 サーバー情報）。公開 API。Misskey は `sort=-createdAt` が
   /// `user.id ASC`（＝古い順）なので、先頭 1 件で最古ユーザーを引く
