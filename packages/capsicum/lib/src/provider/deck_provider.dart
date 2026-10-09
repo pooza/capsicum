@@ -1,8 +1,30 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../model/deck_column.dart';
 import 'preferences_provider.dart';
+
+/// アプリを開いたとき、デッキで始めるか (#1239)。
+///
+/// 前回デッキを開いたまま終えていたら、デッキで始める。ただし:
+///
+/// - ⚠ **行き先が別に決まっている起動では飛ばない。**通知のタップ（開くタブが
+///   指定されている・[hasPendingTab]）や、共有・ディープリンクで別の画面が上に
+///   積まれている回（[location] が `/home` でない）にデッキを被せると、開こうと
+///   したものが隠れる
+/// - 列が空ならデッキを開いても「カラムがありません」になるだけなので開かない
+bool shouldStartInDeck({
+  required LastViewMode lastMode,
+  required bool hasPendingTab,
+  required String location,
+  required bool hasColumns,
+}) =>
+    lastMode == LastViewMode.deck &&
+    !hasPendingTab &&
+    location == '/home' &&
+    hasColumns;
 
 /// 画面にあるデッキ画面の数 (#1099)。**0 なら閉じている。**
 ///
@@ -84,7 +106,22 @@ class DeckFocusNotifier extends Notifier<DeckFocus> {
     ref.listen<List<DeckColumn>>(deckColumnsProvider, (previous, next) {
       _reconcile(previous ?? const [], next);
     });
-    return DeckFocus(columnId: ref.read(deckColumnsProvider).firstOrNull?.id);
+    // 最後に見ていたカラムを覚える (#1239)。⚠ 点滅の要求（`blinkToken`）だけが
+    // 動いた回は書かない。
+    listenSelf((previous, next) {
+      if (previous?.columnId == next.columnId) return;
+      unawaited(writeDeckLastColumnId(next.columnId));
+    });
+    // ⚠ **前回のカラムから始める** (#1239)。以前は毎回先頭だったので、タブ UI へ
+    // 行って戻るたびに左端（狭幅では一番上）へ戻っていた。⚠ 保存された id が
+    // 列に居なければ先頭（閉じた・バックアップから戻した）。
+    final columns = ref.read(deckColumnsProvider);
+    final saved = readDeckLastColumnId();
+    return DeckFocus(
+      columnId: columns.any((c) => c.id == saved)
+          ? saved
+          : columns.firstOrNull?.id,
+    );
   }
 
   /// 列が変わったときにフォーカスを繋ぎ直す。**居るなら動かさない。**

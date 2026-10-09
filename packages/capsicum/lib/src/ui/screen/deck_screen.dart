@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -103,6 +105,35 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
   /// 狭幅でのフォーカス追従を、フレームに 1 回へ間引くための予約済みフラグ。
   bool _focusSyncScheduled = false;
 
+  /// 開いた直後の位置合わせを済ませたか (#1239)。
+  bool _initialPositionRestored = false;
+
+  /// 開いたとき、**最後に見ていたカラム**が見える位置から始める (#1239)。
+  ///
+  /// フォーカス（[deckFocusProvider]）は画面をまたいで残り、終了をまたいでも
+  /// 保存されているが、横スクロールは毎回 0 から始まっていた ＝ タブ UI へ行って
+  /// 戻るたびに左端（狭幅では一番上）へ戻る。
+  ///
+  /// ⚠ **アニメーションしない。**開くたびに列が流れると、戻ってきた感じに
+  /// ならない。⚠ 割り付けが決まった最初のフレームで 1 回だけ。
+  void _restoreInitialPositionOnce() {
+    if (_initialPositionRestored) return;
+    _initialPositionRestored = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final layout = _layout;
+      if (!mounted || layout == null || !_scrollController.hasClients) return;
+      final id = ref.read(deckFocusProvider).columnId;
+      final index = ref.read(deckColumnsProvider).indexWhere((c) => c.id == id);
+      if (index <= 0) return;
+      // フォーカス中のカラムが右端に来る位置（見えていれば足りる）。狭幅では
+      // 1 本しか見えないので、そのカラムそのものになる。
+      final target = (index - layout.visibleColumns + 1) * layout.columnWidth;
+      if (target <= 0) return;
+      final position = _scrollController.position;
+      _scrollController.jumpTo(target.clamp(0, position.maxScrollExtent));
+    });
+  }
+
   /// メニューへの登録口 (#1170)。⚠ `dispose` では `ref` が使えないので掴んでおく。
   late final StateController<DeckMenuActions?> _menuActions = _root.read(
     deckMenuActionsProvider.notifier,
@@ -115,6 +146,8 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
     // ⚠ 投稿・ブロックの反映先がカラム列から解決されるようになる (#1099)。
     // 閉じている間に列を読むと、片づいたはずの TL provider を起こしてしまう。
     _shiftMountedDecks(1);
+    // 最後に開いていた側を覚える (#1239)。開き直したとき、前回の側で始める。
+    unawaited(writeLastViewMode(LastViewMode.deck));
     _scrollController.addListener(_syncFocusToVisibleColumn);
     // デスクトップメニューへ、デッキだけが持っている操作を渡す (#1170)。
     // ⚠ フレームの後（provider の書き換えなので `_shiftMountedDecks` と同じ理由）。
@@ -136,13 +169,27 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
   @override
   void dispose() {
     _shiftMountedDecks(-1);
+    // タブ UI へ戻った (#1239)。⚠⚠ **アプリが前面に居るときだけ書く。**画面が
+    // 捨てられるのは利用者が戻ったときだけではなく、アプリが終了へ向かうときにも
+    // 起こりうる。そこで「タブ UI」と書くと、デッキを開いたまま終了した人が次回
+    // タブ UI で始まる。終了は `inactive` / `paused` / `detached` を通るので、
+    // `resumed` の間の破棄だけを「戻った」と読む。
+    if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed ||
+        WidgetsBinding.instance.lifecycleState == null) {
+      unawaited(writeLastViewMode(LastViewMode.tabs));
+    }
     // ⚠ 解除もフレームの後。⚠ **自分が入れたぶんだけ外す**（デッキを開き直した
     // 直後は新しい画面の登録が先に走っている）。
-    final ownActions = _menuActions.state;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_menuActions.mounted) return;
-      if (_menuActions.state == ownActions) _menuActions.state = null;
-    });
+    // ⚠ **ルートのコンテナが先に畳まれていることがある**（アプリの終了・テストの
+    // 後片づけ）。そのとき `state` を素で読むと投げ、**以降の後始末（スクロールの
+    // 解除・カラムのコンテナの破棄）に到達しない**。外す先が無いので何もしない。
+    if (_menuActions.mounted) {
+      final ownActions = _menuActions.state;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_menuActions.mounted) return;
+        if (_menuActions.state == ownActions) _menuActions.state = null;
+      });
+    }
     _scrollController.removeListener(_syncFocusToVisibleColumn);
     _scrollController.dispose();
     for (final container in _containers.values) {
@@ -595,6 +642,7 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
                       (_layout?.visibleColumns ?? 1) != 1;
                   _layout = layout;
                   if (narrowed) _syncFocusToVisibleColumn();
+                  _restoreInitialPositionOnce();
                   return SingleChildScrollView(
                     controller: _scrollController,
                     scrollDirection: Axis.horizontal,

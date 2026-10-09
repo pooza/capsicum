@@ -152,6 +152,12 @@ const deviceLocalKeys = <String>{
   // 画面サイズとキーボードに依存する。他端末へ持ち込む意味がない。
   // デッキのカラム幅も画面幅に対する好みなので同じ扱い (#1092)。
   'deck_column_width',
+  // 最後に見ていたカラムと、最後に開いていた側 (#1239)。設定ではなく「前回
+  // どこで終えたか」という端末ごとの状態で、他端末へ持ち込む意味がない。
+  // ⚠ カラムの id は列の中だけで通じる番号なので、取り込み先の列では別の
+  // カラムを指しうる。
+  'deck_last_column',
+  'last_view_mode',
   'insert_picker_height',
   'reaction_picker_height',
   'sticker_picker_height',

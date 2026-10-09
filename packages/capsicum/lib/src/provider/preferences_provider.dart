@@ -58,6 +58,8 @@ const _deckColumnsKey = 'deck_columns';
 
 /// デッキのカラム幅の下限（ユーザー設定・#1092）。
 const _deckColumnWidthKey = 'deck_column_width';
+const _deckLastColumnKey = 'deck_last_column';
+const _lastViewModeKey = 'last_view_mode';
 const _tabConfigPrefix = 'tab_config_';
 const _avatarShapeKey = 'avatar_shape';
 const _mouseDragScrollKey = 'mouse_drag_scroll';
@@ -592,6 +594,30 @@ class TabConfigNotifier extends FamilyNotifier<List<TabConfigEntry>, String> {
 ///
 /// ⚠ 削除しても購読を明示的に止めない（6-3）。重複カラムは provider を共有するので、
 /// 最後の 1 本が消えたときに autoDispose が片づける。
+/// 最後にフォーカスしていたカラムの id (#1239)。無ければ null。
+///
+/// ⚠ **スクロール量ではなく id で持つ。**列は並べ替え・削除で動くので、位置で
+/// 持つと別のカラムを指す。⚠ 保存された id が列に居ないことはありうる（閉じた・
+/// バックアップから戻した）。読む側が「居なければ先頭」に倒す。
+String? readDeckLastColumnId() =>
+    sharedPrefsOrThrow.getString(_deckLastColumnKey);
+
+Future<void> writeDeckLastColumnId(String? id) => id == null
+    ? sharedPrefsOrThrow.remove(_deckLastColumnKey)
+    : sharedPrefsOrThrow.setString(_deckLastColumnKey, id);
+
+/// 最後に開いていた側 (#1239)。
+enum LastViewMode { tabs, deck }
+
+/// アプリを開き直したとき、前回の側で始めるための記録 (#1239)。既定はタブ UI。
+LastViewMode readLastViewMode() =>
+    sharedPrefsOrThrow.getString(_lastViewModeKey) == LastViewMode.deck.name
+    ? LastViewMode.deck
+    : LastViewMode.tabs;
+
+Future<void> writeLastViewMode(LastViewMode mode) =>
+    sharedPrefsOrThrow.setString(_lastViewModeKey, mode.name);
+
 final deckColumnsProvider =
     NotifierProvider<DeckColumnsNotifier, List<DeckColumn>>(
       DeckColumnsNotifier.new,

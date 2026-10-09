@@ -15,6 +15,7 @@ import '../../model/account.dart';
 import '../../model/offline_account.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/announcement_provider.dart';
+import '../../provider/deck_provider.dart';
 import '../../provider/hashtag_provider.dart';
 import '../../provider/list_provider.dart';
 import '../../provider/marker_provider.dart';
@@ -149,6 +150,37 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       if (mounted) {
         _refreshNotifier?.state = _refreshCurrentTimeline;
       }
+    });
+    _restoreLastViewModeOnce();
+  }
+
+  /// アプリを開いてから、前回の側へ戻す処理を済ませたか (#1239)。
+  ///
+  /// ⚠ **プロセスに 1 回。**HomeScreen はアカウントの切り替え等で作り直される
+  /// ので、State に持つとそのたびにデッキへ飛ぶ。
+  static bool _lastViewModeRestored = false;
+
+  /// 前回デッキを開いたまま終えていたら、デッキで始める (#1239・2026-10-09 pooza)。
+  ///
+  /// ⚠ デッキは HomeScreen の上に push する画面（決定済み事項 8）なので、起動時も
+  /// 同じ形にする（HomeScreen を下に残す）。
+  void _restoreLastViewModeOnce() {
+    if (_lastViewModeRestored) return;
+    _lastViewModeRestored = true;
+    if (readLastViewMode() != LastViewMode.deck) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final router = GoRouter.of(context);
+      // 条件の正本は [shouldStartInDeck]。
+      if (!shouldStartInDeck(
+        lastMode: readLastViewMode(),
+        hasPendingTab: ref.read(pendingInitialTabProvider) != null,
+        location: router.routerDelegate.currentConfiguration.uri.path,
+        hasColumns: ref.read(deckColumnsProvider).isNotEmpty,
+      )) {
+        return;
+      }
+      router.push('/deck');
     });
   }
 

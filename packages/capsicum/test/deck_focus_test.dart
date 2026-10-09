@@ -181,4 +181,101 @@ void main() {
       isNot(const DeckFocus(columnId: 'b')),
     );
   });
+
+  /// #1239: 最後に見ていたカラムを、アプリの終了をまたいで覚える。
+  group('最後に見ていたカラムを覚える (#1239)', () {
+    test('⚠ フォーカスを移すと保存され、開き直すとそのカラムから始まる', () async {
+      final container = await makeContainer();
+      final columns = container.read(deckColumnsProvider.notifier);
+      await columns.add(_me, const TimelineTab(TimelineType.home));
+      final second = await columns.add(_me, const HashtagTab('delmulin'));
+      container.read(deckFocusProvider.notifier).focus(second.id);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(readDeckLastColumnId(), second.id);
+
+      // アプリを開き直した（同じ保存内容で、別のコンテナ）。
+      final reopened = ProviderContainer();
+      addTearDown(reopened.dispose);
+      expect(
+        reopened.read(deckFocusProvider).columnId,
+        second.id,
+        reason: '毎回先頭（左端・狭幅では一番上）へ戻っていた',
+      );
+    });
+
+    test('⚠ 覚えていたカラムが列に居なければ、先頭から始まる', () async {
+      final container = await makeContainer();
+      final columns = container.read(deckColumnsProvider.notifier);
+      final first = await columns.add(
+        _me,
+        const TimelineTab(TimelineType.home),
+      );
+      await writeDeckLastColumnId('gone');
+
+      expect(container.read(deckFocusProvider).columnId, first.id);
+    });
+
+    test('点滅の要求だけでは書き直さない（同じカラムのまま）', () async {
+      final container = await makeContainer();
+      final columns = container.read(deckColumnsProvider.notifier);
+      final first = await columns.add(
+        _me,
+        const TimelineTab(TimelineType.home),
+      );
+      container.read(deckFocusProvider);
+      await writeDeckLastColumnId('sentinel');
+
+      container.read(deckFocusProvider.notifier).focusAndBlink(first.id);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(readDeckLastColumnId(), 'sentinel');
+    });
+  });
+
+  /// #1239: 最後に開いていた側（デッキ / タブ UI）で始める。
+  group('前回の側で始める (#1239)', () {
+    bool decide({
+      LastViewMode lastMode = LastViewMode.deck,
+      bool hasPendingTab = false,
+      String location = '/home',
+      bool hasColumns = true,
+    }) => shouldStartInDeck(
+      lastMode: lastMode,
+      hasPendingTab: hasPendingTab,
+      location: location,
+      hasColumns: hasColumns,
+    );
+
+    test('前回デッキで終えていたら、デッキで始める', () {
+      expect(decide(), isTrue);
+    });
+
+    test('前回タブ UI なら、タブ UI のまま', () {
+      expect(decide(lastMode: LastViewMode.tabs), isFalse);
+    });
+
+    test('⚠ 通知のタップ等で開くタブが決まっている起動では飛ばない', () {
+      expect(decide(hasPendingTab: true), isFalse);
+    });
+
+    test('⚠ 別の画面が上に積まれている起動（共有・ディープリンク）では飛ばない', () {
+      expect(decide(location: '/compose'), isFalse);
+    });
+
+    test('列が空なら開かない', () {
+      expect(decide(hasColumns: false), isFalse);
+    });
+
+    test('記録の読み書き: 既定はタブ UI', () async {
+      await makeContainer();
+      expect(readLastViewMode(), LastViewMode.tabs);
+
+      await writeLastViewMode(LastViewMode.deck);
+      expect(readLastViewMode(), LastViewMode.deck);
+
+      await writeLastViewMode(LastViewMode.tabs);
+      expect(readLastViewMode(), LastViewMode.tabs);
+    });
+  });
 }
