@@ -79,6 +79,17 @@ class MisskeyClient {
     return MisskeyUser.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// POST /api/i の `unreadNotificationsCount` (#1207)。
+  ///
+  /// ⚠ [MisskeyUser] には載せていない（自分についてしか返らない値で、他人の
+  /// `User` と形を分けたくない）ので、生の応答から読む。古いサーバーで欠けて
+  /// いれば 0。
+  Future<int> getUnreadNotificationsCount() async {
+    final response = await dio.post('/api/i', data: createBody());
+    final data = response.data as Map<String, dynamic>;
+    return (data['unreadNotificationsCount'] as num?)?.toInt() ?? 0;
+  }
+
   /// POST /api/users — 最古のローカルユーザーの `createdAt` を返す（設立日の
   /// 近似、#804 サーバー情報）。公開 API。Misskey は `sort=-createdAt` が
   /// `user.id ASC`（＝古い順）なので、先頭 1 件で最古ユーザーを引く
@@ -861,8 +872,11 @@ class MisskeyClient {
   /// ⚠ **`markAsRead` を必ず明示する (#1045)。**サーバー側の既定は `true` なので、
   /// 省略すると**取得しただけでサーバーの未読が消える**。capsicum は未読を
   /// クライアント側で持つ運用（2026-09-04 pooza 判断・クライアント側が正本）
-  /// なので、サーバーの既読状態には触らない。WebUI や他クライアントを併用して
-  /// いるユーザーの未読バッジが、capsicum の取得だけで消えるのを防ぐ。
+  /// なので、**取得では**サーバーの既読状態に触らない。WebUI や他クライアントを
+  /// 併用しているユーザーの未読バッジが、capsicum の取得だけで消えるのを防ぐ。
+  ///
+  /// ⚠ 既読を返すのは [markAllNotificationsAsRead] の側で、利用者が一覧の先頭を
+  /// 実際に見たときだけ（2026-10-09 pooza 判断・#1205）。
   /// [grouped] が true なら `POST /api/i/notifications-grouped` を叩く (#1048)。
   ///
   /// ⚠ **束ねられるのは `reaction` と `renote` だけ、しかも連続したものだけ**
@@ -895,6 +909,15 @@ class MisskeyClient {
     return (response.data as List)
         .map((e) => MisskeyNotification.fromJson(e as Map<String, dynamic>))
         .toList();
+  }
+
+  /// POST /api/notifications/mark-all-as-read (#1205)
+  ///
+  /// ⚠ **引数は無い。**Misskey は「ここまで読んだ」を持たないので、部分的な
+  /// 既読にはできない。⚠ `notifications/flush` は既読ではなく**全消し**なので
+  /// 取り違えない。
+  Future<void> markAllNotificationsAsRead() async {
+    await dio.post('/api/notifications/mark-all-as-read', data: createBody({}));
   }
 
   /// POST /api/notes/reactions/create

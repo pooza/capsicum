@@ -20,7 +20,7 @@ void main() {
 
   Future<void> openPrompt(WidgetTester tester, Size surface) async {
     await ImageEditorHarness.open(tester, imageData: png, surfaceSize: surface);
-    await tester.tap(find.text('テキストを追加'));
+    await tester.tap(find.text('文字を追加'));
     await tester.pumpAndSettle();
   }
 

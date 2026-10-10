@@ -238,9 +238,10 @@ void main() {
   });
 
   group('接続ドット (#793)', () {
-    const labels = {'ライブ更新中', '接続中…', '切断 — 再接続中', '接続が不安定 — 再試行中', 'ライブ更新オフ'};
+    // ⚠ ツールチップは「ライブ更新: 」を前置きする (#1235)。色とラベルの正本は
+    // `stream_connection_display.dart` で、タブ UI と同じ文面になる。
     final dot = find.byWidgetPredicate(
-      (w) => w is Tooltip && labels.contains(w.message),
+      (w) => w is Tooltip && (w.message ?? '').startsWith('ライブ更新: '),
     );
 
     testWidgets('本線のカラムには出す', (tester) async {
@@ -253,6 +254,104 @@ void main() {
       await pump(tester, const TimelineTab(TimelineType.directMessages));
       await tester.pump();
       expect(dot, findsNothing);
+    });
+
+    // #1238: 状態の色は固定なので、サーバーの色が明るい黄や緑だと点が埋もれる。
+    // 色は状態の意味を持つので変えず、見出しの文字と同じ色で縁を取る。
+    BoxDecoration dotDecoration(WidgetTester tester) =>
+        tester.widget<Container>(find.byKey(deckStreamDotKey)).decoration!
+            as BoxDecoration;
+
+    Future<void> pumpWithHostColor(WidgetTester tester, Color color) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            currentAccountProvider.overrideWithValue(account),
+            hostThemeColorProvider.overrideWithValue({
+              'misskey.example': color,
+            }),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: DeckColumnView(
+                column: DeckColumn(
+                  id: 'x',
+                  account: account.key,
+                  tab: const TimelineTab(TimelineType.home),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+    }
+
+    testWidgets('⚠ 明るい色のサーバーでは、点を暗い色で縁取る (#1238)', (tester) async {
+      await pumpWithHostColor(tester, const Color(0xFFFFEB3B));
+      final border = dotDecoration(tester).border! as Border;
+      expect(border.top.color, Colors.black87);
+      expect(border.top.color, foregroundOnHostColor(const Color(0xFFFFEB3B)));
+    });
+
+    testWidgets('暗い色のサーバーでは白で縁取り、塗りは状態の色のまま', (tester) async {
+      await pumpWithHostColor(tester, const Color(0xFF3F51B5));
+      final decoration = dotDecoration(tester);
+      expect((decoration.border! as Border).top.color, Colors.white);
+      expect(
+        decoration.color,
+        isNot(Colors.white),
+        reason: '縁を足しただけで、状態の色は変えていない',
+      );
+    });
+  });
+
+  group('見出しの大きさ (#1242)', () {
+    testWidgets('アイコンは 20dp・ボタンの枠は 36dp（AppBar より一回り小さい）', (tester) async {
+      await pump(tester, const TimelineTab(TimelineType.home));
+      await tester.pump();
+
+      final close = find.widgetWithIcon(IconButton, Icons.close);
+      expect(close, findsOneWidget);
+      expect(tester.getSize(close), const Size.square(36));
+      expect(
+        tester.getSize(
+          find.descendant(of: close, matching: find.byIcon(Icons.close)),
+        ),
+        const Size.square(20),
+      );
+    });
+  });
+
+  group('アカウントをまたぐカラムの見出し (#1259)', () {
+    testWidgets('⚠ 「すべての通知」にはアカウント（アイコン・表示名）を出さない', (tester) async {
+      await pump(tester, const AllNotificationsTab());
+      await tester.pump();
+
+      expect(find.byTooltip('すべてのアカウント'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byTooltip('すべてのアカウント'),
+          matching: find.byType(UserAvatar),
+        ),
+        findsNothing,
+        reason: '中身は全アカウントのもの。出すと「このアカウントの通知」に見える',
+      );
+      expect(find.byTooltip('@me@misskey.example'), findsNothing);
+    });
+
+    testWidgets('前提: ふつうの通知カラムにはアカウントを出す', (tester) async {
+      await pump(tester, const NotificationsTab());
+      await tester.pump();
+
+      expect(find.byTooltip('@me@misskey.example'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byTooltip('@me@misskey.example'),
+          matching: find.byType(UserAvatar),
+        ),
+        findsOneWidget,
+      );
     });
   });
 }

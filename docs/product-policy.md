@@ -122,13 +122,40 @@ capsicum は「最新版を対象にする」方針で開発しており、UI �
 
 ### プッシュ通知
 
-プッシュ通知には、Mastodon の Web Push を APNs/FCM に変換する中継サーバーの運用が必要。capsicum は主にプリセットサーバーのユーザー向けに開発されており、プリセットサーバーのユーザーには [pooza/capsicum-relay](https://github.com/pooza/capsicum-relay) 経由で無償でリレーを提供している。外部ユーザー向けの有償提供（[#597](https://github.com/pooza/capsicum/issues/597)・未実装・v2.0）の設計書は [paid-relay-plan.md](paid-relay-plan.md) が正本（2026-09-06）。
+プッシュ通知には、Mastodon の Web Push を APNs/FCM に変換する中継サーバーの運用が必要。capsicum は主にプリセットサーバーのユーザー向けに開発されており、プリセットサーバーのユーザーには [pooza/capsicum-relay](https://github.com/pooza/capsicum-relay) 経由で無償でリレーを提供している。外部ユーザー向けの有償提供（[#597](https://github.com/pooza/capsicum/issues/597)・v2.0 で提供開始）の設計書は [paid-relay-plan.md](paid-relay-plan.md) が正本（2026-09-06）。
 
 ⚠ **「コスト補填」という当初の建付けは実測で組み直した。**開発工数を人件費換算すると回収に届かないため、**回収を KPI に置く限り永久に「やらない」が正解になる**。収益目標は **「relay のインフラを持ち出しにしないこと」**（2026-09-06 pooza 決定）。⚠ **プリセットのアカウントを 1 つも持たない利用者は現時点で 0 人**（本番 DB の実測）なので、**対象は「これから来る人」で需要は未証明**。⚠ **サーバー別に数えると外部が 36% に見えるが、マルチアカウント利用者の別アカウント宛であって「外部ユーザー」ではない**。
 
 v1.15 の観測性強化（#293）により、iOS のバックグラウンド通知は発火回数 0回で事実上機能していないことが確認された。v1.18 でプッシュ通知リレー（[#52](https://github.com/pooza/capsicum/issues/52)）を実装し、根本解決済み。リレーサーバー（Ruby、公開ドメイン `relay.capsicum.shrieker.net`）の実装は [pooza/capsicum-relay](https://github.com/pooza/capsicum-relay) リポジトリが正本（ホスト構成・デプロイ手順はインフラノートが正本）。初期設計判断の経緯は [archive/push-relay-plan.md](archive/push-relay-plan.md) に保存。具体的な課金設計（料金体系・ストア課金統合等）は [paid-relay-plan.md](paid-relay-plan.md) が正本（投げ銭本体は [#428](https://github.com/pooza/capsicum/issues/428) / [supporter-subscription-plan.md](supporter-subscription-plan.md)）。
 
+#### アプリが前面に出ている間の扱い（[#1222](https://github.com/pooza/capsicum/issues/1222)）
+
+**開いている間に届いた通知も出す**（2026-10-10 pooza 決定・iOS は 2.1 から）。
+
+| | capsicum が前面 | バックグラウンド / 未起動 |
+| --- | --- | --- |
+| iOS | 出る（バナーと通知センター・**音なし**） | 出る |
+| Android | 出る | 出る |
+
+- **iOS**: `AppDelegate` の `willPresent` が、リモート通知（リレー経由のプッシュ）に `[.banner, .list]` を返す。ローカル通知は flutter_local_notifications に任せる。
+- **Android**: relay は data-only で送るので OS による自動表示は起きず、`main.dart` の `_initFirebase` が復号してローカル通知を出している（#336 Phase 2）。前面でも同じ経路を通る。
+
+⚠⚠ **2.0 までの iOS は、前面では何も出なかった**（バナーも通知センターも）。delegate が居て `willPresent` が何も返さないと、iOS は前面表示中の通知を捨てる。**relay が `outcome=success` を返していても端末に出ない**ので、古いビルドの不達を調べるときは、まずアプリが前面に居たかを確かめる（2026-10-04 に、これを知らずに relay・payload・Sentry・NSE まで 1 時間追った）。
+
 ⚠ **配送の重さは device_type で大きく違う**（2026-09-06 実測・正本は [paid-relay-baseline.md](paid-relay-baseline.md) 1-5）。**Windows (WNS) が処理時間の 88% を占め、1 件あたり iOS の 16 倍**（2,056ms 対 126ms）。⚠ **APNs だけが永続 HTTP/2 接続を保持しており、WNS / FCM は 1 通ごとに TLS を張り直している**。改善は [relay#54](https://github.com/pooza/capsicum-relay/issues/54)（接続再利用・v1.65）/ [relay#55](https://github.com/pooza/capsicum-relay/issues/55)（非同期化・#597 と同じ回）/ [relay#56](https://github.com/pooza/capsicum-relay/issues/56)（バックオフ・on-hold）。⚠ **WNS の `dropped` は「端末が落ちている / スリープ」**であって dedup ではない。**raw notification は queue されない**ので、その間の通知は失われる。
+
+### ナウプレ（再生中の曲の投稿）
+
+経緯と段階の設計は [archive/nowplaying-design.md](archive/nowplaying-design.md)。ここには**いま効いている決まり**だけを置く。
+
+- **本文は 3 行形式（`Title:` / `Album:` / `Artist:` + URL 行 + `#nowplaying`）で固定。**モロヘイヤ由来で、遡るとユーザー要望由来。他クライアントの形式へ寄せない（2026-09-13 pooza）
+- **再生中の曲のジャケット（アートワーク）は、取れるなら添付する**（[#1133](https://github.com/pooza/capsicum/issues/1133)・2026-10-09 pooza）
+  - ⚠⚠ **目的は「どの環境でもジャケットを添付できる」こと。**当初は「URL を持たない源のときだけ添付する」と決めていたが、それは「同じ絵を 2 枚並べない」ための手段だった。モロヘイヤの補完で URL が付いた回に添付を諦めるのは本末転倒なので、**URL の有無では分けない**
+  - Mastodon は添付のある投稿にプレビューカードを出さないので、同じ絵が 2 枚並ぶことは起きない。⚠ **Misskey は添付があっても URL プレビューを出す**ので、並びうる（実機での確認は #1133）
+  - **添付は自動**（選ばせない）。代替テキストも自動で入れる（`曲名 / アーティスト のアルバムアートワーク`）
+  - ⚠ **リサイズ / 形式変換を capsicum 側で作らない。**モロヘイヤの既存の処理と重ねない
+  - ⚠ **取れなくても投稿は止めない。**ジャケットは上積みで、失敗した回は本文だけのナウプレになる
+  - 出どころは 2 つ: 源が自前で持つもの（Linux の MPRIS）と、モロヘイヤの `artwork_url`（5.39.0〜・全プラットフォーム）。**源が持っていればそちらを優先する**（いま鳴っている音源そのものの絵）。⚠ モロヘイヤ非導入サーバーで macOS / Windows / iOS のジャケットを出すには OS ごとの実装が要り、未着手
 
 ### サポート優先順位
 
@@ -160,7 +187,7 @@ probing の結果、基本的な機能が欠けているサーバーに対して
 
 ## 運営元
 
-capsicum の運営元は有限会社ビーショック（<https://www.b-shock.co.jp>）。課金（投げ銭サブスクは v1.27 で実装済み・外部ユーザー向け通知リレーの有償提供は v2.0 で実装中・[#597](https://github.com/pooza/capsicum/issues/597)）を前提に、商品扱いとする方針。
+capsicum の運営元は有限会社ビーショック（<https://www.b-shock.co.jp>）。課金（投げ銭サブスクは v1.27 で実装済み・外部ユーザー向け通知リレーの有償提供は v2.0 で提供を始めた・[#597](https://github.com/pooza/capsicum/issues/597)）を前提に、商品扱いとする方針。
 
 - サイト運営・問い合わせ窓口・特商法表示は法人名義（capsicum-site / Google Workspace アドレス経由）
 - 著作権表記は個人名義のままで問題なし

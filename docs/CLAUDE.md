@@ -86,7 +86,7 @@ capsicum はサーバーが提供する API を検出し、利用可能な機能
 | --- | --- |
 | develop が次リリース対象そのもの | 上のフローでよい |
 | **ホットフィックス**（x.y.z）で、develop に次マイルストーンの work が乗っている | 下の手順 |
-| **v2.0 開発中の 1.x リリース**（develop が 2.x 線である間はずっと） | 下の手順 |
+| **次のメジャーを develop に仕込んでいる間の、現行系列のリリース**（v2.0 開発中の 1.x がこれだった・2026-10-08 に終了） | 下の手順 |
 
 手順:
 
@@ -99,6 +99,8 @@ capsicum はサーバーが提供する API を検出し、利用可能な機能
 ⚠⚠ **2026-04-27 に実際に事故った。**v1.20.2 のホットフィックスで `fix/385` を develop から切り、この CLAUDE.md の「develop → main」の記述だけを見て release PR を作ろうとした。develop には v1.21 向けコミットが 4 本乗っていたため、**そのままマージしていれば v1.20.2 として出すべきでない内容が main に流れていた**。さらに検証ビルド `1.20.2+49` も develop 起点で作っており、**verified artifact 自体が v1.21 のコードを含んでいて出荷できない状態**だった。⚠ **「branch 操作は安全」と保証する前に、main / develop の差分を実際に見る。**
 
 #### v2.0 開発中は、1.x のリリースが全部この形になる
+
+✅ **この期間は 2026-10-08 の v2.0.0 で終わった。**`main` は 2.x 線に戻り、`develop` → `main` の通常のフローが使える（v2.0.1 はそれで出した）。⚠ **以下は、次にメジャーを仕込むときの手引きとして残す**（この形になったのは v1.66.0 / v1.66.1 の 2 回）。
 
 **v2.0 の実装が develop に乗ると、`develop` → `main` は 1.x に使えなくなる**（大玉 3 本・長期のため、develop は「まだ出せないもの」を数か月抱える）。一方 [roadmap.md](roadmap.md) のとおり **1.x は止められない** —— ユーザー報告・上流追従・Sentry 起点の修正はその間も発生するので、「v2.0 まで 1.x 凍結」は選べない。
 
@@ -332,11 +334,11 @@ dart analyze --fatal-infos > /tmp/analyze.log 2>&1; echo "ANALYZE_EXIT=$?"
 
 [GitHub Milestones](https://github.com/pooza/capsicum/milestones) が正本。各マイルストーンの概要・スコープはマイルストーンの description に記載し、CLAUDE.md には複写しない。個別 Issue の一覧・ステータスも同様。
 
-最新リリース: **v1.66.0**（2026-09-21 タグ、build 187、pubspec 1.66.0+187、リリース PR [#1164](https://github.com/pooza/capsicum/pull/1164)、merge `cb2c83ac`）+ **v1.66.1**（2026-09-22 タグ、build 188・**Windows のみ**、リリース PR [#1169](https://github.com/pooza/capsicum/pull/1169)、merge `79c815bc`）。**大更新なし — 返信の宛先を Web UI と同じにする回**（[#1161](https://github.com/pooza/capsicum/issues/1161) が出荷理由）+ v1.65 レビューの送り分。⚠ **この版から動作対象が iOS 15 / macOS 12 以降**（[#1162](https://github.com/pooza/capsicum/issues/1162)・Xcode 27 の下限）。**公開完了（2026-09-22 実測）**: iOS はストアページが 1.66.0 / macOS は lookup が 1.66.0（2026-09-21 公開）/ Windows は Microsoft Store が `1.66.188.0` を返す（displaycatalog）/ Android は production 187（2026-09-22 に Play API で `status=completed` を実測）/ Linux AppImage は [GitHub Release v1.66.0](https://github.com/pooza/capsicum/releases/tag/v1.66.0)（Latest。v1.66.1 は Windows のみのため非 Latest・MSIX のみ添付）。マイルストーン [#85](https://github.com/pooza/capsicum/milestone/85) / [#87](https://github.com/pooza/capsicum/milestone/87)（どちらも 2026-09-22 close）。消化（v1.66 は 9 件）: [#1161](https://github.com/pooza/capsicum/issues/1161) 返信の宛先にメンション全員 / [#1162](https://github.com/pooza/capsicum/issues/1162) 動作対象の引き上げ / [#1144](https://github.com/pooza/capsicum/issues/1144) v1.65 レビューの送り分 / [#1141](https://github.com/pooza/capsicum/issues/1141) Linux キーリング失敗の案内 / [#1120](https://github.com/pooza/capsicum/issues/1120) flutter_secure_storage 更新 / [#1134](https://github.com/pooza/capsicum/issues/1134) dSYM アップロード / [#1146](https://github.com/pooza/capsicum/issues/1146) CI の二重実行 / [#1137](https://github.com/pooza/capsicum/issues/1137) / [#1138](https://github.com/pooza/capsicum/issues/1138) スキル整理。送り分は [#1163](https://github.com/pooza/capsicum/issues/1163) / [#1165](https://github.com/pooza/capsicum/issues/1165)。**relay v1.66.1 は残 0 で完了**（[relay#65](https://github.com/pooza/capsicum-relay/issues/65) WNS 5000B 超過の degrade・`07b1a7e` をステージング / 本番へデプロイ済み・[枠も 2026-09-22 に close](https://github.com/pooza/capsicum-relay/milestone/13)）。
+最新リリース: **v2.0.0**（2026-10-08 タグ、build 197、リリース PR [#1147](https://github.com/pooza/capsicum/pull/1147)、merge `9b738ca3`）+ **v2.0.1**（同日タグ、build 198、リリース PR [#1253](https://github.com/pooza/capsicum/pull/1253)、merge `4822059c`）。**v2.0 はメジャーリリース**（デッキ表示 [#720](https://github.com/pooza/capsicum/issues/720)・有償プッシュ通知リレー [#597](https://github.com/pooza/capsicum/issues/597)・添付画像のレイヤ編集 [#884](https://github.com/pooza/capsicum/issues/884) の 3 本）。**v2.0.1 は公開直後に見つかった不具合だけを出すホットフィックス**（[#1249](https://github.com/pooza/capsicum/issues/1249) デスクトップの通知用接続 / [#1248](https://github.com/pooza/capsicum/issues/1248) Windows の投げ銭の入口 / [#1236](https://github.com/pooza/capsicum/issues/1236) 通知の一覧 / [#1250](https://github.com/pooza/capsicum/issues/1250) デッキのスレッドの背景）。**公開状況（2026-10-10 実測）**: Android は production 198 が `completed` / Windows は Microsoft Store が `2.0.198.0` を返す / Linux AppImage は [GitHub Release v2.0.1](https://github.com/pooza/capsicum/releases/tag/v2.0.1)（Latest）/ iOS は 2.0.1 が公開済み / macOS は 2.0.1 が審査中（公開中は 1.66.0。⚠ **macOS の 2.0.0 は審査待ちのまま 2.0.1 へ差し替えたので、公開されていない**）。利用権の商品 `supporter.relay.monthly` は承認済みで、iOS と Android で販売中。マイルストーンは [v2.0](https://github.com/pooza/capsicum/milestone/65)（2026-10-08 close）/ [v2.0.1](https://github.com/pooza/capsicum/milestone/93)（2026-10-10 close）。relay は [v2.0](https://github.com/pooza/capsicum-relay/milestone/12) が残 0 で close 済み、v2.0.1 に同名枠は無い。
 
-⚠⚠ **v1.66 は v2.0 開発中の 1.x リリースの初回で、2 回とも `origin/main` から `release/x.y.z` を切って出した**（[develop が次リリース対象でないときの出し方](#develop-が次リリース対象でないときの出し方)・#1142）。**back-merge で pubspec が衝突したら develop 側の `2.0.0+…` を残す**（`81aa4c1c` / `d5628802`）。⚠ **v2.0 のビルド番号は 189 以上**（1.x が 188 まで使った）。
+⚠⚠ **v2.0 を出したので、`main` は 2.x 線に戻った。**`develop` → `main` の通常のフローが使える（v2.0.1 はそれで出した）。⚠ **develop は 2026-10-09 に `2.1.0+199` へ上げた**（Apple 2 つの 2.0.1 が審査中のまま、pooza の判断で v2.1 に着手。iOS は 10-10 までに公開され、残るのは macOS）。⚠ **審査で差し戻されて 2.0.x を出し直すときは、`origin/main` から `release/2.0.x` を切り、ビルド番号は develop で使った最大値より上を取る**（そのあと develop も、それより上へ上げ直す）。
 
-⚠ **v1.66.1 は Windows 専用の点リリース**（relay#65）。relay が WNS raw の上限 5000B を超えた通知から暗号化本文を落として `degraded:"1"` で送り、Windows 側は iOS と同じ汎用文面（「capsicum」/「<account> に通知があります」）で出す。**起動中は 8 秒待って、同じアカウント宛を WebSocket 経路が出していなければ出す**（ID が無く dedup できないため・Codex P1 / P2 で詰めた）。実機で「終了中 / 起動中で WebSocket 無し / 8 秒以内に終了」の 3 ケースを本番 relay で確認済み。
+⚠ **#1248（Windows で投げ銭の商品が出ない）は、v2.0.1 の修正では直っていない。**原因は 2026-10-10 に Windows 実機で特定し、v2.1 で直した（ネイティブのワーカーが Store の結果を捨てていた。経緯は Issue、検証の経路は [tech-notes-native.md](tech-notes-native.md)）。
 
 過去リリースの詳細ログは [archive/release-log.md](archive/release-log.md) に退避した（正本は [GitHub Releases](https://github.com/pooza/capsicum/releases) / Milestones）。マイルストーン移行時のログトリム手順は [milestone-transition スキル](../.claude/skills/milestone-transition/SKILL.md) の step 7。
 

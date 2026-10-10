@@ -24,7 +24,7 @@ gh issue list --state open --label Linux     # Linux 機で
 - `sentry-cli` を GitHub Releases から `~/.local/bin/sentry-cli`（Windows は `%USERPROFILE%\.local\bin\sentry-cli.exe`）に直接配置（MacPorts / Homebrew / scoop 等のパッケージマネージャ不使用）
 - `~/.sentryclirc` に Issue 読み取り用トークンを配置（メインと同じ）
 - Google Drive クライアント（Drive for desktop 等）をインストールし、`~/.config/capsicum/secrets.env` を Google Drive 上の実体への symlink で配置
-- Claude Code の memory ディレクトリ（`~/.claude/projects/<project-key>/memory/`）も Google Drive 上の `claude-memory/` 実体への symlink で共有する。`<project-key>` は Claude Code 起動時に作業ディレクトリから自動生成されるため、起動後に確認してから symlink を張る
+- Claude Code の memory ディレクトリ（`~/.claude/projects/<project-key>/memory/`）も Google Drive 上の実体（プロジェクトのフォルダ配下の `memory/`）への symlink で共有する。⚠ **リンク先のフォルダ名は `memory`。**`claude-memory` という名前を指してリンク切れになった事故が 2 端末で起きている（張ったあと `ls` で中身が見えることを確かめる。実パスは端末固有なのでここには書かない）。`<project-key>` は Claude Code 起動時に作業ディレクトリから自動生成されるため、起動後に確認してから symlink を張る
 
 ## Linux 固有
 
@@ -114,6 +114,19 @@ ls -l /etc/sysctl.d/99-inotify.conf                # サイズが 0 でないこ
   フラグは `windows/CMakeLists.txt` の `APPLY_STANDARD_SETTINGS` に合わせてある（`/WX` があるので警告 1 個で CI が落ちる）。CMakeLists への新ファイル追加や実際のリンクまで見たいときだけ `flutter build windows --debug` を回す（x64 実機で約 195 秒。`capsicum.exe` と `push_background_task.dll` の両ターゲットが出る）。
   - ⚠ **cmd の `cl /Fo:"%~dp0"` は壊れる**。`%~dp0` が `\` で終わるため `\"` がクォートのエスケープとして食われ、`error D8003: ソース ファイル名がありません` になる。出力先を分けたいなら `/Fo` を使わず出力ディレクトリへ `cd` してから絶対パスのソースを渡す
   - ⚠ ビルドした exe は **`.\` を付けて起動する**（この端末では cwd が exe 検索パスに入っていない）。CI (`windows-release.yml`) が `.\xxx_test.exe` と書いているのと同じ理由
+
+### 定形作業（同期・push 前の検査）で踏むシェルの差
+
+Windows では Claude Code の Bash ツールが Git Bash、PowerShell ツールが Windows PowerShell 5.1 になる。**手順書は macOS の書き方なので、次の 6 つだけ読み替える。**
+
+- **`gh` は Bash ツールから叩く。**⚠ PowerShell から `gh ... --jq '...'` を呼ぶと、jq 式が空白で割られて `accepts 1 arg(s), received 4` / `unknown shorthand flag` になる（PS 5.1 のネイティブ実行ファイルへの引数の渡し方）。`curl` / `git` / `awk` / `sed` / `jq` も Bash 側でそのまま動く
+- **`.claude/scripts/sentry-api.sh` は Bash ツールから動く**（使えないのは PowerShell から）。⚠ `cli issues list` には **`--org <slug>` を足す**（`~/.sentryclirc` に org が無い端末では省けない）。⚠⚠ **`post` に日本語の JSON をそのまま渡すと `'utf-8' codec can't decode` で落ちる**（Windows の curl が引数を CP932 にする）。JSON をファイルに書き、`"$(jq -c -a . file.json)"` で ASCII エスケープしてから渡す
+- **PS 5.1 の `Invoke-RestMethod` は、`charset` の無い応答の日本語が化ける。**Mastodon / Misskey の API は charset 付きなので読めるが、Sentry の API は化ける。日本語を含む応答は Bash 側の `curl` で扱う
+- **素の `python` / `python3` は Microsoft Store のアプリ実行エイリアスを先に掴む**（何もせず終わる）。実体を入れてあっても同じなので、`py` ランチャーかフルパスで呼ぶ
+- **`.ps1` は実行ポリシーで止まる。**`powershell -ExecutionPolicy Bypass -File <script>` で 1 回だけ通す（ポリシーそのものは変えない）
+- **Git Bash では `$TMPDIR` が空。**`"$TMPDIR/fmt.log"` は `/fmt.log` になって Permission denied になるので、`/tmp/` を直に書く
+
+⚠ push 前の `dart format` が Windows で黙って空振りする件は、全 OS 共通の書き方として [CLAUDE.md「push 前のローカル整形・解析」](CLAUDE.md#push-前のローカル整形解析) に入っている（`xargs -n 40`）。
 
 ### この端末で決着した環境トラブル 2 件（記録は archive）
 

@@ -57,6 +57,22 @@ sealed class OverlayLayerSpec {
   /// `image_overlay_layer_json_guard_test.dart` が機械で照合している。
   Map<String, Object?> toJson();
 
+  /// 置き場所（位置・大きさ・角度）だけを差し替えた写し (#1132)。
+  ///
+  /// トリミング / 回転で基準の画像が変わったとき、見え方を保ったまま座標を
+  /// 移すのに使う（`remapLayersForCrop`）。
+  ///
+  /// ⚠⚠ **項目を足したら、3 つのサブクラスの実装にも足す。**ここは記述を
+  /// 作り直すので、足し忘れると**トリミングしただけでその項目が既定値へ戻る**。
+  /// `image_crop_geometry_test.dart` が、JSON に出る項目が置き場所の 4 つ以外
+  /// 変わらないことを見ている。
+  OverlayLayerSpec withPlacement({
+    required double nx,
+    required double ny,
+    required double sizeFrac,
+    required double angle,
+  });
+
   /// 共通項目。サブクラスの [toJson] が自分のぶんを足して返す。
   Map<String, Object?> baseJson(String type) => <String, Object?>{
     'type': type,
@@ -106,6 +122,9 @@ sealed class OverlayLayerSpec {
         return TextOverlayLayerSpec(
           text: text,
           color: Color(color),
+          // ⚠ **欄が無い下書きは中央として読む** (#1183)。行揃えを足す前に
+          // 保存された下書きを、復元できないものにしない。
+          align: overlayTextAlignFromName(json['align']),
           nx: nx,
           ny: ny,
           sizeFrac: sizeFrac,
@@ -155,6 +174,7 @@ class TextOverlayLayerSpec extends OverlayLayerSpec {
   const TextOverlayLayerSpec({
     required this.text,
     required this.color,
+    this.align = TextAlign.center,
     required super.nx,
     required super.ny,
     required super.sizeFrac,
@@ -167,6 +187,12 @@ class TextOverlayLayerSpec extends OverlayLayerSpec {
   final String text;
   final Color color;
 
+  /// 複数行のときの行揃え (#1183)。[kOverlayTextAligns] のどれか。
+  ///
+  /// ⚠ **1 行のテキストでは見た目が変わらない**（レイヤの位置は中心基準）。
+  /// 画像の端へ寄せる（位置の基準を変える）話ではない。
+  final TextAlign align;
+
   @override
   Map<String, Object?> toJson() => {
     ...baseJson('text'),
@@ -174,7 +200,47 @@ class TextOverlayLayerSpec extends OverlayLayerSpec {
     // ⚠ `Color` はそのままでは JSON に載らない。ARGB の 32bit 整数で持つ
     // （`preferences_provider` のテーマ色と同じ形）。
     'color': color.toARGB32(),
+    'align': align.name,
   };
+
+  @override
+  TextOverlayLayerSpec withPlacement({
+    required double nx,
+    required double ny,
+    required double sizeFrac,
+    required double angle,
+  }) => TextOverlayLayerSpec(
+    text: text,
+    color: color,
+    align: align,
+    nx: nx,
+    ny: ny,
+    sizeFrac: sizeFrac,
+    angle: angle,
+    opacity: opacity,
+    visible: visible,
+    locked: locked,
+  );
+}
+
+/// 文字レイヤで選べる行揃え (#1183)。並びは切り替えボタンが回る順。
+///
+/// ⚠ **3 つに絞る。**`start` / `end` / `justify` は選ばせない —— ペイントソフトを
+/// 作りたいわけではない（2026-09-28 pooza）。
+const kOverlayTextAligns = [TextAlign.left, TextAlign.center, TextAlign.right];
+
+/// 下書きの `align` を読む (#1183)。**欄が無い・知らない値は中央**（投げない）。
+TextAlign overlayTextAlignFromName(Object? name) {
+  for (final align in kOverlayTextAligns) {
+    if (align.name == name) return align;
+  }
+  return TextAlign.center;
+}
+
+/// 切り替えボタンを押したときの、次の行揃え (#1183)。左 → 中央 → 右 → 左。
+TextAlign nextOverlayTextAlign(TextAlign current) {
+  final index = kOverlayTextAligns.indexOf(current);
+  return kOverlayTextAligns[(index + 1) % kOverlayTextAligns.length];
 }
 
 /// カスタム絵文字を素材にした画像スタンプのレイヤ (#883)。
@@ -204,6 +270,24 @@ class StickerOverlayLayerSpec extends OverlayLayerSpec {
     'shortcode': shortcode,
     'url': url,
   };
+
+  @override
+  StickerOverlayLayerSpec withPlacement({
+    required double nx,
+    required double ny,
+    required double sizeFrac,
+    required double angle,
+  }) => StickerOverlayLayerSpec(
+    shortcode: shortcode,
+    url: url,
+    nx: nx,
+    ny: ny,
+    sizeFrac: sizeFrac,
+    angle: angle,
+    opacity: opacity,
+    visible: visible,
+    locked: locked,
+  );
 }
 
 /// 端末内の画像を素材にしたレイヤ (#1178)。
@@ -249,6 +333,24 @@ class PictureOverlayLayerSpec extends OverlayLayerSpec {
     'path': path,
     'name': name,
   };
+
+  @override
+  PictureOverlayLayerSpec withPlacement({
+    required double nx,
+    required double ny,
+    required double sizeFrac,
+    required double angle,
+  }) => PictureOverlayLayerSpec(
+    path: path,
+    name: name,
+    nx: nx,
+    ny: ny,
+    sizeFrac: sizeFrac,
+    angle: angle,
+    opacity: opacity,
+    visible: visible,
+    locked: locked,
+  );
 }
 
 /// 編集画面の戻り値 (#1129)。

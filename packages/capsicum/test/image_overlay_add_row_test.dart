@@ -58,7 +58,7 @@ void main() {
   group('画像オーバーレイの追加ツールバー (#953-3)', () {
     testWidgets('320px 幅で overflow しない', (tester) async {
       await pumpAt(tester, width: 320, textScale: 1.0);
-      expect(find.text('テキストを追加'), findsOneWidget);
+      expect(find.text('文字を追加'), findsOneWidget);
       expect(find.text('スタンプを追加'), findsOneWidget);
       // #1178 で 3 つ目が並んだ。⚠ **数を固定する** —— 足したボタンが
       // 「入らないので描かれていない」でも overflow は出ないため、
@@ -79,7 +79,7 @@ void main() {
 
     testWidgets('入る幅では 1 行のまま（折り返しても縦積みにしない）', (tester) async {
       await pumpAt(tester, width: 600, textScale: 1.0);
-      final text = tester.getTopLeft(find.text('テキストを追加'));
+      final text = tester.getTopLeft(find.text('文字を追加'));
       final sticker = tester.getTopLeft(find.text('スタンプを追加'));
       // #1178 の 3 つ目も同じ行に載ることを見る。⚠ **3 つを 1 行に収める幅**を
       // 固定しておかないと、ボタンが増えたときに「通常の幅でも 2 行」になった

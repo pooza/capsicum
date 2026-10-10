@@ -39,7 +39,7 @@ String? composeDraftAttachmentNotice({
     buffer.write('（添付 $restoredCount 件を戻し、$missing 件は戻せませんでした）');
   }
   if (overlaysDroppedCount > 0) {
-    buffer.write('。うち $overlaysDroppedCount 件は編集前の画像が失効したため、重ねたレイヤを外しました');
+    buffer.write('。うち $overlaysDroppedCount 件は編集前の画像が失効したため、重ねたレイヤーを外しました');
   }
   return buffer.toString();
 }

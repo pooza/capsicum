@@ -8,6 +8,8 @@ import 'package:capsicum/src/service/secure_storage_health.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/dart_source.dart';
+
 /// #1144: secure storage の打ち切りを、どの操作・どの店のものか分かる形で記録する。
 ///
 /// ⚠ 以前は stage が `probe` / `read` の 2 値で、**削除中のタイムアウトが
@@ -28,7 +30,7 @@ void main() {
       for (final op in ['read', 'write', 'delete', 'readAll', 'containsKey']) {
         expect(
           SecureStorageHealth.stageOf(
-            TimeoutException('secure storage $op timed out'),
+            TimeoutException(SecureStorageHealth.gateTimeoutMessage(op)),
           ),
           op,
         );
@@ -37,6 +39,34 @@ void main() {
 
     test('知らない形は read（以前と同じ）', () {
       expect(SecureStorageHealth.stageOf(TimeoutException(null)), 'read');
+    });
+
+    // #1166: 組み立てる側と見分ける側が同じ形を通ること。
+    test('⚠ 関所が組み立てた文面を、見分ける側がそのまま読める', () {
+      for (final op in ['read', 'write', 'delete', 'readAll', 'containsKey']) {
+        final message = SecureStorageGate.timeoutMessage(op);
+        expect(SecureStorageHealth.gateTimeoutOperation(message), op);
+        expect(
+          SecureStorageGate.isGateTimeout(TimeoutException(message)),
+          isTrue,
+        );
+      }
+    });
+
+    test('⚠ 似ているだけの文面は、関所の打ち切りと見なさない', () {
+      // 通信など別経路の timeout をキーリングのせいにしない。
+      for (final message in [
+        'secure storage write timed out after retry',
+        'storage read timed out',
+        'request timed out',
+      ]) {
+        expect(SecureStorageHealth.gateTimeoutOperation(message), isNull);
+        expect(
+          SecureStorageGate.isGateTimeout(TimeoutException(message)),
+          isFalse,
+          reason: message,
+        );
+      }
     });
   });
 
@@ -74,8 +104,10 @@ void main() {
         'lib/src/service/push_key_store.dart',
         'lib/src/service/device_install_id.dart',
       ]) {
+        // ⚠ コメントを潰してから見る (#1166)。生のソースだと、コメントに
+        // 書いてあるだけでも通る。
         expect(
-          File(path).readAsStringSync(),
+          maskComments(File(path).readAsStringSync()),
           contains('_gate = ReportingSecureStorageGate('),
           reason: path,
         );

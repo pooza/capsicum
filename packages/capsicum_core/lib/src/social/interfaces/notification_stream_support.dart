@@ -20,10 +20,15 @@ abstract mixin class NotificationStreamSupport {
   /// 内部の parse / 接続 error と再接続枯渇は [StreamSupport.streamTimeline] と
   /// 同型のコールバックで観測層へ流す。raw payload を捨てる前に拾えるよう
   /// streaming 実装の内側から呼ばれる (#569 観測性。timeline は #586 で対応済)。
+  ///
+  /// [onConnectionEvent] は接続の節目（`connected` / `subscribed` /
+  /// `disconnected`）を知らせる (#1252)。⚠ 失敗のコールバックだけでは、**接続が
+  /// 生きているのか**を外から確かめられなかった。
   Stream<Notification> streamNotifications({
     void Function(Object error, StackTrace stack)? onParseError,
     void Function(Object error, StackTrace stack)? onStreamError,
     void Function()? onReconnectExhausted,
+    void Function(String event)? onConnectionEvent,
   });
 
   /// 通知ストリーミング接続を明示的にクローズする（アカウント切替 / dispose 時）。

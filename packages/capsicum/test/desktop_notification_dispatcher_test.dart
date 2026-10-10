@@ -83,6 +83,7 @@ class _RecordingSubsystem implements NotificationSubsystem {
       onParseError: any(named: 'onParseError'),
       onStreamError: any(named: 'onStreamError'),
       onReconnectExhausted: any(named: 'onReconnectExhausted'),
+      onConnectionEvent: any(named: 'onConnectionEvent'),
     ),
   ).thenAnswer((_) => controller.stream);
   final account = Account(

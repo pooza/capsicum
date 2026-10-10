@@ -20,7 +20,8 @@ import '../../widget/section_header.dart';
 /// 投げ銭は「任意の応援」、利用権は「非プリセットサーバーでのプッシュ通知」という
 /// 機能に対する対価で、⚠ **成功時の文言も解約の扱いも違う。**
 ///
-/// 購入導線は iOS / Android / macOS（D-1）。非対応 OS では説明のみ表示する。
+/// 購入導線は iOS / Android / macOS / Windows（Windows は Store 版のみ・E-2）。
+/// 購入の backend が無い OS（Linux）では説明のみ表示する。
 class SupporterScreen extends ConsumerWidget {
   const SupporterScreen({super.key});
 

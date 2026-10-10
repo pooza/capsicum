@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../service/sentry_op_failure.dart';
+import '../service/stream_connect_failure_reporter.dart';
 import '../util/exception_scrub.dart';
 import 'account_manager_provider.dart';
 import 'timeline_provider.dart';
@@ -34,7 +35,6 @@ final chatMessageStreamProvider = Provider.autoDispose<Stream<ChatMessage>?>((
   // streaming 内部 parse 失敗 (server schema 変更等) を観測層に流す (#448)。
   // breadcrumb は毎回、captureException は throttle して spam を防ぐ。
   DateTime? lastParseCapture;
-  DateTime? lastConnectCapture;
   const captureThrottle = Duration(seconds: 60);
   final stream = (adapter as ChatSupport).streamChatMessages(
     onParseError: (e, st) {
@@ -76,19 +76,14 @@ final chatMessageStreamProvider = Provider.autoDispose<Stream<ChatMessage>?>((
           message: e.runtimeType.toString(),
         ),
       );
-      final now = DateTime.now();
-      if (lastConnectCapture != null &&
-          now.difference(lastConnectCapture!) < captureThrottle) {
-        return;
-      }
-      lastConnectCapture = now;
-      Sentry.captureException(
-        scrubException(e),
+      // イベントにするかは、アプリ全体で 1 つの報告役が決める (#1246)。
+      streamConnectFailureReporter.report(
+        category: 'chat.stream.connect',
+        error: e,
         stackTrace: st,
-        withScope: (scope) {
-          scope.setTag('chat.stream.connect', 'failed');
-          scope.fingerprint = ['chat.stream.connect', e.runtimeType.toString()];
-        },
+        // ⚠ タイムライン側と同じく、どのサーバーかを渡す。渡さないと「2 ホスト
+        // 以上が同時に落ちた ＝ 回線側」の判定に、チャットの接続が数えられない。
+        host: adapter is DecentralizedBackendAdapter ? adapter.host : null,
       );
     },
     // 再接続上限 (10 回) に到達した時点で 1 回だけ通知される。Sentry に
@@ -220,7 +215,6 @@ final chatRoomMessageStreamProvider = Provider.autoDispose
       if (adapter is! ChatSupport) return null;
       if (!(adapter as ChatSupport).canReadChat) return null;
       DateTime? lastParseCapture;
-      DateTime? lastConnectCapture;
       const captureThrottle = Duration(seconds: 60);
       final stream = (adapter as ChatSupport).streamRoomMessages(
         roomId: roomId,
@@ -260,22 +254,12 @@ final chatRoomMessageStreamProvider = Provider.autoDispose
               message: e.runtimeType.toString(),
             ),
           );
-          final now = DateTime.now();
-          if (lastConnectCapture != null &&
-              now.difference(lastConnectCapture!) < captureThrottle) {
-            return;
-          }
-          lastConnectCapture = now;
-          Sentry.captureException(
-            scrubException(e),
+          // イベントにするかは、アプリ全体で 1 つの報告役が決める (#1246)。
+          streamConnectFailureReporter.report(
+            category: 'chat.room.stream.connect',
+            error: e,
             stackTrace: st,
-            withScope: (scope) {
-              scope.setTag('chat.room.stream.connect', 'failed');
-              scope.fingerprint = [
-                'chat.room.stream.connect',
-                e.runtimeType.toString(),
-              ];
-            },
+            host: adapter is DecentralizedBackendAdapter ? adapter.host : null,
           );
         },
         onReconnectExhausted: () {

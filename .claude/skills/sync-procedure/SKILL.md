@@ -31,7 +31,7 @@ disable-model-invocation: true
 ## 1. プロジェクトガイドの読み込み
 
 - `docs/CLAUDE.md` を読む（プロジェクトのルール・構造・履歴の正本）
-- インフラノート `/Volumes/extdata/repos/chubo2/docs/infra-note.md` を読む（サーバー構成・デプロイ手順）
+- インフラノート `~/repos/chubo2/docs/infra-note.md` を読む（サーバー構成・デプロイ手順）
 
   ⚠⚠ **全文を読むのは chubo2 に差分があるときだけ**（#1227）。36KB あり、**変わっていない回も毎日読み直していた**。⚠ ステップ 8 の chubo2 の差分確認を、ここで先に済ませる:
 
@@ -175,7 +175,7 @@ capsicum-relay の Issue・マイルストーンは、**capsicum 本体と同じ
 - 新規・未解決のイシューがあれば内容を確認し、対応が必要か判断する（対応が必要なら GitHub Issue を起票。capsicum-relay 側のイシューは pooza/capsicum-relay リポに起票）
 - 判断結果や対応経緯はコメントとして記録する: `.claude/scripts/sentry-api.sh post /issues/{issue_id}/comments/ '{"text":"コメント内容"}'`
 - 調査用トークンが別枠なのは、capsicum ではリポジトリ root の `.sentryclirc` がデプロイ用トークンで占有されているため。スクリプトの `cli` は `SENTRY_AUTH_TOKEN` で調査用を明示するので、cwd に関係なく 403 にならない
-- ⚠ Windows（`sh` 不在）ではスクリプトが使えない。`sentry-cli` を `--org` 明示で叩く従来の形のまま
+- ⚠ Windows でも **Bash ツール（Git Bash）からならスクリプトが動く**（使えないのは PowerShell から）。`--org` の明示と、日本語の JSON を `post` するときの読み替えは [dev-environment-desktop.md](../../../docs/dev-environment-desktop.md) の「定形作業で踏むシェルの差」
 - resolved 済みのイシューは報告不要
 - ⚠⚠ **pooza の普段遣いがプレリリース版のときは、その release で 1 回引く**（2026-10-05〜・メモリ `project_pooza_daily_driver_on_v20_beta`）。**回帰は新規イシューにならず既存へ積まれる**ことがあり、その場合**新着にも既知 warning の推移にも掛からない**。⚠ **クエリ 1 本で済む**（所要時間を増やさない・#1227）:
 

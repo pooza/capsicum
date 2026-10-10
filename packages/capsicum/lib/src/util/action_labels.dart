@@ -32,6 +32,14 @@ import '../model/account.dart';
 String reblogLabelFrom(MulukhiyaService? mulukhiya, Object? adapter) =>
     mulukhiya?.reblogLabel ?? (adapter is ReactionSupport ? 'リノート' : 'ブースト');
 
+/// お気に入り / リアクションの呼称 (#1238)。
+///
+/// ⚠ **provider（`favouriteLabelProvider`）だけでは足りない。**デッキの見出しは
+/// 「周りのスコープのアカウント」ではなく**そのカラムのアダプタ**で決めるので、
+/// アダプタを受ける関数が要る。provider も中でこれを呼ぶ。
+String favouriteLabelFrom(Object? adapter) =>
+    adapter is ReactionSupport ? 'リアクション' : 'お気に入り';
+
 /// 投稿の呼称（例: キュアスタ！の「キュア！」）。
 String postLabelFrom(MulukhiyaService? mulukhiya) =>
     mulukhiya?.postLabel ?? '投稿';

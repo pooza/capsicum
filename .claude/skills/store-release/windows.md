@@ -13,7 +13,7 @@ OV コード署名証明書 ([#534](https://github.com/pooza/capsicum/issues/534
 
 #### Windows 内部ベータ提出（他 OS の TestFlight / Play 内部トラック相当・[#797](https://github.com/pooza/capsicum/issues/797)）
 
-製品版を Store へ submit する前に、**release ビルドを実機で検証する経路**。iOS の TestFlight / Android の Play 内部トラックに対応する。v1.43 で投げ銭（[#599](https://github.com/pooza/capsicum/issues/599)）を release ビルド検証なしで製品版提出した反省（軽量な検証経路が未確立だった）から手順化した。検証内容に応じて 2 経路を使い分ける。
+製品版を Store へ submit する前に、**release ビルドを実機で検証する経路**。iOS の TestFlight / Android の Play 内部トラックに対応する。v1.43 で投げ銭（[#599](https://github.com/pooza/capsicum/issues/599)）を release ビルド検証なしで製品版提出した反省（軽量な検証経路が未確立だった）から手順化した。経路は A の 1 つだけ（B の package flight は使わない）。
 
 **A. CI artifact sideload（軽量・既定）** — ほとんどの release ビルド検証はこれで足りる。
 
@@ -27,27 +27,26 @@ pwsh distribution/windows/install-internal-beta.ps1 -Run <run-id>
 ```
 
 - **カバー範囲**: push 通知 / OAuth / ストリーミング / メディア再生 / UI / SMTC など **投げ銭以外のほぼ全機能**。OS 連携系（[#382](https://github.com/pooza/capsicum/issues/382) / [#559](https://github.com/pooza/capsicum/issues/559) のような native 連携）もこの経路で先行検証できる。
-- **カバーしない**: **#599 投げ銭（Microsoft Store IAP）は動作しない**。自己署名 sideload 版はライセンスコンテキストが Store と異なり、`Windows.Services.Store` の購入は成立しない。IAP を触るリリースは経路 B を併用する。
+- **カバーしない**: **#599 投げ銭（Microsoft Store IAP）は動作しない**。自己署名 sideload 版はライセンスコンテキストが Store と異なり、`Windows.Services.Store` の購入は成立しない。IAP は製品版を出したあとに確かめる（下の B のとおり、flight は使わない）。
 - ARM64 Windows でローカル x64 ビルドが通らない制約（ATL / jni / crashpad）とも独立して回せる（CI 産の x64 MSIX を落とすだけ）。手動の `gh run download` → ダブルクリック運用（従来）を script 化したもの。
 
-**B. MS Store package flight（IAP 検証が要るリリースのみ）** — Store-signed の実配布と同一バイナリで、実際の購入まで検証できる唯一の経路。
+**B. MS Store package flight — ⚠⚠ 使わない（2026-08-05 決定）。**
 
-Partner Center の **package flight** は、本番 submission と別に限定テスターへ Store 経由で配る仕組み（TestFlight のサンドボックス購入に相当）。#599 投げ銭のように **Store-install 版でしか挙動しない機能**を release ビルドで検証するときに使う。
+Partner Center の package flight（限定テスターへ Store 経由で配る仕組み）は、**検証手段として使わないし、提案もしない。**「捨てアカウントで受ければよい」も持ち出さない。
 
-1. Partner Center → アプリ「capsicum」→ **Package flights** → 新規 flight を作成（テスターの MSA / AAD メールを flight group に登録）
-2. draft Release 添付（または `capsicum-msix` artifact）の `capsicum.msix` を flight の Packages に upload（本番 submission と同じ MSIX でよい）
-3. Submit for certification（本番より軽い審査）→ 通過後、テスターに配られる **flight 専用の Store リンク**からインストール
-4. Store-install 版として起動し、投げ銭の購入ダイアログ〜消費報告まで実機確認
+- **2026-07-07 に実害が出た。**flight のテスターグループに登録した Microsoft アカウントは、製品版（本番リング）を受け取れなくなる。flight の package が本番より古いと、本番が新しくなっても古い版に固着する。⚠ **submission を削除しても戻らない**（真の blocker はテスターグループのメンバー登録）。wsreset / Store への再サインイン / アンインストールと再インストールのどれでも剥がれない。v1.43 の投げ銭の検証で日常のアカウントを入れた結果、v1.44 の公開後もそのアカウントが 1.43 に固着した。
+- 復旧は Partner Center でそのアカウントをテスターグループから外すこと（MS サポートは不要）。
 
-> Partner Center の UI 名称は変わりやすい。「Package flights」が見つからないときはアプリ概要から辿る。flight は本番審査より速いが、証明書認定は要るため経路 A より重い。
->
-> ⚠️ **flight は「捨てアカウント」で受けること（2026-07-07 に実害）。** package flight の**テスターグループに登録した Microsoft アカウントは製品版（本番リング）を受け取れない**。flight package が本番より古いと、本番が新しくなってもそのアカウントは古い版に固着する。厄介なのは **submission を削除しても戻らない**点で、真の blocker は**テスターグループのメンバー登録**。wsreset / Store 再サインイン / アンインストール→再インストールのどれでも剥がれない（client 側では直せない）。v1.43 の投げ銭検証で日常アカウントをフライトに入れた結果、v1.44 公開後もそのアカウントが 1.43 に固着した（一般ユーザーは無風＝おま環）。**復旧は self-service**：Partner Center でそのアカウントを**フライトのテスターグループから外す**と製品版が installable になる（MS サポート不要。過度に恐れる必要はないが、submission 削除だけでは戻らない=使い勝手が悪い）。原則 **日常使いの Microsoft アカウントをフライトに入れない**。
+⚠⚠ **したがって、Store から入れた版でしか動かないもの（投げ銭 = [#599](https://github.com/pooza/capsicum/issues/599) / Store の IAP）は、出荷前に確かめる手段が無い。****製品版を出したあとに回収する。**
+
+- **検証待ちを理由に出荷を止めない。**
+- **出荷前に観測の手掛かりを仕込んでおく**（Sentry の記録・relay 側の指標）。リリース後にそれを読んで、効いたかどうかを判定する。⚠ 先例: v2.0.1 の [#1248](https://github.com/pooza/capsicum/issues/1248)（「遅れて届いた」「利用不可で返った」「失敗で返った」を別々の記録にして出した）。
 
 **使い分けの原則**:
 
 - 既定は **A（sideload）**。毎リリース、製品版昇格（§4.3）の前に回す。
-- リリースに **#599 IAP を含む / Store-install 固有挙動を触る**場合は **B（flight）も**回してから submit する。**ただし flight は日常アカウントでなく捨てアカウントで受ける**（上記の固着を避けるため）。IAP の実購入検証がどうしても要るときだけ B を使い、それ以外は A で十分。
-- どちらも `Add-AppxPackage` は同一 identity（`9AFBB08E.capsicum`）を置き換えるため、**Store 版を常用している端末では検証後に Store 版へ戻す**（sideload 版をアンインストール → Store から再インストール、または flight リンクから本番版へ）ことに注意。
+- **A で見られないもの（Store の IAP・Store から入れた版に固有の挙動）は、製品版で確かめる。**flight へは進まない。
+- `Add-AppxPackage` は同一 identity（`9AFBB08E.capsicum`）を置き換えるため、**Store 版を常用している端末では検証後に Store 版へ戻す**（sideload 版をアンインストール → Store から再インストール）ことに注意。
 
 #### MSIX
 
@@ -118,7 +117,7 @@ PFX は 5 年有効。**期限切れ・流出疑い・鍵管理ホスト退役�
 
 タグ駆動ビルドで draft Release に添付された `capsicum.msix` を Partner Center Web UI から手動で submission する。初回審査は 2026-05-20 通過、以降は同じ流れで毎リリース回す。
 
-> 提出の前に §「Windows 内部ベータ提出」で release ビルドを実機検証してから publish すること（既定は sideload、#599 IAP を触るリリースは package flight も）。
+> 提出の前に §「Windows 内部ベータ提出」で release ビルドを実機検証してから publish すること（sideload。#599 IAP は製品版で確かめる）。
 
 1. **Partner Center にログイン**: <https://partner.microsoft.com/dashboard> → アプリ「capsicum」(`identity_name=9AFBB08E.capsicum` / `publisher_display_name=小石達也`)
 2. **新規 Submission を開始**

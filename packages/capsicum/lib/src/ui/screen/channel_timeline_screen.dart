@@ -1,8 +1,10 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../provider/account_manager_provider.dart';
 import '../../provider/channel_provider.dart';
+import '../util/scroll_thresholds.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/post_tile.dart';
 import '../widget/retry_error_view.dart';
@@ -29,11 +31,22 @@ class ChannelTimelineView extends ConsumerStatefulWidget {
 
 class _ChannelTimelineViewState extends ConsumerState<ChannelTimelineView> {
   final _scrollController = ScrollController();
+  final _nearTopTracker = NearTopTracker();
+
+  ChannelTimelineKey get _key =>
+      (account: ref.read(currentAccountKeyProvider), id: widget.channelId);
 
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    // ⚠ 開いた時点で「先頭に居る」と名乗る (#1235)。理由は
+    // `list_timeline_screen.dart` の同じ箇所。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ref.read(channelTimelineProvider(_key).notifier).setNearTop(true);
+      }
+    });
   }
 
   @override
@@ -44,15 +57,17 @@ class _ChannelTimelineViewState extends ConsumerState<ChannelTimelineView> {
   }
 
   void _onScroll() {
-    if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 600) {
+    // 読み進めている間は、ライブの新着を未表示バッファへ退避させる (#1235)。
+    _nearTopTracker.update(
+      _scrollController.position,
+      (nearTop) =>
+          ref.read(channelTimelineProvider(_key).notifier).setNearTop(nearTop),
+    );
+    if (shouldLoadMore(_scrollController.position)) {
       // 継続エラー時 (loadMoreError) は自動再試行を止める (#678)。isLoadingMore /
       // hasMore は loadMore 側でも弾くが、リトライストーム抑止のため loadMoreError
       // はトリガー段で見る。回復は pull-to-refresh で build() 再実行時。
-      final ChannelTimelineKey key = (
-        account: ref.read(currentAccountKeyProvider),
-        id: widget.channelId,
-      );
+      final key = _key;
       final state = ref.read(channelTimelineProvider(key)).valueOrNull;
       if (state != null && state.loadMoreError != null) return;
       ref.read(channelTimelineProvider(key).notifier).loadMore();

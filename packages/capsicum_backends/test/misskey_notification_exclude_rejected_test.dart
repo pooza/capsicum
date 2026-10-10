@@ -24,6 +24,11 @@ class _RejectsExclude implements HttpClientAdapter {
   /// `i/notifications-grouped` を持つサーバーか。持たなければ 404。
   final bool hasGrouped;
 
+  /// 400 のときに返す本文。既定は上流が実際に返す形 (#1251)。
+  Map<String, dynamic> rejectBody = invalidParam(
+    '#/properties/excludeTypes/items/enum',
+  );
+
   /// 飛んだリクエストを「経路 + 除外の有無」で記録する。
   final List<String> log = [];
 
@@ -46,7 +51,11 @@ class _RejectsExclude implements HttpClientAdapter {
       status = 200;
     }
     return ResponseBody.fromString(
-      status == 200 ? jsonEncode(notifications) : '{"error":{}}',
+      status == 200
+          ? jsonEncode(notifications)
+          : jsonEncode(
+              status == 400 ? rejectBody : {'error': <String, dynamic>{}},
+            ),
       status,
       headers: {
         Headers.contentTypeHeader: ['application/json'],
@@ -57,6 +66,20 @@ class _RejectsExclude implements HttpClientAdapter {
   @override
   void close({bool force = false}) {}
 }
+
+/// Misskey が引数の検証に落ちたときの本文（`endpoint-base.ts`）。
+Map<String, dynamic> invalidParam(String param) => {
+  'error': {
+    'message': 'Invalid param.',
+    'code': 'INVALID_PARAM',
+    'id': '3d81ceae-475f-4600-b2a8-2bc116157532',
+    'kind': 'client',
+    'info': {
+      'param': param,
+      'reason': 'must be equal to one of the allowed values',
+    },
+  },
+};
 
 void main() {
   Map<String, dynamic> notification(String id, String type) => {
@@ -167,4 +190,134 @@ void main() {
     );
     expect(server.log, ['plain'], reason: '無いと分かったら叩かない');
   });
+
+  /// #1251: 400 を「除外を断られた」と読むのは、本文がそう言っているときだけ。
+  group('400 の読み分け (#1251)', () {
+    test('⚠ 別の引数の INVALID_PARAM では、除外を断られたことにしない', () async {
+      final (adapter, server) = await setUpServer();
+      server.rejectBody = invalidParam('#/properties/limit/maximum');
+      const plainExclude = NotificationQuery(
+        excludeTypes: {NotificationType.follow},
+      );
+
+      await expectLater(
+        adapter.getNotifications(filter: plainExclude),
+        throwsA(isA<DioException>()),
+      );
+
+      // 🔴 以前はこの 1 回で「断られた」の覚えが立ち、アダプターの寿命のあいだ
+      // 絞り込みが手元処理に倒れていた。次の回もサーバーへ送る。
+      server.log.clear();
+      await expectLater(
+        adapter.getNotifications(filter: plainExclude),
+        throwsA(isA<DioException>()),
+      );
+      expect(server.log, ['plain+exclude']);
+    });
+
+    test('INVALID_PARAM 以外の 400 でも、除外を断られたことにしない', () async {
+      final (adapter, server) = await setUpServer();
+      server.rejectBody = {
+        'error': {'message': 'nope', 'code': 'SOMETHING_ELSE'},
+      };
+
+      await expectLater(
+        adapter.getNotifications(
+          filter: const NotificationQuery(
+            excludeTypes: {NotificationType.follow},
+          ),
+        ),
+        throwsA(isA<DioException>()),
+      );
+      expect(server.log, ['plain+exclude']);
+    });
+
+    test('⚠ 本文から読み取れないフォークでは、従来どおり広く読む（通知を出す）', () async {
+      final (adapter, server) = await setUpServer(
+        notifications: [notification('1', 'mention')],
+      );
+      server.rejectBody = {'error': <String, dynamic>{}};
+
+      final response = await adapter.getNotifications(filter: excludeFollow);
+
+      expect(server.log, ['grouped+exclude', 'grouped']);
+      expect(response.notifications, hasLength(1));
+    });
+
+    test('手元で絞ったページには印が付く（呼び出し側が連打を抑える）', () async {
+      final (adapter, _) = await setUpServer(
+        notifications: [
+          notification('2', 'follow'),
+          notification('1', 'mention'),
+        ],
+      );
+
+      final response = await adapter.getNotifications(filter: excludeFollow);
+
+      expect(response.filteredLocally, isTrue);
+      expect(response.notifications.map((n) => n.id), ['1']);
+      // ⚠ カーソルと件数は落とす前のもの。
+      expect(response.rawCount, 2);
+    });
+
+    test('サーバーが除外を受けたページには印が付かない', () async {
+      final adapter = await MisskeyAdapter.create('misskey.example');
+      adapter.client.dio.httpClientAdapter = _AcceptsAll();
+
+      final response = await adapter.getNotifications(filter: excludeFollow);
+
+      expect(response.filteredLocally, isFalse);
+    });
+
+    test('判定そのもの', () {
+      expect(
+        misskeyRejectedExcludeTypes(
+          invalidParam('#/properties/excludeTypes/items/enum'),
+        ),
+        isTrue,
+      );
+      expect(
+        misskeyRejectedExcludeTypes(invalidParam('#/properties/limit/maximum')),
+        isFalse,
+      );
+      expect(
+        misskeyRejectedExcludeTypes({
+          'error': {'code': 'RATE_LIMIT_EXCEEDED'},
+        }),
+        isFalse,
+      );
+      // 読み取れないときは広く読む。
+      expect(misskeyRejectedExcludeTypes(null), isTrue);
+      expect(misskeyRejectedExcludeTypes('oops'), isTrue);
+      expect(
+        misskeyRejectedExcludeTypes({'error': <String, dynamic>{}}),
+        isTrue,
+      );
+      expect(
+        misskeyRejectedExcludeTypes({
+          'error': {'code': 'INVALID_PARAM'},
+        }),
+        isTrue,
+      );
+    });
+  });
+}
+
+/// 何を送っても空の一覧を返すサーバー。
+class _AcceptsAll implements HttpClientAdapter {
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<List<int>>? requestStream,
+    Future<void>? cancelFuture,
+  ) async => ResponseBody.fromString(
+    '[]',
+    200,
+    headers: {
+      Headers.contentTypeHeader: ['application/json'],
+    },
+  );
+
+  @override
+  void close({bool force = false}) {}
 }

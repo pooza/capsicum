@@ -9,6 +9,7 @@ import '../../url_helper.dart';
 import '../../util/exception_scrub.dart';
 import '../util/deck_navigation.dart';
 import '../util/provider_scope_carrier.dart';
+import '../util/scroll_thresholds.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/emoji_text.dart';
 
@@ -53,8 +54,7 @@ class _MediaCatalogScreenState extends ConsumerState<MediaCatalogScreen> {
 
   void _onScroll() {
     if (_loadingMore || !_hasMore) return;
-    if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 600) {
+    if (shouldLoadMore(_scrollController.position)) {
       _loadMore();
     }
   }

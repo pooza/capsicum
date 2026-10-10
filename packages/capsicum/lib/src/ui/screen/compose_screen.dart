@@ -26,6 +26,7 @@ import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../../service/compose_draft_attachment.dart';
 import '../../service/compose_draft_store.dart';
+import '../../service/now_playing_artwork.dart';
 import '../../service/sentry_op_failure.dart';
 import '../../url_helper.dart';
 import '../../util/exception_scrub.dart';
@@ -41,9 +42,11 @@ import '../util/annict_link.dart';
 import '../util/compose_draft_notice.dart';
 import '../util/compose_settings_display.dart';
 import '../util/compose_template_display.dart';
+import '../util/direct_recipients.dart';
 import '../util/draft_display.dart';
 import '../util/drive_description_sync.dart';
 import '../util/hashtag_body.dart';
+import '../util/image_crop_geometry.dart';
 import '../util/livecure_snackbar.dart';
 import '../util/post_scope_display.dart';
 import '../util/program_schedule_display.dart';
@@ -54,9 +57,11 @@ import '../util/reply_mentions.dart';
 import '../util/shortcode_warning_controller.dart';
 import '../util/text_length_counter.dart';
 import '../util/visible_timeline.dart';
+import '../widget/account_multi_select_sheet.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/content_parser.dart';
 import '../widget/desktop_menu_model.dart';
+import '../widget/direct_recipients_row.dart';
 import '../widget/emoji_text.dart';
 import '../widget/insert_picker_sheet.dart';
 import '../widget/overflow_icon_row.dart';
@@ -171,8 +176,9 @@ class _MediaEntry {
   /// 中身を別の画像へ差し替える（トリミング等）。
   ///
   /// ⚠⚠ **レイヤの控えを必ず捨てる。**差し替え後の画像に前のレイヤを重ねると
-  /// **同じ文字やスタンプが二重に乗る**。トリミングは焼き込み済みの画像に掛かる
-  /// ので、レイヤを保ったまま切る経路は今のところ無い（#884-G で決着させる）。
+  /// **同じ文字やスタンプが二重に乗る**。⚠ トリミングでレイヤを保つ経路は
+  /// [applyOverlay] のほう（焼き込み前の画像とレイヤの座標も一緒に切る・#1132）。
+  /// ここへ来るのは、それができなかった回とレイヤの無い画像だけ。
   void replaceFile(XFile next) {
     file = next;
     overlaySource = null;
@@ -571,16 +577,99 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// 取得に失敗した / まだ返ってきていない。
   bool _redraftReplyToUnavailable = false;
 
-  /// 指名（Misskey の `specified`）で送るときの宛先 (#1161)。
+  /// 指名（Misskey の `specified`）の宛先 (#1161 / #1165)。利用者の id → 利用者。
   ///
-  /// ⚠ **サーバーが自動で足すのは返信先の投稿者だけ**なので、返信先の宛先を
-  /// 引き継がないと、スレッドにいた他の人へ届かない。redraft は元の宛先も戻す。
-  /// Mastodon の adapter はこの値を読まない（宛先は本文のメンションで決まる）。
-  List<String> get _visibleUserIds => composeVisibleUserIds(
+  /// 値は id からサーバーへ問い合わせて入れる。**取れるまで・取れなかった回は
+  /// null**（そのあいだも宛先としては有効で、外すこともできる）。並び順は
+  /// 足した順。
+  ///
+  /// ⚠⚠ **画面の「宛先」の行に、ここに居る全員が出ている。**以前は宛先を見る
+  /// 手段が無く、返信先の宛先を引き継ぐと「本文から消した人にも届く」ことに
+  /// なったので、引き継ぎごと外していた（v1.66 のレビュー）。見えていて外せる
+  /// ようになったので、引き継ぐ。
+  final _recipients = <String, User?>{};
+
+  /// 問い合わせ中の宛先の id。
+  final _recipientsLoading = <String>{};
+
+  /// 宛先を利用者の id の一覧で渡すサーバーか（Misskey）。
+  ///
+  /// ⚠ Mastodon は本文のメンションで宛先が決まり、adapter もこの値を読まない。
+  bool get _usesRecipientList =>
+      ref.read(currentAdapterProvider) is MisskeyAdapter;
+
+  /// 指名で送るときに渡す宛先。指名でなければ空。
+  List<String> get _visibleUserIds => directRecipientIdsToSend(
     scope: _scope,
-    redraft: widget.redraft,
+    recipientIds: _recipients.keys,
     me: ref.read(currentAccountProvider)?.user,
   );
+
+  /// 外せない宛先（返信先の投稿者。サーバーが必ず足す）。
+  String? get _lockedRecipientId => lockedDirectRecipientId(
+    replyTo: _replyToPost,
+    me: ref.read(currentAccountProvider)?.user,
+  );
+
+  /// 開いたときの宛先を入れ、名前とアイコンを取りにいく (#1165)。
+  void _initRecipients(Draft? restoreDraft) {
+    if (!_usesRecipientList) return;
+    final replyTo = widget.replyTo;
+    final ids = initialDirectRecipientIds(
+      replyTo: replyTo,
+      redraft: widget.redraft,
+      draftRecipientIds: restoreDraft?.visibleUserIds ?? const [],
+      me: ref.read(currentAccountProvider)?.user,
+    );
+    for (final id in ids) {
+      // 返信先の投稿者は、問い合わせなくても手元に居る。
+      _recipients[id] = replyTo != null && replyTo.author.id == id
+          ? replyTo.author
+          : null;
+    }
+    for (final id in ids) {
+      if (_recipients[id] == null) unawaited(_resolveRecipient(id));
+    }
+  }
+
+  /// 宛先 1 人の名前とアイコンを取る。⚠ 取れなくても宛先からは外さない
+  /// （届くことは変わらないので、見えなくするほうが害が大きい）。
+  Future<void> _resolveRecipient(String id) async {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter == null) return;
+    _recipientsLoading.add(id);
+    try {
+      final user = await adapter.getUserById(id);
+      if (!mounted || !_recipients.containsKey(id)) return;
+      setState(() => _recipients[id] = user);
+    } catch (e) {
+      debugLogException('capsicum: direct recipient lookup failed', e);
+    } finally {
+      _recipientsLoading.remove(id);
+      if (mounted) setState(() {});
+    }
+  }
+
+  void _removeRecipient(String id) {
+    if (id == _lockedRecipientId) return;
+    setState(() => _recipients.remove(id));
+  }
+
+  /// 利用者を検索して宛先に足す。
+  Future<void> _addRecipients() async {
+    final me = ref.read(currentAccountProvider)?.user;
+    final picked = await showAccountMultiSelectSheet(
+      context,
+      // ⚠ 既に入っている人と自分は選べないようにする。
+      excludeIds: {..._recipients.keys, ?me?.id},
+    );
+    if (picked == null || picked.isEmpty || !mounted) return;
+    setState(() {
+      for (final user in picked) {
+        _recipients[user.id] = user;
+      }
+    });
+  }
 
   Future<void> _loadRedraftReplyTo(String id) async {
     final adapter = ref.read(currentAdapterProvider);
@@ -593,6 +682,13 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       // （v1.64 のリリース前レビュー）。
       if (_redraftReplyToUnavailable) return;
       setState(() => _redraftReplyTo = post);
+      // ⚠ 返信先が分かったので、投稿者（外せない宛先）の名前も入れておく (#1165)。
+      // 再編集では宛先に投稿者を足さない（元の投稿の宛先だけ）が、元の宛先に
+      // 居れば、ここで問い合わせずに済む。
+      if (_recipients.containsKey(post.author.id) &&
+          _recipients[post.author.id] == null) {
+        setState(() => _recipients[post.author.id] = post.author);
+      }
     } catch (e) {
       // ⚠ **失敗しても送信は成立する。**プレビューが出ないだけなので、
       // ユーザーの操作は止めない。1 行の注記へ落とす。
@@ -610,6 +706,17 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// ユーザーに選び直してもらう。
   String? get _unsendableScopeReason {
     final adapter = ref.read(currentAdapterProvider);
+    // ⚠ 宛先を一覧で渡すサーバー（Misskey）は、**宛先が空かどうか**で決める
+    // (#1165)。宛先の画面ができたので、「指定する画面がありません」ではなくなった。
+    if (_usesRecipientList) {
+      return directRecipientsProblem(
+        scope: _scope,
+        hasRecipients: _recipients.isNotEmpty,
+        isReply: _isReply,
+        replyTargetIsSelf: _replyTargetIsSelf,
+        directLabel: postScopeLabel(PostScope.direct, adapter),
+      );
+    }
     return unsendableDirectScopeReason(
       scope: _scope,
       selectable: selectableScopes(adapter),
@@ -858,6 +965,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     final redraft = widget.redraft;
     final replyTo = widget.replyTo;
     final restoreDraft = widget.restoreDraft;
+    _initRecipients(restoreDraft);
     if (restoreDraft != null) {
       // サーバー下書き（Misskey）からの復元 (#174)。Misskey の本文は MFM 平文
       // なので HTML 復元は不要。CW・公開範囲・添付（drive エントリ）を引き継ぐ。
@@ -1593,12 +1701,44 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     }
   }
 
+  /// 下書きの復元（本体・添付の実在確認）を待つ上限 (#1237)。
+  ///
+  /// ⚠ どちらも本来は即座に返る（端末内の設定とファイルを見るだけ）。上限は
+  /// 「返ってこない」を「失敗」に変えるためのもので、遅い端末を切るためではない。
+  static const _draftRestoreTimeout = Duration(seconds: 10);
+
+  /// 下書きを戻せなかった回を Sentry へ残す (#1237)。
+  ///
+  /// ⚠ 以前は `debugLogException` だけで、release では何も残らなかった
+  /// （頻度が分からない）。⚠ 本文もパスも載せない（`scrubException` を通す）。
+  void _reportDraftRestoreFailure(String stage, Object error, StackTrace st) {
+    unawaited(
+      Sentry.captureException(
+        scrubException(error),
+        stackTrace: st,
+        withScope: (scope) {
+          scope.level = SentryLevel.warning;
+          scope.setTag('compose.draft.restore', stage);
+          scope.fingerprint = [
+            'compose.draft.restore',
+            stage,
+            error.runtimeType.toString(),
+          ];
+        },
+      ),
+    );
+  }
+
   /// Restore a previously saved draft into the controllers.
   Future<void> _restoreDraft() async {
     final ComposeDraft? saved;
     try {
-      saved = await _draftStore.restore();
-    } catch (e) {
+      // ⚠⚠ **上限を掛ける** (#1237)。投稿は復元が済むまで止めているので、
+      // 返ってこないと**毎回「下書きを読み込んでいます」が出て投稿できない**。
+      // 時間切れは下の catch へ落ち、ふつうの失敗と同じに扱う。
+      saved = await _draftStore.restore().timeout(_draftRestoreTimeout);
+    } catch (e, st) {
+      _reportDraftRestoreFailure('restore', e, st);
       // 復元に失敗しても離脱時保存 (#966) は解禁する。ここで抜けると
       // `_draftRestored` が false のまま `_saveDraft` が永久に no-op になり、
       // **書きかけが黙って保存されなくなる**（#969 で解禁条件を足すまでは、
@@ -1685,8 +1825,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     final epoch = _draftClearEpoch;
     final ComposeDraftAttachmentRestore resolved;
     try {
-      resolved = await resolveComposeDraftAttachments(saved.attachments);
-    } catch (e) {
+      // ⚠ こちらも上限を掛ける（理由は上の `restore()` と同じ・#1237）。
+      resolved = await resolveComposeDraftAttachments(
+        saved.attachments,
+      ).timeout(_draftRestoreTimeout);
+    } catch (e, st) {
+      _reportDraftRestoreFailure('attachments', e, st);
       if (epoch != _draftClearEpoch) {
         _draftRestored = true;
         return;
@@ -1716,9 +1860,13 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       if (mounted && saved.attachments.isNotEmpty) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('下書きの添付を復元できませんでした')));
+          ScaffoldMessenger.of(context).showSnackBar(
+            // ⚠ **どうすれば戻るかも言う** (#1237)。控えは残してあり、開き直せば
+            // もう一度試す。
+            const SnackBar(
+              content: Text('下書きの添付を復元できませんでした。投稿画面を開き直すと、もう一度試します。'),
+            ),
+          );
         });
       }
       return;
@@ -2161,15 +2309,15 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     }
     if (!mounted) return;
 
-    final cropped = await Navigator.of(context).push<Uint8List>(
+    final result = await Navigator.of(context).push<ImageCropResult>(
       MaterialPageRoute(
         builder: (_) => ImageCropScreen(imageData: bytes),
         fullscreenDialog: true,
       ),
     );
-    if (cropped == null || !mounted) return;
+    if (result == null || !mounted) return;
 
-    final croppedFile = await _writeTempPng(original, cropped, 'crop');
+    final croppedFile = await _writeTempPng(original, result.png, 'crop');
     if (croppedFile == null) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -2179,14 +2327,71 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       return;
     }
 
+    // ⚠⚠ **レイヤを載せた画像は、レイヤを保ったまま切る** (#1132)。焼き込み前の
+    // 画像にも同じ切り方を当て、レイヤの座標を切ったあとの画像へ移す。
+    // ⚠ できなかった回（切り方が分からない・元画像を読めない）は、以前と同じく
+    // 平らな画像にしてレイヤの控えを捨てる。**二重に乗るよりは失うほうがまし。**
+    final remapped = await _remapOverlayForCrop(entry, result.geometry);
+
     if (!mounted) return;
     setState(() {
       // 差し替え後も同じ添付スロットを保つため index を再取得せず置換する。
-      // ⚠ レイヤの控えはここで捨てる（`replaceFile` の doc を参照・#1129）。
-      entry.replaceFile(croppedFile);
+      if (remapped != null) {
+        entry.applyOverlay(
+          source: remapped.source,
+          baked: croppedFile,
+          layers: remapped.layers,
+        );
+      } else {
+        // ⚠ レイヤの控えはここで捨てる（`replaceFile` の doc を参照・#1129）。
+        entry.replaceFile(croppedFile);
+      }
     });
     // 差し替えた実体を下書きへ反映する (#1130)。
     _scheduleDraftSave();
+  }
+
+  /// [entry] のレイヤと焼き込み前の画像へ、[geometry] と同じ切り方を当てる (#1132)。
+  ///
+  /// レイヤを載せていない・切り方が分からない・焼き込み前の画像を扱えなかった回は
+  /// null（呼び出し側はレイヤの控えを捨てる）。
+  Future<({XFile source, List<OverlayLayerSpec> layers})?> _remapOverlayForCrop(
+    _MediaEntry entry,
+    ImageCropGeometry? geometry,
+  ) async {
+    final source = entry.overlaySource;
+    if (source == null || entry.overlayLayers.isEmpty || geometry == null) {
+      return null;
+    }
+    try {
+      final cropped = await applyCropGeometry(
+        await source.readAsBytes(),
+        geometry,
+      );
+      final file = await _writeTempPng(source, cropped, 'crop-source');
+      if (file == null) return null;
+      return (
+        source: file,
+        layers: remapLayersForCrop(entry.overlayLayers, geometry),
+      );
+    } catch (e, st) {
+      // ⚠ 焼き込み前の画像は一時領域にあり、OS に消されていることがある。
+      // トリミングそのものは成立しているので、記録だけして平らな画像で続ける。
+      unawaited(
+        Sentry.captureException(
+          scrubException(e),
+          stackTrace: st,
+          withScope: (scope) {
+            scope.level = SentryLevel.warning;
+            scope.fingerprint = [
+              'compose.crop.overlay_remap',
+              e.runtimeType.toString(),
+            ];
+          },
+        ),
+      );
+      return null;
+    }
   }
 
   /// 添付済みのローカル画像に文字 / Unicode 絵文字 (#576) とカスタム絵文字の
@@ -2807,6 +3012,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       info = await _enrichNowPlayingUrl(info);
       if (!mounted) return;
       _appendToBody(formatNowPlayingFallback(info));
+      // ジャケットを添付する (#1133)。本文を先に入れてから取りに行く（取得を
+      // 待っている間も、何が入るかは見えている）。
+      await _attachNowPlayingArtwork(info);
     } finally {
       if (mounted) setState(() => _insertingNowPlaying = false);
     }
@@ -2881,7 +3089,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     if (title == null || title.trim().isEmpty) {
       return info; // resolve は title 必須。
     }
-    final url = await mulukhiya.resolveNowPlaying(
+    final resolved = await mulukhiya.resolveNowPlaying(
       accessToken: account.userSecret.accessToken,
       title: title,
       artist: info.artist,
@@ -2889,7 +3097,64 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       sourceAppName: info.sourceAppName,
       prefer: ref.read(nowPlayingUrlProviderProvider).apiValue,
     );
-    return url == null ? info : info.copyWith(url: url);
+    if (resolved == null) return info;
+    // ジャケットの URL も一緒に受け取る (#1133)。⚠ **源が自前で持っている
+    // アートワーク（MPRIS 等）を優先する** —— いま鳴っている音源そのものの絵で、
+    // 検索で引いた絵より確か。モロヘイヤのぶんは、源が持っていないときの補い。
+    return info.copyWith(
+      url: resolved.url,
+      artworkUrl: info.artworkUrl ?? resolved.artworkUrl,
+    );
+  }
+
+  /// このフォームで既に添付したナウプレのアートワーク (#1133)。⚠ 「ナウプレを
+  /// 挿入」を続けて押したとき、同じジャケットを 2 枚添付しない。
+  final Set<Uri> _attachedNowPlayingArtwork = {};
+
+  /// ナウプレのアートワーク（ジャケット画像）を添付に足す (#1133)。
+  ///
+  /// ⚠⚠ **目的は「再生中の曲のジャケットを、どの環境でも添付できる」こと**
+  /// （2026-10-09 pooza）。以前は「URL を持つ源には添付しない」と決めていたが、
+  /// それは手段で、補完で URL が付いた回に添付を諦める理由にならない。
+  /// Mastodon は添付のある投稿にプレビューカードを出さないので、同じ絵が 2 枚
+  /// 並ぶこともない。
+  ///
+  /// ⚠ **失敗しても投稿は止めない。**ジャケットは上積みで、取れなければ本文
+  /// だけのナウプレになる（従来と同じ）。
+  ///
+  /// ⚠ リサイズ / 形式変換はしない（決定事項 3）。モロヘイヤが返すのは一辺
+  /// 480px 程度で、添付としてそのまま使える大きさ。
+  Future<void> _attachNowPlayingArtwork(NowPlayingInfo info) async {
+    final uri = info.artworkUrl;
+    if (uri == null || _attachedNowPlayingArtwork.contains(uri)) return;
+    // ⚠ 投票とメディアは同居できない（Mastodon）。自動で足して投稿を失敗させない。
+    if (_pollEnabled) return;
+    final XFile? file;
+    try {
+      file = await fetchNowPlayingArtwork(
+        uri,
+        tempDir: await getTemporaryDirectory(),
+      );
+    } catch (e) {
+      // 契約では null に倒すが、破られても投稿フォームを巻き込まない。
+      debugLogException('nowplaying artwork fetch error', e);
+      return;
+    }
+    if (file == null || !mounted) return;
+    // ⚠⚠ **取得を待つ間に変わった条件を見直す**（リリース前レビュー・2026-10-10）。
+    // 本文は先に入っているので、取得（最大 15 秒）を待たずに送信できる。
+    // 送信が始まったあとに足すと、添付は投稿に載らないうえ、下の下書き保存が
+    // 送信の入口で止めた保存を張り直す（#1012 の競合が戻る）。
+    // ⚠ 待つ間に投票を有効にした回も足さない（上の入口と同じ理由）。
+    if (_sending || _pollEnabled) return;
+    final before = _attachments.length;
+    await _addLocalMedia([file]);
+    if (!mounted || _attachments.length == before) return;
+    _attachedNowPlayingArtwork.add(uri);
+    // 読み上げに何も出ない添付にしない。⚠ 利用者が書いた ALT は上書きしない
+    // （ここで足した直後の 1 枚にだけ入れる）。
+    setState(() => _attachments.last.description = nowPlayingArtworkAlt(info));
+    _scheduleDraftSave();
   }
 
   /// 本文末尾に [snippet] を追記する。直前が改行でなければ改行を 1 つ挟む。
@@ -3850,7 +4115,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           content: Text(
             '下書きにあった添付 $count 件を復元できませんでした。\n\n'
             'このまま投稿すると、添付なしで投稿され、下書きに残っていた添付の'
-            '控えは破棄されます。',
+            '控えは破棄されます。\n\n'
+            'キャンセルして投稿画面を開き直すと、復元をもう一度試します。',
           ),
           actions: [
             TextButton(
@@ -5318,6 +5584,23 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                   // 下書き復元・サーバー既定という「開いた瞬間に決まる」経路
                   // なので、消える通知だと**送信ボタンを押す時点で情報が無い**。
                   // 送信もブロックするので、理由は出したままにする。
+                  // 指名の宛先 (#1165)。⚠ **指名を選んでいるときだけ出す**
+                  // （ほかの公開範囲では行を増やさない）。
+                  if (_usesRecipientList && _scope == PostScope.direct)
+                    DirectRecipientsRow(
+                      recipients: [
+                        for (final entry in _recipients.entries)
+                          DirectRecipient(
+                            id: entry.key,
+                            user: entry.value,
+                            loading: _recipientsLoading.contains(entry.key),
+                            locked: entry.key == _lockedRecipientId,
+                          ),
+                      ],
+                      onRemove: _removeRecipient,
+                      onAdd: _addRecipients,
+                      enabled: !_sending,
+                    ),
                   if (_unsendableScopeReason != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 8),

@@ -199,46 +199,59 @@ void main() {
     test('メールアドレスはメンションではない', () {
       expect(extractMfmMentions('mail@example.com'), isEmpty);
     });
-  });
 
-  group('composeVisibleUserIds（送る宛先）', () {
-    Post note({required String authorId, List<String> ids = const []}) => Post(
-      id: 'n',
-      postedAt: DateTime.utc(2026, 9, 21),
-      author: User(id: authorId, username: 'x'),
-      scope: PostScope.direct,
-      visibleUserIds: ids,
-    );
+    // #1166: 端の `.` `-` の扱いは mfm-js の `mention` と同じにする。
+    // ⚠ 期待値は mfm.js の `src/internal/parser.ts` を読んで決めた（記憶で
+    // 書くと、ずれた判定をそのまま固定する）。
+    group('端の . と - (#1166)', () {
+      test('⚠ 文末の句点を巻き込まない（host なしは末尾を落とす）', () {
+        expect(extractMfmMentions('@alice. こんにちは'), [
+          (username: 'alice', host: null),
+        ]);
+        expect(extractMfmMentions('@alice- と @bob.-'), [
+          (username: 'alice', host: null),
+          (username: 'bob', host: null),
+        ]);
+      });
 
-    // v1.66 リリース前レビュー（赤）: 返信先の宛先を足すと、外した人に届く。
-    test('⚠⚠ redraft は元の投稿の宛先だけ', () {
-      final result = composeVisibleUserIds(
-        scope: PostScope.direct,
-        redraft: note(authorId: 'me', ids: ['a', 'me']),
-        me: me,
-      );
-      expect(result, ['a'], reason: '自分は入れない');
-    });
+      test('host の末尾は落とす', () {
+        expect(extractMfmMentions('@alice@remote.example. です'), [
+          (username: 'alice', host: 'remote.example'),
+        ]);
+      });
 
-    // ⚠⚠ 通常の返信では返信先の宛先を引き継がない（#1165 へ先送り）。宛先を
-    // 見せて外せる UI が無いまま引き継ぐと、本文から消した人にも届く。
-    // サーバーが返信先の投稿者を足すので、送る宛先は空でよい。
-    test('⚠⚠ 通常の返信では送らない（サーバーが投稿者を足す）', () {
-      expect(
-        composeVisibleUserIds(scope: PostScope.direct, redraft: null, me: me),
-        isEmpty,
-      );
-    });
+      test('途中の . と - は名前の一部', () {
+        expect(extractMfmMentions('@a.b-c@re-mote.example'), [
+          (username: 'a.b-c', host: 're-mote.example'),
+        ]);
+      });
 
-    test('指名でなければ送らない', () {
-      expect(
-        composeVisibleUserIds(
-          scope: PostScope.followersOnly,
-          redraft: note(authorId: 'me', ids: ['a']),
+      test('⚠ 成立しない形はメンションにしない', () {
+        // host があるのに username が . - で終わる
+        expect(extractMfmMentions('@alice.@remote.example'), isEmpty);
+        // 先頭が . -
+        expect(extractMfmMentions('@.alice'), isEmpty);
+        expect(extractMfmMentions('@-alice'), isEmpty);
+        expect(extractMfmMentions('@alice@.remote.example'), isEmpty);
+        // host が . - だけ
+        expect(extractMfmMentions('@alice@.'), isEmpty);
+        // 名前が . - だけ
+        expect(extractMfmMentions('@...'), isEmpty);
+      });
+
+      test('⚠ 返信の宛先が二重にならない', () {
+        final result = buildReplyMentions(
+          replyTo: Post(
+            id: 'n',
+            postedAt: DateTime.utc(2026, 9, 21),
+            author: const User(id: 'a', username: 'alice', host: local),
+            content: '@alice. と @bob. に',
+          ),
           me: me,
-        ),
-        isEmpty,
-      );
+          localHost: local,
+        );
+        expect(result, ['alice', 'bob']);
+      });
     });
   });
 }

@@ -10,11 +10,14 @@ import 'package:flutter_test/flutter_test.dart';
 /// ここで守るのは「アダプターの `supportedScopes` が母数になっていること」。
 void main() {
   group('selectableScopes', () {
-    test('Misskey は「指名」を選択肢に出さない', () async {
+    // ⚠ #1043 では、宛先を指定する画面が無かったので選択肢から外していた。
+    // #1165 で投稿画面に「宛先」の行ができたので、選べるように戻した。宛先が
+    // 空のまま送れないことは `direct_recipients_test.dart` が見ている。
+    test('Misskey も「指名」を選択肢に出す（宛先の画面ができたので・#1165）', () async {
       final adapter = await MisskeyAdapter.create('misskey.io');
       final scopes = selectableScopes(adapter);
 
-      expect(scopes, isNot(contains(PostScope.direct)));
+      expect(scopes, contains(PostScope.direct));
       expect(scopes, contains(PostScope.public));
       expect(scopes, contains(PostScope.unlisted));
       expect(scopes, contains(PostScope.followersOnly));

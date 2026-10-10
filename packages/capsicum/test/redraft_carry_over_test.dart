@@ -248,7 +248,9 @@ void main() {
       'channelId': 'widget.redraft?.channelId',
       'content': 'redraft.content',
       'quoteApprovalPolicy': 'redraft.quoteApprovalPolicy',
-      'visibleUserIds': 'composeVisibleUserIds(',
+      // ⚠ 再編集の宛先は「元の投稿の宛先だけ」。読む場所は宛先の初期値の関数
+      // （`direct_recipients.dart`）へ移った (#1165)。
+      'visibleUserIds': 'redraft: widget.redraft,',
     };
 
     test('readSites が policy の carry を網羅している', () {

@@ -15,6 +15,7 @@ import '../../model/account.dart';
 import '../../model/offline_account.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/announcement_provider.dart';
+import '../../provider/deck_provider.dart';
 import '../../provider/hashtag_provider.dart';
 import '../../provider/list_provider.dart';
 import '../../provider/marker_provider.dart';
@@ -34,6 +35,7 @@ import '../util/deck_navigation.dart';
 import '../util/keyboard_list_navigation.dart';
 import '../util/mouse_drag_scroll_behavior.dart';
 import '../util/offline_account_display.dart';
+import '../util/stream_connection_display.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/emoji_text.dart';
 import '../widget/home_menu.dart';
@@ -41,6 +43,7 @@ import '../widget/livecure_filter_button.dart';
 import '../widget/notification_bell_button.dart';
 import '../widget/notification_filter_button.dart';
 import '../widget/post_tile.dart';
+import '../widget/scroll_jump_buttons.dart';
 import '../widget/server_badge.dart';
 import '../widget/simple_post_bar.dart';
 import '../widget/tab_management_sheet.dart';
@@ -72,6 +75,48 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   String? _pendingListRestore;
   Timer? _throttleTimer;
   bool _showScrollTop = false;
+
+  /// いま描いている一覧の行数 (#1244)。▽ の行き先と、ボタンを出すかの判定に使う。
+  /// 一覧を描いていない（読み込み中・失敗・通知タブ等）あいだは 0。
+  int _listItemCount = 0;
+
+  /// 一覧を組むときに行数を控える。⚠ build の最中なので、ボタンの出し分けが
+  /// 変わるとき（0 ⇔ 1 以上）だけ、フレームの後で描き直す。
+  int _noteListItemCount(int count) {
+    _listBuiltThisBuild = true;
+    final wasEmpty = _listItemCount == 0;
+    _listItemCount = count;
+    if (wasEmpty != (count == 0)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() {});
+      });
+    }
+    return count;
+  }
+
+  /// この build() で一覧を組んだか。組まなかった回（通知タブ・読み込み中・失敗）
+  /// は [_listItemCount] を 0 へ戻す。
+  bool _listBuiltThisBuild = false;
+
+  /// タブの中身を組む前に呼ぶ。⚠ 一覧を組まない分岐が多い（専用ビューのタブ・
+  /// 読み込み中・失敗・空）ので、分岐ごとではなく「組まなかったら戻す」で見る。
+  void _resetListItemCountUnlessBuilt() {
+    _listBuiltThisBuild = false;
+    if (_listItemCount == 0) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _listBuiltThisBuild || _listItemCount == 0) return;
+      setState(() => _listItemCount = 0);
+    });
+  }
+
+  void _scrollToIndex(int index) {
+    if (!_itemScrollController.isAttached || index < 0) return;
+    _itemScrollController.scrollTo(
+      index: index,
+      duration: const Duration(milliseconds: 300),
+    );
+  }
+
   // pull-to-refresh 実行中だけ true。文脈切替（アカウント/タブ切替）の reload と
   // 区別し、リフレッシュ中は現データを残す（リスト消失を防ぐ）ため (#758)。
   bool _pullRefreshing = false;
@@ -96,6 +141,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   void initState() {
     super.initState();
     _itemPositionsListener.itemPositions.addListener(_onPositionsChanged);
+    // ⚠⚠ **保存役を、この画面が生きている間は保持する**（PR #1256 の Codex P2）。
+    // autoDispose なので、`ref.read` だけでは数フレームのうちに破棄され、
+    // 待っていた保存がその場で流れる（実測）。**5 秒の間引きが効かず、スクロールのたびに
+    // 既読位置をサーバーへ送っていた**（#25 の初版から）。
+    ref.listenManual(homeMarkerSaverProvider, (_, _) {});
     WidgetsBinding.instance.addObserver(this);
     // Shell 上のデスクトップメニュー (#834) の「タイムラインを更新」/ Ctrl+R が
     // 現在表示中のタイムラインをリフレッシュできるよう、自身の
@@ -105,6 +155,37 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       if (mounted) {
         _refreshNotifier?.state = _refreshCurrentTimeline;
       }
+    });
+    _restoreLastViewModeOnce();
+  }
+
+  /// アプリを開いてから、前回の側へ戻す処理を済ませたか (#1239)。
+  ///
+  /// ⚠ **プロセスに 1 回。**HomeScreen はアカウントの切り替え等で作り直される
+  /// ので、State に持つとそのたびにデッキへ飛ぶ。
+  static bool _lastViewModeRestored = false;
+
+  /// 前回デッキを開いたまま終えていたら、デッキで始める (#1239・2026-10-09 pooza)。
+  ///
+  /// ⚠ デッキは HomeScreen の上に push する画面（決定済み事項 8）なので、起動時も
+  /// 同じ形にする（HomeScreen を下に残す）。
+  void _restoreLastViewModeOnce() {
+    if (_lastViewModeRestored) return;
+    _lastViewModeRestored = true;
+    if (readLastViewMode() != LastViewMode.deck) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final router = GoRouter.of(context);
+      // 条件の正本は [shouldStartInDeck]。
+      if (!shouldStartInDeck(
+        lastMode: readLastViewMode(),
+        hasPendingTab: ref.read(pendingInitialTabProvider) != null,
+        location: router.routerDelegate.currentConfiguration.uri.path,
+        hasColumns: ref.read(deckColumnsProvider).isNotEmpty,
+      )) {
+        return;
+      }
+      router.push('/deck');
     });
   }
 
@@ -285,10 +366,33 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
     // Notify timeline notifier whether the user is near the top so that
     // streaming posts can be queued while scrolling (#296).
-    if (selectedHashtag == null && selectedList == null) {
+    //
+    // ⚠ **タグ / リストを選んでいるときも伝える** (#1235)。#1098 でこの 2 系統
+    // にもライブ購読が載ったが、ここが本線だけだったので、読み進めている最中も
+    // 新着が先頭へ直接入っていた（流量の多い実況タグほど頻発する）。
+    final nearTop = minIndex <= 1;
+    if (selectedHashtag != null) {
+      ref
+          .read(
+            hashtagTimelineProvider((
+              account: accountKey,
+              spec: selectedHashtag,
+            )).notifier,
+          )
+          .setNearTop(nearTop);
+    } else if (selectedList != null) {
+      ref
+          .read(
+            listTimelineProvider((
+              account: accountKey,
+              id: selectedList.id,
+            )).notifier,
+          )
+          .setNearTop(nearTop);
+    } else {
       ref
           .read(timelineProvider(ref.read(currentTimelineKeyProvider)).notifier)
-          .setNearTop(minIndex <= 1);
+          .setNearTop(nearTop);
     }
 
     // Save marker (home timeline only, debounced).
@@ -781,19 +885,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         ),
       ),
       drawer: wideLayout ? null : drawerWidget,
-      floatingActionButton: _showScrollTop
+      // 先頭・末尾へ飛ぶ (#1244)。⚠ ▽ は 2.1 で足した（デッキのカラムと揃える）。
+      // ⚠ **一覧が無いあいだは出さない。**通知タブ等（この画面の一覧ではない
+      // もの）や読み込み中は、飛ぶ先が無い。
+      floatingActionButton: _listItemCount > 0
           ? Padding(
               padding: const EdgeInsets.only(bottom: 56),
-              child: FloatingActionButton.small(
-                onPressed: () {
-                  if (!_itemScrollController.isAttached) return;
-                  _itemScrollController.scrollTo(
-                    index: 0,
-                    duration: const Duration(milliseconds: 300),
-                  );
-                },
-                tooltip: '先頭へ',
-                child: const Icon(Icons.arrow_upward),
+              child: ScrollJumpButtons(
+                showTop: _showScrollTop,
+                onTop: () => _scrollToIndex(0),
+                // 読み込み済みの末尾へ。そこが続きを読みに行く位置なので、
+                // 飛んだ先で追加読み込みが起きる。
+                onBottom: () => _scrollToIndex(_listItemCount - 1),
               ),
             )
           : null,
@@ -860,6 +963,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     String? selectedHashtag,
     AsyncValue<dynamic> timeline,
   ) {
+    _resetListItemCountUnlessBuilt();
     // アカウント別背景画像は、タブとして表示される全タブに一律で回す（#832）。
     // 通知/お知らせ/チャンネルのビューはいずれも不透明背景を持たない（透過の
     // Column/list）ので、背景 Container で包めば画像が透ける。空表示の
@@ -1020,8 +1124,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   child: ScrollablePositionedList.separated(
                     itemScrollController: _itemScrollController,
                     itemPositionsListener: _itemPositionsListener,
-                    itemCount:
-                        tlState.posts.length + (tlState.isLoadingMore ? 1 : 0),
+                    itemCount: _noteListItemCount(
+                      tlState.posts.length + (tlState.isLoadingMore ? 1 : 0),
+                    ),
                     separatorBuilder: (_, _) => const Divider(height: 1),
                     itemBuilder: (context, index) {
                       if (index >= tlState.posts.length) {
@@ -1869,19 +1974,8 @@ class _StreamStatusIndicatorState
     // 値だけを正直に出すため）。
     final st = (async.isLoading || stale) ? null : async.valueOrNull;
     final conn = st?.streamConnectionState ?? StreamConnectionState.connecting;
-    final (Color baseColor, String label) = switch (conn) {
-      StreamConnectionState.live => (Colors.green, 'ライブ更新中'),
-      StreamConnectionState.connecting => (Colors.amber, '接続中…'),
-      StreamConnectionState.disconnected => (Colors.orange, '切断 — 再接続中'),
-      // #784 で give-up しなくなったため「停止」ではなく「不安定・再試行中」。
-      StreamConnectionState.exhausted => (
-        Theme.of(context).colorScheme.error,
-        '接続が不安定 — 再試行中',
-      ),
-      // ユーザーが設定でライブ更新を OFF にしている (#854)。エラーではないので
-      // 灰色で「オフ」と正直に出す。pull-to-refresh / タブ再選択で更新できる。
-      StreamConnectionState.disabled => (Colors.grey, 'ライブ更新オフ'),
-    };
+    // 色とラベルの正本は `stream_connection_display.dart`（デッキと共有・#1235）。
+    final (color: baseColor, :label) = streamConnectionDisplay(context, conn);
     // 速い再接続でも見えるよう、flash 中は live でも切断色を見せる (#782)。
     final color = (_flashing && conn == StreamConnectionState.live)
         ? Colors.orange
@@ -1893,7 +1987,7 @@ class _StreamStatusIndicatorState
     final showDetail = ref.watch(showStreamReconnectDetailProvider);
     final count = st?.reconnectCount ?? 0;
     final lastAt = st?.lastDisconnectedAt;
-    final tooltip = StringBuffer('ライブ更新: $label');
+    final tooltip = StringBuffer(streamConnectionTooltip(label));
     if (showDetail && count > 0) {
       tooltip.write('\n再接続 $count 回');
       if (lastAt != null) tooltip.write('・直近切断 ${_fmtTime(lastAt)}');

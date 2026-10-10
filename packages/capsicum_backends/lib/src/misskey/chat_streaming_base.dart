@@ -1,10 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:uuid/uuid.dart';
-import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
+
+import '../reconnecting_socket.dart';
+import '../streaming_backoff.dart';
 
 /// Misskey の `/streaming` WebSocket を 1 本張り、指数バックオフ再接続つきで
 /// [ChatMessage] を配信する共通基盤 (#627)。
@@ -23,16 +26,19 @@ abstract class MisskeyChatStreamingBase {
   final void Function(Object error, StackTrace stack)? onStreamError;
   final void Function()? onReconnectExhausted;
 
-  WebSocketChannel? _channel;
+  /// WebSocket を開く手段。null なら実際に接続する。テストの差し替え口
+  /// （通知側の `NotificationStreamingBase.channelFactory` と同じ形）。
+  final WebSocketChannel Function(Uri uri)? channelFactory;
+
+  /// 接続の節目（`connected` / `subscribed` / `disconnected`）を知らせる (#1252)。
+  final void Function(String event)? onConnectionEvent;
+
   StreamController<ChatMessage>? _controller;
-  Timer? _reconnectTimer;
-  String? _subscriptionId;
-  bool _disposed = false;
-  bool _reconnectExhaustedNotified = false;
-  int _reconnectAttempts = 0;
-  static const _maxReconnectAttempts = 10;
+  ReconnectingSocket? _socket;
+  final Random _random = Random();
   static const _baseReconnectDelay = Duration(seconds: 5);
-  static const _maxReconnectDelay = Duration(seconds: 300);
+  // ⚠ 通知側と同じ 60 秒 (#1252)。以前は 300 秒で、しかも 10 回で諦めていた。
+  static const _maxReconnectDelay = Duration(seconds: 60);
   // 無音切断を検知するための WS ping/pong。pong が無ければ自動 close → onDone →
   // 再接続が走る (#788)。チャットは緊急性が低めなので timeline より長め。
   static const _pingInterval = Duration(seconds: 60);
@@ -45,6 +51,8 @@ abstract class MisskeyChatStreamingBase {
     this.onParseError,
     this.onStreamError,
     this.onReconnectExhausted,
+    this.onConnectionEvent,
+    this.channelFactory,
   });
 
   /// 購読する channel の connect メッセージ body
@@ -59,67 +67,51 @@ abstract class MisskeyChatStreamingBase {
   Stream<ChatMessage> connect() {
     _controller?.close();
     _controller = StreamController<ChatMessage>.broadcast(onCancel: dispose);
-    _connect();
+    // ⚠⚠ **つなぐ・切れたら予約する・数える、は通知側と同じ部品に任せる**
+    // (#1252)。以前はここに #1249 で直す前の形が残っていた —— 10 回で諦めて
+    // タイマーを張らず、1 回の失敗を 3 経路から数えていた。デスクトップで
+    // チャットを開いたまま持ち歩くと、回線が戻っても画面を開き直すまで届かない。
+    _socket?.dispose();
+    _socket = ReconnectingSocket(
+      buildUri: () => Uri(
+        scheme: 'wss',
+        host: host,
+        path: '/streaming',
+        queryParameters: {'i': accessToken},
+      ),
+      onMessage: _onMessage,
+      // 購読の id は接続ごとに作り直す。
+      subscribeMessage: () => jsonEncode({
+        'type': 'connect',
+        'body': buildConnectBody(const Uuid().v4()),
+      }),
+      delayFor: reconnectDelayFor,
+      onStreamError: onStreamError,
+      onReconnectExhausted: onReconnectExhausted,
+      onConnectionEvent: onConnectionEvent,
+      channelFactory: channelFactory,
+      pingInterval: _pingInterval,
+      connectTimeout: connectTimeout,
+      stableAfter: stableConnectionAfter,
+    )..connect();
     return _controller!.stream;
   }
 
-  void _connect() {
-    if (_disposed) return;
-    _channel?.sink.close();
+  /// 握手を待つ上限。⚠ テストが縮める。
+  Duration get connectTimeout => const Duration(seconds: 30);
 
-    final uri = Uri(
-      scheme: 'wss',
-      host: host,
-      path: '/streaming',
-      queryParameters: {'i': accessToken},
-    );
+  /// これだけつながり続けたら、失敗を数え直す。⚠ テストが縮める。
+  Duration get stableConnectionAfter => const Duration(seconds: 30);
 
-    final channel = IOWebSocketChannel.connect(
-      uri,
-      pingInterval: _pingInterval,
-    );
-    _channel = channel;
-    // listener / catchError は前世代 channel の close でも発火しうるので
-    // 「現役 channel と同一か」をクロージャ捕捉した channel で判定し、旧世代の
-    // onDone / onError で余計な reconnect Timer が積まれるのを防ぐ (#548)。
-    // error は #552 で onStreamError 経路に流す。
-    channel.stream.listen(
-      _onMessage,
-      onError: (Object error, StackTrace stack) {
-        if (_channel != channel) return;
-        _notifyStreamError(error, stack);
-        _scheduleReconnect();
-      },
-      onDone: () {
-        if (_channel == channel) _scheduleReconnect();
-      },
-    );
-
-    _subscriptionId = const Uuid().v4();
-    final subId = _subscriptionId!;
-    channel.ready
-        .then((_) {
-          if (_disposed || _channel != channel) return;
-          _reconnectAttempts = 0;
-          _reconnectExhaustedNotified = false;
-          channel.sink.add(
-            jsonEncode({'type': 'connect', 'body': buildConnectBody(subId)}),
-          );
-        })
-        .catchError((Object error, StackTrace stack) {
-          if (_channel != channel) return;
-          _notifyStreamError(error, stack);
-          _scheduleReconnect();
-        });
-  }
-
-  void _notifyStreamError(Object error, StackTrace stack) {
-    try {
-      onStreamError?.call(error, stack);
-    } catch (_) {
-      // 観測経路の失敗で本筋を止めない。
-    }
-  }
+  /// [attempt] 回目（0 始まり）の再接続までの待ち時間。⚠ テストが上書きする。
+  Duration reconnectDelayFor(int attempt) => Duration(
+    milliseconds: reconnectBackoffMs(
+      attempt,
+      baseMs: _baseReconnectDelay.inMilliseconds,
+      maxMs: _maxReconnectDelay.inMilliseconds,
+      random: _random,
+    ),
+  );
 
   void _onMessage(dynamic message) {
     if (message is! String) return;
@@ -142,37 +134,9 @@ abstract class MisskeyChatStreamingBase {
     }
   }
 
-  void _scheduleReconnect() {
-    if (_disposed) return;
-    if (_reconnectAttempts >= _maxReconnectAttempts) {
-      // 諦めたまま _controller を開きっぱなしにすると、UI 側は「接続中」のまま
-      // 無期限に新規イベントを待つことになる。callback で外に出して呼び出し側に
-      // 判断させる (#552)。一度きり通知する。
-      if (!_reconnectExhaustedNotified) {
-        _reconnectExhaustedNotified = true;
-        try {
-          onReconnectExhausted?.call();
-        } catch (_) {
-          // 観測経路の失敗で本筋を止めない。
-        }
-      }
-      return;
-    }
-    _reconnectTimer?.cancel();
-    final delaySecs = _baseReconnectDelay.inSeconds * (1 << _reconnectAttempts);
-    final delay = Duration(
-      seconds: delaySecs.clamp(0, _maxReconnectDelay.inSeconds),
-    );
-    _reconnectAttempts++;
-    _reconnectTimer = Timer(delay, () {
-      if (!_disposed) _connect();
-    });
-  }
-
   void dispose() {
-    _disposed = true;
-    _reconnectTimer?.cancel();
-    _channel?.sink.close();
+    _socket?.dispose();
+    _socket = null;
     _controller?.close();
     _controller = null;
   }

@@ -21,6 +21,7 @@ class MastodonNotificationStreaming extends NotificationStreamingBase {
     super.onParseError,
     super.onStreamError,
     super.onReconnectExhausted,
+    super.onConnectionEvent,
   });
 
   @override

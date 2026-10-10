@@ -240,12 +240,12 @@ grep -rhoE "\['[a-zA-Z_][a-zA-Z0-9_]*'\]" packages/capsicum_backends/lib/src/mis
 
 | | 内容 | 行き先 |
 | --- | --- | --- |
-| **13-1 ★★** | 一覧 3 経路が既定件数で**黙って打ち切られる**（リストメンバー 40 / 予約投稿 20 / 検索 20・ページングも `limit` も送っていない）。⚠ **Misskey 側は打ち切られないので非対称** | [#1202](https://github.com/pooza/capsicum/issues/1202) `bug` |
-| **13-2 ★** | 通報に `forward` を送っておらず、**リモートの利用者を通報しても相手のサーバーに届かない**（`category` / `rule_ids` も未使用） | [#1203](https://github.com/pooza/capsicum/issues/1203) `bug` |
+| **13-1 ★★** | 一覧 3 経路が既定件数で**黙って打ち切られる**（リストメンバー 40 / 予約投稿 20 / 検索 20・ページングも `limit` も送っていない）。⚠ **Misskey 側は打ち切られないので非対称** | [#1202](https://github.com/pooza/capsicum/issues/1202) `bug`・✅ v2.1 で実装（リストは `limit=0` / 予約投稿は `Link` を辿って全件 / 検索は種別ごとの「もっと読む」。⚠ **検索の `offset` は `type` と一緒でないと効かない**） |
+| **13-2 ★** | 通報に `forward` を送っておらず、**リモートの利用者を通報しても相手のサーバーに届かない**（`category` / `rule_ids` も未使用） | [#1203](https://github.com/pooza/capsicum/issues/1203)（✅ v2.1 で `forward` を実装・`category` / `rule_ids` は未着手） `bug` |
 | **13-3 ★★** | プッシュの購読種別が **7 / 17**（画面は 30 種扱っている）。🔴 重いのは `moderation_warning` / `admin.report` / `quote` / `severed_relationships`。✅ 直しはキーを足すだけ | [#1204](https://github.com/pooza/capsicum/issues/1204) `bug` |
-| **13-4 ★** | 未読数を `notifications/unread_count` に訊かずクライアント側で数えている（**両 SNS 対称**）。⚠ **層① の取りこぼしで、層② の目で見たから出た** | [#1207](https://github.com/pooza/capsicum/issues/1207) `enhancement` |
-| **13-5 ★** | Misskey だけ既読をサーバーへ返しておらず（`MarkerSupport` が `MastodonAdapter` にしか mixin されていない）、**WebUI の未読が永久に消えない**。⚠ [#1045](https://github.com/pooza/capsicum/issues/1045) の裏返し | [#1205](https://github.com/pooza/capsicum/issues/1205) `bug` |
-| **13-6 ★** | DM（会話）の `unread` を読まず既読も返さず、削除もできない | [#1206](https://github.com/pooza/capsicum/issues/1206) `bug` |
+| **13-4 ★** | 未読数を `notifications/unread_count` に訊かずクライアント側で数えている（**両 SNS 対称**）。⚠ **層① の取りこぼしで、層② の目で見たから出た** | [#1207](https://github.com/pooza/capsicum/issues/1207) `enhancement`・✅ v2.1 で実装（アカウント切替のバッジ）。⚠ **「クライアント側で数えている」は起票時の誤読で、実際は v1.19 から常に 0 だった**（数えていなかった） |
+| **13-5 ★** | Misskey だけ既読をサーバーへ返しておらず（`MarkerSupport` が `MastodonAdapter` にしか mixin されていない）、**WebUI の未読が永久に消えない**。⚠ [#1045](https://github.com/pooza/capsicum/issues/1045) の裏返し | [#1205](https://github.com/pooza/capsicum/issues/1205) `bug`・✅ v2.1 で実装（**一覧の先頭が見えたとき**に `mark-all-as-read`。⚠⚠ **取得では触らない**のは #1045 のまま ＝ 「取得では触らない・見たら返す」・2026-10-09 pooza） |
+| **13-6 ★** | DM（会話）の `unread` を読まず既読も返さず、削除もできない | [#1206](https://github.com/pooza/capsicum/issues/1206)（✅ v2.1 で実装・DM を開いたら既読 / 投稿メニューから会話を削除。画面は投稿の列のまま） `bug` |
 | **13-7 ★** | スレッド（会話）のミュートが**両 SNS に経路があるのに無い** | [#1208](https://github.com/pooza/capsicum/issues/1208) `enhancement` |
 | **13-8 ★** | タグ TL の OR（`any[]`）・除外（`none[]`）とリモートのみの連合 TL（`remote`）が使えない。⚠ **タグセットは実況の中心道具** | [#1209](https://github.com/pooza/capsicum/issues/1209) `enhancement` |
 | **13-9 ★** | `update_credentials` の書く側が無く、既定の公開範囲・アイコンの ALT などを capsicum から変えられない。⚠ [#1185](https://github.com/pooza/capsicum/issues/1185) / [#1194](https://github.com/pooza/capsicum/issues/1194) の裏返し | [#1210](https://github.com/pooza/capsicum/issues/1210) `enhancement` |

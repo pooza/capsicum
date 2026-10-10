@@ -70,10 +70,11 @@ class MisskeyCapabilities extends AdapterCapabilities {
     PostScope.public,
     PostScope.unlisted,
     PostScope.followersOnly,
-    // ⚠ **`PostScope.direct`（Misskey の「指名」= `specified`）は載せない (#1043)。**
-    // 送信には宛先の `visibleUserIds` が要るが、capsicum にそれを組み立てる
-    // 導線が無い。載せると「選べるのに誰にも届かない投稿」ができる。
-    // 宛先選択 UI を作るまでは選択肢から外す、という判断（2026-09-04 pooza）。
+    // 「指名」（`specified`）。宛先は投稿画面の「宛先」の行で決める (#1165)。
+    // ⚠ #1043 では、宛先を組み立てる導線が無かったので選択肢から外していた
+    // （選べるのに誰にも届かない投稿ができるため）。宛先の画面ができたので戻す。
+    // ⚠ 宛先が空のまま送れないことは、投稿画面の側が止める。
+    PostScope.direct,
     // ⚠ **受信側の表示は別経路なので影響しない**（`extensions.dart` の
     // `'specified': PostScope.direct` は残す）。Misskey の 1 対 1 のやり取りは
     // #248 のチャット機能が担う。
@@ -99,6 +100,33 @@ class MisskeyCapabilities extends AdapterCapabilities {
   PostLengthRule get postLengthRule => PostLengthRule.codePoints;
 }
 
+/// 400 の本文が「`excludeTypes` に知らない種別が入っていた」を指しているか
+/// (#1251)。
+///
+/// Misskey は引数の検証に落ちると
+/// `{error: {code: 'INVALID_PARAM', info: {param: '#/properties/excludeTypes/items/enum', …}}}`
+/// を返す（`endpoint-base.ts`）。古い版は新しい通知種別を enum に持たないので、
+/// 除外に入れるとこれが返る。
+///
+/// - `INVALID_PARAM` で `param` が `excludeTypes` を指している → true
+/// - `INVALID_PARAM` だが `param` が別の引数 → false（別の原因）
+/// - `code` が別のもの → false
+/// - ⚠ **本文から読み取れないときは true**（`info` を返さないフォーク向け。
+///   読み取れないからと false にすると、そのサーバーでは通知が出なくなる ——
+///   広く読むほうの最悪は「絞り込みが手元処理になる」で、狭く読むほうの最悪は
+///   「通知が出ない」）
+bool misskeyRejectedExcludeTypes(Object? body) {
+  final error = body is Map ? body['error'] : null;
+  if (error is! Map) return true;
+  final code = error['code'];
+  if (code is! String) return true;
+  if (code != 'INVALID_PARAM') return false;
+  final info = error['info'];
+  final param = info is Map ? info['param'] : null;
+  if (param is! String) return true;
+  return param.contains('excludeTypes');
+}
+
 class MisskeyAdapter extends DecentralizedBackendAdapter
     with
         AchievementSupport,
@@ -107,6 +135,10 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         FollowSupport,
         FollowRequestSupport,
         NotificationSupport,
+        // 既読を全部の単位で返す (#1205)。Mastodon は位置で返せるので
+        // MarkerSupport の側。
+        NotificationReadSupport,
+        NotificationUnreadCountSupport,
         SearchSupport,
         ReactionSupport,
         CustomEmojiSupport,
@@ -316,9 +348,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         cw: draft.spoilerText,
         localOnly: draft.localOnly ? true : null,
         channelId: draft.channelId,
-        visibleUserIds: draft.visibleUserIds.isNotEmpty
-            ? draft.visibleUserIds.toSet().toList()
-            : null,
+        visibleUserIds: _visibleUserIdsOf(draft),
       );
       return null;
     }
@@ -340,9 +370,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       cw: draft.spoilerText,
       localOnly: draft.localOnly ? true : null,
       channelId: draft.channelId,
-      visibleUserIds: draft.visibleUserIds.isNotEmpty
-          ? draft.visibleUserIds.toSet().toList()
-          : null,
+      visibleUserIds: _visibleUserIdsOf(draft),
       poll: poll,
       extraHeaders: draft.skipMulukhiya ? {'X-Mulukhiya': 'capsicum'} : null,
     );
@@ -375,9 +403,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       cw: draft.spoilerText,
       localOnly: draft.localOnly ? true : null,
       channelId: draft.channelId,
-      visibleUserIds: draft.visibleUserIds.isNotEmpty
-          ? draft.visibleUserIds.toSet().toList()
-          : null,
+      visibleUserIds: _visibleUserIdsOf(draft),
     );
   }
 
@@ -426,6 +452,11 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
             renote: renote,
             channelId: json['channelId'] as String?,
             channelName: channelJson?['name'] as String?,
+            // 指名の宛先も読み戻す (#1165)。
+            visibleUserIds: [
+              for (final id in json['visibleUserIds'] as List<dynamic>? ?? [])
+                if (id is String) id,
+            ],
           ),
         );
       } catch (e) {
@@ -1167,9 +1198,21 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         // 非グループを試してまた 400 になっていた ＝ **通知が出ず、除外を外しても
         // グループ化が戻らない**。除外を外して同じ経路をもう一度試す（絞り込みは
         // 下で手元に倒す）。⚠ 版では分岐しない（対応バージョン方針）。
-        if (status == 400 && sentExclude.isNotEmpty) {
+        //
+        // ⚠ **400 なら何でも、とは読まない** (#1251)。別の原因の 400 でこの覚えが
+        // 立つと、アダプターの寿命のあいだ絞り込みが手元処理に倒れる（グループ
+        // 経路ではグループ化も無効になる）。本文で絞る（[misskeyRejectedExcludeTypes]）。
+        if (status == 400 &&
+            sentExclude.isNotEmpty &&
+            misskeyRejectedExcludeTypes(e.response?.data)) {
           _rejectedExcludeKey = excludeKey;
           sentExclude = const [];
+          // ⚠ 記録に残す。どのサーバーで手元の絞り込みに倒れているかが、これが
+          // 無いと分からない（`host` はログの文脈で分かるので載せない）。
+          developer.log(
+            'misskey rejected notification excludeTypes; filtering locally',
+            name: 'capsicum',
+          );
           continue;
         }
         // ⚠ エンドポイントが無いサーバーでは通知が丸ごと出なくなるので、必ず
@@ -1208,11 +1251,24 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       // 「同じノートへの 20 件のリアクション」は limit 20 に対して 1 件で返る。
       // `rawCount >= limit` で切ると**そこで読み止まる**。
       hasMore: grouped ? notifications.isNotEmpty : null,
+      filteredLocally: sentExclude.isEmpty && excluded.isNotEmpty,
     );
   }
 
   @override
   Future<void> clearAllNotifications() => throw UnimplementedError();
+
+  // NotificationReadSupport
+
+  @override
+  Future<void> markAllNotificationsRead() =>
+      client.markAllNotificationsAsRead();
+
+  // NotificationUnreadCountSupport
+
+  @override
+  Future<int> getUnreadNotificationCount() =>
+      client.getUnreadNotificationsCount();
 
   // SearchSupport
 
@@ -2007,6 +2063,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     void Function(Object error, StackTrace stack)? onParseError,
     void Function(Object error, StackTrace stack)? onStreamError,
     void Function()? onReconnectExhausted,
+    void Function(String event)? onConnectionEvent,
   }) {
     _notificationStreaming?.dispose();
     final token = client.accessToken;
@@ -2018,6 +2075,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       onParseError: onParseError,
       onStreamError: onStreamError,
       onReconnectExhausted: onReconnectExhausted,
+      onConnectionEvent: onConnectionEvent,
     );
     return _notificationStreaming!.connect();
   }
@@ -2107,12 +2165,19 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     String postId,
     String authorId, {
     String? comment,
+    // ⚠ Misskey は通報者が転送を指定する口を持たない（転送はモデレータが
+    // 管理画面から行う）。`reportForwardHost` が null なので画面も出さない。
+    bool forward = false,
   }) async {
     await client.reportAbuse(authorId, comment: comment ?? '投稿 $postId に対する通報');
   }
 
   @override
-  Future<void> reportUser(String userId, {String? comment}) async {
+  Future<void> reportUser(
+    String userId, {
+    String? comment,
+    bool forward = false,
+  }) async {
     // report-abuse はもともとユーザー単位なので、投稿を指さない通報はこちらが
     // 素直な形 (#998)。comment は必須なので、未入力なら理由なしと明示する。
     await client.reportAbuse(userId, comment: comment ?? 'このユーザーに対する通報');
@@ -2651,3 +2716,15 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     _chatRoomStreamings.remove(roomId)?.dispose();
   }
 }
+
+/// 下書きの指名先を、API へ送る形にする (#1166)。
+///
+/// - 重複を落とす（サーバーは重複した id を弾く）
+/// - 空なら**キーごと送らない**（null）。空の配列を送ると「宛先なし」の指定になる
+///
+/// ⚠ 投稿・予約投稿・下書き保存の 3 か所が同じ式を持っていた。片方だけ直すと、
+/// 同じ下書きが経路によって違う宛先で出る。
+List<String>? _visibleUserIdsOf(PostDraft draft) =>
+    draft.visibleUserIds.isNotEmpty
+    ? draft.visibleUserIds.toSet().toList()
+    : null;

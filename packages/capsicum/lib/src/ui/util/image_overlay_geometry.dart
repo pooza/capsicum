@@ -30,6 +30,9 @@ const overlayCanvasKey = Key('overlay_canvas');
 
 /// レイヤ一覧の開閉ボタン (#1126) と一覧そのものの識別キー。
 const overlayLayerToggleKey = Key('overlay_layer_toggle');
+
+/// 文字レイヤの行揃えを切り替えるボタン (#1183)。テストから探すための目印。
+const overlayTextAlignButtonKey = Key('overlay_text_align');
 const overlayLayerListKey = Key('overlay_layer_list');
 
 /// レイヤ一覧を本文の横に常設するかどうかの境目（論理 px）(#1126)。

@@ -108,6 +108,26 @@ inside the App Sandbox, so the feature cannot work without it.
 
 > 万一 temporary-exception で差し戻された場合の代替は、macOS を Developer ID 直接配布（非サンドボックス）にすること。ただし **macOS の投げ銭 IAP（#598、StoreKit）は MAS 専用**で非サンドボックス化すると失われるため、ナウプレ機能と IAP のトレードオフになる。まず temporary-exception で挑み、不可なら配布形態を pooza 判断。
 
+#### もう片方のプラットフォームが「審査中」だと、提出が再試行のまま止まる
+
+**アプリ情報（カテゴリ等）は iOS と macOS で共有**で、片方の版が審査中（`IN_REVIEW`）の間は、アプリ情報の状態も `IN_REVIEW` になる。deliver は編集できるアプリ情報を `PREPARE_FOR_SUBMISSION` / `WAITING_FOR_REVIEW` / 却下 からしか探さない（`fetch_edit_app_info`）ので、もう片方を提出しようとすると次の行を繰り返して止まる:
+
+```text
+Cannot find edit app info... Retrying after 80 seconds (remaining: 4)
+```
+
+⚠ **待ち時間が 80 → 160 → 300 秒と伸びるので、外からは固まって見える。**版は作られ、App Store Connect では「提出準備中」のまま残る。2026-10-10 の v2.1.0 で踏んだ（macOS 2.0.1 が審査中のまま iOS 2.1.0 を提出した）。⚠ **片方が「審査待ち」（`WAITING_FOR_REVIEW`）なら起きない**（v2.0.1 はこの状態で通った）。
+
+回避: メタデータの段を飛ばして提出する（iOS のレーンに口がある）。
+
+```sh
+fastlane release skip_metadata:true
+```
+
+⚠ **飛ばした段は「このバージョンの新機能」欄も埋めていた**ので、そのまま提出すると下の `whatsNew` のエラーで弾かれる。**先に下の手順で定型文を入れてから**提出する（iOS でも起きる）。
+
+⚠⚠ **審査中の版があるプラットフォームそのものには、新しい版を出せない**（公開前の版はプラットフォームごとに 1 つ）。取り下げて出し直すか、公開を待ってから出す。v2.1.0 の macOS は、2.0.1 の公開を待ってから出すと決めた（取り下げると審査の列に並び直すため）。
+
 #### macOS の whatsNew (新機能欄) 未入力で submit が弾かれる罠
 
 iOS は `fastlane release` 実行時に新バージョンの `whatsNew` が空でも前バージョンの値を継承するか何らかの経路で埋められ、submit_for_review が通る。一方 **macOS は同じ Fastfile / 同じ呼び出し方でも `whatsNew` を継承しない** ため、空のまま submit_for_review に進んで Apple API がエラーを返す:

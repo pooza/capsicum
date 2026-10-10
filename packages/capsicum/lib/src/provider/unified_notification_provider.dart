@@ -80,6 +80,10 @@ class UnifiedNotificationNotifier
     final items = <UnifiedNotification>[];
     final failed = <Account>[];
     final pending = List<Account>.of(supported);
+    // 失敗の報告は、全員が返ってからまとめて行う (#1246)。⚠ 返ってきた順に
+    // 1 件ずつ送ると、回線が切れた 1 回でアカウントの数だけ error が飛ぶ。
+    final failures =
+        <({Account account, Object error, StackTrace stackTrace})>[];
 
     for (final account in supported) {
       // fire-and-forget: 各 fetch の完了ごとに state を更新する。build() の
@@ -87,8 +91,13 @@ class UnifiedNotificationNotifier
       _fetchFor(account, filter).then((result) {
         if (disposed) return;
         pending.remove(result.account);
-        if (result.error != null) {
+        if (result.error case final error?) {
           failed.add(result.account);
+          failures.add((
+            account: result.account,
+            error: error,
+            stackTrace: result.stackTrace ?? StackTrace.empty,
+          ));
         } else {
           for (final n in result.notifications) {
             items.add(
@@ -110,6 +119,15 @@ class UnifiedNotificationNotifier
             totalAccounts: supported.length,
           ),
         );
+        if (pending.isEmpty) {
+          reportFanOutFailures(
+            // ⚠ 一覧の取得は `<領域>.list` (#1117-E / #1144)。
+            tagKey: 'notification.list',
+            operation: 'unified_fetch',
+            failures: failures,
+            totalAccounts: supported.length,
+          );
+        }
       });
     }
 
@@ -151,16 +169,13 @@ class UnifiedNotificationNotifier
       // 失敗は上部バナーでユーザーには見えるが、サーバー側で「どの host が・
       // どんな例外で・どの頻度で」落ちているかの可視性が無かった（#862 でこの
       // 経路を書き換え済み・リリース前レビュー黄）。プリセット host 優先運用に
-      // 乗せて観測する。
-      reportOpFailure(
-        // ⚠ 一覧の取得は `<領域>.list` (#1117-E / #1144)。
-        tagKey: 'notification.list',
-        operation: 'unified_fetch',
+      // 乗せて観測する。⚠ **報告は呼ぶ側が、全員ぶんをまとめて行う** (#1246)。
+      return _FetchResult(
+        account: account,
+        notifications: const [],
         error: e,
         stackTrace: st,
-        account: account,
       );
-      return _FetchResult(account: account, notifications: const [], error: e);
     }
   }
 }
@@ -169,11 +184,13 @@ class _FetchResult {
   final Account account;
   final List<Notification> notifications;
   final Object? error;
+  final StackTrace? stackTrace;
 
   const _FetchResult({
     required this.account,
     required this.notifications,
     this.error,
+    this.stackTrace,
   });
 }
 

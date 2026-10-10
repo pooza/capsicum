@@ -11,6 +11,7 @@ import '../../provider/list_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
+import '../../util/exception_scrub.dart';
 import '../screen/achievement_screen.dart';
 import '../screen/announcement_screen.dart';
 import '../screen/chat_thread_screen.dart';
@@ -27,11 +28,14 @@ import '../screen/unified_notification_screen.dart';
 import '../screen/user_list_screen.dart';
 import '../util/deck_compose.dart';
 import '../util/deck_tabs.dart';
+import '../util/scroll_thresholds.dart';
+import '../util/stream_connection_display.dart';
 import 'emoji_text.dart';
 import 'home_menu.dart' show tabLabel;
 import 'notification_filter_button.dart';
 import 'post_tile.dart';
 import 'retry_error_view.dart';
+import 'scroll_jump_buttons.dart';
 import 'user_avatar.dart';
 
 /// デッキのカラム 1 本 (#1092)。ヘッダーと中身。
@@ -67,7 +71,7 @@ class DeckColumnView extends ConsumerWidget {
     // **そのまま描くと別のアカウントとして操作が外に出る**（B-2）ので出さない。
     // TL の family も、キーのアカウントと現在のアカウントが一致しないと取らない。
     if (column.account != ref.watch(currentAccountKeyProvider)) {
-      return const _DeckColumnMessage('このカラムを表示できません');
+      return const _DeckColumnMessage('このカラムは表示できません');
     }
     final account = column.account;
     return switch (column.tab) {
@@ -170,8 +174,8 @@ class DeckColumnView extends ConsumerWidget {
         postId,
       )) {
         final fetcher? => PostListScreen(
-          title: '引用',
-          emptyMessage: '引用している投稿はありません',
+          title: kQuotesListTitle,
+          emptyMessage: kQuotesListEmptyMessage,
           fetcher: fetcher,
           embedded: true,
         ),
@@ -272,16 +276,21 @@ class _DeckColumnHeader extends ConsumerWidget {
     // アイコンを出さず、アカウント名だけにする。
     final current = ref.watch(currentAccountProvider);
     final user = current?.key == account ? current!.user : null;
+    // ⚠⚠ **アカウントをまたぐカラムの見出しには、アカウントを出さない** (#1259)。
+    // 中身は全アカウントのもので、カラムが持つアカウントと対応しない。出すと
+    // 「このアカウントの通知」に見える。アイコン・表示名・サーバーの色を外す。
+    final spansAccounts = column.tab.spansAccounts;
     // ⚠ 背景はカラムのアカウントのサーバーの色 (#1152・2026-09-22 pooza)。
     // サーバーバッジと同じ [resolveHostColor] を使う。
     // ⚠⚠ **文字とアイコンを白に固定しない (#1240)。**モロヘイヤの色はそのまま
     // 返るので、サーバーが明るい色を設定していると白では読めない。背景の
     // 明るさから選ぶ（[foregroundOnHostColor]）。
-    final background = resolveHostColor(
-      ref.watch(hostThemeColorProvider),
-      account.host,
-    );
-    final foreground = foregroundOnHostColor(background);
+    final background = spansAccounts
+        ? theme.colorScheme.surfaceContainerHighest
+        : resolveHostColor(ref.watch(hostThemeColorProvider), account.host);
+    final foreground = spansAccounts
+        ? theme.colorScheme.onSurface
+        : foregroundOnHostColor(background);
     final titleStyle = theme.textTheme.titleSmall?.copyWith(color: foreground);
     final subStyle = theme.textTheme.bodySmall?.copyWith(
       color: foreground.withValues(alpha: 0.8),
@@ -293,98 +302,125 @@ class _DeckColumnHeader extends ConsumerWidget {
     // 行から外し、ツールチップで見られるようにした。
     // ⚠ 色だけに意味を持たせない（同じサーバーの別アカウントは同じ色になる）。
     // アカウントの区別はアイコンと表示名が担う。
+    //
+    // ⚠ **帯は 40dp**（#1242・2026-10-07 pooza「アイコンが大きい。AppBar より
+    // 気持ち小さくてもいい」「padding が大きいのかも」）。以前は 48dp で、アイコン
+    // 24dp・ボタンの枠 40dp・上下 4dp だった。アイコンを 20dp、枠を 36dp、上下を
+    // 2dp にしてある。⚠ **枠をこれ以上詰めない**（押せる範囲も一緒に狭くなる）。
     return ColoredBox(
       color: background,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(8, 4, 4, 4),
-        child: Row(
-          children: [
-            Expanded(
-              child: Tooltip(
-                message: acct,
-                child: Row(
-                  children: [
-                    if (user != null) ...[
-                      UserAvatar(user: user, size: 24, compact: true),
-                      const SizedBox(width: 8),
-                    ],
-                    Flexible(
-                      child: Text(
-                        label,
-                        style: titleStyle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+      child: IconButtonTheme(
+        data: IconButtonThemeData(
+          style: IconButton.styleFrom(
+            iconSize: kDeckColumnHeaderIconSize,
+            minimumSize: const Size.square(kDeckColumnHeaderButtonSize),
+            fixedSize: const Size.square(kDeckColumnHeaderButtonSize),
+            padding: EdgeInsets.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 2, 4, 2),
+          child: Row(
+            children: [
+              Expanded(
+                child: Tooltip(
+                  message: spansAccounts ? 'すべてのアカウント' : acct,
+                  child: Row(
+                    children: [
+                      if (user != null && !spansAccounts) ...[
+                        UserAvatar(user: user, size: 24, compact: true),
+                        const SizedBox(width: 8),
+                      ],
+                      Flexible(
+                        child: Text(
+                          label,
+                          style: titleStyle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                    ),
-                    Text(' · ', style: subStyle),
-                    Flexible(
-                      child: user != null
-                          ? EmojiText(
-                              user.displayName ?? user.username,
-                              emojis: user.emojis,
-                              fallbackHost: user.host,
-                              style: subStyle,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            )
-                          : Text(
-                              acct,
-                              style: subStyle,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                    ),
-                  ],
+                      if (!spansAccounts) Text(' · ', style: subStyle),
+                      if (!spansAccounts)
+                        Flexible(
+                          child: user != null
+                              ? EmojiText(
+                                  user.displayName ?? user.username,
+                                  emojis: user.emojis,
+                                  fallbackHost: user.host,
+                                  style: subStyle,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                )
+                              : Text(
+                                  acct,
+                                  style: subStyle,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                        ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-            // ⚠ 出す条件はタブ UI の AppBar と共有する (#793)。DM には出さない。
-            if (streamIndicatorTimelineType(column.tab) case final type?
-                when account == ref.watch(currentAccountKeyProvider))
-              // カラムのスコープの中なので、別アカウントのカラムでもここは一致する。
-              _DeckStreamDot(
-                key: ValueKey(type),
-                timelineKey: (account: account, type: type),
-              ),
-            // 新規投稿の入口（案 A・#1172・決定済み事項 10）。⚠ **このカラムの
-            // アカウント**で開く。誰として投稿するかは、すぐ左の見出し（アイコン・
-            // 表示名・サーバーの色・#1152）が見せている。
-            // ⚠ カラムの種類ごとの初期状態（タグ・チャンネル）は
-            // [deckComposeExtra] が持つ。
-            // ⚠ `user != null` ＝ カラムのスコープの割り当てが生きている（本体の
-            // `_body` と同じ判定）。誰のアカウントか出せない状態で投稿の入口を
-            // 出すと、別のアカウントとして操作が外に出る。
-            if (user != null && canComposeFromColumn(column.tab, adapter))
+              // ⚠ 出す条件はタブ UI の AppBar と共有する (#793)。DM には出さない。
+              if (streamIndicatorTimelineType(column.tab) case final type?
+                  when account == ref.watch(currentAccountKeyProvider))
+                // カラムのスコープの中なので、別アカウントのカラムでもここは一致する。
+                _DeckStreamDot(
+                  key: ValueKey(type),
+                  timelineKey: (account: account, type: type),
+                  ringColor: foreground,
+                ),
+              // 新規投稿の入口（案 A・#1172・決定済み事項 10）。⚠ **このカラムの
+              // アカウント**で開く。誰として投稿するかは、すぐ左の見出し（アイコン・
+              // 表示名・サーバーの色・#1152）が見せている。
+              // ⚠ カラムの種類ごとの初期状態（タグ・チャンネル）は
+              // [deckComposeExtra] が持つ。
+              // ⚠ `user != null` ＝ カラムのスコープの割り当てが生きている（本体の
+              // `_body` と同じ判定）。誰のアカウントか出せない状態で投稿の入口を
+              // 出すと、別のアカウントとして操作が外に出る。
+              if (user != null && canComposeFromColumn(column.tab, adapter))
+                IconButton(
+                  icon: Icon(Icons.edit_outlined, color: foreground),
+                  tooltip: 'このアカウントで投稿',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => openDeckCompose(context, ref, column),
+                ),
+              // 通知の種別の絞り込み (#1042)。⚠ **通知のカラムにだけ出す。**
+              // ⚠⚠ **設定はアプリ全体で 1 つ**なので、カラムごとに別の絞り込みには
+              // ならない（カラムごとに持たせるのは #1042 の要求に無く、カラムの
+              // 保存形式から作り直しになる）。同じ絞り込みが全カラムに効く。
+              // ⚠ 色は引数で渡す。`IconTheme` で囲んでも M3 の IconButton には
+              // 効かない（`NotificationFilterButton.color` の doc が正本）。
+              if (column.tab is NotificationsTab ||
+                  column.tab is AllNotificationsTab)
+                NotificationFilterButton(color: foreground),
+              // カラムから開いたカラムは使い捨てなので、ヘッダーで閉じられるようにする
+              // (#1148)。⚠ 列から外すだけで購読は止めない（autoDispose に任せる・#1093）。
               IconButton(
-                icon: Icon(Icons.edit_outlined, color: foreground),
-                tooltip: 'このアカウントで投稿',
+                icon: Icon(Icons.close, color: foreground),
+                tooltip: 'カラムを閉じる',
                 visualDensity: VisualDensity.compact,
-                onPressed: () => openDeckCompose(context, ref, column),
+                onPressed: () =>
+                    ref.read(deckColumnsProvider.notifier).remove(column.id),
               ),
-            // 通知の種別の絞り込み (#1042)。⚠ **通知のカラムにだけ出す。**
-            // ⚠⚠ **設定はアプリ全体で 1 つ**なので、カラムごとに別の絞り込みには
-            // ならない（カラムごとに持たせるのは #1042 の要求に無く、カラムの
-            // 保存形式から作り直しになる）。同じ絞り込みが全カラムに効く。
-            // ⚠ 色は引数で渡す。`IconTheme` で囲んでも M3 の IconButton には
-            // 効かない（`NotificationFilterButton.color` の doc が正本）。
-            if (column.tab is NotificationsTab ||
-                column.tab is AllNotificationsTab)
-              NotificationFilterButton(color: foreground),
-            // カラムから開いたカラムは使い捨てなので、ヘッダーで閉じられるようにする
-            // (#1148)。⚠ 列から外すだけで購読は止めない（autoDispose に任せる・#1093）。
-            IconButton(
-              icon: Icon(Icons.close, color: foreground),
-              tooltip: 'カラムを閉じる',
-              visualDensity: VisualDensity.compact,
-              onPressed: () =>
-                  ref.read(deckColumnsProvider.notifier).remove(column.id),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 }
+
+/// 接続ドットの丸そのもの (#1238)。テストから色と縁を読むための目印。
+const deckStreamDotKey = Key('deck_stream_dot');
+
+/// カラム見出しのアイコンの大きさ (#1242)。AppBar（24dp）より一回り小さい。
+const double kDeckColumnHeaderIconSize = 20;
+
+/// カラム見出しのボタンの枠 (#1242)。⚠ 押せる範囲なので、これ以上詰めない。
+const double kDeckColumnHeaderButtonSize = 36;
 
 /// id から取り直す中身 (#1148)。開いた時点の中身（[seed]）があればそのまま描く。
 ///
@@ -422,8 +458,16 @@ class _DeckSeededBodyState<T extends Object>
         : widget.fetch(adapter);
     // ⚠ 再試行では setState の中で作るので、FutureBuilder が購読するのは次の
     // フレーム。それより先に失敗すると「未処理の例外」として上がる（テストで
-    // 実際に踏んだ）。エラーは FutureBuilder が拾うので、ここでは握っておくだけ。
-    future.ignore();
+    // 実際に踏んだ）。画面への反映は FutureBuilder が拾うので、ここでは握る。
+    //
+    // ⚠ **握るだけにしない** (#1235)。利用者には「読み込みに失敗しました」と
+    // 再試行の口が出るが、何で失敗したかがどこにも残らないと、回線断と恒常的な
+    // 失敗（API の形が変わった等）を後から区別できない。
+    future.then<void>(
+      (_) {},
+      onError: (Object e, StackTrace st) =>
+          debugLogException('Deck column load error (${T.toString()})', e, st),
+    );
     _future = future;
   }
 
@@ -450,9 +494,20 @@ class _DeckSeededBodyState<T extends Object>
 
 /// カラム単位の接続状態 (#1092・決定済み事項 7-2)。
 class _DeckStreamDot extends ConsumerWidget {
-  const _DeckStreamDot({super.key, required this.timelineKey});
+  const _DeckStreamDot({
+    super.key,
+    required this.timelineKey,
+    required this.ringColor,
+  });
 
   final TimelineKey timelineKey;
+
+  /// 縁取りの色。見出しの文字と同じ色を渡す (#1238)。
+  ///
+  /// ⚠ 状態の色（緑・黄・橙・赤・灰）は固定なので、サーバーの色が明るい黄や緑だと
+  /// 点が背景に埋もれる。**色は状態の意味を持つので変えず**、背景と必ず対比する
+  /// 色で縁を取る。
+  final Color ringColor;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -461,21 +516,22 @@ class _DeckStreamDot extends ConsumerWidget {
         ? StreamConnectionState.connecting
         : async.valueOrNull?.streamConnectionState ??
               StreamConnectionState.connecting;
-    final (Color color, String label) = switch (state) {
-      StreamConnectionState.live => (Colors.green, 'ライブ更新中'),
-      StreamConnectionState.connecting => (Colors.amber, '接続中…'),
-      StreamConnectionState.disconnected => (Colors.orange, '切断 — 再接続中'),
-      StreamConnectionState.exhausted => (Colors.red, '接続が不安定 — 再試行中'),
-      StreamConnectionState.disabled => (Colors.grey, 'ライブ更新オフ'),
-    };
+    final (:color, :label) = streamConnectionDisplay(context, state);
     return Tooltip(
-      message: label,
+      message: streamConnectionTooltip(label),
       child: Padding(
-        padding: const EdgeInsets.all(8),
+        // ⚠ 縁のぶん（1dp × 2）だけ箱を広げ、余白を詰める。塗りの直径 8dp と
+        // 行の中で占める幅（24dp）は変えない。
+        padding: const EdgeInsets.all(7),
         child: Container(
-          width: 8,
-          height: 8,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          key: deckStreamDotKey,
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+            border: Border.all(color: ringColor),
+          ),
         ),
       ),
     );
@@ -552,7 +608,15 @@ class _DeckTimelineBodyState extends ConsumerState<_DeckTimelineBody> {
     // Riverpod の assert に当たる（`desktopTimelineRefreshProvider` の登録も
     // 同じ理由で post-frame にしてある）。
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _refreshRegistry?.register(widget.columnId, _showRefresh);
+      if (!mounted) return;
+      _refreshRegistry?.register(widget.columnId, _showRefresh);
+      // ⚠ **開いた時点で「先頭に居る」と名乗る** (#1235)。`_isNearTop` は
+      // notifier に 1 つしか無く、同じ TL を見ている別の画面（重複カラム・下に
+      // 残るタブ UI）と共有している。名乗らないと、前に見ていた側が離れた位置の
+      // まま残した値を引き継ぎ、先頭に居るのに新着が溜まり続ける。
+      // ⚠ 「最後に現れたか、閾値をまたいだ側の値が効く」が、共有したままで
+      // 取れるいちばん素直な規則（いま操作している画面がたいてい勝つ）。
+      widget.setNearTop?.call(ref, true);
     });
   }
 
@@ -577,14 +641,24 @@ class _DeckTimelineBodyState extends ConsumerState<_DeckTimelineBody> {
     super.dispose();
   }
 
+  void _jumpTo(double offset) {
+    if (!_scrollController.hasClients) return;
+    _scrollController.animateTo(
+      offset,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+    );
+  }
+
   void _onScroll() {
     final position = _scrollController.position;
-    final nearTop = position.pixels <= 200;
-    if (widget.setNearTop != null && nearTop != _nearTop) {
-      _nearTop = nearTop;
-      widget.setNearTop!(ref, nearTop);
+    final nearTop = isNearTop(position);
+    if (nearTop != _nearTop) {
+      // ⚠ △ の出し分けに使うので、`setNearTop` が無いカラムでも追う (#1244)。
+      setState(() => _nearTop = nearTop);
+      widget.setNearTop?.call(ref, nearTop);
     }
-    if (position.pixels >= position.maxScrollExtent - 600) {
+    if (shouldLoadMore(position)) {
       // 継続エラー時は自動再試行を止める (#678)。回復は引っ張って更新。
       final state = ref.read(widget.timeline).valueOrNull;
       if (state == null || state.loadMoreError != null) return;
@@ -630,11 +704,29 @@ class _DeckTimelineBodyState extends ConsumerState<_DeckTimelineBody> {
                 child: Text('新着 ${state.pendingCount} 件'),
               ),
             Expanded(
-              child: RefreshIndicator(
-                // メニュー / `Ctrl+R` からも同じ弧を起こす (#1157 / #1170)。
-                key: _refreshKey,
-                onRefresh: () => widget.refresh(ref),
-                child: list,
+              child: Stack(
+                children: [
+                  RefreshIndicator(
+                    // メニュー / `Ctrl+R` からも同じ弧を起こす (#1157 / #1170)。
+                    key: _refreshKey,
+                    onRefresh: () => widget.refresh(ref),
+                    child: list,
+                  ),
+                  // 先頭・末尾へ飛ぶ (#1244・2026-10-09 pooza)。⚠ **カラムごと**に
+                  // 置く（画面に 1 組だけ置いてフォーカス中のカラムへ効かせる案は
+                  // 採っていない —— どのカラムが動くかが押すまで分からない）。
+                  if (state.posts.isNotEmpty)
+                    Positioned(
+                      right: 8,
+                      bottom: 8,
+                      child: ScrollJumpButtons(
+                        showTop: _nearTop == false,
+                        onTop: () => _jumpTo(0),
+                        onBottom: () =>
+                            _jumpTo(_scrollController.position.maxScrollExtent),
+                      ),
+                    ),
+                ],
               ),
             ),
           ],

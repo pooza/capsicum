@@ -88,6 +88,30 @@ void main() {
       expect(store[DeviceInstallId.storageKey], equals(id));
     });
 
+    test('持ち主の証明には、保存してある値をそのまま使う (#1262)', () async {
+      final id = await DeviceInstallId.get();
+      expect(await DeviceInstallId.getForOwnershipProof(), id);
+
+      // 再起動をまたいで読めた回も同じ。
+      DeviceInstallId.resetForTest();
+      expect(await DeviceInstallId.getForOwnershipProof(), id);
+    });
+
+    test('⚠⚠ 読めずに作り直した回は、持ち主の証明に使わない (#1262)', () async {
+      // relay の行は以前の ID を持っているので、作り直した値を送ると拒まれる。
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            if (call.method == 'read') {
+              throw PlatformException(code: 'keychain');
+            }
+            return null;
+          });
+
+      final id = await DeviceInstallId.get();
+      expect(id, isNotEmpty, reason: '前提: 登録のほうは作り直した値で続ける');
+      expect(await DeviceInstallId.getForOwnershipProof(), isNull);
+    });
+
     test('同一プロセス内で呼び直しても同じ値', () async {
       final first = await DeviceInstallId.get();
       final second = await DeviceInstallId.get();
@@ -192,6 +216,46 @@ void main() {
 
       expect(ids.toSet(), hasLength(1));
       expect(ids.first, isNotEmpty);
+    });
+  });
+
+  // #1166: 読めない / 書けない端末は起動のたびに ID を作り直して relay の行を
+  // 増やすのに、release では何も残っていなかった。
+  group('失敗の記録 (#1166)', () {
+    late List<String> reported;
+
+    setUp(() {
+      reported = [];
+      DeviceInstallId.debugReportHook = (operation, error) =>
+          reported.add('$operation:${error.runtimeType}');
+    });
+
+    test('前提: 読み書きできる端末では何も送らない', () async {
+      await DeviceInstallId.get();
+      expect(reported, isEmpty);
+    });
+
+    test('⚠ 読めなかったら送る', () async {
+      readThrows = true;
+      await DeviceInstallId.get();
+      expect(reported, ['read:PlatformException']);
+    });
+
+    test('⚠ 書けなかったら送る', () async {
+      writeThrows = true;
+      await DeviceInstallId.get();
+      expect(reported, ['write:PlatformException']);
+    });
+
+    test('⚠ 同時に呼ばれても 1 回だけ（アカウントの数だけ送らない）', () async {
+      readThrows = true;
+      writeThrows = true;
+      await Future.wait([
+        DeviceInstallId.get(),
+        DeviceInstallId.get(),
+        DeviceInstallId.get(),
+      ]);
+      expect(reported, ['read:PlatformException', 'write:PlatformException']);
     });
   });
 }

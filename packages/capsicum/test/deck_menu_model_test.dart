@@ -8,6 +8,7 @@ import 'package:capsicum/src/util/shared_preferences_cache.dart';
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
@@ -190,9 +191,86 @@ void main() {
           .whereType<MenuActionEntry>()
           .map((a) => a.label)
           .toList();
-      expect(labels, ['#a · me さん', '#b · me さん', 'カラムを編集…']);
+      expect(labels, ['前のカラム', '次のカラム', '#a · me さん', '#b · me さん', 'カラムを編集…']);
     });
 
+    // #1258: ⌘N と Ctrl+R は「フォーカス中のカラム」に効くのに、その宛先を
+    // 変える操作だけがキーボードに無かった。
+    testWidgets('⚠ 隣のカラムへ移る項目に、主修飾 + [ / ] が付く', (tester) async {
+      final revealed = <String>[];
+      final view = childrenOf(
+        await buildModel(tester, inDeck: true, revealed: revealed),
+        '表示',
+      );
+      final columns = submenuNamed(view, 'カラム')!.children;
+      final previous = actionNamed(columns, '前のカラム')!;
+      final next = actionNamed(columns, '次のカラム')!;
+
+      expect(
+        previous.shortcut,
+        const MenuShortcut(LogicalKeyboardKey.bracketLeft),
+      );
+      expect(
+        next.shortcut,
+        const MenuShortcut(LogicalKeyboardKey.bracketRight),
+      );
+      // ⚠ Windows / Linux はメニューを開かなくても効く（表示専用にしない）。
+      expect(previous.globalShortcut, isTrue);
+      expect(next.globalShortcut, isTrue);
+
+      // フォーカスは先頭（a）にある。左端なので「前」は無効、「次」は b へ。
+      expect(previous.onSelected, isNull, reason: '端では止める（回り込まない）');
+      next.onSelected!();
+      expect(revealed, ['b']);
+    });
+
+    testWidgets('⚠ 左から 9 本目までは、主修飾 + 数字で直接移れる', (tester) async {
+      final ids = [for (var i = 1; i <= 10; i++) 'c$i'];
+      final view = childrenOf(
+        await buildModel(tester, inDeck: true, columnIds: ids),
+        '表示',
+      );
+      final columns = submenuNamed(view, 'カラム')!.children;
+
+      final first = actionNamed(columns, '#c1 · me さん')!;
+      expect(first.shortcut, const MenuShortcut(LogicalKeyboardKey.digit1));
+      expect(first.globalShortcut, isTrue);
+      expect(
+        actionNamed(columns, '#c9 · me さん')!.shortcut,
+        const MenuShortcut(LogicalKeyboardKey.digit9),
+      );
+      // 10 本目には割り当てない（0 を「10 本目」と読ませない）。
+      final tenth = actionNamed(columns, '#c10 · me さん')!;
+      expect(tenth.shortcut, isNull);
+      expect(tenth.globalShortcut, isFalse);
+    });
+  });
+
+  group('adjacentDeckColumnId (#1258)', () {
+    const ids = ['a', 'b', 'c'];
+
+    test('隣へ移る', () {
+      expect(adjacentDeckColumnId(ids, 'b', forward: true), 'c');
+      expect(adjacentDeckColumnId(ids, 'b', forward: false), 'a');
+    });
+
+    test('⚠ 端では止める（回り込まない）', () {
+      expect(adjacentDeckColumnId(ids, 'c', forward: true), isNull);
+      expect(adjacentDeckColumnId(ids, 'a', forward: false), isNull);
+    });
+
+    test('フォーカスが無い・列に無い id なら、どちらの向きでも先頭へ', () {
+      expect(adjacentDeckColumnId(ids, null, forward: true), 'a');
+      expect(adjacentDeckColumnId(ids, null, forward: false), 'a');
+      expect(adjacentDeckColumnId(ids, 'gone', forward: true), 'a');
+    });
+
+    test('列が空なら移る先は無い', () {
+      expect(adjacentDeckColumnId(const [], null, forward: true), isNull);
+    });
+  });
+
+  group('表示 > タブ / カラム（続き）', () {
     testWidgets('⚠ フォーカス中のカラムに ✓ が付く', (tester) async {
       final view = childrenOf(await buildModel(tester, inDeck: true), '表示');
       final columns = submenuNamed(view, 'カラム')!.children;

@@ -516,7 +516,7 @@ void main() {
 
       expect(tail, contains('SupporterPurchaseOutcomeKind.success'));
       expect(tail, contains('entitlementStatusProvider.notifier'));
-      expect(tail, contains('refresh()'));
+      expect(tail, contains('refreshCoalesced()'));
     });
 
     test('⚠⚠ どちらの画面も自前では持たない（集約が「使わなくなる」形で崩れない）', () {
@@ -556,7 +556,7 @@ void main() {
         read('lib/src/provider/supporter_purchase_provider.dart'),
       );
 
-      expect(provider, contains('Future<void> forgetEntitlement()'));
+      expect(provider, contains('Future<bool> forgetEntitlement()'));
       expect(provider, contains('EntitlementTokenStore.clear()'));
       // ⚠ 捨てたら `hasEntitlement` も落とす（残すとボタンが消えない）。
       expect(provider, contains('hasEntitlement: false'));
@@ -567,7 +567,7 @@ void main() {
 
       expect(section, contains('showDialog<bool>'));
       // ⚠ 何が消えないかを文面で言うこと（購入そのものは消えない）。
-      expect(section, contains('ストアの購読は解約されません'));
+      expect(section, contains('ストアでの自動更新も止まりません'));
       // ⚠⚠ **ウィジェットが自分から `clear` を呼んでいない**（必ず provider 経由
       // で、ダイアログの後ろ）。
       expect(section, isNot(contains('EntitlementTokenStore')));
@@ -586,7 +586,7 @@ void main() {
       // ⚠ 足りないのは利用権の引き直しだけ（これが無いと買っても
       // 「利用権がありません」のまま残る）。
       expect(listener, contains('entitlementStatusProvider.notifier'));
-      expect(listener, contains('refresh()'));
+      expect(listener, contains('refreshCoalesced()'));
     });
 
     test('⚠ 手押しで登録をやり直す口は残っている', () {

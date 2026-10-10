@@ -23,10 +23,10 @@ export 'supporter_purchase_backend.dart'
 /// (同一 App レコード) のため ASC の消耗型 3 商品をそのまま共有し、
 /// `in_app_purchase` も macOS を in_app_purchase_storekit で公式サポートする。
 /// Windows は #599 でストア IAP（Microsoft Store）を解放するが、購入は
-/// **Store からインストールされたコピーでのみ**成立するため、入口の可否は
+/// **Store からインストールされたコピーでのみ**成立するため、買えるかどうかは
 /// 実行時に商品問い合わせが通るか（[SupporterPurchaseState.isAvailable]）で
-/// 決める。この getter はコンパイル時に backend の有無だけを表す。Linux は
-/// ストア IAP 不在。
+/// 決まる（⚠ 入口は問い合わせに繋がず常に出す・[supporterEntryVisibleProvider]）。
+/// この getter はコンパイル時に backend の有無だけを表す。Linux はストア IAP 不在。
 bool get supporterPurchaseSupported =>
     Platform.isIOS || Platform.isAndroid || Platform.isMacOS;
 
@@ -187,7 +187,10 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
   static const storeTimeout = Duration(seconds: 15);
 
   /// 手元のキーホルダ読み出し。⚠ 本来は即座に返る。
-  static const localTimeout = Duration(seconds: 5);
+  ///
+  /// ⚠ 値は [EntitlementStatusNotifier.localTimeout] が正本（同じ読みを両方が
+  /// するので、上限を別々に持たない・#1237）。
+  static const localTimeout = EntitlementStatusNotifier.localTimeout;
 
   late final SupporterPurchaseBackend _backend;
   StreamSubscription<SupporterPurchaseEvent>? _sub;
@@ -198,6 +201,19 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
   /// ⚠ **処理の完了ではなく到着で数える**（[_onSubscriptionPurchased] の先頭）——
   /// 完了を待つと relay への通信ぶん遅れ、その間に二重に登録してしまう。
   int _subscriptionEventCount = 0;
+
+  /// いま処理している最中のサブスクの購入イベントの数 (#1237)。
+  ///
+  /// 復元の後始末が「まだ発行の途中か」を知るために見る。
+  /// - 途中なら、ボタンを戻さない（押し直すと 2 本目の発行が 1 本目と relay の
+  ///   枠を取り合う）
+  /// - 途中なら、「復元できる購入はありません」と言わない（数秒後に「復元しました」
+  ///   で上書きされ、結果が一瞬矛盾して見えていた）
+  int _subscriptionInFlight = 0;
+
+  /// [restoreAndReregister] が、自分の登録のやり直しを待っている最中か。
+  /// その間は、購入イベントの側がボタンを戻さない（復元の finally が戻す）。
+  bool _restoreReregistering = false;
 
   /// [loadProducts] の世代 (#1248)。時間切れのあとに届いた答えを反映するとき、
   /// その間に読み直しが始まっていないかを見分ける。
@@ -285,9 +301,11 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
   /// いて（[supporterEntryVisibleProvider]）、読み直しの口は投げ銭画面の中に
   /// しか無い ＝ **入口が出ないので、読み直しにも行けない**。
   ///
-  /// ⚠ [storeTimeout] の根拠は Play と Apple の実測で、**Microsoft Store は
-  /// 測っていなかった**。`GetAssociatedStoreProductsAsync` は起動直後に 15 秒を
-  /// 超えることがある（Sentry では起動のたびに時間切れ）。
+  /// ⚠ **Windows で起動のたびに時間切れになっていた原因は、遅さではなかった。**
+  /// Microsoft Store の往復は実測で 1.0〜1.5 秒（2026-10-10・製品版のパッケージ
+  /// の中で計測）。返った結果をネイティブのワーカーが捨てていたので、Dart には
+  /// 答えが届かなかった（`flutter_window.cpp` の `window_alive`）。この関数は
+  /// 「本当に遅いストア」への備えとして残す。
   ///
   /// ⚠⚠ **時間切れは「画面を固着させない」ためのもので、「使えない」の判定では
   /// ない。**答えが出たら、その答えに従う。
@@ -522,15 +540,19 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
   /// 「勝手に消さない」としているのと同じ理由で、**通信の失敗やストア側の一過性
   /// の不調で有効な利用権を捨てると、再登録の手掛かりごと失う**。⚠ **利用者が
   /// 確認してから**押す口にしてある（画面側がダイアログを出す）。
-  Future<void> forgetEntitlement() async {
-    if (state.purchaseInProgress) return;
+  ///
+  /// 戻り値は「消せたか」。⚠ **false は、消そうとして消せなかった回だけ**
+  /// (#1247)。その回は `hasEntitlement` も落とさない（記録は残っている）。
+  Future<bool> forgetEntitlement() async {
+    if (state.purchaseInProgress) return true;
     // ⚠⚠ **消す前に、応答待ちの読み直しを無効にする**（2 回目の差分レビュー・
     // 2026-10-06）。消している最中に着いた古い応答が、記録を保存し直せた。
     ref.read(entitlementStatusProvider.notifier).invalidatePending();
-    await EntitlementTokenStore.clear();
-    // ⚠ 画面の「取り直す / 記録を消す」の出し分けはこの値を見るので、
+    if (!await EntitlementTokenStore.clear()) return false;
+    // ⚠ 画面の「購入を復元する / 記録を消す」の出し分けはこの値を見るので、
     // **保存を消したらここも落とす**（残すとボタンが消えない）。
     state = state.copyWith(hasEntitlement: false);
+    return true;
   }
 
   Future<void> restoreEntitlement() async {
@@ -543,7 +565,9 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
       // ⚠ **ここで成功を宣言しない。**復元すべき購入が無ければイベントは
       // 1 つも流れてこないので、`lastOutcome` は `_onEvent` 側に委ねる。
       // ⚠⚠ **代わりにフラグだけ戻す** —— 戻さないとボタンが固着する。
-      state = state.copyWith(purchaseInProgress: false);
+      // ⚠ ただし、返ってきた購入の発行がまだ途中なら戻さない (#1237)。
+      // そちらは [_issueEntitlementFor] の出口が戻す。
+      state = state.copyWith(purchaseInProgress: _subscriptionInFlight > 0);
     } catch (e, st) {
       Sentry.captureException(
         scrubException(e),
@@ -597,6 +621,7 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
     // ⚠ 登録は端末のトークンを待つことがある（最大 10 秒）。その間に押し直せない
     // ようにする。
     state = state.copyWith(purchaseInProgress: true);
+    _restoreReregistering = true;
     try {
       final accounts = ref.read(accountManagerProvider).accounts;
       if (accounts.isNotEmpty) {
@@ -615,19 +640,23 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
         },
       );
     } finally {
+      _restoreReregistering = false;
       // 🔴 **復元できる購入が無かったことを伝える**（リリース前レビュー
       // 2026-10-06）。以前は何も立てなかったので、ボタンが一瞬無効になって
       // 戻るだけで、**「押しても何も起きない」に見えた**。
       // ⚠ 復元の要求そのものが失敗した回は、[restoreEntitlement] が既に
       // `restoreError` を立てているので上書きしない。
+      //
+      // ⚠⚠ **購入イベントが遅れて届いていたら、「無かった」と言わない** (#1237)。
+      // 上の登録は端末のトークンを最大 10 秒待つので、その間に届くことがある。
+      // 以前はここで「復元できる購入はありません」を立て、数秒後に発行が済むと
+      // 「復元しました」で上書きされていた。⚠ 発行の途中ならボタンも戻さない。
       state = state.copyWith(
-        purchaseInProgress: false,
-        lastOutcome:
-            state.lastOutcome ??
-            const SupporterPurchaseOutcome(
-              SupporterPurchaseOutcomeKind.nothingToRestore,
-              isSubscription: true,
-            ),
+        purchaseInProgress: _subscriptionInFlight > 0,
+        lastOutcome: outcomeAfterRestoreFallback(
+          state.lastOutcome,
+          arrivedLate: _subscriptionEventCount != before,
+        ),
       );
     }
     return false;
@@ -796,6 +825,34 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
   /// 再試行の手掛かりごと消える。
   Future<void> _onSubscriptionPurchased(SupporterPurchaseEvent event) async {
     _subscriptionEventCount++;
+    _subscriptionInFlight++;
+    // ⚠ **発行のあいだは押し直せないようにする** (#1237)。購入の経路は `buy` が
+    // 立てているが、**復元の経路は復元の要求が返った時点で戻していた**ので、
+    // 発行が relay の送り直しで数秒かかる間にもう一度「復元」を押せた。
+    state = state.copyWith(purchaseInProgress: true);
+    try {
+      await _issueEntitlementFor(event);
+    } finally {
+      _subscriptionInFlight--;
+      // ⚠⚠ **最後の 1 件が抜けるときに、フラグを必ず戻す**（リリース前レビュー・
+      // 2026-10-10）。発行の出口が戻したあと、登録のやり直し
+      // （[_completeAndReregister]・端末のトークンを最大 10 秒待つ）の最中に
+      // 復元の側が `_subscriptionInFlight > 0` を見て立て直すと、戻す者が
+      // 居なくなり、**購入も復元も再起動まで押せなくなっていた**。
+      // ⚠ 復元の側が自分の登録を待っている間は、そちらの finally に任せる。
+      if (_subscriptionInFlight == 0 &&
+          !_restoreReregistering &&
+          state.purchaseInProgress) {
+        state = state.copyWith(purchaseInProgress: false);
+      }
+    }
+  }
+
+  /// [_onSubscriptionPurchased] の中身。失敗の出口は `purchaseInProgress` を戻す。
+  /// ⚠ **ほかの購入イベントの発行が残っていれば戻さない**（`> 1` は自分を除いた
+  /// 残り）。1 件目が済んだ時点で戻すと、2 件目の発行中に押し直せた (#1237)。
+  /// ⚠ 成功の出口は戻さない（後始末が済むまで押させない）。
+  Future<void> _issueEntitlementFor(SupporterPurchaseEvent event) async {
     final store = entitlementStoreName();
     final purchaseId = event.purchaseId;
     // ⚠ どちらも無ければ利用権を引けない。**成功に見せない。**
@@ -808,7 +865,7 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
         },
       );
       state = state.copyWith(
-        purchaseInProgress: false,
+        purchaseInProgress: _subscriptionInFlight > 1,
         lastOutcome: const SupporterPurchaseOutcome(
           SupporterPurchaseOutcomeKind.entitlementError,
           isSubscription: true,
@@ -843,7 +900,7 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
         },
       );
       state = state.copyWith(
-        purchaseInProgress: false,
+        purchaseInProgress: _subscriptionInFlight > 1,
         lastOutcome: const SupporterPurchaseOutcome(
           SupporterPurchaseOutcomeKind.entitlementError,
           isSubscription: true,
@@ -852,8 +909,10 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
       return; // ⚠ 確定させない（再配信で拾い直す）
     }
 
+    // ⚠ **ここではボタンを戻さない**（PR #1256 の Codex P2）。このあとの
+    // ストアの確定と登録のやり直しが済むまで、押し直すと 2 本目が 1 本目と
+    // 競う。戻すのは [_onSubscriptionPurchased] の finally。
     state = state.copyWith(
-      purchaseInProgress: false,
       hasEntitlement: true,
       lastOutcome: const SupporterPurchaseOutcome(
         SupporterPurchaseOutcomeKind.success,
@@ -915,17 +974,22 @@ final supporterPurchaseProvider =
 
 /// 設定に投げ銭エントリ（購入導線）を出すか (#428 D-1 / #599 §E-2)。
 ///
-/// iOS / Android / macOS は常に出す（[supporterPurchaseSupported]）。Windows は
-/// 購入が **Microsoft Store からインストールされたコピーでのみ**成立するため、
-/// 商品問い合わせが通って利用可能になった（= Store 版）ときだけ出す。直配版
-/// （自己署名 MSIX）や非対応 OS では隠す（§E-2(a)・空振りの入口を出さない）。
-/// mobile では `supporterPurchaseSupported` で短絡し、購入 provider を余計に
-/// 起動しない。
+/// iOS / Android / macOS は常に出す（[supporterPurchaseSupported]）。
+///
+/// ⚠⚠ **Windows も常に出す (#1248・2026-10-10 pooza)。**🔴 以前は「商品の
+/// 問い合わせが通った（= Store 版）ときだけ出す」（#599 §E-2(a)）だったが、
+/// **製品版 2.0.0 / 2.0.1 で問い合わせが返らず、入口が丸ごと消えた。**入口を
+/// 問い合わせの成否に繋ぐと、問い合わせが壊れた回に**読み直しの口（投げ銭画面の
+/// 中にある）へも行けなくなる**。
+///
+/// - 守る相手だった自己署名 MSIX の直配は #760 で公式案内をやめており、製品として
+///   配っているのは Store 版だけ。買えない入口が出るのは開発ビルドと手で入れた
+///   `.msix` に限られ、そこでは投げ銭画面が「ご利用いただけません」と伝える。
+/// - ⚠ **ここで購入 provider を watch しない。**watch すると起動のたびに Store へ
+///   問い合わせる。問い合わせは投げ銭画面を開いたときだけでよい。
 final supporterEntryVisibleProvider = Provider<bool>((ref) {
   if (supporterPurchaseSupported) return true;
-  if (Platform.isWindows) {
-    return ref.watch(supporterPurchaseProvider.select((s) => s.isAvailable));
-  }
+  if (Platform.isWindows) return true;
   // 課金 backend が無い OS（現状 Linux）は Web の支援先を案内するので、入口
   // 自体は出す (#893)。ストア版に Web リンクを出さない判断は投げ銭画面側で行う。
   // backend 非提供のターゲットが増えても追従漏れしないよう、Platform.isLinux
@@ -933,6 +997,25 @@ final supporterEntryVisibleProvider = Provider<bool>((ref) {
   if (!supporterPurchaseHasBackend) return true;
   return false;
 });
+
+/// 復元で購入が返らず、登録だけやり直した回の締めくくりに出す結果 (#1237)。
+///
+/// - 既に結果が立っていれば、それを残す（復元の要求の失敗・遅れて届いた購入の成功）
+/// - ⚠ **購入イベントが遅れて届いていたら、何も立てない**（[arrivedLate]）。
+///   結果は発行が済んだ時点でイベントの側が立てる。ここで「無かった」と言うと、
+///   数秒後に「復元しました」で上書きされる
+/// - どちらでもなければ「復元できる購入はありません」
+SupporterPurchaseOutcome? outcomeAfterRestoreFallback(
+  SupporterPurchaseOutcome? current, {
+  required bool arrivedLate,
+}) =>
+    current ??
+    (arrivedLate
+        ? null
+        : const SupporterPurchaseOutcome(
+            SupporterPurchaseOutcomeKind.nothingToRestore,
+            isSubscription: true,
+          ));
 
 /// relay が「塞がっている」と断った回なら、その理由の語。それ以外は null。
 ///

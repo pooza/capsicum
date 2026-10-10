@@ -112,6 +112,44 @@ void main() {
       }).toCapsicum('mstdn.b-shock.org');
       expect(post.mentions.map((m) => m.acct), ['c']);
     });
+
+    // #1166: 引用カードから直接返信できるので、引用元の宛先も運ぶ。
+    Map<String, dynamic> quoted(Map<String, dynamic> overrides) => {
+      'state': 'accepted',
+      'quoted_status': {
+        'id': 'q1',
+        'created_at': '2026-09-21T00:00:00Z',
+        'account': {'id': '9', 'username': 'carol', 'acct': 'carol'},
+        'content': '<p>引用元</p>',
+        'visibility': 'public',
+        ...overrides,
+      },
+    };
+
+    test('⚠ 引用元の mentions も Post.quote へ運ぶ', () {
+      final post = status({
+        'quote': quoted({
+          'mentions': [
+            {'id': '2', 'username': 'a', 'acct': 'a', 'url': ''},
+            {'id': '3', 'username': 'b', 'acct': 'b@remote.example', 'url': ''},
+          ],
+        }),
+      }).toCapsicum('mstdn.b-shock.org');
+
+      expect(post.quote, isNotNull, reason: '前提: 引用を拾えている');
+      expect(post.quote!.mentions.map((m) => (m.id, m.acct)), [
+        ('2', 'a'),
+        ('3', 'b@remote.example'),
+      ]);
+    });
+
+    test('引用元に mentions が無くても落ちない', () {
+      final post = status({
+        'quote': quoted({}),
+      }).toCapsicum('mstdn.b-shock.org');
+      expect(post.quote, isNotNull);
+      expect(post.quote!.mentions, isEmpty);
+    });
   });
 
   group('Misskey: visibleUserIds → Post.visibleUserIds', () {

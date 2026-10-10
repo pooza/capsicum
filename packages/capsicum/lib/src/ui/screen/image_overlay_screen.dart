@@ -78,6 +78,10 @@ class _TextOverlayItem extends _OverlayItem {
   String text;
   Color color = Colors.white;
 
+  /// 複数行のときの行揃え (#1183)。⚠ **見る側は 2 箇所** —— プレビューの `Text` と
+  /// 書き出しの `TextPainter`。片方だけだと、編集中の見た目と投稿される画像が違う。
+  TextAlign align = TextAlign.center;
+
   @override
   String get label => text;
 
@@ -267,6 +271,9 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
   /// 書き出し中は再押下・離脱を防ぐ。
   bool _rendering = false;
 
+  /// 前回のレイヤの取り直しの進み具合 (#1238)。出さない間は null。
+  ({int done, int total})? _restoreProgress;
+
   /// スタンプ素材の取得中。連打で同じ絵文字が二重に載るのを防ぐ。
   bool _loadingSticker = false;
 
@@ -367,21 +374,45 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
     final pictures = ref.read(pictureLayerSourceProvider);
     final restored = <_OverlayItem>[];
     var failed = 0;
+    // ⚠⚠ **途中で画面が閉じたら、それまでに読んだ画像もすべて解放する** (#1238)。
+    // `restored` はまだ `_items` に入っていないので、画面の `dispose()` からは
+    // 見えない。以前は「いま読み終えた 1 枚」だけを解放して抜けていた。
+    void discardRestored() {
+      for (final item in restored) {
+        if (item is _ImageBackedOverlayItem) item.image.dispose();
+      }
+    }
+
+    // 取り直しが要るレイヤ（スタンプ・画像）の数。⚠ 文字は待たないので数えない。
+    final total = widget.initialLayers
+        .where((spec) => spec is! TextOverlayLayerSpec)
+        .length;
+    var done = 0;
+    void advance() {
+      done++;
+      // ⚠ 1 枚だけの回は数字を出さない（「1 / 1」は何も伝えない）。
+      if (total >= 2 && mounted) {
+        setState(() => _restoreProgress = (done: done, total: total));
+      }
+    }
 
     for (final spec in widget.initialLayers) {
       switch (spec) {
         case TextOverlayLayerSpec():
           restored.add(
             _TextOverlayItem(id: _nextId++, text: spec.text)
-              ..color = spec.color,
+              ..color = spec.color
+              ..align = spec.align,
           );
         case StickerOverlayLayerSpec():
           try {
             final image = await stickers.load(spec.url);
             if (!mounted) {
               image.dispose();
+              discardRestored();
               return;
             }
+            advance();
             restored.add(
               _StickerOverlayItem(
                 id: _nextId++,
@@ -394,6 +425,7 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
             // ⚠ リモート URL 由来の例外が来るので必ず scrub を通す (#953-4)。
             await Sentry.captureException(scrubException(e), stackTrace: st);
             failed++;
+            advance();
             continue;
           }
         case PictureOverlayLayerSpec():
@@ -404,8 +436,10 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
             final image = await pictures.restore(spec.path);
             if (!mounted) {
               image.dispose();
+              discardRestored();
               return;
             }
+            advance();
             restored.add(
               _PictureOverlayItem(
                 id: _nextId++,
@@ -417,6 +451,7 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
           } catch (e, st) {
             await Sentry.captureException(scrubException(e), stackTrace: st);
             failed++;
+            advance();
             continue;
           }
       }
@@ -424,12 +459,13 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
     }
 
     if (!mounted) {
-      for (final item in restored) {
-        if (item is _ImageBackedOverlayItem) item.image.dispose();
-      }
+      discardRestored();
       return;
     }
-    setState(() => _items.addAll(restored));
+    setState(() {
+      _items.addAll(restored);
+      _restoreProgress = null;
+    });
     if (failed > 0) {
       // ⚠ **種別を名指ししない** (#1178)。スタンプと端末の画像のどちらも落ちうる
       // ようになったので、「スタンプを N 個」と書くと**画像が落ちたときに嘘になる**。
@@ -457,6 +493,7 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
     _TextOverlayItem() => TextOverlayLayerSpec(
       text: item.text,
       color: item.color,
+      align: item.align,
       nx: item.nx,
       ny: item.ny,
       sizeFrac: item.sizeFrac,
@@ -838,7 +875,7 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
         text: item.text,
         style: _textStyle(item.color, item.sizeFrac * h),
       ),
-      textAlign: TextAlign.center,
+      textAlign: item.align,
       textDirection: TextDirection.ltr,
     );
     // 画像幅の 96% を上限に折り返す。
@@ -962,7 +999,24 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
         ],
       ),
       body: image == null || size == null
-          ? const Center(child: CircularProgressIndicator())
+          ? Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const CircularProgressIndicator(),
+                  // 前回のレイヤを 1 枚ずつ取り直している間の進み具合 (#1238)。
+                  // ⚠ 回線が遅いと、数字が無いまま回り続けて止まったように見える。
+                  if (_restoreProgress case (:final done, :final total))
+                    Padding(
+                      padding: const EdgeInsets.only(top: 16),
+                      child: Text(
+                        'レイヤーを読み込んでいます（$done / $total）',
+                        style: const TextStyle(color: Colors.white70),
+                      ),
+                    ),
+                ],
+              ),
+            )
           : _buildBody(image, size, wide: wide, layersOpen: layersOpen),
     );
   }
@@ -1140,7 +1194,7 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
         child: switch (item) {
           _TextOverlayItem() => Text(
             item.text,
-            textAlign: TextAlign.center,
+            textAlign: item.align,
             style: _textStyle(item.color, item.sizeFrac * dispH),
           ),
           // ⚠ 素材の出どころが違うだけなので、**プレビューも 1 本**にする (#1178)。
@@ -1197,7 +1251,7 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
               child: Padding(
                 padding: EdgeInsets.all(16),
                 child: Text(
-                  'テキスト・スタンプ・画像を追加すると、ここに重ね順が出ます',
+                  '文字・スタンプ・画像を追加すると、ここに重ね順が出ます',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.white54, fontSize: 12),
                 ),
@@ -1414,9 +1468,38 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
               ),
             ),
           ),
+        const Spacer(),
+        // 行揃え (#1183)。⚠ **ボタンは 1 つで、押すたびに 左 → 中央 → 右 と回す。**
+        // 3 つ並べると、色 6 つと合わせて 320px 幅に収まらない。行を足すと
+        // 背の低い画面で縦に破綻する（この列は既に 4 行ある）。
+        IconButton(
+          key: overlayTextAlignButtonKey,
+          icon: Icon(_alignIcon(item.align), color: Colors.white),
+          tooltip: '行揃え: ${_alignLabel(item.align)}（押すと切り替え）',
+          visualDensity: VisualDensity.compact,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          onPressed: _canModify(item)
+              ? () => setState(
+                  () => item.align = nextOverlayTextAlign(item.align),
+                )
+              : null,
+        ),
       ],
     );
   }
+
+  static IconData _alignIcon(TextAlign align) => switch (align) {
+    TextAlign.left => Icons.format_align_left,
+    TextAlign.right => Icons.format_align_right,
+    _ => Icons.format_align_center,
+  };
+
+  static String _alignLabel(TextAlign align) => switch (align) {
+    TextAlign.left => '左',
+    TextAlign.right => '右',
+    _ => '中央',
+  };
 
   /// 回転角の操作行 (#946)。
   ///
@@ -1516,7 +1599,13 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
         Expanded(
           child: Slider(
             key: overlaySizeSliderKey,
-            value: item.sizeFrac,
+            // ⚠ **範囲へ収めて見せる** (#1132)。トリミングで基準の高さが変わると、
+            // 大きさの比率がスライダの上限を超えうる（範囲外の値を渡すと落ちる）。
+            // 記述の値は触らない —— 動かすまでは切る前と同じ見え方のまま。
+            value: item.sizeFrac.clamp(kOverlayMinSizeFrac, switch (item) {
+              _TextOverlayItem() => kOverlayMaxTextSizeFrac,
+              _ImageBackedOverlayItem() => item.maxSizeFrac,
+            }),
             // 画像系（スタンプ・端末の画像）は絵として見せるので、文字より大きく
             // 引き伸ばせる。⚠ **上限はレイヤ自身に持たせてある** (#1178) ——
             // スタンプと端末の画像は同じ 0.8 でも根拠が別なので、片方を動かすとき
@@ -1534,7 +1623,7 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
         if (isText)
           IconButton(
             icon: const Icon(Icons.edit, color: Colors.white),
-            tooltip: 'テキストを編集',
+            tooltip: '文字を編集',
             onPressed: _canModify(item) ? _editSelected : null,
           ),
         IconButton(
@@ -1566,7 +1655,7 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
         TextButton.icon(
           onPressed: _addTextItem,
           icon: const Icon(Icons.add),
-          label: const Text('テキストを追加'),
+          label: const Text('文字を追加'),
         ),
         TextButton.icon(
           onPressed: _loadingSticker ? null : _addStickerItem,
@@ -1629,7 +1718,9 @@ class _TextPromptDialogState extends State<_TextPromptDialog> {
       // 「絵文字」は**カスタム絵文字＝スタンプ**の意味で使っており、同じ語が
       // 2 つのものを指していた。⚠ **Unicode 絵文字が打てることは説明しなくてよい**
       // —— 文字として打てるのは当たり前で、書くと逆にスタンプと取り違えられる。
-      title: const Text('テキスト'),
+      // ⚠ 入口（「文字・スタンプ・画像を重ねる」）と欄の案内に合わせて「文字」
+      // (#1238)。以前はこの画面だけ「テキスト」で、同じものに 2 語あった。
+      title: const Text('文字'),
       // 字数も改行も制限していないが、1 行ぶんの欄だと「短い文字しか入らない」
       // ように見える (#1126)。数行ぶんの高さと幅を最初から取っておく。
       // ⚠ 幅は [double.maxFinite] で「ダイアログが許す最大」にし、上限だけ

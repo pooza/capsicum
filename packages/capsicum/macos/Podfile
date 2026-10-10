@@ -1,5 +1,6 @@
-# Runner の MACOSX_DEPLOYMENT_TARGET (11.5) に揃える。gal (#646) が
-# macOS 11.0+ を要求し、旧値 10.15 のままだと pod install が解決できない。
+# Runner の MACOSX_DEPLOYMENT_TARGET (12.0) に揃える。⚠ 片方だけ上げると
+# pod install が解決できない（#646 では gal が要求する版に Podfile だけが
+# 追いついておらず、ここで止まった）。
 platform :osx, '12.0'
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.

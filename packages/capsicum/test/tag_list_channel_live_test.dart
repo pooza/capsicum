@@ -56,12 +56,19 @@ class _LiveAdapter extends Mock
   final List<TabType> streamedTabs = [];
   int fetchCalls = 0;
 
+  /// 非 null のとき、取得はこれが完了するまで返らない (#1235)。
+  Completer<void>? fetchGate;
+
   @override
   AdapterCapabilities get capabilities => _FakeCapabilities();
 
-  List<Post> _page() {
+  Future<List<Post>> _page() async {
     fetchCalls++;
-    return fetchCalls > 1 ? (catchUpPage ?? const <Post>[]) : initialPosts;
+    final page = fetchCalls > 1
+        ? (catchUpPage ?? const <Post>[])
+        : initialPosts;
+    await fetchGate?.future;
+    return page;
   }
 
   @override
@@ -69,19 +76,17 @@ class _LiveAdapter extends Mock
     String hashtag, {
     TimelineQuery? query,
     List<String>? all,
-  }) async => _page();
+  }) => _page();
 
   @override
-  Future<List<Post>> getListTimeline(
-    String listId, {
-    TimelineQuery? query,
-  }) async => _page();
+  Future<List<Post>> getListTimeline(String listId, {TimelineQuery? query}) =>
+      _page();
 
   @override
   Future<List<Post>> getChannelTimeline(
     String channelId, {
     TimelineQuery? query,
-  }) async => _page();
+  }) => _page();
 
   @override
   Stream<Post> streamTimeline(
@@ -374,6 +379,73 @@ void main() {
         container.read(p).requireValue.streamConnectionState,
         StreamConnectionState.disabled,
       );
+    });
+  });
+
+  /// #1235: 初回取得を待っている間に破棄された TL が、あとから購読を張らない。
+  ///
+  /// ⚠⚠ **`ref.onDispose` は await の途中でも走る。**後始末が先に済むので、
+  /// await 明けに張った購読は閉じる者がおらず、再接続を諦めないまま生き続ける。
+  /// 画面には何も出ない（破棄済みなので）ため、通信量でしか気付けない。
+  group('⚠⚠ 取得中に破棄されたら、購読を張らない (#1235)', () {
+    Future<void> disposedWhileFetching(
+      ProviderListenable<AsyncValue<TimelineState>> provider,
+    ) async {
+      final adapter = _LiveAdapter([_p102, _p101])
+        ..fetchGate = Completer<void>();
+      final container = makeContainer(adapter);
+
+      // 画面が開いて取得が始まり、返る前に閉じられた。
+      final subscription = container.listen(provider, (_, _) {});
+      await settle();
+      subscription.close();
+      await container.pump();
+      await settle();
+
+      adapter.fetchGate!.complete();
+      await settle();
+      await settle();
+
+      expect(adapter.fetchCalls, 1, reason: '前提: 取得は走っている');
+      expect(
+        adapter.streamedTabs,
+        isEmpty,
+        reason: '破棄されたあとに WebSocket を張っている。閉じる者がいない',
+      );
+    }
+
+    test('ハッシュタグ TL', () async {
+      await disposedWhileFetching(
+        hashtagTimelineProvider((account: _meKey, spec: 'precure_fun')),
+      );
+    });
+
+    test('リスト TL', () async {
+      await disposedWhileFetching(
+        listTimelineProvider((account: _meKey, id: '42')),
+      );
+    });
+
+    test('チャンネル TL', () async {
+      await disposedWhileFetching(
+        channelTimelineProvider((account: _meKey, id: 'abc')),
+      );
+    });
+
+    test('前提: 破棄されなければ、取得のあとに張る', () async {
+      final adapter = _LiveAdapter([_p102, _p101])
+        ..fetchGate = Completer<void>();
+      final container = makeContainer(adapter);
+      final p = hashtagTimelineProvider((account: _meKey, spec: 'precure_fun'));
+
+      container.listen(p, (_, _) {});
+      await settle();
+      expect(adapter.streamedTabs, isEmpty, reason: '取得の前には張らない');
+
+      adapter.fetchGate!.complete();
+      await container.read(p.future);
+
+      expect(adapter.streamedTabs, hasLength(1));
     });
   });
 }

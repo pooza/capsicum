@@ -117,6 +117,9 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
   late final TabController _tabController;
   late final List<InsertPickerTab> _tabs;
 
+  /// 直前に見ていたタブ。検索語を持ち越す元 (#1175)。
+  int _lastTabIndex = 0;
+
   /// サーバーの全件。shortcode → 絵文字の**解決表**として使う（パレットの
   /// 描画・単語辞書のプレビュー）ので、入力導線から外した絵文字も落とさない。
   List<CustomEmoji>? _customEmojis;
@@ -168,6 +171,7 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
       vsync: this,
       initialIndex: resolveInitialTabIndex(_tabs, widget.initialTab),
     )..addListener(_onTabChanged);
+    _lastTabIndex = _tabController.index;
     if (hasCustom) {
       _loadCustomEmojis();
     }
@@ -223,7 +227,52 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
 
   void _onTabChanged() {
     if (_tabController.indexIsChanging) return;
-    if (mounted) _focusActiveTabSearch();
+    if (!mounted) return;
+    final index = _tabController.index;
+    if (index != _lastTabIndex) {
+      _carrySearchText(_tabs[_lastTabIndex], _tabs[index]);
+      _lastTabIndex = index;
+    }
+    _focusActiveTabSearch();
+  }
+
+  TextEditingController _searchControllerOf(InsertPickerTab tab) =>
+      switch (tab) {
+        InsertPickerTab.custom => _searchController,
+        InsertPickerTab.unicode => _unicodeSearchController,
+        InsertPickerTab.word => _wordSearchController,
+      };
+
+  /// 離れるタブの検索語を、移る先のタブへ持ち越す (#1175)。
+  ///
+  /// 同じ語を各タブで打ち直すことが多い、という実使用からの要望（2026-09-23
+  /// pooza）。検索ボックスはタブごとに残したまま、**文字だけ**を運ぶ。
+  ///
+  /// - ⚠ **打った生の文字を運ぶ。**正規化はタブごとに違う（カスタム / Unicode は
+  ///   小文字化・劇中ワードは trim）ので、絞り込みに使う側の値は運ばない。
+  /// - ⚠⚠ **運ぶのはタブを移ったときだけ。**打鍵のたびに 3 つへ流すと、
+  ///   カスタムタブで打っている間も劇中ワードの検索が走る。劇中ワードは
+  ///   **そのタブを開いたとき**に引く。
+  /// - 移った先で 0 件になるのは普通に起きる（shortcode のローマ字は読みでは
+  ///   当たらない）。そのタブの「見つかりません」をそのまま出す。
+  void _carrySearchText(InsertPickerTab from, InsertPickerTab to) {
+    final text = _searchControllerOf(from).text;
+    final target = _searchControllerOf(to);
+    if (target.text == text) return;
+    target.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+    // ⚠ `controller.value` の代入では `onChanged` が呼ばれないので、絞り込みを
+    // ここで掛け直す。
+    switch (to) {
+      case InsertPickerTab.custom:
+        setState(() => _searchQuery = text.toLowerCase());
+      case InsertPickerTab.unicode:
+        setState(() => _unicodeSearchQuery = text.toLowerCase());
+      case InsertPickerTab.word:
+        _onWordQueryChanged(text);
+    }
   }
 
   void _focusActiveTabSearch() {

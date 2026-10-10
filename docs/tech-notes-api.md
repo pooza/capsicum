@@ -152,7 +152,7 @@ Misskey upstream は [GHSA-7pxq-6xx9-xpgm](https://github.com/misskey-dev/misske
 
 | # | 現象 | 正体 | 扱い |
 | --- | --- | --- | --- |
-| 1 | **Web と出目が違う** | engine の忠実度。capsicum の `Math:gen_rng` は `dart:math` の `Random(seed.hashCode)`、Misskey 側は seedrandom（RC4 系） | [#896](https://github.com/pooza/capsicum/issues/896)・優先度低。**シードを固定しても一致しない**が、seedrandom 互換化なら原理的には一致可能 |
+| 1 | **Web と出目が違う** | engine の忠実度。Misskey 側は seedrandom（RC4 系）で、capsicum の `Math:gen_rng` は当初 `dart:math` の `Random(seed.hashCode)` だった | ✅ [#896](https://github.com/pooza/capsicum/issues/896)（v1.55）で **seedrandom 互換にした**。⚠ **いま食い違うのは、宣言バージョンが 1.0 以上の Play を「このまま実行する」で動かしたときだけ**（本家は 1.x の実行系へ振り分け、乱数が chacha20 になる）。宣言なし / 1.0 未満は一致する |
 | 2 | **同じ日でも朝と夕で変わる** | **絵文字インベントリ依存の仕様**（下記） | [#898](https://github.com/pooza/capsicum/issues/898) で決着。**再調査不要** |
 | 3 | **特定キャラが出やすい** | Play スクリプト（ユーザースクリプト）側の seed / 選択バイアス | **作者側の話で capsicum の対象外**。engine の初手分布は実測で有意な偏りなし |
 

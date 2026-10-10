@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../util/exception_scrub.dart';
+import '../util/image_crop_geometry.dart';
 
 /// 添付画像をトリミング・回転する全画面エディタ (#577 / #647 / #662)。
 ///
@@ -14,7 +15,22 @@ import '../../util/exception_scrub.dart';
 /// image_cropper 非対応の macOS / Windows / Linux でも動作する。デスクトップ
 /// (#577) とモバイル (#647) の双方で同じ本画面が使われる。入力のバイト列を
 /// メモリ上で処理し、トリミング結果のバイト列を [Navigator.pop] で呼び出し元に
-/// 返す（キャンセル時は null）。90 度回転は #662 で追加。
+/// 返す（キャンセル時は null）。90 度回転は #662 で追加。戻り値は
+/// [ImageCropResult]（#1132）。
+/// トリミング画面の戻り値 (#1132)。
+///
+/// ⚠ 以前は PNG だけを返していた。レイヤを載せた画像を切ると平らな画像に戻り、
+/// レイヤの控えを捨てるしかなかったので、**どう切ったか**も返す。
+class ImageCropResult {
+  const ImageCropResult({required this.png, required this.geometry});
+
+  /// 切ったあとの画像。
+  final Uint8List png;
+
+  /// 何回回して、どこを切ったか。分からなかった回は null。
+  final ImageCropGeometry? geometry;
+}
+
 class ImageCropScreen extends StatefulWidget {
   const ImageCropScreen({super.key, required this.imageData, this.title});
 
@@ -40,6 +56,12 @@ class _ImageCropScreenState extends State<ImageCropScreen> {
   /// 完了押下からコールバック到達までの間、再押下と離脱を防ぐ。
   bool _cropping = false;
 
+  /// 切り方の控え (#1132)。呼び出し元が、レイヤの座標と焼き込み前の画像へ
+  /// 同じ切り方を当てるのに使う（[ImageCropResult.geometry]）。
+  int _quarterTurns = 0;
+  Size? _imageSize;
+  Rect? _cropRect;
+
   /// 回転処理中は再押下・トリミング・回転ボタンを無効化する。
   bool _rotating = false;
 
@@ -56,6 +78,10 @@ class _ImageCropScreenState extends State<ImageCropScreen> {
     try {
       final codec = await ui.instantiateImageCodec(widget.imageData);
       final frame = await codec.getNextFrame();
+      _imageSize = Size(
+        frame.image.width.toDouble(),
+        frame.image.height.toDouble(),
+      );
       final data = await frame.image.toByteData(format: ui.ImageByteFormat.png);
       frame.image.dispose();
       codec.dispose();
@@ -101,7 +127,21 @@ class _ImageCropScreenState extends State<ImageCropScreen> {
     if (!mounted) return;
     switch (result) {
       case CropSuccess(:final croppedImage):
-        Navigator.of(context).pop(croppedImage);
+        final size = _imageSize;
+        final rect = _cropRect;
+        Navigator.of(context).pop(
+          ImageCropResult(
+            png: croppedImage,
+            // ⚠ 切った範囲が分からない回は null（呼び出し側はレイヤを保てない）。
+            geometry: size == null || rect == null
+                ? null
+                : ImageCropGeometry(
+                    quarterTurns: _quarterTurns,
+                    rotatedSize: size,
+                    cropRect: rect,
+                  ),
+          ),
+        );
       case CropFailure():
         setState(() => _cropping = false);
         ScaffoldMessenger.of(
@@ -153,6 +193,14 @@ class _ImageCropScreenState extends State<ImageCropScreen> {
       setState(() {
         _normalizedImage = bytes;
         _rotating = false;
+        // 回した回数と、回したあとの大きさを控える (#1132)。⚠ 枠は下の差し替えで
+        // 作り直されるので、いったん「分からない」へ戻す（通知が来たら入る）。
+        _quarterTurns = ImageCropGeometry.turned(
+          _quarterTurns,
+          clockwise: clockwise,
+        );
+        _imageSize = Size(h, w);
+        _cropRect = null;
       });
       _controller.image = bytes;
     } catch (e, st) {
@@ -204,6 +252,9 @@ class _ImageCropScreenState extends State<ImageCropScreen> {
                     interactive: true,
                     progressIndicator: const CircularProgressIndicator(),
                     onCropped: _onCropped,
+                    // 枠が動くたびに、画像の座標での範囲を控える (#1132)。
+                    // ⚠ 枠を作り直したとき（最初・回したあと）にも届く。
+                    onMoved: (_, imageRect) => _cropRect = imageRect,
                   ),
                 ),
                 SafeArea(

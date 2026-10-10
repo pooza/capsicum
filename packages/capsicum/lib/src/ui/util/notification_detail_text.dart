@@ -14,7 +14,7 @@ const _exportedEntityLabels = <String, String>{
   'favorite': 'お気に入り',
   'following': 'フォロー',
   'muting': 'ミュート',
-  'note': 'ノート',
+  'note': '投稿',
   'userList': 'リスト',
 };
 
@@ -38,6 +38,12 @@ String? notificationDetailText(Notification notification) {
   if (notification.export case final export?) {
     return '${exportedEntityLabel(export.entity)}を書き出しました';
   }
+  // ⚠ **いまの Misskey ではここに入らない** (#1251・2026-10-09 にフォークの
+  // ソースで確認)。上流のスキーマ（`json-schema/notification.ts`）は
+  // `scheduledNotePostFailed` に `noteDraft` を返すと宣言しているが、詰める側
+  // （`NotificationEntityService`）が載せていない。capsicum はスキーマどおりに
+  // 読んでいるので、**上流が直れば何もせず出るようになる**。⚠ 「出ないから」と
+  // 外さないこと（外すと、直ったときに気付けないまま欠ける）。
   if (notification.failedScheduledPost case final failed?) {
     final text = failed.content?.trim();
     // ⚠ **本文が空の予約投稿はありうる**（添付だけ）。そのときは「どれか」を

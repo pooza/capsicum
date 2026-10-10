@@ -246,6 +246,12 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
           )
         : account;
 
+    // ⚠ 足す前の時点でプリセットのアカウントが居たか (#1237)。下の登録で、
+    // 「いま初めてプリセットが居るようになった」回を見分けるのに使う。
+    final hadPreset = hasPresetAccountIn(
+      accounts: state.accounts.map((a) => a.key),
+      offlineAccounts: state.offlineAccounts.map((o) => o.key),
+    );
     final newAccounts = withAccountAtFront(state.accounts, enriched);
     // 手動ログインで復帰したサーバーがオフライン保持中なら、その entry を落と
     // して二重表示を防ぐ (#792)。
@@ -292,7 +298,22 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
       accounts: newAccounts.map((a) => a.key),
       offlineAccounts: offline.map((o) => o.key),
     );
-    PushRegistrationService.registerAccount(enriched, eligible: hasPreset);
+    // ⚠⚠ **プリセットを足して初めて対象になったアカウントも、ここで登録する**
+    // (#1237)。以前は足したアカウントしか登録せず、先に居た外部サーバーの
+    // アカウントは**次に起動するまで「登録対象外」のまま**だった（通知が届かない）。
+    // ⚠ 全員を登録する回は、プリセットのアカウントを先に済ませる
+    // （`PushRegistrationService.registrationWaves`）。
+    unawaited(
+      PushRegistrationService.registerAccounts(
+        accountsToRegisterAfterAdd(
+          added: enriched,
+          all: newAccounts,
+          hadPreset: hadPreset,
+          hasPreset: hasPreset,
+        ),
+        eligible: hasPreset,
+      ),
+    );
   }
 
   void switchAccount(Account account) {
@@ -1569,6 +1590,23 @@ final hasPresetAccountProvider = Provider<bool>((ref) {
     offlineAccounts: state.offlineAccounts.map((o) => o.key),
   );
 });
+
+/// アカウントを足した直後に、プッシュ登録を試みる相手 (#1237)。
+///
+/// - ふだんは足したアカウントだけ（ほかは起動時か、自分が足されたときに済んでいる）
+/// - ⚠ **この追加でプリセットが初めて居るようになった回は、全員。**先に居た
+///   外部サーバーのアカウントは、プリセットが居なかったので登録を見送られている。
+///   プリセットが居るようになれば対象なので、足した直後に登録し直す
+///
+/// ⚠ `registerAccount` は進行中のものを重ねないので、既に登録済みのアカウントを
+/// 渡しても害は無い。それでも「初めて」の回に絞るのは、アカウントを足すたびに
+/// 全員ぶんの登録（relay と各サーバーへの問い合わせ）を打たないため。
+List<Account> accountsToRegisterAfterAdd({
+  required Account added,
+  required List<Account> all,
+  required bool hadPreset,
+  required bool hasPreset,
+}) => !hadPreset && hasPreset ? all : [added];
 
 /// [hasPresetAccountProvider] の判定そのもの。
 ///

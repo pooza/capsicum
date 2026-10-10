@@ -1,10 +1,12 @@
 import 'dart:async';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../service/entitlement_token_store.dart';
+import '../service/push_relay_client.dart';
 import '../util/exception_scrub.dart';
 import 'account_manager_provider.dart';
 import 'supporter_status_provider.dart';
@@ -69,6 +71,20 @@ enum EntitlementView {
   /// 復元の口は出す —— 読めないのが続くなら、そこから抜けられる。
   unknown,
 }
+
+/// プッシュ登録を**試みる側**の「利用権がある」(#1218 / #1237)。
+///
+/// `absent` 以外 ＝ トークンを持っている、**または読めなくて分からない**
+/// （[EntitlementView.unknown]）。
+///
+/// ⚠⚠ **「読めなかった」も「ある」に数えるのは意図どおり。**分からない回に登録を
+/// 見送ると、購入済みの人の通知が止まる。試みて、止めるのは relay の仕事。
+/// ⚠ **`expired` でも試みる**（同じ理由。状態は relay が正本）。
+///
+/// ⚠ この式は 2 画面に写されていた。「読めなかった」を足した回（v2.0）に片方だけ
+/// 直すと、画面によって「登録対象か」が食い違う。
+bool attemptsRegistrationWith(EntitlementView view) =>
+    view != EntitlementView.absent;
 
 /// relay の `status` を [EntitlementView] へ畳む。
 ///
@@ -221,6 +237,30 @@ class EntitlementStatusNotifier extends Notifier<EntitlementStatus> {
     return run;
   }
 
+  /// 同じ出来事への反応を 1 本にまとめる [refresh] (#1237)。
+  ///
+  /// 購入の成立は、利用権の節と画面の 2 か所が待ち受けている（節は成立の瞬間に
+  /// 外れることがあるので、片方へは寄せられない）。両方がそのまま [refresh] を
+  /// 呼ぶと、relay への問い合わせが 2 本飛ぶ。
+  ///
+  /// ⚠ **まとめるのは「同じ回の通知で続けて呼ばれたぶん」だけ**（次のマイクロ
+  /// タスクで解く）。時間で束ねると、あとから起きた別の出来事（記録の消去・
+  /// 復元）の読み直しを、古い結果で済ませてしまう。
+  Future<void> refreshCoalesced() {
+    final pending = _coalesced;
+    if (pending != null) return pending;
+    final run = refresh();
+    _coalesced = run;
+    scheduleMicrotask(() => _coalesced = null);
+    return run;
+  }
+
+  Future<void>? _coalesced;
+
+  /// 始めた読み直しの世代。テストが「何本始まったか」を数えるために見る。
+  @visibleForTesting
+  int get debugGeneration => _generation;
+
   /// 進行中の読み直しを無効にする（**後続は始めない**）。
   ///
   /// ⚠⚠ **手元の保存を書き換える側が、書き換える前に呼ぶ**（記録の消去・
@@ -326,7 +366,8 @@ class EntitlementStatusNotifier extends Notifier<EntitlementStatus> {
       // ⚠ 起動時の呼び出し元（splash）は「圏外でも起きるので送らない」と
       // 書いていたが、**ここが自分で送っていたので実現していなかった**。
       final status = e is DioException ? e.response?.statusCode : null;
-      final unreachable = e is DioException && e.response == null;
+      // ⚠ 証明書の失敗は「届かなかった」に数えない（[PushRelayClient.isUnreachable]）。
+      final unreachable = PushRelayClient.isUnreachable(e);
       if (!unreachable) {
         Sentry.captureException(
           scrubException(e),
@@ -355,9 +396,18 @@ class EntitlementStatusNotifier extends Notifier<EntitlementStatus> {
   /// 🔴 **以前は [EntitlementTokenStore.load] を呼んでいた。**あちらは読めなく
   /// ても null を返すので、**ここの catch には一度も来ておらず**、読めない回は
   /// 「未購入」として表示されていた（リリース前レビュー・2026-10-06）。
+  /// 手元のキーホルダ読み出しの上限。⚠ 本来は即座に返る。
+  ///
+  /// ⚠ 購入側（`SupporterPurchaseNotifier.localTimeout`）もこの値を使う。
+  static const localTimeout = Duration(seconds: 5);
+
   Future<EntitlementToken?> _loadLocal() async {
     try {
-      return await EntitlementTokenStore.loadOrThrow();
+      // ⚠⚠ **上限を掛ける** (#1237)。キーホルダの読み出しが詰まると、上限が
+      // 無ければ「不明」へ落ちず、問い合わせ中の表示のまま止まる。
+      // `SecureStorageGate` が上限を掛けるのは Secret Service の構成だけなので、
+      // ほかの OS はここで守る。購入側の同じ読みも同じ上限を掛けている。
+      return await EntitlementTokenStore.loadOrThrow().timeout(localTimeout);
     } catch (e, st) {
       Sentry.captureException(
         scrubException(e),

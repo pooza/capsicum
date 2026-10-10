@@ -8,6 +8,18 @@ import 'package:http_parser/http_parser.dart';
 import '../network_timeouts.dart';
 import '../rate_limit_interceptor.dart';
 
+/// `GET /api/v2/notifications` が、束ねた通知の形（Map）を返さなかった (#1251)。
+///
+/// 応答は 200 なので [DioException] にはならない。アダプターはこれを「v2 が
+/// 無い」と同じに扱い、v1 へ落とす。
+class MastodonGroupedNotificationsUnsupported implements Exception {
+  const MastodonGroupedNotificationsUnsupported();
+
+  @override
+  String toString() =>
+      'MastodonGroupedNotificationsUnsupported: response is not a map';
+}
+
 /// Link ヘッダの rel="next" から offset を取り出す（offset ページング、#802）。
 /// Collections API 用。次ページが無い / Link が無い / 解析不能なら null。
 /// テスト可能なようトップレベルに切り出す。
@@ -550,9 +562,16 @@ class MastodonClient {
   }
 
   /// GET /api/v1/scheduled_statuses
-  Future<List<ScheduledPost>> getScheduledStatuses() async {
-    final response = await dio.get('/api/v1/scheduled_statuses');
-    return (response.data as List).map((e) {
+  ///
+  /// ⚠ **`limit` を送らないと 20 件で黙って切れる** (#1202)。上限は 40
+  /// （`DEFAULT_STATUSES_LIMIT * 2`）。続きは `Link` ヘッダの `max_id`。
+  Future<({List<ScheduledPost> posts, String? nextMaxId})>
+  getScheduledStatuses({String? maxId, int? limit}) async {
+    final response = await dio.get(
+      '/api/v1/scheduled_statuses',
+      queryParameters: {'max_id': ?maxId, 'limit': ?limit},
+    );
+    final posts = (response.data as List).map((e) {
       final json = e as Map<String, dynamic>;
       final params = json['params'] as Map<String, dynamic>? ?? {};
       return ScheduledPost(
@@ -568,6 +587,7 @@ class MastodonClient {
             [],
       );
     }).toList();
+    return (posts: posts, nextMaxId: _parseLinkNextMaxId(response));
   }
 
   /// DELETE /api/v1/scheduled_statuses/:id
@@ -667,6 +687,7 @@ class MastodonClient {
     int? limit,
     List<String> excludeTypes = const [],
     List<String> supportedTypes = const [],
+    List<SkippedPost>? skipped,
   }) async {
     final response = await dio.get(
       '/api/v1/notifications',
@@ -682,25 +703,13 @@ class MastodonClient {
     // 壊れた通知だけ skip する（タイムライン側の _safeConvert と同じ方針）。
     // Mastodon 4.6 の collection (#741) など新フィールドを非準拠サーバーが
     // 非整形で返したときに通知一覧が丸ごと空になるのを防ぐ。
-    final notifications = <MastodonNotification>[];
-    for (final e in response.data as List) {
-      try {
-        notifications.add(
-          MastodonNotification.fromJson(e as Map<String, dynamic>),
-        );
-      } catch (err) {
-        // ⚠ 生の `$err` を出さない (#1035-B3)。FormatException は source
-        // （＝生 JSON の断片＝投稿本文）を、NoSuchMethodError は receiver の
-        // toString を含む。`developer.log` は Sentry breadcrumb にはならないが、
-        // Linux の `~/.local/share/capsicum/logs/` や logcat / Console.app に
-        // 残る。アダプタ側の `_safeConvert` (#1027-A5) と同じ形に揃える。
-        developer.log(
-          'skipping malformed notification: ${describeConversionFailure(err)}',
-          name: 'capsicum',
-        );
-      }
-    }
-    return notifications;
+    // ⚠ 読み飛ばしの本体は [_parseEach]（v2 と同じヘルパー・#1251）。
+    return _parseEach(
+      response.data,
+      MastodonNotification.fromJson,
+      'notification',
+      skipped: skipped,
+    );
   }
 
   /// GET /api/v2/notifications — 束ねられた通知 (#1048)。
@@ -722,6 +731,7 @@ class MastodonClient {
     int? limit,
     List<String> excludeTypes = const [],
     List<String> supportedTypes = const [],
+    List<SkippedPost>? skipped,
   }) async {
     final response = await dio.get(
       '/api/v2/notifications',
@@ -738,12 +748,21 @@ class MastodonClient {
     // 通知一覧が丸ごとエラーになる。⚠ 投げられるのは `TypeError` 等で
     // `DioException` ではないので、アダプタの v1 への切り替えにも入らない。
     // v1 の [getNotifications] と同じく、壊れた要素だけ読み飛ばす。
-    final data = response.data as Map<String, dynamic>;
+    //
+    // ⚠ **200 で Map 以外が返ることがある** (#1251)。v2 のパスに v1 の形（配列）を
+    // 返す互換サーバー等。`as Map` で受けると `TypeError` になり、アダプタの
+    // v1 への切り替え（`DioException` を見ている）に入らないまま通知が出ない。
+    final data = response.data;
+    if (data is! Map<String, dynamic>) {
+      throw const MastodonGroupedNotificationsUnsupported();
+    }
     final rawGroups = data['notification_groups'];
     final notificationGroups = _parseEach(
       rawGroups,
       MastodonNotificationGroup.fromJson,
       'notification group',
+      skipped: skipped,
+      idKey: 'group_key',
     );
     // ⚠⚠ **1 つも読めないページは、空のページとして返さない。**呼び出し側は
     // 空を「通知が無い / ここで終わり」と読むので、サーバーがグループを返して
@@ -759,11 +778,13 @@ class MastodonClient {
         data['accounts'],
         MastodonAccount.fromJson,
         'grouped notification account',
+        skipped: skipped,
       ),
       statuses: _parseEach(
         data['statuses'],
         MastodonStatus.fromJson,
         'grouped notification status',
+        skipped: skipped,
       ),
       notificationGroups: notificationGroups,
     );
@@ -771,21 +792,37 @@ class MastodonClient {
 
   /// [raw] の各要素を [fromJson] で読み、読めない要素だけ飛ばす (#1236)。
   ///
-  /// ⚠ 生の例外を出さない（#1035-B3・[getNotifications] の説明）。
+  /// ⚠ 生の例外を出さない（#1035-B3）。FormatException は source（＝生 JSON の
+  /// 断片＝投稿本文）を、NoSuchMethodError は receiver の toString を含む。
+  /// `developer.log` は Sentry breadcrumb にはならないが、Linux の
+  /// `~/.local/share/capsicum/logs/` や logcat / Console.app に残る。
+  ///
+  /// [skipped] を渡すと、飛ばした要素をそこへ積む (#1251)。⚠ **開発ログだけに
+  /// 残すと Sentry に届かない。**アダプター層で落ちたぶん（`_safeConvert`）は
+  /// `skipped_in_batch` つきで出るので、同じ「読めない通知」でも層によって
+  /// 見えたり見えなかったりしていた。呼び出し側が応答の `skippedPosts` へ
+  /// 合流させる。[idKey] は要素の id を引くキー（グループは `group_key`）。
   List<T> _parseEach<T>(
     Object? raw,
     T Function(Map<String, dynamic>) fromJson,
-    String what,
-  ) {
+    String what, {
+    List<SkippedPost>? skipped,
+    String idKey = 'id',
+  }) {
     if (raw is! List) return const [];
     final out = <T>[];
     for (final e in raw) {
       try {
         out.add(fromJson(e as Map<String, dynamic>));
       } catch (err) {
-        developer.log(
-          'skipping malformed $what: ${describeConversionFailure(err)}',
-          name: 'capsicum',
+        final reason = describeConversionFailure(err);
+        developer.log('skipping malformed $what: $reason', name: 'capsicum');
+        skipped?.add(
+          SkippedPost(
+            // ⚠ id が読めない要素もある（要素が Map ですらない等）。
+            id: e is Map ? (e[idKey]?.toString() ?? '?') : '?',
+            error: '$what: $reason',
+          ),
         );
       }
     }
@@ -795,7 +832,16 @@ class MastodonClient {
   /// GET /api/v1/conversations
   /// Returns the last_status from each conversation (DM thread) along with
   /// the conversation ID of the last entry for cursor-based pagination.
-  Future<({List<MastodonStatus> statuses, String? lastConversationId})>
+  ///
+  /// `conversations` は、`last_status` を持つ会話ごとの id と未読 (#1206)。
+  /// 既読・削除は会話に対する操作なので、投稿から会話を引けるように返す。
+  Future<
+    ({
+      List<MastodonStatus> statuses,
+      String? lastConversationId,
+      List<({String id, bool unread, String lastStatusId})> conversations,
+    })
+  >
   getConversations({String? maxId, String? sinceId, int? limit}) async {
     final response = await dio.get(
       '/api/v1/conversations',
@@ -808,17 +854,43 @@ class MastodonClient {
     final conversations = response.data as List;
     String? lastConversationId;
     final statuses = <MastodonStatus>[];
+    final refs = <({String id, bool unread, String lastStatusId})>[];
     for (final e in conversations) {
       final m = e as Map<String, dynamic>;
-      lastConversationId = m['id']?.toString();
+      final id = m['id']?.toString();
+      lastConversationId = id;
       final lastStatus = m['last_status'];
       if (lastStatus != null) {
-        statuses.add(
-          MastodonStatus.fromJson(lastStatus as Map<String, dynamic>),
+        final status = MastodonStatus.fromJson(
+          lastStatus as Map<String, dynamic>,
         );
+        statuses.add(status);
+        if (id != null) {
+          refs.add((
+            id: id,
+            unread: m['unread'] == true,
+            lastStatusId: status.id,
+          ));
+        }
       }
     }
-    return (statuses: statuses, lastConversationId: lastConversationId);
+    return (
+      statuses: statuses,
+      lastConversationId: lastConversationId,
+      conversations: refs,
+    );
+  }
+
+  /// POST /api/v1/conversations/:id/read (#1206)
+  Future<void> markConversationRead(String id) async {
+    await dio.post('/api/v1/conversations/$id/read');
+  }
+
+  /// DELETE /api/v1/conversations/:id (#1206)
+  ///
+  /// ⚠ 消えるのは自分の一覧の会話だけで、投稿そのものは消えない。
+  Future<void> deleteConversation(String id) async {
+    await dio.delete('/api/v1/conversations/$id');
   }
 
   /// POST /api/v2/media
@@ -1061,11 +1133,27 @@ class MastodonClient {
     await dio.delete('/api/v1/statuses/$id');
   }
 
+  /// GET /api/v1/notifications/unread_count (#1207)
+  ///
+  /// サーバーが marker（`last_read_id`）より新しい通知を数えて返す。capsicum は
+  /// 通知一覧で marker を保存しているので、読んだぶんはここから減る。
+  /// ⚠ **上限つき**（既定 100 件で頭打ち）。バッジの数字としては足りる。
+  /// ⚠ 4.3 より前のサーバーには無い（404）。呼び出し側で握る。
+  Future<int> getNotificationUnreadCount() async {
+    final response = await dio.get('/api/v1/notifications/unread_count');
+    final data = response.data as Map<String, dynamic>;
+    return (data['count'] as num?)?.toInt() ?? 0;
+  }
+
   /// POST /api/v1/reports
+  ///
+  /// ⚠⚠ **[forward] を送らないと、リモートの相手のサーバーへは届かない**
+  /// (#1203)。サーバーの既定は「転送しない」。
   Future<void> createReport(
     String accountId, {
     List<String>? statusIds,
     String? comment,
+    bool? forward,
   }) async {
     await dio.post(
       '/api/v1/reports',
@@ -1073,6 +1161,7 @@ class MastodonClient {
         'account_id': accountId,
         'status_ids': ?statusIds,
         'comment': ?comment,
+        'forward': ?forward,
       },
     );
   }
@@ -1093,12 +1182,18 @@ class MastodonClient {
   }
 
   /// GET /api/v2/search
+  ///
+  /// ⚠⚠ **`offset` は `type` を指定したときしか効かない** (#1202)。サーバーの
+  /// `SearchService` が `type` 無しのとき offset を 0 に落とすので、種別を
+  /// 混ぜたまま送ると**同じ 1 ページ目が返り続ける**。
   Future<Map<String, dynamic>> search(
     String query, {
     String? type,
     bool? resolve,
     int? limit,
+    int? offset,
   }) async {
+    assert(offset == null || type != null, 'offset は type と一緒に送る');
     final response = await dio.get(
       '/api/v2/search',
       queryParameters: {
@@ -1106,6 +1201,7 @@ class MastodonClient {
         'type': ?type,
         'resolve': ?resolve,
         'limit': ?limit,
+        'offset': ?offset,
       },
     );
     return response.data as Map<String, dynamic>;
@@ -1186,8 +1282,15 @@ class MastodonClient {
   }
 
   /// GET /api/v1/lists/:id/accounts
+  ///
+  /// ⚠⚠ **`limit=0` を外さない** (#1202)。送らないと 40 人で黙って切れ、
+  /// 41 人目以降が「居ない」ように見える。`0` は「全件」を意味する
+  /// Mastodon 固有の約束（`Lists::AccountsController#unlimited?`）。
   Future<List<MastodonAccount>> getListAccounts(String listId) async {
-    final response = await dio.get('/api/v1/lists/$listId/accounts');
+    final response = await dio.get(
+      '/api/v1/lists/$listId/accounts',
+      queryParameters: {'limit': 0},
+    );
     return (response.data as List)
         .map((e) => MastodonAccount.fromJson(e as Map<String, dynamic>))
         .toList();

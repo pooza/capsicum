@@ -62,8 +62,14 @@ bool FlutterWindow::OnCreate() {
 
   // 起動中二重通知の dedup チャンネル (#945)。チャネル名とキー形式は macOS
   // (#674) と共通で、Dart 側は NotificationDedupChannel が終端。
+  //
+  // 🔴 **window_alive をここで true に戻す (#1248)。**Win32Window::Create は
+  // ウィンドウを作る前に必ず Destroy() → OnDestroy() を通るので、起動時に 1 回
+  // false へ倒れている。戻さないと、プロセスの寿命を通して「破棄済み」のままに
+  // なり、WNS 経路が出した通知のキーが 1 件も Dart へ渡らない。
   {
     std::lock_guard<std::mutex> lock(dedup_state_->mutex);
+    dedup_state_->window_alive = true;
     dedup_state_->hwnd = GetHandle();
   }
   notification_dedup_channel_ = std::make_unique<flutter::MethodChannel<>>(
@@ -210,8 +216,10 @@ bool FlutterWindow::OnCreate() {
               }
             }
           }
-          DispatchStoreWork(std::move(result),
-                            [ids]() { return QueryStoreProducts(ids); });
+          HWND hwnd = GetHandle();
+          DispatchStoreWork(std::move(result), [hwnd, ids]() {
+            return QueryStoreProducts(hwnd, ids);
+          });
         } else if (method == "purchase" || method == "reportFulfillment") {
           // args: EncodableMap { "storeId": String }。
           std::string store_id;
@@ -255,8 +263,15 @@ bool FlutterWindow::OnCreate() {
   // Store IAP ワーカーが結果を marshal する先の HWND を共有状態へ控える (#795)。
   // OnDestroy で nullptr にし、破棄後のワーカーが stale/recycle された HWND へ
   // PostMessage するのを防ぐ。
+  //
+  // 🔴 **window_alive をここで true に戻す (#1248)。**Win32Window::Create は
+  // ウィンドウを作る前に必ず Destroy() → OnDestroy() を通るので、起動時に 1 回
+  // false へ倒れている。#795 から 2.0.1 までは戻しておらず、**Store が 1 秒で
+  // 商品を返していても、ワーカーが「破棄済み」と見て結果を毎回捨てていた**
+  // （Dart は返事を永久に待つ ＝ 投げ銭の商品が 1 度も出ない）。
   {
     std::lock_guard<std::mutex> lock(store_state_->mutex);
+    store_state_->window_alive = true;
     store_state_->hwnd = GetHandle();
   }
 

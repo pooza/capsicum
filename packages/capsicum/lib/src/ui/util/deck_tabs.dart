@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/server_config_provider.dart';
+import '../../util/action_labels.dart';
 import '../screen/post_list_screen.dart';
 import '../screen/user_list_screen.dart';
 
@@ -27,13 +28,13 @@ String deckOnlyTabLabel(
   UserListTab(:final kind) => switch (kind) {
     UserListKind.following => 'フォロー',
     UserListKind.followers => 'フォロワー',
-    UserListKind.favouritedBy =>
-      adapter is ReactionSupport ? 'リアクション' : 'お気に入り',
+    // ⚠ 三項式を手書きしない（[favouriteLabelFrom] が正本・#1238）。
+    UserListKind.favouritedBy => favouriteLabelFrom(adapter),
     UserListKind.rebloggedBy =>
       listen ? ref.watch(reblogLabelProvider) : ref.read(reblogLabelProvider),
     UserListKind.reactedBy => 'リアクション',
   },
-  QuotesTab() => '引用',
+  QuotesTab() => kQuotesListTitle,
   AchievementsTab() => '実績',
   CollectionsTab(:final mode) => switch (mode) {
     CollectionsMode.list => 'コレクション',
@@ -46,6 +47,21 @@ String deckOnlyTabLabel(
   ChatUserTab() => 'メッセージ',
   SearchTab() => '検索',
   AllNotificationsTab() => 'すべての通知',
+};
+
+/// カラムの種別のアイコン。カラム編集のシートと、下の帯 (#1241) が共有する。
+///
+/// ⚠ **2 か所で別々に持たない。**同じカラムが場所によって違うアイコンになると、
+/// 帯で見たものをシートで探せない。
+IconData deckTabIcon(TabType tab) => switch (tab) {
+  TimelineTab() => Icons.forum_outlined,
+  ListTab() => Icons.list,
+  HashtagTab() => Icons.tag,
+  ChannelTab() => Icons.forum,
+  NotificationsTab() => Icons.notifications_outlined,
+  AnnouncementsTab() => Icons.campaign_outlined,
+  MessagesTab() => Icons.chat_bubble_outline,
+  final DeckOnlyTab t => deckOnlyTabIcon(t),
 };
 
 IconData deckOnlyTabIcon(DeckOnlyTab tab) => switch (tab) {
@@ -113,6 +129,13 @@ UserListFetcher? userListFetcher(
     _ => null,
   };
 }
+
+/// 引用の一覧の見出しと、空のときの文面 (#1238)。
+///
+/// ⚠ 全画面の push（`deck_navigation.dart`）とカラム（`deck_column_view.dart`）が
+/// 同じ一覧を出すので、文面を 2 か所に書かない。
+const kQuotesListTitle = '引用';
+const kQuotesListEmptyMessage = '引用している投稿はありません';
 
 /// 引用した投稿の一覧の取得。アダプタが対応していなければ null。
 PostListFetcher? quotesFetcher(

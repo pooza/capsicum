@@ -93,7 +93,59 @@ void main() {
         album: 'スイート☆エチュード',
         sourceAppName: 'Apple Music',
       );
-      expect(url, Uri.parse('https://music.apple.com/jp/song/1352845804'));
+      expect(url?.url, Uri.parse('https://music.apple.com/jp/song/1352845804'));
+      // ⚠ 5.39.0 より前のモロヘイヤは `artwork_url` を返さない（キーごと無い）。
+      expect(url?.artworkUrl, isNull);
+    });
+
+    test('artwork_url があれば一緒に返す (#1133・モロヘイヤ 5.39.0〜)', () async {
+      final built = await _build(
+        resolveBody: {
+          'url': 'https://music.apple.com/jp/song/1352845804',
+          'provider': 'apple_music',
+          'artwork_url': 'https://is1-ssl.mzstatic.com/image/a/480x480bb.jpg',
+        },
+      );
+      final resolved = await built.service.resolveNowPlaying(
+        accessToken: 't',
+        title: 'Song',
+      );
+      expect(
+        resolved?.artworkUrl,
+        Uri.parse('https://is1-ssl.mzstatic.com/image/a/480x480bb.jpg'),
+      );
+    });
+
+    test('artwork_url が null でも、共有 URL は返す', () async {
+      final built = await _build(
+        resolveBody: {
+          'url': 'https://music.apple.com/jp/song/1',
+          'artwork_url': null,
+        },
+      );
+      final resolved = await built.service.resolveNowPlaying(
+        accessToken: 't',
+        title: 'Song',
+      );
+      expect(resolved?.url, Uri.parse('https://music.apple.com/jp/song/1'));
+      expect(resolved?.artworkUrl, isNull);
+    });
+
+    test('⚠ artwork_url が http / https でなければ捨てる（取りに行く URL なので）', () async {
+      for (final bad in ['file:///etc/passwd', 'javascript:alert(1)', '', 42]) {
+        final built = await _build(
+          resolveBody: {
+            'url': 'https://music.apple.com/jp/song/1',
+            'artwork_url': bad,
+          },
+        );
+        final resolved = await built.service.resolveNowPlaying(
+          accessToken: 't',
+          title: 'Song',
+        );
+        expect(resolved?.artworkUrl, isNull, reason: '$bad');
+        expect(resolved?.url, isNotNull, reason: '共有 URL まで巻き添えにしない');
+      }
     });
 
     test('構造化メタデータと bearer を送る', () async {

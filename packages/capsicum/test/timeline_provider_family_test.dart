@@ -383,10 +383,32 @@ void main() {
         isNot(contains('ref.watch(currentAccountProvider)')),
         reason: '$path が Account 全体を watch している',
       );
+      // ⚠ 閉包は 4 系統へ写さず、共通の関数 1 本を呼ぶ (#1238)。
       expect(
         source,
-        contains('currentAccountProvider.select('),
-        reason: '$path がアダプタだけを見る形になっていない',
+        contains('watchAdapterForTimelineKey(ref, key.account)'),
+        reason: '$path がアダプタだけを見る形（共通の関数）になっていない',
+      );
+    }
+    // 関数の中身が select であること。⚠ ここが全体の watch へ戻ると 4 系統とも
+    // 戻るが、それは上の本線の振る舞いの検査が落ちる。
+    final shared = File(
+      'lib/src/provider/timeline_provider.dart',
+    ).readAsStringSync();
+    expect(
+      'currentAccountProvider.select('.allMatches(shared),
+      hasLength(1),
+      reason: 'select は共通の関数の中に 1 つだけ（写しが残っていない）',
+    );
+    for (final path in [
+      'lib/src/provider/hashtag_provider.dart',
+      'lib/src/provider/list_provider.dart',
+      'lib/src/provider/channel_provider.dart',
+    ]) {
+      expect(
+        File(path).readAsStringSync(),
+        isNot(contains('currentAccountProvider.select(')),
+        reason: '$path に閉包の写しが残っている',
       );
     }
   });

@@ -10,6 +10,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.os.SystemClock
 import android.util.Log
 
 /**
@@ -59,13 +60,16 @@ class OAuthKeepAliveService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        reached = true
+        // この 1 回ぶんの予約が届いた (#1163)。
+        if (pendingStarts > 0) pendingStarts--
         // ⚠⚠ **必ず先に startForeground を通す (#1117-A)。**startForegroundService で
         // 予約された service が startForeground を呼ばないまま死ぬと、OS が
         // ForegroundServiceDidNotStartInTimeException でアプリを落とす。止める
         // 要求が先に来ていても、順序は「上げてから下ろす」でなければならない。
         startInForeground()
-        if (stopPending) {
+        // ⚠ **まだ届いていない予約が残っているあいだは下ろさない** (#1163)。
+        // 残っている予約にも startForeground を通させてから、最後の 1 回で下ろす。
+        if (stopPending && pendingStarts == 0) {
             // start の往復中に stop が来ていた（launchUrl が即 false を返した /
             // その間に画面を離れた）。窓は ms 単位だが実際に踏みうる。
             stopPending = false
@@ -78,8 +82,9 @@ class OAuthKeepAliveService : Service() {
     }
 
     override fun onDestroy() {
-        reached = false
-        stopPending = false
+        // ⚠ `pendingStarts` は触らない (#1163)。破棄のあとに届く予約があれば、
+        // OS が新しいインスタンスを作って `onStartCommand` を呼ぶ（そこで減る）。
+        if (pendingStarts == 0) stopPending = false
         super.onDestroy()
     }
 
@@ -200,15 +205,38 @@ class OAuthKeepAliveService : Service() {
         private const val TAG = "OAuthKeepAlive"
 
         /**
-         * `onStartCommand` まで到達したか (#1117-A)。
+         * `startForegroundService` で予約して、まだ `onStartCommand` へ届いていない
+         * 回数 (#1117-A / #1163)。
          *
          * ⚠⚠ **`startForegroundService` は予約であって起動ではない。**予約した
          * service が `startForeground` を呼ぶ前に `stopService` で消されると、OS は
-         * ForegroundServiceDidNotStartInTimeException でアプリを落とす。到達したか
-         * どうかを見て、未到達なら stop を**サービス側へ持ち越す**。
+         * ForegroundServiceDidNotStartInTimeException でアプリを落とす。届いていない
+         * 予約が 1 つでもあれば、stop を**サービス側へ持ち越す**。
+         *
+         * 🔴 **以前は「届いたことがあるか」の真偽値 1 つ（`reached`）だった** (#1163)。
+         * 前のフローで立った true が残っているうちに次の予約をすると、その予約は
+         * まだ届いていないのに「届いた」と読まれ、`stopService` を呼んで落とし得た。
+         * 予約ごとに数えれば、どの予約についても「届く前に消す」が起きない。
+         * ⚠ 素直に「予約のたびに false へ戻す」だと、サービスが生きている最中に
+         * false になり、次の stop が持ち越し側へ行って前景通知が出しっぱなしになる。
+         *
+         * ⚠ 触るのはメインスレッドだけ（メソッドチャネルの処理とサービスの
+         * ライフサイクル）なので、排他は要らない。
          */
-        @Volatile
-        private var reached = false
+        private var pendingStarts = 0
+
+        /** 最後に予約した時刻（`SystemClock.elapsedRealtime`）。 */
+        private var lastStartAt = 0L
+
+        /**
+         * 予約が届くのを待つ上限。
+         *
+         * OS は予約から約 10 秒のうちに `startForeground` を要求する（守れなければ
+         * アプリが落ちる）。それを過ぎても届いていない予約は**もう届かない**ので、
+         * 数え残しとして捨てる —— 捨てないと、以後の stop がずっと持ち越しになり、
+         * 前景通知を 3 分の打ち切りまで下ろせなくなる。
+         */
+        private const val PENDING_START_GRACE_MS = 15_000L
 
         /** 未到達のあいだに来た stop 要求 (#1117-A)。`onStartCommand` が消化する。 */
         @Volatile
@@ -229,19 +257,47 @@ class OAuthKeepAliveService : Service() {
          * ⚠ **呼び出し元がフォアグラウンドにいるあいだに呼ぶこと。**foreground
          * service はバックグラウンドからは起動できない。ブラウザを開く前
          * （＝ログイン画面が見えているあいだ）に呼ぶ前提。
+         *
+         * 戻り値は「OS が予約を受け付けたか」(#1163)。⚠ **サービスが実際に立ち
+         * 上がったかではない**（それは予約の時点では分からない）。以前は予約の
+         * 成否を見ずに「この端末で上げる意味があるか」を返していたので、
+         * バックグラウンドからの起動として OS に断られた回も true だった。
          */
-        fun start(context: Context) {
-            if (!shouldKeepAlive()) return
+        fun start(context: Context): Boolean {
+            if (!shouldKeepAlive()) return false
+            dropStalePendingStarts()
             // ⚠ 前回の持ち越しを引き継がない（引き継ぐと上げた直後に落ちる）。
             stopPending = false
             val intent = Intent(context, OAuthKeepAliveService::class.java)
-            context.startForegroundService(intent)
+            return try {
+                context.startForegroundService(intent)
+                pendingStarts++
+                lastStartAt = SystemClock.elapsedRealtime()
+                true
+            } catch (e: RuntimeException) {
+                // API 31+ の ForegroundServiceStartNotAllowedException（バック
+                // グラウンドからの起動）ほか。⚠ 上げられなくてもログインは続ける
+                // （凍結され得る、という #1108 以前の挙動に戻るだけ）。
+                Log.w(TAG, "startForegroundService was refused", e)
+                false
+            }
+        }
+
+        /** 届く見込みの無くなった予約を、数え残しとして捨てる。 */
+        private fun dropStalePendingStarts() {
+            if (pendingStarts == 0) return
+            val waited = SystemClock.elapsedRealtime() - lastStartAt
+            if (waited > PENDING_START_GRACE_MS) {
+                Log.w(TAG, "dropping $pendingStarts start(s) that never arrived")
+                pendingStarts = 0
+            }
         }
 
         /** 認可待ちを終える。認可完了・中断・タイムアウトのいずれでも呼ぶ。 */
         fun stop(context: Context) {
             if (!shouldKeepAlive()) return
-            if (!reached) {
+            dropStalePendingStarts()
+            if (pendingStarts > 0) {
                 // ⚠⚠ **ここで stopService を呼ばない (#1117-A)。**まだ
                 // `startForeground` を通っていない service を消すと、OS が
                 // ForegroundServiceDidNotStartInTimeException でアプリを落とす。

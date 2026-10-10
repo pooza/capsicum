@@ -40,5 +40,12 @@ class Draft {
     this.renote,
     this.channelId,
     this.channelName,
+    this.visibleUserIds = const [],
   });
+
+  /// 指名（Misskey の `specified`）の宛先 (#1165)。指名でなければ空。
+  ///
+  /// ⚠ 保存する側は v1.66 から送っていたが、**読み戻す側が運んでいなかった**ので、
+  /// 指名の下書きを開き直すと宛先が空になり、送れなかった。
+  final List<String> visibleUserIds;
 }

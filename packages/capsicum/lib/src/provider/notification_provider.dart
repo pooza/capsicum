@@ -1,4 +1,5 @@
 import 'package:capsicum_core/capsicum_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -8,6 +9,42 @@ import 'account_manager_provider.dart';
 import 'is_cat_provider.dart';
 import 'preferences_provider.dart';
 import 'timeline_provider.dart';
+
+/// 追加で読んだページ [older] から、既に [shown] に出ているグループを落とす
+/// (#1251)。
+///
+/// ⚠ **Mastodon のグループ化は、同じ `group_key` のグループをページを跨いで
+/// 2 回返しうる**（1 時間に 20 グループ超が動くアカウントで起きる）。そのまま
+/// 足すと同じグループが 2 行並び、件数も重なる。
+///
+/// ⚠ **残すのは先に出ているほう**（新しい側）。WebUI も同じキーのグループは
+/// 1 つにまとめる。件数は先に出ているグループの値をそのまま使う —— 後の
+/// ページの値を足すと、サーバーが同じ通知を両方に数えているぶん二重になる。
+///
+/// ⚠ グループ化していない通知（`groupKey == null`）は対象外。id の重複は
+/// カーソルの歯止め（下の `stalled`）が見る。
+List<Notification> dropAlreadyShownGroups(
+  List<Notification> shown,
+  List<Notification> older,
+) {
+  final seen = <String>{
+    for (final n in shown)
+      if (n.groupKey != null) n.groupKey!,
+  };
+  return [
+    for (final n in older)
+      // 同じページの中で重なっていても 1 つにする。
+      if (n.groupKey == null || seen.add(n.groupKey!)) n,
+  ];
+}
+
+/// 手元で絞ったページのあと、次の追加読み込みまで置く間 (#1251)。
+///
+/// ⚠ **古い Misskey で種別を外していると、20 件取って数件しか残らないページが
+/// 続く。**追加読み込みの起点は「一覧の末尾が近い」ことなので、行が増えない
+/// あいだ連鎖して打ち続ける。`i/notifications-grouped` の流量制限は
+/// 30 回 / 30 秒なので、1 回あたり 1 秒を超える間を置けば届かない。
+const locallyFilteredLoadMoreInterval = Duration(milliseconds: 1500);
 
 /// Paginated notification state.
 class NotificationState {
@@ -58,8 +95,28 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
         : ref.read(notificationGroupingProvider),
   );
 
+  /// 直前に読んだページが、手元で絞ったものだったか (#1251)。
+  bool _lastPageFilteredLocally = false;
+
+  /// 「サーバーが除外を断った」を記録済みか。⚠ ページごとに出さない。
+  bool _localFilterReported = false;
+
+  void _noteLocalFilter(NotificationResponse response) {
+    _lastPageFilteredLocally = response.filteredLocally;
+    if (!response.filteredLocally || _localFilterReported) return;
+    _localFilterReported = true;
+    // ⚠ **記録に残す。**どのサーバーで手元の絞り込みに倒れているかが、これが
+    // 無いと分からない（release では Sentry の breadcrumb になり、host は
+    // イベントのタグで分かる）。
+    debugPrint(
+      'notification: server rejected the exclude filter; filtering locally',
+    );
+  }
+
   @override
   Future<NotificationState> build() async {
+    _lastPageFilteredLocally = false;
+    _localFilterReported = false;
     final adapter = ref.watch(currentAdapterProvider);
     if (adapter == null || adapter is! NotificationSupport) {
       return const NotificationState(hasMore: false);
@@ -70,6 +127,7 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
       filter: _filter(watch: true),
     );
     reportSkippedNotifications(response.skippedPosts, source: 'notification');
+    _noteLocalFilter(response);
     // ⚠ **猫耳のために通知一覧の表示を止めない (#1080)。**理由と仕組みは
     // `is_cat_provider.dart` の [kIsCatEnrichBudget] の doc が正本。
     // ⚠ **待ち上限は enricher の中で掛かる (#1083-C)。**以前はこの 4 箇所が
@@ -113,6 +171,12 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
 
     state = AsyncData(current.copyWith(isLoadingMore: true));
 
+    // 手元で絞ったページが続いているあいだは、間を置いてから読む (#1251)。
+    // 理由は [locallyFilteredLoadMoreInterval]。
+    if (_lastPageFilteredLocally) {
+      await Future<void>.delayed(locallyFilteredLoadMoreInterval);
+    }
+
     for (var attempt = 0; attempt <= loadMoreMaxRetries; attempt++) {
       try {
         final adapter = ref.read(currentAdapterProvider);
@@ -145,6 +209,7 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
           source: 'notification.loadMore',
           maxId: lastId,
         );
+        _noteLocalFilter(response);
         // 追加読み込みも同じ扱い (#1080)。ここで止まるとスクロールが刺さる。
         final older = await ref
             .read(isCatEnricherProvider)
@@ -160,7 +225,10 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
           base.copyWith(
             notifications: stalled
                 ? base.notifications
-                : [...base.notifications, ...older],
+                : [
+                    ...base.notifications,
+                    ...dropAlreadyShownGroups(base.notifications, older),
+                  ],
             isLoadingMore: false,
             lastRawId: nextRawId,
             hasMore:

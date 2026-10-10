@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../model/account.dart';
@@ -38,6 +39,94 @@ import '../util/exception_scrub.dart';
 /// 「モデレーション操作の失敗を全部見る」が **1 クエリで書けるかどうか**。
 /// [tags] は fingerprint に含めない補助タグ（例: Play の未実装キー `Ui:C:switch`）。
 /// issue は集約したまま、Sentry UI 上でタグ別に件数比較・絞り込みできる (#875)。
+/// サーバーの応答を受け取る前に落ちた失敗か（回線断・名前解決・接続の時間切れ）
+/// (#1246)。
+///
+/// ⚠ **応答があった失敗（4xx / 5xx）は false。**あちらはサーバーが返した結果で、
+/// 回線の事象ではない。
+bool isConnectionLevelFailure(Object error) {
+  if (error is! DioException) return false;
+  if (error.response != null) return false;
+  return switch (error.type) {
+    DioExceptionType.connectionError ||
+    DioExceptionType.connectionTimeout ||
+    DioExceptionType.sendTimeout ||
+    DioExceptionType.receiveTimeout ||
+    DioExceptionType.unknown => true,
+    DioExceptionType.badCertificate ||
+    DioExceptionType.badResponse ||
+    DioExceptionType.transformTimeout ||
+    DioExceptionType.cancel => false,
+  };
+}
+
+/// 複数アカウントへ同時に問い合わせた取得の失敗を、まとめて報告する (#1246)。
+///
+/// ⚠⚠ **全アカウントが同時に回線で落ちた回は、アカウントの数だけ送らない。**
+/// 中身は回線側の事象で、1 回の圏外につき接続中のサーバーの数だけ error が
+/// 飛んでいた（`CAPSICUM-61`・1 install が 2 つの瞬間に 6 ホストぶんで 10 件）。
+/// warning 1 件にまとめる。
+///
+/// ⚠ **一部だけ落ちた回・応答のある失敗は、従来どおり 1 件ずつ送る。**
+/// 「特定のサーバーだけ落ちている」はサーバー側の障害の合図になる。
+/// [send] はテスト用の差し替え口。
+void reportFanOutFailures({
+  required String tagKey,
+  required String operation,
+  required List<({Account account, Object error, StackTrace stackTrace})>
+  failures,
+  required int totalAccounts,
+  void Function({
+    required String tagKey,
+    required String operation,
+    required Object error,
+    required StackTrace stackTrace,
+    Account? account,
+  })?
+  sendEach,
+  void Function(int accounts)? sendNetworkDown,
+}) {
+  if (failures.isEmpty) return;
+  // ⚠ **数えるのはアカウントではなくホスト**（リリース前レビュー・2026-10-10）。
+  // 同じサーバーに 2 アカウントだけ持つ人では、そのサーバーの障害が「全員が
+  // 落ちた ＝ 回線側」に見え、ホスト名の無い warning 1 件に畳まれていた。
+  // ストリーム側（`looksLikeNetworkDown`）と同じ数え方に揃える。
+  final networkDown =
+      totalAccounts >= 2 &&
+      failures.length == totalAccounts &&
+      failures.map((f) => f.account.key.host).toSet().length >= 2 &&
+      failures.every((f) => isConnectionLevelFailure(f.error));
+  if (networkDown) {
+    if (sendNetworkDown != null) {
+      sendNetworkDown(totalAccounts);
+      return;
+    }
+    try {
+      Sentry.captureMessage(
+        '$tagKey.network_down',
+        level: SentryLevel.warning,
+        withScope: (scope) {
+          scope.setTag(tagKey, operation);
+          scope.setTag('accounts', '$totalAccounts');
+          scope.fingerprint = [tagKey, operation, 'network_down'];
+        },
+      );
+    } catch (_) {
+      // Sentry 失敗で UI 更新を止めない
+    }
+    return;
+  }
+  for (final f in failures) {
+    (sendEach ?? reportOpFailure)(
+      tagKey: tagKey,
+      operation: operation,
+      error: f.error,
+      stackTrace: f.stackTrace,
+      account: f.account,
+    );
+  }
+}
+
 void reportOpFailure({
   required String tagKey,
   required String operation,

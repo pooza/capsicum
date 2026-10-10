@@ -35,7 +35,7 @@ const supporterTipProductIds = <String>[
 /// ⚠ **RTDN も突き合わせられなかった**（`RENEWED (unknown_purchase)`）—— あちらは
 /// purchaseToken で届くので、保存した orderId と一致しない。
 ///
-/// ⚠ **`_entitlementStoreName()`（`supporter_purchase_provider.dart`）と同じ軸で
+/// ⚠ **[entitlementStoreName]（このファイルの公開関数）と同じ軸で
 /// 分けること。**片方だけ変えると「store は google なのに Apple の値を送る」形に
 /// なり、同じ不具合に戻る。
 String? entitlementPurchaseId(PurchaseDetails purchase) =>

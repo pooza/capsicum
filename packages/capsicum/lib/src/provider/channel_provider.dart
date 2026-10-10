@@ -54,14 +54,10 @@ class ChannelTimelineNotifier
   @override
   Future<TimelineState> build(ChannelTimelineKey key) async {
     // 前のチャンネル / アカウントの新着を、このカラムへ漏らさない (#1098)。
-    resetLiveIngestState();
+    final liveGeneration = resetLiveIngestState();
     // 🔴 `Account` 全体ではなく、解決したアダプタだけを見る（本線の
     // `TimelineNotifier.build` と同じ理由。全体を見ると、復帰のたびに読み直す）。
-    final adapter = ref.watch(
-      currentAccountProvider.select(
-        (current) => adapterForTimelineKey(current, key.account),
-      ),
-    );
+    final adapter = watchAdapterForTimelineKey(ref, key.account);
     // ⚠ contextKey はギャップ補完 (#781) の stale 判定が読む。ここだけ空のまま
     // だったので、他の TL と同じく入れる。
     final contextKey = timelineContextKey(key.account, ChannelTab(id: key.id));
@@ -87,7 +83,10 @@ class ChannelTimelineNotifier
     );
     seedLiveIngestAnchor(result.posts);
     if (adapter is StreamSupport) {
-      startLiveStreamIfEnabled(adapter as StreamSupport);
+      startLiveStreamIfEnabled(
+        adapter as StreamSupport,
+        generation: liveGeneration,
+      );
     }
     return result.copyWith(
       contextKey: contextKey,

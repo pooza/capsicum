@@ -145,6 +145,19 @@ void main() {
       }
     });
 
+    test('⚠⚠ アカウントを横断するカラム（すべての通知）には出さない (#1255)', () {
+      expect(
+        canComposeFromColumn(const AllNotificationsTab(), _PlainAdapter()),
+        isFalse,
+        reason: '見出しのアカウントが中身と対応しないので、誰として投稿するかが読めない',
+      );
+      // ⚠ 単独アカウントの通知カラムには出す（見出しのアカウントの通知だけが並ぶ）。
+      expect(
+        canComposeFromColumn(const NotificationsTab(), _PlainAdapter()),
+        isTrue,
+      );
+    });
+
     test('⚠ メッセージは出さない（カラムとして表示もできない）', () {
       expect(
         canComposeFromColumn(const MessagesTab(), _PlainAdapter()),

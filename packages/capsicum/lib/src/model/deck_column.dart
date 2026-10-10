@@ -39,7 +39,23 @@ class DeckColumn {
 
   /// 中身の同一性を表す文字列。`timelineContextKey` と同じ
   /// `<アカウント>|<種別>` の形（決定済み事項 4-3）。
-  String get contentKey => '${account.toStorageKey()}|${tab.toIdentityKey()}';
+  ///
+  /// ⚠⚠ **アカウントをまたぐカラム（[TabType.spansAccounts]）はアカウントを
+  /// 含めない** (#1259)。含めると、同じ中身のカラムがアカウントの数だけ別物に
+  /// なる（「すべての通知」が、フォーカスしていたアカウントごとに増えていた）。
+  String get contentKey => tab.spansAccounts
+      ? '*|${tab.toIdentityKey()}'
+      : '${account.toStorageKey()}|${tab.toIdentityKey()}';
+
+  /// このカラムが実際に動くアカウント (#1259)。
+  ///
+  /// ふつうは [account]。⚠ **アカウントをまたぐカラムは [current]**（現在の
+  /// アカウント）—— 保存されている [account] は見ない。[current] が無い
+  /// （ログアウト直後など）ときは [account] のまま。
+  DeckColumn effective(AccountKey? current) =>
+      tab.spansAccounts && current != null && current != account
+      ? DeckColumn(id: id, account: current, tab: tab, seed: seed)
+      : this;
 
   /// 保存用の 1 行。`<id>|<アカウント>|<種別>`。
   ///

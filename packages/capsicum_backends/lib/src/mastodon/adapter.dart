@@ -118,7 +118,12 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         FollowSupport,
         FollowRequestSupport,
         NotificationSupport,
+        NotificationUnreadCountSupport,
         SearchSupport,
+        // 検索の続き (#1202)。Misskey は続きの口が種別ごとに違うので未対応。
+        SearchPagingSupport,
+        // DM の会話の既読・削除 (#1206)。Misskey の DM は chat で別実装。
+        ConversationSupport,
         CustomEmojiSupport,
         ListSupport,
         HashtagSupport,
@@ -394,8 +399,27 @@ class MastodonAdapter extends DecentralizedBackendAdapter
 
   @override
   Future<List<ScheduledPost>> getScheduledPosts() async {
-    return client.getScheduledStatuses();
+    // ⚠ **全件を読み切る** (#1202)。素の 1 回だと 20 件で黙って切れる。
+    // サーバーは予約投稿の総数を 300 件に制限している
+    // （`ScheduledStatus::TOTAL_LIMIT`）ので、40 件ずつなら 8 回で終わる。
+    // 回数の上限は、`Link` が同じ `max_id` を返し続けた場合の歯止め。
+    final posts = <ScheduledPost>[];
+    String? maxId;
+    for (var page = 0; page < _scheduledMaxPages; page++) {
+      final result = await client.getScheduledStatuses(
+        maxId: maxId,
+        limit: _scheduledPageSize,
+      );
+      posts.addAll(result.posts);
+      final next = result.nextMaxId;
+      if (next == null || next == maxId) break;
+      maxId = next;
+    }
+    return posts;
   }
+
+  static const _scheduledPageSize = 40;
+  static const _scheduledMaxPages = 10;
 
   @override
   Future<void> cancelScheduledPost(String id) async {
@@ -405,6 +429,34 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   @override
   Future<void> deletePost(String id) async {
     await client.deleteStatus(id);
+  }
+
+  // ConversationSupport
+
+  /// DM 一覧で取得した投稿 id → その会話 (#1206)。
+  ///
+  /// ⚠ **投稿のモデルに持たせない理由**は [ConversationSupport.conversationOf]。
+  /// DM 一覧を取得するたびに上書きするので、未読は最後に取得した時点の値。
+  final Map<String, ConversationRef> _conversations = {};
+
+  @override
+  ConversationRef? conversationOf(String postId) => _conversations[postId];
+
+  @override
+  Future<void> markConversationRead(String conversationId) async {
+    await client.markConversationRead(conversationId);
+    // ⚠ 手元も既読へ倒す。倒さないと、同じ DM を開くたびに呼び直す。
+    _conversations.updateAll(
+      (_, ref) => ref.id == conversationId
+          ? ConversationRef(id: ref.id, unread: false)
+          : ref,
+    );
+  }
+
+  @override
+  Future<void> deleteConversation(String conversationId) async {
+    await client.deleteConversation(conversationId);
+    _conversations.removeWhere((_, ref) => ref.id == conversationId);
   }
 
   @override
@@ -419,6 +471,12 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         sinceId: query?.sinceId,
         limit: query?.limit,
       );
+      for (final c in result.conversations) {
+        _conversations[c.lastStatusId] = ConversationRef(
+          id: c.id,
+          unread: c.unread,
+        );
+      }
       final converted = _safeConvert(
         result.statuses,
         (s) => s.toCapsicum(host, adminRoleIds: _adminRoleIds),
@@ -1096,14 +1154,22 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         final status = e.response?.statusCode;
         if (status != 404 && status != 400 && status != 501) rethrow;
         _groupingUnsupported = true;
+      } on MastodonGroupedNotificationsUnsupported {
+        // ⚠ 200 で束ねた形（Map）以外が返った (#1251)。v2 のパスに別の形を返す
+        // 互換サーバーで、「v2 が無い」と同じ扱いにする。
+        _groupingUnsupported = true;
       }
     }
+    // クライアント層（fromJson）で読めなかった要素 (#1251)。アダプター層の
+    // `_safeConvert` が落としたぶんと合わせて返し、Sentry まで届ける。
+    final unreadable = <SkippedPost>[];
     final notifications = await client.getNotifications(
       maxId: query?.maxId,
       sinceId: query?.sinceId,
       limit: query?.limit,
       excludeTypes: excludeTypes,
       supportedTypes: mastodonSupportedNotificationTypes,
+      skipped: unreadable,
     );
     final converted = _safeConvert(
       notifications,
@@ -1114,7 +1180,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       notifications: converted.results,
       rawCount: converted.rawCount,
       rawLastId: converted.rawLastId,
-      skippedPosts: converted.skipped,
+      skippedPosts: [...unreadable, ...converted.skipped],
     );
   }
 
@@ -1122,15 +1188,27 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     TimelineQuery? query,
     required List<String> excludeTypes,
   }) async {
+    // クライアント層で読めなかった要素（グループ / アカウント / 投稿）(#1251)。
+    final unreadable = <SkippedPost>[];
     final grouped = await client.getGroupedNotifications(
       maxId: query?.maxId,
       sinceId: query?.sinceId,
       limit: query?.limit,
       excludeTypes: excludeTypes,
       supportedTypes: mastodonSupportedNotificationTypes,
+      skipped: unreadable,
     );
     final accounts = {for (final a in grouped.accounts) a.id: a};
     final statuses = {for (final st in grouped.statuses) st.id: st};
+    // ⚠ **参照先だけ欠けたグループは、黙って痩せる** (#1251)。`accounts[]` の
+    // 1 件が読めないと顔ぶれから無言で外れ、`statuses[]` の 1 件が読めないと
+    // 投稿なしの通知になる。グループ自体は出す（落とすより情報が残る）が、
+    // 痩せたことは記録する。
+    final thinned = <SkippedPost>[
+      for (final g in grouped.notificationGroups)
+        if (_missingReferences(g, accounts, statuses) case final missing?)
+          SkippedPost(id: g.groupKey, error: missing),
+    ];
     final converted = _safeConvert(
       grouped.notificationGroups,
       (g) => g.toCapsicum(
@@ -1148,15 +1226,38 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       notifications: converted.results,
       rawCount: converted.rawCount,
       rawLastId: converted.rawLastId,
-      skippedPosts: converted.skipped,
+      skippedPosts: [...unreadable, ...thinned, ...converted.skipped],
       // ⚠⚠ **グループ数と limit を比べてはいけない**理由は
       // [NotificationResponse.hasMore] の doc が正本。
       hasMore: grouped.notificationGroups.isNotEmpty,
     );
   }
 
+  /// [group] が指しているのに応答に無いアカウント / 投稿があれば、その説明を返す
+  /// (#1251)。揃っていれば null。⚠ id は載せない（件数だけ）。
+  static String? _missingReferences(
+    MastodonNotificationGroup group,
+    Map<String, MastodonAccount> accounts,
+    Map<String, MastodonStatus> statuses,
+  ) {
+    final missingAccounts = group.sampleAccountIds
+        .where((id) => !accounts.containsKey(id))
+        .length;
+    final statusId = group.statusId;
+    final missingStatus = statusId != null && !statuses.containsKey(statusId);
+    if (missingAccounts == 0 && !missingStatus) return null;
+    return 'notification group shown with missing references: '
+        'accounts=$missingAccounts status=${missingStatus ? 1 : 0}';
+  }
+
   @override
   Future<void> clearAllNotifications() => throw UnimplementedError();
+
+  // NotificationUnreadCountSupport
+
+  @override
+  Future<int> getUnreadNotificationCount() =>
+      client.getNotificationUnreadCount();
 
   // SearchSupport
 
@@ -1166,8 +1267,12 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     final data = await client.search(
       query,
       resolve: isUrl ? true : null,
-      limit: 20,
+      limit: searchPageSize,
     );
+    return _searchResultsFrom(data);
+  }
+
+  SearchResults _searchResultsFrom(Map<String, dynamic> data) {
     final accounts = (data['accounts'] as List? ?? [])
         .map((e) => MastodonAccount.fromJson(e as Map<String, dynamic>))
         .map((a) => a.toCapsicum(host, adminRoleIds: _adminRoleIds))
@@ -1180,6 +1285,32 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         .map((e) => (e as Map<String, dynamic>)['name'] as String)
         .toList();
     return SearchResults(users: accounts, posts: statuses, hashtags: hashtags);
+  }
+
+  // SearchPagingSupport
+
+  @override
+  int get searchPageSize => 20;
+
+  @override
+  Future<SearchResults> searchMore(
+    String query,
+    SearchKind kind, {
+    required int offset,
+  }) async {
+    // ⚠ **`resolve` は送らない。**URL の解決は 1 件を返す操作で、続きが無い
+    // （サーバーも offset が正のときは解決結果を混ぜない）。
+    final data = await client.search(
+      query,
+      type: switch (kind) {
+        SearchKind.users => 'accounts',
+        SearchKind.posts => 'statuses',
+        SearchKind.hashtags => 'hashtags',
+      },
+      limit: searchPageSize,
+      offset: offset,
+    );
+    return _searchResultsFrom(data);
   }
 
   @override
@@ -1582,6 +1713,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     void Function(Object error, StackTrace stack)? onParseError,
     void Function(Object error, StackTrace stack)? onStreamError,
     void Function()? onReconnectExhausted,
+    void Function(String event)? onConnectionEvent,
   }) {
     _notificationStreaming?.dispose();
     final token = client.accessToken;
@@ -1593,6 +1725,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       onParseError: onParseError,
       onStreamError: onStreamError,
       onReconnectExhausted: onReconnectExhausted,
+      onConnectionEvent: onConnectionEvent,
     );
     return _notificationStreaming!.connect();
   }
@@ -1696,15 +1829,38 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     String postId,
     String authorId, {
     String? comment,
+    bool forward = false,
   }) async {
-    await client.createReport(authorId, statusIds: [postId], comment: comment);
+    await client.createReport(
+      authorId,
+      statusIds: [postId],
+      comment: comment,
+      forward: forward ? true : null,
+    );
   }
 
   @override
-  Future<void> reportUser(String userId, {String? comment}) async {
+  Future<void> reportUser(
+    String userId, {
+    String? comment,
+    bool forward = false,
+  }) async {
     // status_ids を省くと「アカウントに対する通報」になる。空配列ではなく
     // 未送信にする必要がある (#998)。
-    await client.createReport(userId, comment: comment);
+    await client.createReport(
+      userId,
+      comment: comment,
+      forward: forward ? true : null,
+    );
+  }
+
+  @override
+  String? reportForwardHost(User user) {
+    // ローカルの相手は host に自分のサーバーが入る（`toCapsicum` が
+    // `atHost ?? localHost` で埋める）。転送する先が無いので出さない。
+    final userHost = user.host;
+    if (userHost == null || userHost.isEmpty || userHost == host) return null;
+    return userHost;
   }
 
   // MediaUpdateSupport

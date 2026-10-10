@@ -30,3 +30,31 @@ abstract mixin class SearchSupport {
   Future<List<User>> searchUsers(String query, {int? limit});
   Future<List<String>> searchHashtags(String query, {int? limit});
 }
+
+/// 検索結果の種別。続きを読むときに 1 つだけ指定する (#1202)。
+enum SearchKind { users, posts, hashtags }
+
+/// 検索結果の続きを種別ごとに読める (#1202)。
+///
+/// ⚠ **[SearchSupport.search] は 3 種別をまとめて 1 ページだけ返す。**続きを
+/// 持たないと、21 件目以降が「それだけしか無い」ように見える。
+///
+/// ⚠ **種別をまとめて続きを読む口は作らない。**Mastodon の `offset` は
+/// `type` を指定したときしか効かないので、まとめて送ると同じ 1 ページ目が
+/// 返り続ける。
+abstract mixin class SearchPagingSupport {
+  /// [SearchSupport.search] と [searchMore] が 1 回に返す最大件数。
+  ///
+  /// ⚠ **「まだ続きがあるか」の判定に使う。**返ってきた件数がこれ未満なら
+  /// 終端。サーバーは総数を返さないので、ほかに知る手段が無い。
+  int get searchPageSize;
+
+  /// [kind] の結果を、先頭から [offset] 件飛ばして 1 ページ読む。
+  ///
+  /// 返る [SearchResults] は [kind] のリストだけが埋まる。
+  Future<SearchResults> searchMore(
+    String query,
+    SearchKind kind, {
+    required int offset,
+  });
+}

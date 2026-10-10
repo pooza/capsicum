@@ -168,6 +168,35 @@ void main() {
       expect(stopwatch.elapsedMilliseconds, greaterThanOrEqualTo(1000));
     });
 
+    // #1237: 残りが閾値以下でも、窓が遠ければ待たない。以前は窓が明けるまで
+    // 黙って待っていた（Mastodon の 5 分窓なら最大約 5 分・読み込み中のまま固まる）。
+    test('⚠⚠ 窓が遠いときは、先回りで待たずに送る', () async {
+      final resetTime = DateTime.now()
+          .add(const Duration(minutes: 5))
+          .toUtc()
+          .toIso8601String();
+      adapter.enqueue(
+        200,
+        headers: {
+          'x-ratelimit-remaining': ['2'],
+          'x-ratelimit-reset': [resetTime],
+        },
+      );
+      await dio.get('/first');
+
+      adapter.enqueue(200);
+      final stopwatch = Stopwatch()..start();
+      await dio.get('/second');
+      stopwatch.stop();
+
+      expect(
+        stopwatch.elapsedMilliseconds,
+        lessThan(500),
+        reason: '⚠ 待っていたら 5 分返らない（テストはタイムアウトで落ちる）',
+      );
+      expect(adapter.callCount, 2, reason: '要求そのものは送っている');
+    });
+
     test('does not delay when remaining is above threshold', () async {
       final resetTime = DateTime.now()
           .add(const Duration(seconds: 5))

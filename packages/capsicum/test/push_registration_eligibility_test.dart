@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:capsicum/src/service/push_registration_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -70,6 +72,66 @@ void main() {
     // ⚠⚠ **空振りしないことの確認。**全部偽のときだけ偽になる。
     test('全部偽のときだけ試みない', () {
       expect(decide(), isFalse);
+    });
+  });
+
+  // v2.1 のリリース前レビュー（2026-10-10）。relay は `/register` のたびに
+  // 「この端末にプリセットの行があるか」をその瞬間に引くので、全員を並行に
+  // 打つと、外部の要求が先に着いた回に 403 で拒まれる。
+  group('registrationWaves', () {
+    List<List<String>> waves(List<String> hosts, {required bool hasPreset}) =>
+        PushRegistrationService.registrationWaves(
+          hosts,
+          hasPreset: hasPreset,
+          hostOf: (h) => h,
+        );
+
+    test('⚠⚠ プリセットを持つ人は、プリセットのアカウントを先に済ませる', () {
+      expect(
+        waves([external, preset, 'misskey.io', 'precure.ml'], hasPreset: true),
+        [
+          [preset, 'precure.ml'],
+          [external, 'misskey.io'],
+        ],
+      );
+    });
+
+    test('プリセットだけ / 外部だけなら 1 組（空の組を作らない）', () {
+      expect(waves([preset], hasPreset: true), [
+        [preset],
+      ]);
+      // ⚠ プリセットのサーバーに届かない状態で起動した人。渡ってくるのは外部の
+      // アカウントだけだが、登録の対象ではある。
+      expect(waves([external], hasPreset: true), [
+        [external],
+      ]);
+    });
+
+    test('プリセットを持たない人は、並べ替えずに 1 組', () {
+      expect(waves([external, 'misskey.io'], hasPreset: false), [
+        [external, 'misskey.io'],
+      ]);
+    });
+
+    test('⚠ 起動時も追加時も、この順番を通る（配線）', () {
+      final service = File(
+        'lib/src/service/push_registration_service.dart',
+      ).readAsStringSync();
+      final manager = File(
+        'lib/src/provider/account_manager_provider.dart',
+      ).readAsStringSync();
+      expect(
+        service,
+        contains('await registerAccounts(accounts, eligible: hasPreset);'),
+      );
+      expect(manager, contains('PushRegistrationService.registerAccounts('));
+      // ⚠ 並行に打つ形へ戻っていない（順番を通さない登録の口は、1 件ずつの
+      // 再試行だけ）。
+      expect(
+        manager,
+        isNot(contains('PushRegistrationService.registerAccount(')),
+      );
+      expect('Future.wait('.allMatches(service).length, 1);
     });
   });
 }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -17,6 +19,7 @@ import '../util/mouse_drag_scroll_behavior.dart';
 import '../util/provider_scope_carrier.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/deck_column_focus.dart';
+import '../widget/deck_column_strip.dart';
 import '../widget/deck_column_view.dart';
 import '../widget/deck_columns_sheet.dart';
 import '../widget/livecure_filter_button.dart';
@@ -103,18 +106,54 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
   /// 狭幅でのフォーカス追従を、フレームに 1 回へ間引くための予約済みフラグ。
   bool _focusSyncScheduled = false;
 
+  /// 開いた直後の位置合わせを済ませたか (#1239)。
+  bool _initialPositionRestored = false;
+
+  /// 開いたとき、**最後に見ていたカラム**が見える位置から始める (#1239)。
+  ///
+  /// フォーカス（[deckFocusProvider]）は画面をまたいで残り、終了をまたいでも
+  /// 保存されているが、横スクロールは毎回 0 から始まっていた ＝ タブ UI へ行って
+  /// 戻るたびに左端（狭幅では一番上）へ戻る。
+  ///
+  /// ⚠ **アニメーションしない。**開くたびに列が流れると、戻ってきた感じに
+  /// ならない。⚠ 割り付けが決まった最初のフレームで 1 回だけ。
+  void _restoreInitialPositionOnce() {
+    if (_initialPositionRestored) return;
+    _initialPositionRestored = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final layout = _layout;
+      if (!mounted || layout == null || !_scrollController.hasClients) return;
+      final id = ref.read(deckFocusProvider).columnId;
+      final index = ref.read(deckColumnsProvider).indexWhere((c) => c.id == id);
+      if (index <= 0) return;
+      // フォーカス中のカラムが右端に来る位置（見えていれば足りる）。狭幅では
+      // 1 本しか見えないので、そのカラムそのものになる。
+      final target = (index - layout.visibleColumns + 1) * layout.columnWidth;
+      if (target <= 0) return;
+      final position = _scrollController.position;
+      _scrollController.jumpTo(target.clamp(0, position.maxScrollExtent));
+    });
+  }
+
   /// メニューへの登録口 (#1170)。⚠ `dispose` では `ref` が使えないので掴んでおく。
   late final StateController<DeckMenuActions?> _menuActions = _root.read(
     deckMenuActionsProvider.notifier,
   );
 
+  /// いま載っているデッキ画面の数。⚠ **開き直した直後は 2 になる**（新しい画面の
+  /// initState が、古い画面の dispose より先に走る）。
+  static int _liveScreens = 0;
+
   @override
   void initState() {
     super.initState();
+    _liveScreens++;
     _root = ProviderScope.containerOf(context, listen: false);
     // ⚠ 投稿・ブロックの反映先がカラム列から解決されるようになる (#1099)。
     // 閉じている間に列を読むと、片づいたはずの TL provider を起こしてしまう。
     _shiftMountedDecks(1);
+    // 最後に開いていた側を覚える (#1239)。開き直したとき、前回の側で始める。
+    unawaited(writeLastViewMode(LastViewMode.deck));
     _scrollController.addListener(_syncFocusToVisibleColumn);
     // デスクトップメニューへ、デッキだけが持っている操作を渡す (#1170)。
     // ⚠ フレームの後（provider の書き換えなので `_shiftMountedDecks` と同じ理由）。
@@ -136,17 +175,36 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
   @override
   void dispose() {
     _shiftMountedDecks(-1);
+    _liveScreens--;
+    // タブ UI へ戻った (#1239)。⚠⚠ **アプリが前面に居るときだけ書く。**画面が
+    // 捨てられるのは利用者が戻ったときだけではなく、アプリが終了へ向かうときにも
+    // 起こりうる。そこで「タブ UI」と書くと、デッキを開いたまま終了した人が次回
+    // タブ UI で始まる。終了は `inactive` / `paused` / `detached` を通るので、
+    // `resumed` の間の破棄だけを「戻った」と読む。
+    // ⚠ **ほかにデッキ画面が載っていれば書かない**（リリース前レビュー・
+    // 2026-10-10）。開き直した回は新しい画面が先に「デッキ」と書いているので、
+    // あとから走るこの dispose が「タブ UI」で上書きしてしまう。
+    if (_liveScreens == 0 &&
+        (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed ||
+            WidgetsBinding.instance.lifecycleState == null)) {
+      unawaited(writeLastViewMode(LastViewMode.tabs));
+    }
     // ⚠ 解除もフレームの後。⚠ **自分が入れたぶんだけ外す**（デッキを開き直した
     // 直後は新しい画面の登録が先に走っている）。
-    final ownActions = _menuActions.state;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_menuActions.mounted) return;
-      if (_menuActions.state == ownActions) _menuActions.state = null;
-    });
+    // ⚠ **ルートのコンテナが先に畳まれていることがある**（アプリの終了・テストの
+    // 後片づけ）。そのとき `state` を素で読むと投げ、**以降の後始末（スクロールの
+    // 解除・カラムのコンテナの破棄）に到達しない**。外す先が無いので何もしない。
+    if (_menuActions.mounted) {
+      final ownActions = _menuActions.state;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_menuActions.mounted) return;
+        if (_menuActions.state == ownActions) _menuActions.state = null;
+      });
+    }
     _scrollController.removeListener(_syncFocusToVisibleColumn);
     _scrollController.dispose();
     for (final container in _containers.values) {
-      container.dispose();
+      ProviderScopeLeases.disposeWhenReleased(container);
     }
     super.dispose();
   }
@@ -229,7 +287,11 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
         .firstOrNull;
     if (column == null) return;
     // 現在のアカウントのカラムはルートのコンテナのまま（未決事項 10）。
-    final container = column.account == ref.read(currentAccountKeyProvider)
+    // ⚠ アカウントをまたぐカラムにフォーカスしているときも、現在のアカウントで
+    // 開く (#1259・`DeckColumn.effective`)。
+    final container =
+        column.effective(ref.read(currentAccountKeyProvider)).account ==
+            ref.read(currentAccountKeyProvider)
         ? _root
         : _containers[column.account];
     if (container == null) return;
@@ -340,9 +402,12 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
       _containerAccounts.remove(k);
     }
     // ⚠ このフレームではまだ古いコンテナを読むウィジェットが居るので、後で捨てる。
+    // ⚠⚠ **`used` が数えているのはカラムと簡易投稿バーだけ。**push 先（投稿
+    // フォーム・メディアビューア）に渡したコンテナは [ProviderScopeLeases] が
+    // 数えており、貸している間は破棄を先送りする (#1235)。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       for (final container in doomed) {
-        container.dispose();
+        ProviderScopeLeases.disposeWhenReleased(container);
       }
     });
   }
@@ -403,20 +468,35 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
 
   /// [content] の下に [postBar] を置く。バーが無いときは下端の inset を
   /// [BottomSafeArea] で吸う（#1037 / #1062・上の `body` の注記）。
-  Widget _withPostBar(Widget? postBar, Widget content) => postBar == null
-      ? BottomSafeArea(child: content)
-      : Column(
-          children: [
-            Expanded(child: content),
-            postBar,
-          ],
-        );
+  /// 中身の下に、カラムへ飛ぶ帯 (#1241) と簡易投稿バーを並べる。
+  ///
+  /// ⚠ 下端の inset は**いちばん下に来るもの**が吸う。簡易投稿バーは自分で
+  /// 吸う設計（`SimplePostBar`）なので、バーが無いときだけここで包む。
+  Widget _withBottomBars(Widget? strip, Widget? postBar, Widget content) {
+    if (strip == null && postBar == null) return BottomSafeArea(child: content);
+    final column = Column(
+      children: [
+        Expanded(child: content),
+        ?strip,
+        ?postBar,
+      ],
+    );
+    return postBar == null ? BottomSafeArea(child: column) : column;
+  }
 
   @override
   Widget build(BuildContext context) {
-    final columns = ref.watch(deckColumnsProvider);
-    final minColumnWidth = ref.watch(deckColumnWidthProvider);
     final currentKey = ref.watch(currentAccountKeyProvider);
+    // ⚠⚠ **アカウントをまたぐカラム（「すべての通知」）は、現在のアカウントで
+    // 動かす** (#1259)。保存されているアカウントは見ない —— 開いたときの
+    // アカウントに縛ると、そのアカウントをログアウトした時点でカラムごと
+    // 「表示できません」になる。ここで読み替えておけば、スコープ・簡易投稿バー・
+    // 見出しは下流でそのまま現在のアカウントを見る。
+    final columns = [
+      for (final column in ref.watch(deckColumnsProvider))
+        column.effective(currentKey),
+    ];
+    final minColumnWidth = ref.watch(deckColumnWidthProvider);
     final accounts = ref.watch(accountManagerProvider).accounts;
 
     final used = <AccountKey>{};
@@ -434,6 +514,27 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
     final postBar = _postBar(focusedColumn, currentKey, accounts, used);
     _disposeUnused(used);
 
+    // 見たいカラムへ 1 回で飛べる帯 (#1241・2026-10-09 pooza)。
+    // ⚠⚠ **カラムが 1 本ずつしか見えない幅のときだけ出す。**広幅ではカラムが
+    // 並んで見えているので、縦を使ってまで出す理由が無い。⚠ 1 本しか無いなら
+    // 飛ぶ先も無い。
+    // ⚠ 幅は画面幅で見る（中身の `LayoutBuilder` と同じ値。デッキ画面は左右に
+    // 何も置かないので一致する）。
+    final narrow =
+        computeDeckLayout(
+          availableWidth: MediaQuery.sizeOf(context).width,
+          columnCount: columns.length,
+          minColumnWidth: minColumnWidth,
+        ).visibleColumns ==
+        1;
+    final strip = narrow && columns.length > 1
+        ? DeckColumnStrip(
+            columns: columns,
+            focusedId: focusedId,
+            onSelected: _revealAndFocus,
+          )
+        : null;
+
     // ⚠⚠ デスクトップでは引っ張って更新ができなかった (#1157)。マウスと
     // トラックパッドは既定の dragDevices に入っておらず、2 本指スクロールは
     // ポインタスクロールとして届くので **RefreshIndicator が起動しない**。
@@ -450,6 +551,15 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
         automaticallyImplyLeading: false,
         // ⚠ **題は置かない (#1242・2026-10-06 pooza)。**デッキ画面であることは
         // 見れば分かるので、自己紹介のような題で幅を使わない。
+        //
+        // ⚠ **見えない題は置く。**`AppBar` は `title` を画面名として読み上げに
+        // 渡すので、題を外すとデッキへ入ったときに何も読まれなくなる。見た目を
+        // 変えずに画面名だけ渡す（`namesRoute`）。
+        title: Semantics(
+          namesRoute: true,
+          label: 'デッキ',
+          child: const SizedBox.shrink(),
+        ),
         actions: [
           // ⚠ アイコンが増えたので、タブ UI と同じコンパクト枠に詰める (#1173)。
           // 既定の 48px タップ枠のままだと、狭幅（375px）にアイコン 5 つが収まらない。
@@ -515,6 +625,17 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
                     if (id != null) _revealAndFocus(id);
                   },
                 ),
+                // 設定 (#1242・2026-10-09 pooza)。デッキには設定への入口が無く、
+                // 開くにはタブ UI へ戻る必要があった。⚠ **メニューに畳まない**
+                // （1 タップで開けることを取った。アイコンは 6 つになるが、36px
+                // の枠なら 375px に収まる）。
+                // ⚠ 設定は全画面で開く（カラムにしない）。アカウントに依らない
+                // 画面なので、スコープを持ち込む必要も無い。
+                IconButton(
+                  icon: const Icon(Icons.settings_outlined),
+                  tooltip: '設定',
+                  onPressed: () => context.push('/settings'),
+                ),
                 // タブ表示への切り替え (#1153)。タブ UI の AppBar の「デッキ表示に
                 // 切り替え」と対になる。⚠ **`go('/home')` は下に残っている
                 // HomeScreen を作り直さない**（go_router が同じページを使い回す・
@@ -537,7 +658,8 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
       // **バーが inset を吸う**（`SimplePostBar` が `padding.bottom` を自分で
       // 足す設計・`bottom_safe_area.dart`）ので、ここでは包まない。包むと
       // バーの上に無駄な余白が入る。
-      body: _withPostBar(
+      body: _withBottomBars(
+        strip,
         postBar,
         columns.isEmpty
             ? Center(
@@ -572,6 +694,7 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
                       (_layout?.visibleColumns ?? 1) != 1;
                   _layout = layout;
                   if (narrowed) _syncFocusToVisibleColumn();
+                  _restoreInitialPositionOnce();
                   return SingleChildScrollView(
                     controller: _scrollController,
                     scrollDirection: Axis.horizontal,

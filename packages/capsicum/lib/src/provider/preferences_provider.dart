@@ -58,6 +58,8 @@ const _deckColumnsKey = 'deck_columns';
 
 /// デッキのカラム幅の下限（ユーザー設定・#1092）。
 const _deckColumnWidthKey = 'deck_column_width';
+const _deckLastColumnKey = 'deck_last_column';
+const _lastViewModeKey = 'last_view_mode';
 const _tabConfigPrefix = 'tab_config_';
 const _avatarShapeKey = 'avatar_shape';
 const _mouseDragScrollKey = 'mouse_drag_scroll';
@@ -592,6 +594,30 @@ class TabConfigNotifier extends FamilyNotifier<List<TabConfigEntry>, String> {
 ///
 /// ⚠ 削除しても購読を明示的に止めない（6-3）。重複カラムは provider を共有するので、
 /// 最後の 1 本が消えたときに autoDispose が片づける。
+/// 最後にフォーカスしていたカラムの id (#1239)。無ければ null。
+///
+/// ⚠ **スクロール量ではなく id で持つ。**列は並べ替え・削除で動くので、位置で
+/// 持つと別のカラムを指す。⚠ 保存された id が列に居ないことはありうる（閉じた・
+/// バックアップから戻した）。読む側が「居なければ先頭」に倒す。
+String? readDeckLastColumnId() =>
+    sharedPrefsOrThrow.getString(_deckLastColumnKey);
+
+Future<void> writeDeckLastColumnId(String? id) => id == null
+    ? sharedPrefsOrThrow.remove(_deckLastColumnKey)
+    : sharedPrefsOrThrow.setString(_deckLastColumnKey, id);
+
+/// 最後に開いていた側 (#1239)。
+enum LastViewMode { tabs, deck }
+
+/// アプリを開き直したとき、前回の側で始めるための記録 (#1239)。既定はタブ UI。
+LastViewMode readLastViewMode() =>
+    sharedPrefsOrThrow.getString(_lastViewModeKey) == LastViewMode.deck.name
+    ? LastViewMode.deck
+    : LastViewMode.tabs;
+
+Future<void> writeLastViewMode(LastViewMode mode) =>
+    sharedPrefsOrThrow.setString(_lastViewModeKey, mode.name);
+
 final deckColumnsProvider =
     NotifierProvider<DeckColumnsNotifier, List<DeckColumn>>(
       DeckColumnsNotifier.new,
@@ -605,11 +631,18 @@ class DeckColumnsNotifier extends Notifier<List<DeckColumn>> {
     if (saved == null) return const [];
     final columns = <DeckColumn>[];
     final seenIds = <String>{};
+    final seenSpanning = <String>{};
     for (final line in saved) {
       final column = DeckColumn.deserialize(line);
       // 読めない行と、id が重複する行（手編集等）は黙って捨てる。⚠ 重複 id を
       // 残すと、並べ替え・削除が 2 本のどちらを指すか決まらない。
       if (column == null || !seenIds.add(column.id)) continue;
+      // ⚠ **アカウントをまたぐカラムは列に 1 本だけ** (#1259)。以前はアカウントを
+      // 含むキーで見分けていたので、フォーカスしていたアカウントごとに同じ中身の
+      // カラムが増えていた。既にできている列は、いちばん左を残して畳む。
+      if (column.tab.spansAccounts && !seenSpanning.add(column.contentKey)) {
+        continue;
+      }
       columns.add(column);
     }
     return columns;
@@ -631,8 +664,17 @@ class DeckColumnsNotifier extends Notifier<List<DeckColumn>> {
   }
 
   /// 末尾にカラムを足す。⚠ **同じ中身が既にあっても足す**（重複を許す・6-2）。
+  ///
+  /// ⚠⚠ **例外はアカウントをまたぐカラム**（「すべての通知」・#1259）。中身が
+  /// 1 つしか無いので、2 本目は置かず既にあるものを返す。
   Future<DeckColumn> add(AccountKey account, TabType tab) async {
     final column = DeckColumn(id: _newId(), account: account, tab: tab);
+    if (tab.spansAccounts) {
+      final existing = state
+          .where((c) => c.contentKey == column.contentKey)
+          .firstOrNull;
+      if (existing != null) return existing;
+    }
     state = [...state, column];
     await _save();
     return column;

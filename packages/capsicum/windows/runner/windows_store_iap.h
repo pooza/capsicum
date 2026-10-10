@@ -12,20 +12,26 @@
 // runner に閉じ、Dart 側 WindowsStoreBackend が 'capsicum/store_iap' チャンネル
 // 経由でここを呼ぶ。
 //
-// いずれの関数も WinRT の IAsyncOperation を .get() で blocking 待ちするため、
+// いずれの関数も WinRT の IAsyncOperation を blocking 待ちするため、
 // STA な UI スレッドから直接呼ばず、専用の MTA ワーカースレッド上で実行する前提
 // (呼び出し側 flutter_window.cpp が apartment 初期化とスレッド marshal を担う)。
 
 // 消耗型アドオン (developer-managed / "UnmanagedConsumable") の商品情報を取得する。
 // アプリに紐づく add-on を列挙し、|product_ids| (アプリ内 SKU = InAppOfferToken)
-// に一致するものだけ返す。
+// に一致するものだけ返す。|hwnd| は StoreContext に結び付けるアプリのウィンドウ。
 //
 // 戻り値は flutter::EncodableMap:
 //   - "isStoreVersion" : bool  (Store からインストールされ課金経路が成立するか)
 //   - "products"       : EncodableList<EncodableMap>  各要素は
 //       { "productId", "storeId", "title", "description", "formattedPrice" }
-// StoreContext 取得不可 / 取得失敗時は isStoreVersion=false・products 空。
+//   - "stage"          : string  どこまで進んだか (#1248)。"ok" / "no_context" /
+//       "timeout" (10 秒で返らない) / "extended_error" / "exception"
+//   - "hresult"        : int  extended_error / exception のときの HRESULT (他は 0)
+//   - "elapsedMs"      : int  かかった時間
+//   - "associatedCount": int  ("ok" のみ) SKU で絞る前の add-on の数
+// "ok" 以外は isStoreVersion=false・products 空。⚠ 例外は外へ投げない。
 flutter::EncodableValue QueryStoreProducts(
+    HWND hwnd,
     const std::vector<std::string>& product_ids);
 
 // |store_id| (StoreProduct.StoreId) の商品を購入する。RequestPurchaseAsync は

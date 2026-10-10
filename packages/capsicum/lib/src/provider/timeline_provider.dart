@@ -7,6 +7,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import '../../main.dart' show appLaunchStopwatch;
 import '../model/account.dart';
 import '../model/account_key.dart';
+import '../service/stream_connect_failure_reporter.dart';
 import '../service/timeline_cache.dart';
 import '../util/conversion_skip_report.dart';
 import '../util/exception_scrub.dart';
@@ -94,6 +95,24 @@ DecentralizedBackendAdapter? adapterForTimelineKey(
   Account? current,
   AccountKey? account,
 ) => current != null && current.key == account ? current.adapter : null;
+
+/// [adapterForTimelineKey] の結果だけを watch する (#1238)。4 系統の `build()` が使う。
+///
+/// 🔴 **`Account` 全体ではなく、解決したアダプタだけを見る。**`Account` は `==` を
+/// 持たないので、全体を watch すると中身が同じでもインスタンスが替わるたびに
+/// `build()` がやり直され、アプリへ戻るたびに TL が最新 1 ページから読み直しになる
+/// （経緯は `TimelineNotifier.build`）。
+///
+/// ⚠ 同じ 3 行の閉包が 4 系統へ写されていた。**条件を変えるときにここだけ直せば
+/// 揃う**ように 1 本にした。
+DecentralizedBackendAdapter? watchAdapterForTimelineKey(
+  Ref ref,
+  AccountKey? account,
+) => ref.watch(
+  currentAccountProvider.select(
+    (current) => adapterForTimelineKey(current, account),
+  ),
+);
 
 /// `null` 自体が「明示的にクリア」を意味する nullable フィールドを
 /// `copyWith` で保持／差し替えするための sentinel (#455 / #450 と同型)。
@@ -644,7 +663,24 @@ mixin TimelineLiveIngest<Arg>
   /// ⚠ **前の文脈（アカウント / 種別）の新着を [flushPending] 経由で次の TL へ
   /// 漏らさないため**、一覧そのものより先に捨てる。接続状態・ギャップ補完の
   /// 起点・切断カウンタも同じ理由で build() が持ち越さない。
-  void resetLiveIngestState() {
+  ///
+  /// 返すのは、この build() の**ライブ購読の世代**。初回接続のとき
+  /// [startLiveStreamIfEnabled] へ渡す。
+  int resetLiveIngestState() {
+    _resetLiveIngestFields();
+    return ++_liveGeneration;
+  }
+
+  /// ライブ購読の世代 (#1235)。build() の開始と破棄のたびに進む。
+  ///
+  /// ⚠⚠ **`ref.onDispose` は await の途中でも走る。**初回取得を待っている間に
+  /// autoDispose されると、後始末（[disposeLiveStream]）は先に済んでしまい、
+  /// await 明けに張った購読を**閉じる者がいない**。再接続を諦めない作りなので
+  /// 生き続け、live になるたびにギャップ補完の REST も打つ。世代が動いていたら
+  /// 張らない。
+  int _liveGeneration = 0;
+
+  void _resetLiveIngestFields() {
     _pendingPosts.clear();
     _isNearTop = true;
     _streamConnectionState = StreamConnectionState.connecting;
@@ -860,7 +896,15 @@ mixin TimelineLiveIngest<Arg>
   }
 
   /// 取得が終わったあとの初回接続。OFF のときは張らない (#854)。
-  void startLiveStreamIfEnabled(StreamSupport adapter) {
+  ///
+  /// [generation] は build() の先頭で [resetLiveIngestState] が返した値。
+  /// ⚠ **取得を待っている間に破棄 / 作り直しがあったら張らない** (#1235)。
+  /// `ref.read` も破棄後は投げるので、世代の照合を先に置く。
+  void startLiveStreamIfEnabled(
+    StreamSupport adapter, {
+    required int generation,
+  }) {
+    if (generation != _liveGeneration) return;
     if (!ref.read(streamingEnabledProvider)) return;
     _startStreaming(adapter);
   }
@@ -868,6 +912,8 @@ mixin TimelineLiveIngest<Arg>
   /// 破棄時の後始末。⚠ **このインスタンスのキーの購読だけ**を閉じる
   /// (#1089 / #1090)。同じアカウントの別のカラムの購読には触らない。
   void disposeLiveStream(StreamSupport adapter) {
+    // この build() が待っている初回接続を無効にする (#1235)。
+    _liveGeneration++;
     _streamSubscription?.cancel();
     adapter.disposeStream(liveStreamKey);
   }
@@ -940,7 +986,6 @@ mixin TimelineLiveIngest<Arg>
   // listener 経路の例外 (_applyWordFilter 異常等) が出ても抑制しないように、
   // _lastListenCapture を独立に持つ。
   DateTime? _lastParseCapture;
-  DateTime? _lastConnectCapture;
   DateTime? _lastListenCapture;
   // 切断 (onDone) の closeCode 観測用バケット (#788)。性質が違うので
   // connect/parse/listen とは独立に持つ。
@@ -994,22 +1039,14 @@ mixin TimelineLiveIngest<Arg>
             message: e.runtimeType.toString(),
           ),
         );
-        final now = DateTime.now();
-        if (_lastConnectCapture != null &&
-            now.difference(_lastConnectCapture!) < _captureThrottle) {
-          return;
-        }
-        _lastConnectCapture = now;
-        Sentry.captureException(
-          scrubException(e),
+        // ⚠ **イベントにするかは、アプリ全体で 1 つの報告役が決める** (#1246)。
+        // 購読ごとに間引いていた頃は、回線が 1 回切れるたびに接続の本数だけ
+        // error が飛んでいた（デッキで 4 ホスト 7 本なら 7 件）。
+        streamConnectFailureReporter.report(
+          category: 'timeline.stream.connect',
+          error: e,
           stackTrace: st,
-          withScope: (scope) {
-            scope.setTag('timeline.stream.connect', 'failed');
-            scope.fingerprint = [
-              'timeline.stream.connect',
-              e.runtimeType.toString(),
-            ];
-          },
+          host: host,
         );
       },
       onReconnectExhausted: () {
@@ -1291,7 +1328,7 @@ class TimelineNotifier
     // なっていた —— 読み進めた分と未表示の新着が消え、WebSocket も張り直す。
     // ⚠ プロフィールの差し替えではアダプタは同じインスタンスのまま
     // （`copyWithUser`）なので、ここは動かない。上のコメントの意図どおりになる。
-    final adapter = ref.watch(currentAccountProvider.select(_adapterFor));
+    final adapter = watchAdapterForTimelineKey(ref, key.account);
     if (adapter == null) return TimelineState(contextKey: contextKey);
 
     // #716 計測: ホーム TL の初回描画を fetch (サーバー応答) / enrich (isCat) /
@@ -1442,7 +1479,13 @@ class TimelineNotifier
     // フェッチ・スクロール位置リセット・_pendingPosts.clear 等）を誘発し、可視の
     // スクロールジャンプを起こす (#904)。切替の張り/解除は build() 側の listen。
     if (adapter is StreamSupport) {
-      startLiveStreamIfEnabled(adapter as StreamSupport);
+      // ⚠ 本線は直前の `_isStale` で「破棄 / 世代進み / 文脈変更」を落として
+      // あるので、ここまで来た時点の世代をそのまま渡す（タグ / リスト /
+      // チャンネルは `_isStale` を持たないので、build() の先頭で控えた値を渡す）。
+      startLiveStreamIfEnabled(
+        adapter as StreamSupport,
+        generation: _liveGeneration,
+      );
     }
 
     fetchSw?.stop();

@@ -143,12 +143,12 @@ NotificationTypeDisplay notificationTypeDisplay(
     case NotificationType.chatInvitation:
       return const NotificationTypeDisplay(
         icon: Icons.group_add,
-        label: 'チャットに招待',
+        label: 'メッセージのルームに招待',
       );
     case NotificationType.exportCompleted:
       return const NotificationTypeDisplay(
         icon: Icons.download_done,
-        label: 'エクスポートが完了',
+        label: '書き出しが完了',
       );
     case NotificationType.other:
       return const NotificationTypeDisplay(

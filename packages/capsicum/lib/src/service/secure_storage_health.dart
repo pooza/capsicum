@@ -73,9 +73,22 @@ class SecureStorageHealth {
   static const probeSkipMessage =
       'secret service did not answer before the read';
 
-  /// 関所の打ち切りのメッセージ（`secure storage <操作> timed out`）から操作名を
-  /// 取る (#1144)。
+  /// 関所の打ち切りのメッセージ（`secure storage <操作> timed out`）。
+  ///
+  /// ⚠⚠ **形を知っているのはここだけ** (#1166)。以前は「組み立てる側」
+  /// （`SecureStorageGate.timeoutMessage`）・「関所のものか見分ける側」
+  /// （`isGateTimeout` の正規表現）・「操作名を取る側」（ここ）・テストの
+  /// リテラルの 4 か所に同じ形が散っていて、片方だけ変えると黙ってずれた。
+  /// 組み立て（[gateTimeoutMessage]）と読み取り（[gateTimeoutOperation]）を
+  /// 隣に置き、ほかは必ずこの 2 つを通す。
+  static String gateTimeoutMessage(String operation) =>
+      'secure storage $operation timed out';
+
   static final _gateTimeout = RegExp(r'^secure storage (\w+) timed out$');
+
+  /// [message] が関所の打ち切りなら操作名、違えば null。
+  static String? gateTimeoutOperation(String? message) =>
+      _gateTimeout.firstMatch(message ?? '')?.group(1);
 
   /// どの段で応答が無かったか。`probe`（触る前に諦めた）か、触った操作の名前
   /// （`read` / `write` / `delete` / `readAll` / `containsKey`）。
@@ -87,17 +100,24 @@ class SecureStorageHealth {
   static String stageOf(TimeoutException cause) {
     final message = cause.message;
     if (message == probeSkipMessage) return 'probe';
-    return _gateTimeout.firstMatch(message ?? '')?.group(1) ?? 'read';
+    return gateTimeoutOperation(message) ?? 'read';
   }
+
+  /// アカウントの secret を扱う処理の `phase` タグ (#1166)。
+  ///
+  /// ⚠ **2.0 までの値は `startup_secret`。**起動時の復元だけでなく保存・削除にも
+  /// 使われていて、名前と実態がずれていた。Sentry で過去のぶんを引くときは
+  /// 旧い値で絞る（どの操作かは `secure_storage_stage` タグで分かる）。
+  static const accountSecretPhase = 'account_secret';
 
   /// 応答が無かったことを記録する。
   ///
-  /// [phase] はどの処理の途中だったか。既定の `startup_secret` はアカウントの
+  /// [phase] はどの処理の途中だったか。既定の [accountSecretPhase] はアカウントの
   /// secret（起動時の復元・保存・削除）。push 鍵 / インストール ID は別の値を
   /// 渡す (#1144)。
   static void markUnavailable(
     TimeoutException cause, {
-    String phase = 'startup_secret',
+    String phase = accountSecretPhase,
   }) {
     final stage = stageOf(cause);
     debugPrint(

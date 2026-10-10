@@ -30,8 +30,22 @@ class MainActivity : FlutterActivity() {
                 // （foreground service はバックグラウンドから起動できない）。
                 // Dart 側はブラウザを開く前に呼んでいる。
                 "start" -> {
-                    OAuthKeepAliveService.start(this)
-                    result.success(OAuthKeepAliveService.shouldKeepAlive())
+                    // ⚠ 返すのは「OS が予約を受け付けたか」(#1163)。以前は
+                    // 予約の成否を見ずに端末の条件だけを返していた。
+                    if (!OAuthKeepAliveService.shouldKeepAlive()) {
+                        // Android 12 未満。上げる意味が無いだけで、失敗ではない。
+                        result.success(false)
+                    } else if (OAuthKeepAliveService.start(this)) {
+                        result.success(true)
+                    } else {
+                        // ⚠ OS に断られた回は、エラーとして返す。Dart 側が
+                        // Sentry へ残す（握って false を返すと、どこにも残らない）。
+                        result.error(
+                            "fgs_start_refused",
+                            "the foreground service start was refused",
+                            null,
+                        )
+                    }
                 }
                 "stop" -> {
                     OAuthKeepAliveService.stop(this)

@@ -128,8 +128,8 @@ void main() {
         expect(state.isAvailable, isFalse, reason: '前提: いったん利用不可');
 
         // 🔴 直す前は、ここで答えが届いても永久に false のままだった。
-        // Windows の「サポート」の入口は isAvailable だけで出し分けるので、
-        // 入口ごと消えていた。
+        // 当時の Windows は「サポート」の入口を isAvailable だけで出し分けて
+        // いたので、入口ごと消えていた（いまは入口を常に出す・#1248）。
         async.elapse(const Duration(seconds: 30));
         state = container.read(supporterPurchaseProvider);
         expect(state.isAvailable, isTrue, reason: '遅れて届いた答えに従う');

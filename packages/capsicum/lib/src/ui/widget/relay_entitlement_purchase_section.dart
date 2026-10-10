@@ -92,7 +92,7 @@ class RelayEntitlementPurchaseSection extends ConsumerWidget {
       if (outcome == null || outcome == prev?.lastOutcome) return;
       if (!outcome.isSubscription) return;
       if (outcome.kind != SupporterPurchaseOutcomeKind.success) return;
-      ref.read(entitlementStatusProvider.notifier).refresh();
+      ref.read(entitlementStatusProvider.notifier).refreshCoalesced();
     });
 
     return Column(
@@ -135,7 +135,7 @@ class RelayEntitlementPurchaseSection extends ConsumerWidget {
             ),
             subtitle: Text(unsupportedNote),
           ),
-        // ⚠ **商品が取れなければ、買う / 取り直す側は丸ごと出さない** ——
+        // ⚠ **商品が取れなければ、買う / 復元する側は丸ごと出さない** ——
         // ストア未登録・審査前・サブスクを扱えない OS。**押しても買えない入口を
         // 作らない。**
         if (product != null) ...[
@@ -298,7 +298,7 @@ class RelayEntitlementPurchaseSection extends ConsumerWidget {
         title: const Text('利用権の記録を消しますか？'),
         content: const Text(
           'この端末に保存した利用権の記録を消します。\n\n'
-          '・ご購入そのものは消えません。ストアの購読は解約されません\n'
+          '・ご購入そのものは消えません。ストアでの自動更新も止まりません\n'
           '・「購入を復元する」で元に戻せます\n'
           '・消すと、買い直しのボタンが出るようになります\n\n'
           '復元しても直らないときにお使いください。',
@@ -316,7 +316,18 @@ class RelayEntitlementPurchaseSection extends ConsumerWidget {
       ),
     );
     if (ok != true) return;
-    await purchase.forgetEntitlement();
+    // ⚠ `context` は次の待ちの前に使い切る（ダイアログを閉じた直後なので
+    // 生きているかを見てから）。
+    if (!context.mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final cleared = await purchase.forgetEntitlement();
+    // 🔴 **消せなかった回は、そう伝える** (#1247)。以前は成功として扱い、
+    // 画面は消えたように見えるのに、再起動すると記録が戻っていた。
+    if (!cleared) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('利用権の記録を消せませんでした。時間をおいて再度お試しください。')),
+      );
+    }
     // ⚠ 消しただけでは画面が古い状態のままなので引き直す（`absent` へ落ちる）。
     await status.refresh();
   }

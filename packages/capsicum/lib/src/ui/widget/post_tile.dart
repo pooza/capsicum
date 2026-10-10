@@ -41,6 +41,7 @@ import 'post_touch_action_row.dart';
 import 'preview_card_widget.dart';
 import 'reaction_picker_sheet.dart';
 import 'report_comment_dialog.dart';
+import 'server_badge.dart';
 import 'user_avatar.dart';
 
 String _stripHtml(String html) => stripHtml(html);
@@ -495,7 +496,12 @@ class _PostTileState extends ConsumerState<PostTile> {
           ? colorScheme.primaryContainer.withValues(alpha: 0.3)
           : null,
       child: InkWell(
-        onTap: widget.tappable ? () => openPost(context, post) : null,
+        onTap: widget.tappable
+            ? () {
+                _markConversationRead(post);
+                openPost(context, post);
+              }
+            : null,
         onLongPress: () => _showActionMenu(context),
         // デスクトップでは右クリックも長押しと同じアクションメニューを開く。
         onSecondaryTap: () => _showActionMenu(context),
@@ -1262,6 +1268,10 @@ class _PostTileState extends ConsumerState<PostTile> {
             targetPost.scope == PostScope.unlisted) &&
         targetPost.url != null &&
         hasOtherAccounts(ref);
+    // DM の会話 (#1206)。DM 一覧で取得した投稿にだけ付く。
+    final conversation = adapter is ConversationSupport
+        ? (adapter as ConversationSupport).conversationOf(targetPost.id)
+        : null;
 
     showModalBottomSheet(
       context: context,
@@ -1470,6 +1480,16 @@ class _PostTileState extends ConsumerState<PostTile> {
                     onSelected: () =>
                         unawaited(_confirmReport(context, targetPost)),
                   ),
+                if (conversation != null)
+                  item(
+                    leading: const Icon(Icons.forum_outlined),
+                    title: const Text('会話を一覧から削除'),
+                    onSelected: () => _confirmDeleteConversation(
+                      context,
+                      targetPost,
+                      conversation,
+                    ),
+                  ),
                 if (isOwn && adapter is PinSupport) ...[
                   const Divider(),
                   item(
@@ -1609,6 +1629,78 @@ class _PostTileState extends ConsumerState<PostTile> {
     );
   }
 
+  /// DM を開いた。未読の会話なら、サーバーへ既読を返す (#1206)。
+  ///
+  /// ⚠⚠ **呼ぶのは利用者が DM を開いたときだけ。**一覧に出しただけで返すと、
+  /// WebUI の未読が黙って消える（#1045 と同じ型）。
+  void _markConversationRead(Post post) {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! ConversationSupport) return;
+    final conversations = adapter as ConversationSupport;
+    final conversation = conversations.conversationOf(post.id);
+    if (conversation == null || !conversation.unread) return;
+    // 画面遷移を待たせない。失敗しても次に開いたときに送り直す（手元の未読は
+    // 成功したときだけ倒れる）。
+    unawaited(
+      conversations.markConversationRead(conversation.id).catchError((
+        Object e,
+      ) {
+        debugLogException('Failed to mark conversation as read', e);
+      }),
+    );
+  }
+
+  void _confirmDeleteConversation(
+    BuildContext context,
+    Post targetPost,
+    ConversationRef conversation,
+  ) {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! ConversationSupport) return;
+    final conversations = adapter as ConversationSupport;
+    final messenger = ScaffoldMessenger.of(context);
+    // 理由は [_confirmDelete] の同名コメント (#990 / #1009)。
+    final timeline = readVisibleTimelines(ref);
+    final postLabel = ref.read(postLabelProvider);
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('会話を一覧から削除'),
+        // ⚠ **投稿が消えるように読ませない。**消えるのは自分の一覧の会話だけで、
+        // 相手側にも自分の投稿にも触らない。
+        // ⚠ 一覧の名前は、タブに出しているものと揃える（「非公開の返信」）。
+        content: Text(
+          'この会話を「${postScopeLabel(PostScope.direct, adapter)}」の一覧から消します。'
+          '$postLabelそのものは削除されず、相手の側にも残ります。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('キャンセル'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              _runVoidAction(messenger, () async {
+                await conversations.deleteConversation(conversation.id);
+                timeline.removePost(targetPost.id);
+                if (mounted) setState(() => _deletedPostId = targetPost.id);
+                if (context.mounted) _popIfInThread(context);
+              }, '会話を一覧から削除しました');
+            },
+            child: Text(
+              '削除',
+              style: TextStyle(
+                color: Theme.of(dialogContext).colorScheme.error,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _confirmReport(BuildContext context, Post targetPost) async {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! ReportSupport) return;
@@ -1622,7 +1714,7 @@ class _PostTileState extends ConsumerState<PostTile> {
     // Mastodon の `POST /api/v1/reports` は account_id が必須・status_ids が
     // 任意、Misskey の `report-abuse` に至っては投稿を渡す口が無い。
     // 「投稿だけが通報された」と読める文面にしない。
-    final comment = await showReportCommentDialog(
+    final input = await showReportCommentDialog(
       context,
       message:
           'この$postLabelを添えて '
@@ -1630,15 +1722,19 @@ class _PostTileState extends ConsumerState<PostTile> {
           // 「@alice」としか出ず、同名の別サーバーのユーザーと区別が付かない
           // まま通報させることになる。組み立ての正本は [userAcct]。
           '@${userAcct(targetPost.author)} をサーバー管理者に通報しますか？',
+      forwardHost: (adapter as ReportSupport).reportForwardHost(
+        targetPost.author,
+      ),
     );
-    if (comment == null) return;
+    if (input == null) return;
 
     await _runVoidAction(
       messenger,
       () => (adapter as ReportSupport).reportPost(
         targetPost.id,
         targetPost.author.id,
-        comment: comment.isNotEmpty ? comment : null,
+        comment: input.comment.isNotEmpty ? input.comment : null,
+        forward: input.forward,
       ),
       '通報しました',
     );
@@ -2019,7 +2115,6 @@ class _PostTileState extends ConsumerState<PostTile> {
     final themeColors = ref.watch(hostThemeColorProvider);
     final color = resolveHostColor(themeColors, host);
     final cached = ServerMetadataCache.instance.getCached(host);
-    final label = cached?.name ?? host;
 
     if (cached == null) {
       ServerMetadataCache.instance.fetch(host).then((_) {
@@ -2035,25 +2130,11 @@ class _PostTileState extends ConsumerState<PostTile> {
       padding: const EdgeInsets.only(top: 2),
       child: Row(
         children: [
+          // ⚠ 箱と文字色は [ServerBadge] に任せる (#1238)。以前は同じ箱をここへ
+          // 写していて、文字色の直し (#1240) を 2 か所へ入れる必要があった。
+          // サーバー名は [ServerBadge] が同じキャッシュから読む。
           Flexible(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-              decoration: BoxDecoration(
-                color: color,
-                borderRadius: BorderRadius.circular(3),
-              ),
-              child: Text(
-                label,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  fontSize: 11,
-                  // ⚠ 白に固定しない（#1240）。
-                  color: foregroundOnHostColor(color),
-                  fontWeight: FontWeight.w500,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
+            child: ServerBadge(host: host, color: color),
           ),
         ],
       ),

@@ -175,21 +175,23 @@ class SecureStorageGate {
   );
 
   /// 上限で打ち切ったときの [TimeoutException] のメッセージ。
+  ///
+  /// ⚠ 形は [SecureStorageHealth.gateTimeoutMessage] が正本（#1166）。
   static String timeoutMessage(String operation) =>
-      'secure storage $operation timed out';
+      SecureStorageHealth.gateTimeoutMessage(operation);
 
   /// [error] が**この関所が投げた**待ちの打ち切りか (#1141)。
   ///
   /// 触る前の疎通確認で諦めた（[SecureStorageHealth.probeSkipMessage]）場合と、
   /// 触って上限に達した場合の 2 つ。⚠ **`TimeoutException` を丸ごと拾わない**
   /// —— 別経路の timeout（通信など）をキーリングのせいにしないため、メッセージの
-  /// 形で見分ける。形はここ（投げる側）だけが知っている。
+  /// 形で見分ける。形は [SecureStorageHealth.gateTimeoutOperation] が知っている。
   static bool isGateTimeout(Object error) {
     if (error is! TimeoutException) return false;
     final message = error.message;
     if (message == null) return false;
     return message == SecureStorageHealth.probeSkipMessage ||
-        RegExp(r'^secure storage \w+ timed out$').hasMatch(message);
+        SecureStorageHealth.gateTimeoutOperation(message) != null;
   }
 
   /// 触る前に聞き、触ったら上限を掛ける。

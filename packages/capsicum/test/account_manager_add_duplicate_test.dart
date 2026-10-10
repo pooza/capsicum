@@ -87,4 +87,40 @@ void main() {
       alice,
     );
   });
+
+  // #1237: プリセットのアカウントを後から足しても、先に居た外部サーバーの
+  // アカウントは次に起動するまで登録し直されなかった（通知が届かない）。
+  group('足した直後に登録を試みる相手', () {
+    test('ふだんは足したアカウントだけ', () async {
+      final a = await accountOf(alice);
+      final b = await accountOf(bob);
+      for (final (had, has) in [(false, false), (true, true)]) {
+        expect(
+          accountsToRegisterAfterAdd(
+            added: b,
+            all: [b, a],
+            hadPreset: had,
+            hasPreset: has,
+          ),
+          [b],
+          reason: 'hadPreset=$had hasPreset=$has',
+        );
+      }
+    });
+
+    test('⚠⚠ この追加でプリセットが初めて居るようになった回は、全員', () async {
+      final a = await accountOf(alice);
+      final b = await accountOf(bob);
+      expect(
+        accountsToRegisterAfterAdd(
+          added: b,
+          all: [b, a],
+          hadPreset: false,
+          hasPreset: true,
+        ),
+        [b, a],
+        reason: '先に居た外部サーバーのアカウントも、ここで対象になる',
+      );
+    });
+  });
 }

@@ -2,9 +2,9 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:capsicum_core/capsicum_core.dart';
-import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
+import 'reconnecting_socket.dart';
 import 'streaming_backoff.dart';
 
 /// notification / announcement を配信する長寿命 WebSocket 接続の共通基盤 (#676)。
@@ -31,21 +31,13 @@ abstract class NotificationStreamingBase {
   /// `MastodonStreaming.channelFactory` (#1090) と同じ形。
   final WebSocketChannel Function(Uri uri)? channelFactory;
 
-  WebSocketChannel? _channel;
-  StreamController<Notification>? _controller;
-  Timer? _reconnectTimer;
-  bool _disposed = false;
-  bool _reconnectExhaustedNotified = false;
-  int _reconnectAttempts = 0;
+  /// 接続の節目（`connected` / `subscribed` / `disconnected`）を知らせる (#1252)。
+  /// 語は [ReconnectingSocket] が持つ。
+  final void Function(String event)? onConnectionEvent;
 
-  /// 再接続を予約済みの接続 (#1249)。1 回の失敗は `stream` の onError / onDone と
-  /// `ready` の catchError の **3 経路**から届くので、同じ接続について予約するのは
-  /// 1 回だけにする。⚠ これが無いと試行回数を 3 つずつ消費し、待ち時間が 1 回の
-  /// 失敗ごとに 8 倍になる（実測: 0 秒 → 20 秒 → 180 秒）。
-  WebSocketChannel? _reconnectScheduledFor;
+  StreamController<Notification>? _controller;
+  ReconnectingSocket? _socket;
   final Random _random = Random();
-  // 上限 = exhausted を一度だけ通知する閾値（**give-up はしない**, #1249）。
-  static const _maxReconnectAttempts = 10;
   static const _baseReconnectDelay = Duration(seconds: 5);
   // ⚠ 上限は「回線が戻ってから通知が戻るまでに待たせる最長」になる。以前は
   // 300 秒だったが、スリープ復帰や Wi-Fi の切り替えのたびに最長 5 分通知が
@@ -62,6 +54,7 @@ abstract class NotificationStreamingBase {
     this.onParseError,
     this.onStreamError,
     this.onReconnectExhausted,
+    this.onConnectionEvent,
     this.channelFactory,
   });
 
@@ -81,53 +74,29 @@ abstract class NotificationStreamingBase {
   Stream<Notification> connect() {
     _controller?.close();
     _controller = StreamController<Notification>.broadcast(onCancel: dispose);
-    _connect();
+    // ⚠ つなぐ・切れたら予約する・数える、は [ReconnectingSocket] が持つ (#1252)。
+    _socket?.dispose();
+    _socket = ReconnectingSocket(
+      buildUri: buildStreamUri,
+      onMessage: _onMessage,
+      subscribeMessage: buildSubscribeMessage,
+      delayFor: reconnectDelayFor,
+      onStreamError: onStreamError,
+      onReconnectExhausted: onReconnectExhausted,
+      onConnectionEvent: onConnectionEvent,
+      channelFactory: channelFactory,
+      pingInterval: _pingInterval,
+      connectTimeout: connectTimeout,
+      stableAfter: stableConnectionAfter,
+    )..connect();
     return _controller!.stream;
   }
 
-  void _connect() {
-    if (_disposed) return;
-    _channel?.sink.close();
+  /// 握手を待つ上限 (#1252)。⚠ テストが縮める。
+  Duration get connectTimeout => const Duration(seconds: 30);
 
-    final uri = buildStreamUri();
-    final factory = channelFactory;
-    final channel = factory != null
-        ? factory(uri)
-        : IOWebSocketChannel.connect(uri, pingInterval: _pingInterval);
-    _channel = channel;
-    // listener / catchError は前世代 channel の close でも発火しうるので、
-    // クロージャ捕捉した channel が現役かで判定し、旧世代の onDone / onError で
-    // 余計な reconnect Timer が積まれるのを防ぐ (#548)。
-    channel.stream.listen(
-      _onMessage,
-      onError: (Object error, StackTrace stack) {
-        if (_channel != channel) return;
-        _notifyStreamError(error, stack);
-        _scheduleReconnect(channel);
-      },
-      // onDone でバックオフをリセットしない。接続直後に即 close する不調な
-      // サーバーに対しリセットすると 5s 間隔のタイト再接続ループに陥り、
-      // exponential backoff も exhausted 通知も効かなくなる（リセットは接続
-      // 成功時の ready.then のみ）。
-      onDone: () {
-        if (_channel == channel) _scheduleReconnect(channel);
-      },
-    );
-
-    channel.ready
-        .then((_) {
-          if (_disposed || _channel != channel) return;
-          _reconnectAttempts = 0;
-          _reconnectExhaustedNotified = false;
-          final subscribe = buildSubscribeMessage();
-          if (subscribe != null) channel.sink.add(subscribe);
-        })
-        .catchError((Object error, StackTrace stack) {
-          if (_channel != channel) return;
-          _notifyStreamError(error, stack);
-          _scheduleReconnect(channel);
-        });
-  }
+  /// これだけつながり続けたら、失敗を数え直す (#1252)。⚠ テストが縮める。
+  Duration get stableConnectionAfter => const Duration(seconds: 30);
 
   /// [attempt] 回目（0 始まり）の再接続までの待ち時間。
   ///
@@ -141,14 +110,6 @@ abstract class NotificationStreamingBase {
       random: _random,
     ),
   );
-
-  void _notifyStreamError(Object error, StackTrace stack) {
-    try {
-      onStreamError?.call(error, stack);
-    } catch (_) {
-      // 観測経路の失敗で本筋を止めない。
-    }
-  }
 
   void _onMessage(dynamic message) {
     if (message is! String) return;
@@ -167,39 +128,9 @@ abstract class NotificationStreamingBase {
     }
   }
 
-  /// [failed] が切れた / つながらなかったので、次の接続を予約する。
-  void _scheduleReconnect(WebSocketChannel failed) {
-    if (_disposed) return;
-    // 同じ接続の失敗は 1 回だけ数える（[_reconnectScheduledFor] の説明）。
-    if (identical(_reconnectScheduledFor, failed)) return;
-    _reconnectScheduledFor = failed;
-    // 上限に達したら exhausted を一度だけ通知する (#552)。⚠⚠ **give-up はしない**
-    // (#1249)。以前はここで return してタイマーを張らなかったため、圏外が続くと
-    // **回線が戻ってもアプリを起動し直すまで通知が二度と来なかった**（持ち歩いて
-    // スリープと Wi-Fi の切り替えを挟むだけで起きる）。この接続は常駐する
-    // デスクトップ通知の唯一の入口なので、最大間隔で試み続ける。timeline は
-    // #784 で同じ方針に直してある。
-    if (_reconnectAttempts >= _maxReconnectAttempts &&
-        !_reconnectExhaustedNotified) {
-      _reconnectExhaustedNotified = true;
-      try {
-        onReconnectExhausted?.call();
-      } catch (_) {
-        // 観測経路の失敗で本筋を止めない。
-      }
-    }
-    _reconnectTimer?.cancel();
-    final delay = reconnectDelayFor(_reconnectAttempts);
-    _reconnectAttempts++;
-    _reconnectTimer = Timer(delay, () {
-      if (!_disposed) _connect();
-    });
-  }
-
   void dispose() {
-    _disposed = true;
-    _reconnectTimer?.cancel();
-    _channel?.sink.close();
+    _socket?.dispose();
+    _socket = null;
     _controller?.close();
     _controller = null;
   }
