@@ -151,15 +151,19 @@ class OAuthKeepAliveSession {
   /// 何本目の認可待ちか。[OAuthKeepAlive.stop] の世代判定に使う。
   final int token;
 
-  /// keep-alive を**必要とする OS か**（≒ Android 12 以上か）。
+  /// keep-alive の起動を **OS が受け付けたか** (#1163)。
   ///
-  /// Android 12 未満は freezer が無いので `false` になるが、**失敗ではない**。
+  /// | 値 | 意味 |
+  /// | --- | --- |
+  /// | `true` | Android 12 以上で、`startForegroundService` が受け付けられた |
+  /// | `false` | Android 12 未満（freezer が無いので上げない・**失敗ではない**）、または OS に断られた / 呼び出しが失敗した（こちらは Sentry に残る） |
   ///
-  /// ⚠⚠ **「実際に上がったか」ではない。**Kotlin 側は
-  /// `OAuthKeepAliveService.start()`（戻り値なし）を呼んだあと
-  /// `shouldKeepAlive()`＝`SDK_INT >= 31` を返しているだけなので、
-  /// `startForegroundService` が受理された後に service が `onStartCommand` へ
-  /// 到達しないまま終わっても `true` になる。**#1108 / #1111 の切り分けで
-  /// 一次情報として使わないこと。**実起動の成否を返す改修は別途。
+  /// ⚠ **「サービスが立ち上がりきったか」までは言っていない。**受け付けは予約で
+  /// あって、`onStartCommand` へ届くのはそのあと。とはいえ、受け付けられた予約が
+  /// 届かないまま終わるのは OS がアプリを落とす場合だけなので、切り分けの
+  /// 一次情報としては足りる。
+  ///
+  /// ⚠ 以前は予約の成否を見ずに「Android 12 以上か」だけを返していたので、
+  /// バックグラウンドからの起動として断られた回も `true` だった。
   final bool active;
 }
