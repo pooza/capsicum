@@ -109,6 +109,8 @@ class DesktopNotificationDispatcher {
             onStreamError: (e, st) =>
                 _onStreamConnectError(e, st, account.key.host),
             onReconnectExhausted: _onStreamReconnectExhausted,
+            onConnectionEvent: (event) =>
+                _onStreamConnectionEvent(event, account.key.host),
           )
           .listen(
             (n) {
@@ -287,6 +289,25 @@ class DesktopNotificationDispatcher {
       error: e,
       stackTrace: st,
       host: host,
+    );
+  }
+
+  /// 通知用の接続の節目を breadcrumb に残す (#1252)。
+  ///
+  /// ⚠⚠ **以前は失敗したときにしか記録が出なかった。**しかも失敗の記録は圏外の
+  /// 最中に送るので届かず、release ビルドの外から「この接続は生きているのか」を
+  /// 確かめる手段が無かった（#1249 の切り分けに 1 時間以上かかった）。
+  /// ⚠ **イベントとしては送らない**（件数が接続の回数ぶん出る）。次に何かの
+  /// Sentry イベントが出たときに、直前の接続の様子として一緒に読める。
+  /// ⚠ アカウントは載せない。サーバーの host だけ（ほかの記録と同じ線）。
+  void _onStreamConnectionEvent(String event, String host) {
+    Sentry.addBreadcrumb(
+      Breadcrumb(
+        category: 'push.desktop.stream',
+        level: SentryLevel.info,
+        message: event,
+        data: {'host': host},
+      ),
     );
   }
 

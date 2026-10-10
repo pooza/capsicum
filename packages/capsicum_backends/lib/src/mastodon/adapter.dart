@@ -1713,6 +1713,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     void Function(Object error, StackTrace stack)? onParseError,
     void Function(Object error, StackTrace stack)? onStreamError,
     void Function()? onReconnectExhausted,
+    void Function(String event)? onConnectionEvent,
   }) {
     _notificationStreaming?.dispose();
     final token = client.accessToken;
@@ -1724,6 +1725,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       onParseError: onParseError,
       onStreamError: onStreamError,
       onReconnectExhausted: onReconnectExhausted,
+      onConnectionEvent: onConnectionEvent,
     );
     return _notificationStreaming!.connect();
   }
