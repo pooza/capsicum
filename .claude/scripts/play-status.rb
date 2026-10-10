@@ -60,6 +60,20 @@ end
 edit_id = call.call(Net::HTTP::Post, 'edits')['id']
 abort '⚠ edit を開けなかった' unless edit_id
 
+# テスターの配り先（Google グループ）とリリースの生の設定を出す。
+# ⚠ **メールアドレスのリストは API に出ない**（Play Console の画面でしか見られない）。
+if ARGV.first == 'testers'
+  %w[alpha internal].each do |track|
+    testers = call.call(Net::HTTP::Get, "edits/#{edit_id}/testers/#{track}")
+    puts "#{track}: googleGroups=#{testers['googleGroups'].inspect} #{testers['error']&.dig('message')}"
+    body = call.call(Net::HTTP::Get, "edits/#{edit_id}/tracks/#{track}")
+    (body['releases'] || []).each do |r|
+      puts "#{track}: #{r.reject { |k, _| k == 'releaseNotes' }.to_json}"
+    end
+  end
+  exit
+end
+
 (ARGV.empty? ? %w[production alpha internal] : ARGV).each do |track|
   body = call.call(Net::HTTP::Get, "edits/#{edit_id}/tracks/#{track}")
   (body['releases'] || []).each do |r|
