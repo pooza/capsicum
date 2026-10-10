@@ -1599,7 +1599,13 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
         Expanded(
           child: Slider(
             key: overlaySizeSliderKey,
-            value: item.sizeFrac,
+            // ⚠ **範囲へ収めて見せる** (#1132)。トリミングで基準の高さが変わると、
+            // 大きさの比率がスライダの上限を超えうる（範囲外の値を渡すと落ちる）。
+            // 記述の値は触らない —— 動かすまでは切る前と同じ見え方のまま。
+            value: item.sizeFrac.clamp(kOverlayMinSizeFrac, switch (item) {
+              _TextOverlayItem() => kOverlayMaxTextSizeFrac,
+              _ImageBackedOverlayItem() => item.maxSizeFrac,
+            }),
             // 画像系（スタンプ・端末の画像）は絵として見せるので、文字より大きく
             // 引き伸ばせる。⚠ **上限はレイヤ自身に持たせてある** (#1178) ——
             // スタンプと端末の画像は同じ 0.8 でも根拠が別なので、片方を動かすとき

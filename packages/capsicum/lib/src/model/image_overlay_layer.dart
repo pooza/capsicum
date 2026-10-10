@@ -57,6 +57,22 @@ sealed class OverlayLayerSpec {
   /// `image_overlay_layer_json_guard_test.dart` が機械で照合している。
   Map<String, Object?> toJson();
 
+  /// 置き場所（位置・大きさ・角度）だけを差し替えた写し (#1132)。
+  ///
+  /// トリミング / 回転で基準の画像が変わったとき、見え方を保ったまま座標を
+  /// 移すのに使う（`remapLayersForCrop`）。
+  ///
+  /// ⚠⚠ **項目を足したら、3 つのサブクラスの実装にも足す。**ここは記述を
+  /// 作り直すので、足し忘れると**トリミングしただけでその項目が既定値へ戻る**。
+  /// `image_crop_geometry_test.dart` が、JSON に出る項目が置き場所の 4 つ以外
+  /// 変わらないことを見ている。
+  OverlayLayerSpec withPlacement({
+    required double nx,
+    required double ny,
+    required double sizeFrac,
+    required double angle,
+  });
+
   /// 共通項目。サブクラスの [toJson] が自分のぶんを足して返す。
   Map<String, Object?> baseJson(String type) => <String, Object?>{
     'type': type,
@@ -186,6 +202,25 @@ class TextOverlayLayerSpec extends OverlayLayerSpec {
     'color': color.toARGB32(),
     'align': align.name,
   };
+
+  @override
+  TextOverlayLayerSpec withPlacement({
+    required double nx,
+    required double ny,
+    required double sizeFrac,
+    required double angle,
+  }) => TextOverlayLayerSpec(
+    text: text,
+    color: color,
+    align: align,
+    nx: nx,
+    ny: ny,
+    sizeFrac: sizeFrac,
+    angle: angle,
+    opacity: opacity,
+    visible: visible,
+    locked: locked,
+  );
 }
 
 /// 文字レイヤで選べる行揃え (#1183)。並びは切り替えボタンが回る順。
@@ -235,6 +270,24 @@ class StickerOverlayLayerSpec extends OverlayLayerSpec {
     'shortcode': shortcode,
     'url': url,
   };
+
+  @override
+  StickerOverlayLayerSpec withPlacement({
+    required double nx,
+    required double ny,
+    required double sizeFrac,
+    required double angle,
+  }) => StickerOverlayLayerSpec(
+    shortcode: shortcode,
+    url: url,
+    nx: nx,
+    ny: ny,
+    sizeFrac: sizeFrac,
+    angle: angle,
+    opacity: opacity,
+    visible: visible,
+    locked: locked,
+  );
 }
 
 /// 端末内の画像を素材にしたレイヤ (#1178)。
@@ -280,6 +333,24 @@ class PictureOverlayLayerSpec extends OverlayLayerSpec {
     'path': path,
     'name': name,
   };
+
+  @override
+  PictureOverlayLayerSpec withPlacement({
+    required double nx,
+    required double ny,
+    required double sizeFrac,
+    required double angle,
+  }) => PictureOverlayLayerSpec(
+    path: path,
+    name: name,
+    nx: nx,
+    ny: ny,
+    sizeFrac: sizeFrac,
+    angle: angle,
+    opacity: opacity,
+    visible: visible,
+    locked: locked,
+  );
 }
 
 /// 編集画面の戻り値 (#1129)。

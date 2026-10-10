@@ -45,6 +45,7 @@ import '../util/compose_template_display.dart';
 import '../util/draft_display.dart';
 import '../util/drive_description_sync.dart';
 import '../util/hashtag_body.dart';
+import '../util/image_crop_geometry.dart';
 import '../util/livecure_snackbar.dart';
 import '../util/post_scope_display.dart';
 import '../util/program_schedule_display.dart';
@@ -172,8 +173,9 @@ class _MediaEntry {
   /// 中身を別の画像へ差し替える（トリミング等）。
   ///
   /// ⚠⚠ **レイヤの控えを必ず捨てる。**差し替え後の画像に前のレイヤを重ねると
-  /// **同じ文字やスタンプが二重に乗る**。トリミングは焼き込み済みの画像に掛かる
-  /// ので、レイヤを保ったまま切る経路は今のところ無い（#884-G で決着させる）。
+  /// **同じ文字やスタンプが二重に乗る**。⚠ トリミングでレイヤを保つ経路は
+  /// [applyOverlay] のほう（焼き込み前の画像とレイヤの座標も一緒に切る・#1132）。
+  /// ここへ来るのは、それができなかった回とレイヤの無い画像だけ。
   void replaceFile(XFile next) {
     file = next;
     overlaySource = null;
@@ -2202,15 +2204,15 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     }
     if (!mounted) return;
 
-    final cropped = await Navigator.of(context).push<Uint8List>(
+    final result = await Navigator.of(context).push<ImageCropResult>(
       MaterialPageRoute(
         builder: (_) => ImageCropScreen(imageData: bytes),
         fullscreenDialog: true,
       ),
     );
-    if (cropped == null || !mounted) return;
+    if (result == null || !mounted) return;
 
-    final croppedFile = await _writeTempPng(original, cropped, 'crop');
+    final croppedFile = await _writeTempPng(original, result.png, 'crop');
     if (croppedFile == null) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -2220,14 +2222,71 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       return;
     }
 
+    // ⚠⚠ **レイヤを載せた画像は、レイヤを保ったまま切る** (#1132)。焼き込み前の
+    // 画像にも同じ切り方を当て、レイヤの座標を切ったあとの画像へ移す。
+    // ⚠ できなかった回（切り方が分からない・元画像を読めない）は、以前と同じく
+    // 平らな画像にしてレイヤの控えを捨てる。**二重に乗るよりは失うほうがまし。**
+    final remapped = await _remapOverlayForCrop(entry, result.geometry);
+
     if (!mounted) return;
     setState(() {
       // 差し替え後も同じ添付スロットを保つため index を再取得せず置換する。
-      // ⚠ レイヤの控えはここで捨てる（`replaceFile` の doc を参照・#1129）。
-      entry.replaceFile(croppedFile);
+      if (remapped != null) {
+        entry.applyOverlay(
+          source: remapped.source,
+          baked: croppedFile,
+          layers: remapped.layers,
+        );
+      } else {
+        // ⚠ レイヤの控えはここで捨てる（`replaceFile` の doc を参照・#1129）。
+        entry.replaceFile(croppedFile);
+      }
     });
     // 差し替えた実体を下書きへ反映する (#1130)。
     _scheduleDraftSave();
+  }
+
+  /// [entry] のレイヤと焼き込み前の画像へ、[geometry] と同じ切り方を当てる (#1132)。
+  ///
+  /// レイヤを載せていない・切り方が分からない・焼き込み前の画像を扱えなかった回は
+  /// null（呼び出し側はレイヤの控えを捨てる）。
+  Future<({XFile source, List<OverlayLayerSpec> layers})?> _remapOverlayForCrop(
+    _MediaEntry entry,
+    ImageCropGeometry? geometry,
+  ) async {
+    final source = entry.overlaySource;
+    if (source == null || entry.overlayLayers.isEmpty || geometry == null) {
+      return null;
+    }
+    try {
+      final cropped = await applyCropGeometry(
+        await source.readAsBytes(),
+        geometry,
+      );
+      final file = await _writeTempPng(source, cropped, 'crop-source');
+      if (file == null) return null;
+      return (
+        source: file,
+        layers: remapLayersForCrop(entry.overlayLayers, geometry),
+      );
+    } catch (e, st) {
+      // ⚠ 焼き込み前の画像は一時領域にあり、OS に消されていることがある。
+      // トリミングそのものは成立しているので、記録だけして平らな画像で続ける。
+      unawaited(
+        Sentry.captureException(
+          scrubException(e),
+          stackTrace: st,
+          withScope: (scope) {
+            scope.level = SentryLevel.warning;
+            scope.fingerprint = [
+              'compose.crop.overlay_remap',
+              e.runtimeType.toString(),
+            ];
+          },
+        ),
+      );
+      return null;
+    }
   }
 
   /// 添付済みのローカル画像に文字 / Unicode 絵文字 (#576) とカスタム絵文字の
