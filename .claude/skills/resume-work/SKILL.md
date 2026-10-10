@@ -16,7 +16,7 @@ description: 作業中にセッションが切れて「続きをやって」と�
 リモート操作用の Mac で `claude rc`（= `claude remote-control`）を走らせている場合、ターミナルを閉じるとプロセスごと落ち、claude.ai/code のセッション一覧からも消える。会話履歴は `~/.claude/projects/<パスをエスケープしたディレクトリ名>/<セッション UUID>.jsonl` に残っているので、**会話ごと戻せる**。
 
 ```sh
-cd /Volumes/extdata/repos/capsicum
+cd ~/repos/capsicum
 claude rc -c                       # このディレクトリの直近セッションを再開
 claude rc --session-id <UUID>      # 特定のセッションを再開（UUID は上記 .jsonl のファイル名）
 ```
