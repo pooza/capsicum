@@ -170,9 +170,18 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
   /// 1 ページ読んだ結果を、次の offset と終端の判定へ反映する。
   ///
   /// ⚠ **サーバーは総数を返さない**ので、1 ページに満たなければ終端とみなす。
+  ///
+  /// ⚠⚠ **投稿だけは、空のページが返るまで終端にしない**（リリース前レビュー・
+  /// 2026-10-10）。Mastodon は 1 ページぶん取ったあとに、ブロック / ミュート等に
+  /// 当たる投稿を落として返すので、**続きがあっても 1 ページに満たないことがある**
+  /// （19 件で返ると、続きを読む口が消えていた）。⚠ 代わりに、結果が少ない回は
+  /// 口が 1 回残る（押すと空が返って消える）。
   void _notePage(SearchKind kind, int fetched, SearchPagingSupport paging) {
     _offsets[kind] = (_offsets[kind] ?? 0) + fetched;
-    if (fetched < paging.searchPageSize) _exhausted.add(kind);
+    final atEnd = kind == SearchKind.posts
+        ? fetched == 0
+        : fetched < paging.searchPageSize;
+    if (atEnd) _exhausted.add(kind);
   }
 
   bool _hasMore(SearchKind kind) =>

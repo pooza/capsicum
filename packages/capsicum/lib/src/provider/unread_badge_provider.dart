@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../util/exception_scrub.dart';
 import 'account_manager_provider.dart';
 
 /// Unread badge counts for a single account.
@@ -29,8 +30,11 @@ Future<UnreadBadge> fetchUnreadBadge(
     try {
       notifications = await (adapter as NotificationUnreadCountSupport)
           .getUnreadNotificationCount();
-    } catch (_) {
+    } catch (e) {
       // Non-critical — skip on failure.
+      // ⚠ ただし痕跡は残す（リリース前レビュー・2026-10-10）。握りつぶすと
+      // 「バッジが出ない」と「未読 0」を、あとから区別できない。
+      debugLogException('unread notification count fetch failed', e);
     }
   }
 

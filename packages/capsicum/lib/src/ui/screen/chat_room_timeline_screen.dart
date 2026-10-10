@@ -330,7 +330,7 @@ class _ChatRoomTimelineScreenState
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('ルームのライブ更新が停止しました。下に引いて再接続してください'),
+              content: Text('ルームのライブ更新が不安定です。再接続を試みています'),
               duration: Duration(seconds: 5),
             ),
           );

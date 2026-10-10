@@ -5,6 +5,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../service/sentry_op_failure.dart';
 import '../../util/exception_scrub.dart';
 import '../util/op_error.dart';
+import '../util/scroll_thresholds.dart';
 import 'retry_error_view.dart';
 
 /// 1 ページぶんの取得。`nextCursor` が null なら打ち止め。
@@ -120,8 +121,9 @@ class _CursorPagedListViewState<T>
   ///
   /// ⚠ **画面ごとに変えない (#1083-A)。**`followed_hashtags_screen` だけ 400
   /// だったが、理由の記載が無かった。**揺れは意図ではなく写し間違い**として
-  /// 多数派の 600 に揃えた。変えるなら**ここを 1 箇所直し、理由を書く**。
-  static const _prefetchThreshold = 600.0;
+  /// 多数派の 600 に揃えた。⚠ 値の正本は [kLoadMoreScrollThreshold]
+  /// （`scroll_thresholds.dart`）。変えるなら**そちらを 1 箇所直し、理由を書く**。
+  static const _prefetchThreshold = kLoadMoreScrollThreshold;
 
   final _scrollController = ScrollController();
   List<T> _items = [];

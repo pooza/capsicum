@@ -92,13 +92,15 @@ class _ChatThreadListScreenState extends ConsumerState<ChatThreadListScreen>
     );
 
     // chat (DM) streaming の再接続上限到達を SnackBar 表示 (#623)。
+    // ⚠ **「停止しました」と言わない。**再接続を `ReconnectingSocket` へ寄せて
+    // からは、上限に達したあとも間隔を空けて試み続ける（timeline の #784 と同じ）。
     // timeline 側 (#602) と同型。flag は autoDispose で再購読時にクリアされる。
     ref.listen(chatStreamReconnectExhaustedProvider, (prev, next) {
       if (next && prev != true) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('メッセージのライブ更新が停止しました。下に引いて再接続してください'),
+              content: Text('メッセージのライブ更新が不安定です。再接続を試みています'),
               duration: Duration(seconds: 5),
             ),
           );

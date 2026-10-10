@@ -87,9 +87,14 @@ void reportFanOutFailures({
   void Function(int accounts)? sendNetworkDown,
 }) {
   if (failures.isEmpty) return;
+  // ⚠ **数えるのはアカウントではなくホスト**（リリース前レビュー・2026-10-10）。
+  // 同じサーバーに 2 アカウントだけ持つ人では、そのサーバーの障害が「全員が
+  // 落ちた ＝ 回線側」に見え、ホスト名の無い warning 1 件に畳まれていた。
+  // ストリーム側（`looksLikeNetworkDown`）と同じ数え方に揃える。
   final networkDown =
       totalAccounts >= 2 &&
       failures.length == totalAccounts &&
+      failures.map((f) => f.account.key.host).toSet().length >= 2 &&
       failures.every((f) => isConnectionLevelFailure(f.error));
   if (networkDown) {
     if (sendNetworkDown != null) {

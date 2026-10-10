@@ -1669,8 +1669,9 @@ class _PostTileState extends ConsumerState<PostTile> {
         title: const Text('会話を一覧から削除'),
         // ⚠ **投稿が消えるように読ませない。**消えるのは自分の一覧の会話だけで、
         // 相手側にも自分の投稿にも触らない。
+        // ⚠ 一覧の名前は、タブに出しているものと揃える（「非公開の返信」）。
         content: Text(
-          'この会話をダイレクトメッセージの一覧から消します。'
+          'この会話を「${postScopeLabel(PostScope.direct, adapter)}」の一覧から消します。'
           '$postLabelそのものは削除されず、相手の側にも残ります。',
         ),
         actions: [

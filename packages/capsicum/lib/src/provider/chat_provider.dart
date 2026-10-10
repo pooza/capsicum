@@ -81,6 +81,9 @@ final chatMessageStreamProvider = Provider.autoDispose<Stream<ChatMessage>?>((
         category: 'chat.stream.connect',
         error: e,
         stackTrace: st,
+        // ⚠ タイムライン側と同じく、どのサーバーかを渡す。渡さないと「2 ホスト
+        // 以上が同時に落ちた ＝ 回線側」の判定に、チャットの接続が数えられない。
+        host: adapter is DecentralizedBackendAdapter ? adapter.host : null,
       );
     },
     // 再接続上限 (10 回) に到達した時点で 1 回だけ通知される。Sentry に
@@ -256,6 +259,7 @@ final chatRoomMessageStreamProvider = Provider.autoDispose
             category: 'chat.room.stream.connect',
             error: e,
             stackTrace: st,
+            host: adapter is DecentralizedBackendAdapter ? adapter.host : null,
           );
         },
         onReconnectExhausted: () {
