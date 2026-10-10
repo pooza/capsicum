@@ -27,10 +27,19 @@ class ProviderScopeCarrier extends InheritedTheme {
 
   final ProviderContainer container;
 
+  /// ⚠⚠ **シート / ダイアログが開いている間も、コンテナを[借りている]
+  /// [ProviderScopeLeases]ことにする**（リリース前レビュー・2026-10-10）。
+  /// 数えていたのは push 先の画面だけで、ここは数えていなかった。別アカウント B の
+  /// カラムからシートを開いたまま B 宛の通知をタップすると、B のコンテナが
+  /// 破棄され、開いたままのシートが次の `ref.read` で StateError を投げる
+  /// （#1235 と同じ筋）。
   @override
-  Widget wrap(BuildContext context, Widget child) => UncontrolledProviderScope(
+  Widget wrap(BuildContext context, Widget child) => _ProviderScopeLease(
     container: container,
-    child: ProviderScopeCarrier(container: container, child: child),
+    child: UncontrolledProviderScope(
+      container: container,
+      child: ProviderScopeCarrier(container: container, child: child),
+    ),
   );
 
   @override

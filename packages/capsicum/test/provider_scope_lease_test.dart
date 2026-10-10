@@ -50,6 +50,50 @@ void main() {
     expect(isDisposed(container), isTrue, reason: '借り手が居なくなったのに残り続ける');
   });
 
+  testWidgets('⚠⚠ カラムから開いたシートが開いている間も、破棄されない', (tester) async {
+    // v2.1 のリリース前レビュー（2026-10-10）。数えていたのは push 先の画面だけで、
+    // シート / ダイアログは数えていなかった。
+    final container = ProviderContainer();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: carryProviderScope(
+            container,
+            Builder(
+              builder: (context) => TextButton(
+                onPressed: () => showModalBottomSheet<void>(
+                  context: context,
+                  builder: (_) => Consumer(
+                    builder: (_, ref, _) => Text('sheet ${ref.watch(_value)}'),
+                  ),
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(ProviderScopeLeases.isLeased(container), isFalse, reason: '前提');
+
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    expect(find.text('sheet 42'), findsOneWidget);
+    expect(ProviderScopeLeases.isLeased(container), isTrue);
+
+    // シートを開いたまま、デッキ画面がこのコンテナを手放した。
+    ProviderScopeLeases.disposeWhenReleased(container);
+    await tester.pump();
+    expect(isDisposed(container), isFalse, reason: '開いたままのシートが次の read で落ちる');
+
+    // シートを閉じたら片づく。
+    Navigator.of(tester.element(find.text('sheet 42'))).pop();
+    await tester.pumpAndSettle();
+    await tester.pump();
+    expect(ProviderScopeLeases.isLeased(container), isFalse);
+    expect(isDisposed(container), isTrue);
+  });
+
   testWidgets('貸していなければ、手放した時点で破棄する（従来どおり）', (tester) async {
     final container = ProviderContainer();
 

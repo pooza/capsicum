@@ -140,9 +140,14 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
     deckMenuActionsProvider.notifier,
   );
 
+  /// いま載っているデッキ画面の数。⚠ **開き直した直後は 2 になる**（新しい画面の
+  /// initState が、古い画面の dispose より先に走る）。
+  static int _liveScreens = 0;
+
   @override
   void initState() {
     super.initState();
+    _liveScreens++;
     _root = ProviderScope.containerOf(context, listen: false);
     // ⚠ 投稿・ブロックの反映先がカラム列から解決されるようになる (#1099)。
     // 閉じている間に列を読むと、片づいたはずの TL provider を起こしてしまう。
@@ -170,13 +175,18 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
   @override
   void dispose() {
     _shiftMountedDecks(-1);
+    _liveScreens--;
     // タブ UI へ戻った (#1239)。⚠⚠ **アプリが前面に居るときだけ書く。**画面が
     // 捨てられるのは利用者が戻ったときだけではなく、アプリが終了へ向かうときにも
     // 起こりうる。そこで「タブ UI」と書くと、デッキを開いたまま終了した人が次回
     // タブ UI で始まる。終了は `inactive` / `paused` / `detached` を通るので、
     // `resumed` の間の破棄だけを「戻った」と読む。
-    if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed ||
-        WidgetsBinding.instance.lifecycleState == null) {
+    // ⚠ **ほかにデッキ画面が載っていれば書かない**（リリース前レビュー・
+    // 2026-10-10）。開き直した回は新しい画面が先に「デッキ」と書いているので、
+    // あとから走るこの dispose が「タブ UI」で上書きしてしまう。
+    if (_liveScreens == 0 &&
+        (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed ||
+            WidgetsBinding.instance.lifecycleState == null)) {
       unawaited(writeLastViewMode(LastViewMode.tabs));
     }
     // ⚠ 解除もフレームの後。⚠ **自分が入れたぶんだけ外す**（デッキを開き直した
