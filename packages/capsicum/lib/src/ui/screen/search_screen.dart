@@ -176,11 +176,17 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
   /// 当たる投稿を落として返すので、**続きがあっても 1 ページに満たないことがある**
   /// （19 件で返ると、続きを読む口が消えていた）。⚠ 代わりに、結果が少ない回は
   /// 口が 1 回残る（押すと空が返って消える）。
+  ///
+  /// ⚠ 同じ理由で、**投稿の offset は返った件数ではなく 1 ページぶん進める**
+  /// （PR #1256 の Codex P2）。サーバーの offset は落とす前の並びに掛かるので、
+  /// 返った件数で進めると、次のページが前のページの末尾と重なる。
+  /// ⚠ 1 ページが丸ごと落とされた回（全件がブロック / ミュートに当たる）は、
+  /// 本当の終端と見分けられないので、終端として扱う。
   void _notePage(SearchKind kind, int fetched, SearchPagingSupport paging) {
-    _offsets[kind] = (_offsets[kind] ?? 0) + fetched;
-    final atEnd = kind == SearchKind.posts
-        ? fetched == 0
-        : fetched < paging.searchPageSize;
+    final isPosts = kind == SearchKind.posts;
+    _offsets[kind] =
+        (_offsets[kind] ?? 0) + (isPosts ? paging.searchPageSize : fetched);
+    final atEnd = isPosts ? fetched == 0 : fetched < paging.searchPageSize;
     if (atEnd) _exhausted.add(kind);
   }
 

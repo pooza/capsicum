@@ -133,6 +133,40 @@ void main() {
       });
     });
 
+    test('⚠⚠ サーバーの位置が分かる前に予約された古い位置は、取り消す', () {
+      // PR #1256 の Codex P2。サーバーの位置を引くのは非同期なので、その前に
+      // 一覧の位置の通知が来ていることがある。
+      fakeAsync((async) {
+        final adapter = _MarkerAdapter();
+        final container = boot(adapter);
+        final saver = container.read(notificationMarkerSaverProvider);
+
+        saver.save('990');
+        saver.noteServerMarker('1000');
+        async.elapse(const Duration(seconds: 6));
+        expect(adapter.notifications, isEmpty);
+
+        container.dispose();
+        async.flushMicrotasks();
+        expect(adapter.notifications, isEmpty, reason: '破棄のときにも送らない');
+      });
+    });
+
+    test('サーバーの位置より新しい予約は、取り消さない', () {
+      fakeAsync((async) {
+        final adapter = _MarkerAdapter();
+        final container = boot(adapter);
+        final saver = container.read(notificationMarkerSaverProvider);
+
+        saver.save('1001');
+        saver.noteServerMarker('1000');
+        async.elapse(const Duration(seconds: 6));
+
+        expect(adapter.notifications, ['1001']);
+        container.dispose();
+      });
+    });
+
     test('⚠ ホームの位置は従来どおり戻せる（読んでいる場所の復元に使う）', () {
       fakeAsync((async) {
         final adapter = _MarkerAdapter();

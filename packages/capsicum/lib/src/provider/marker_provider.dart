@@ -77,9 +77,23 @@ class NotificationMarkerSaver {
   NotificationMarkerSaver(this._ref);
 
   /// サーバーが持っている位置を知らせる。これより古い位置は保存しない。
+  ///
+  /// ⚠ **先に予約されていた保存も、これより新しくなければ取り消す**（PR #1256 の
+  /// Codex P2）。サーバーの位置を引くのは非同期なので、その前に一覧の位置の
+  /// 通知が来て、古い位置が予約されていることがある。
   void noteServerMarker(String lastReadId) {
     final adapter = _ref.read(currentAdapterProvider);
     if (adapter is! MarkerSupport) return;
+    final pending = _pendingId;
+    if (pending != null &&
+        identical(adapter, _pendingAdapter) &&
+        !isNewerNotificationId(pending, than: lastReadId)) {
+      _timer?.cancel();
+      _pendingId = null;
+      _pendingAdapter = null;
+      // ⚠ 取り消したぶんを「これまでの位置」から外す（下で上書きする）。
+      _highId = null;
+    }
     _raise(adapter as MarkerSupport, lastReadId);
   }
 
