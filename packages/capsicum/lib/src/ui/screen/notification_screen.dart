@@ -110,14 +110,17 @@ class _NotificationViewState extends ConsumerState<NotificationView>
             .save(state.notifications[minIndex].id);
       }
     } else if (adapter is NotificationReadSupport &&
-        state.notifications.isNotEmpty &&
-        positions.any((p) => p.index == 0)) {
+        state.notifications.isNotEmpty) {
       // 位置を持たないバックエンド（Misskey）は、一番新しい通知が見えたときに
       // 全既読を返す (#1205)。⚠ **先頭が見えていない間は返さない** —— 途中から
       // 読んでいる利用者の、まだ見ていない新着まで既読にしてしまう。
-      ref
-          .read(notificationReadSaverProvider)
-          .markSeen(state.notifications.first.id);
+      // ⚠ 先頭から離れたら、まだ返していない予約も取り消す。
+      final saver = ref.read(notificationReadSaverProvider);
+      if (positions.any((p) => p.index == 0)) {
+        saver.markSeen(state.notifications.first.id);
+      } else {
+        saver.unsee();
+      }
     }
   }
 
@@ -133,6 +136,10 @@ class _NotificationViewState extends ConsumerState<NotificationView>
       if (markers.notifications == null) return;
 
       final markerId = markers.notifications!.lastReadId;
+      // ⚠ サーバーの位置より古いほうへは保存し直さない（未読の数が増える）。
+      if (mounted) {
+        ref.read(notificationMarkerSaverProvider).noteServerMarker(markerId);
+      }
       final index = notifications.indexWhere((n) => n.id == markerId);
       if (index > 0 && mounted && _itemScrollController.isAttached) {
         _itemScrollController.jumpTo(index: index);

@@ -101,6 +101,47 @@ void main() {
     });
   });
 
+  // v2.1 のリリース前レビュー（2026-10-10）。待っている 5 秒のあいだに届いた
+  // 新着まで、全既読が巻き込んでいた。
+  test('⚠⚠ 先頭から離れたら、まだ返していない予約を取り消す', () {
+    fakeAsync((async) {
+      final adapter = _ReadAdapter();
+      final (container, saver) = boot(adapter);
+
+      saver.markSeen('n1');
+      async.elapse(const Duration(seconds: 2));
+      saver.unsee();
+      async.elapse(const Duration(seconds: 6));
+      expect(adapter.calls, 0);
+
+      // 先頭へ戻れば、改めて返す。
+      saver.markSeen('n1');
+      async.elapse(const Duration(seconds: 6));
+      expect(adapter.calls, 1);
+      container.dispose();
+    });
+  });
+
+  test('⚠⚠ 待っている間にアプリが裏へ回ったら返さない', () {
+    fakeAsync((async) {
+      final adapter = _ReadAdapter();
+      var visible = true;
+      final (container, saver) = boot(adapter, isAppVisible: () => visible);
+
+      saver.markSeen('n1');
+      visible = false;
+      async.elapse(const Duration(seconds: 6));
+      expect(adapter.calls, 0);
+
+      // 戻ってきて先頭が見えれば返す。
+      visible = true;
+      saver.markSeen('n1');
+      async.elapse(const Duration(seconds: 6));
+      expect(adapter.calls, 1);
+      container.dispose();
+    });
+  });
+
   test('⚠ 失敗した回は、同じ先頭でも送り直す', () {
     fakeAsync((async) {
       final adapter = _ReadAdapter()..fail = true;
@@ -178,14 +219,27 @@ void main() {
     });
 
     test('⚠ 先頭（index 0）が見えていることを条件にしている', () {
-      final call = src.indexOf('notificationReadSaverProvider');
-      final guard = src.lastIndexOf('positions.any((p) => p.index == 0)', call);
+      // ⚠ v2.1 のリリース前レビューで、条件は `markSeen` の直前の `if` になった
+      // （外れた側は `unsee` で予約を取り消す）。
+      final call = src.indexOf('.markSeen(state.notifications.first.id)');
+      expect(call, isNot(-1));
+      final guard = src.lastIndexOf(
+        'if (positions.any((p) => p.index == 0)) {',
+        call,
+      );
       expect(guard, isNot(-1), reason: '先頭が見えていなくても全既読を返してしまう');
       expect(
-        call - guard,
-        lessThan(700),
-        reason: '条件と呼び出しが離れている。同じ分岐に居るかを確かめること',
+        src.substring(guard, call).trim(),
+        'if (positions.any((p) => p.index == 0)) {\n        saver',
+        reason: '条件と呼び出しの間に別の文が入っている。同じ分岐に居るかを確かめること',
       );
+    });
+
+    test('⚠ 先頭から離れた側で、予約を取り消している', () {
+      final call = src.indexOf('.markSeen(state.notifications.first.id)');
+      final after = src.substring(call, call + 120);
+      expect(after, contains('} else {'));
+      expect(after, contains('saver.unsee();'));
     });
   });
 }
