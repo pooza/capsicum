@@ -122,11 +122,25 @@ capsicum は「最新版を対象にする」方針で開発しており、UI �
 
 ### プッシュ通知
 
-プッシュ通知には、Mastodon の Web Push を APNs/FCM に変換する中継サーバーの運用が必要。capsicum は主にプリセットサーバーのユーザー向けに開発されており、プリセットサーバーのユーザーには [pooza/capsicum-relay](https://github.com/pooza/capsicum-relay) 経由で無償でリレーを提供している。外部ユーザー向けの有償提供（[#597](https://github.com/pooza/capsicum/issues/597)・未実装・v2.0）の設計書は [paid-relay-plan.md](paid-relay-plan.md) が正本（2026-09-06）。
+プッシュ通知には、Mastodon の Web Push を APNs/FCM に変換する中継サーバーの運用が必要。capsicum は主にプリセットサーバーのユーザー向けに開発されており、プリセットサーバーのユーザーには [pooza/capsicum-relay](https://github.com/pooza/capsicum-relay) 経由で無償でリレーを提供している。外部ユーザー向けの有償提供（[#597](https://github.com/pooza/capsicum/issues/597)・v2.0 で提供開始）の設計書は [paid-relay-plan.md](paid-relay-plan.md) が正本（2026-09-06）。
 
 ⚠ **「コスト補填」という当初の建付けは実測で組み直した。**開発工数を人件費換算すると回収に届かないため、**回収を KPI に置く限り永久に「やらない」が正解になる**。収益目標は **「relay のインフラを持ち出しにしないこと」**（2026-09-06 pooza 決定）。⚠ **プリセットのアカウントを 1 つも持たない利用者は現時点で 0 人**（本番 DB の実測）なので、**対象は「これから来る人」で需要は未証明**。⚠ **サーバー別に数えると外部が 36% に見えるが、マルチアカウント利用者の別アカウント宛であって「外部ユーザー」ではない**。
 
 v1.15 の観測性強化（#293）により、iOS のバックグラウンド通知は発火回数 0回で事実上機能していないことが確認された。v1.18 でプッシュ通知リレー（[#52](https://github.com/pooza/capsicum/issues/52)）を実装し、根本解決済み。リレーサーバー（Ruby、公開ドメイン `relay.capsicum.shrieker.net`）の実装は [pooza/capsicum-relay](https://github.com/pooza/capsicum-relay) リポジトリが正本（ホスト構成・デプロイ手順はインフラノートが正本）。初期設計判断の経緯は [archive/push-relay-plan.md](archive/push-relay-plan.md) に保存。具体的な課金設計（料金体系・ストア課金統合等）は [paid-relay-plan.md](paid-relay-plan.md) が正本（投げ銭本体は [#428](https://github.com/pooza/capsicum/issues/428) / [supporter-subscription-plan.md](supporter-subscription-plan.md)）。
+
+#### アプリが前面に出ている間の扱い（[#1222](https://github.com/pooza/capsicum/issues/1222)）
+
+⚠⚠ **relay が `outcome=success` を返していても、端末に何も出ない場合がある。**不達を疑う前にここを見る（2026-10-04 に、これを知らずに relay・payload・Sentry・NSE まで 1 時間追った）。
+
+| | capsicum が前面 | バックグラウンド / 未起動 |
+| --- | --- | --- |
+| iOS | 🔴 **何も出ない**（バナーも通知センターも） | 出る |
+| Android | 出る | 出る |
+
+- **iOS**: `AppDelegate` が `UNUserNotificationCenter` の delegate になっているが `willPresent` を実装していない。delegate が居て `willPresent` が無いと、iOS は前面表示中の通知を出さない（NSE も走らない）。
+- **Android**: relay は data-only で送るので OS による自動表示は起きず、`main.dart` の `_initFirebase` が復号してローカル通知を出している（#336 Phase 2）。前面でも同じ経路を通るので出る。
+
+⚠ **この非対称は意図して決めたものではない**（片方だけ面倒を見ていた結果）。揃えるかどうかは #1222 で決める —— 判断の軸は「タイムラインを見ている最中に、自分宛の通知のバナーが重なるのは実況中に邪魔か」。
 
 ⚠ **配送の重さは device_type で大きく違う**（2026-09-06 実測・正本は [paid-relay-baseline.md](paid-relay-baseline.md) 1-5）。**Windows (WNS) が処理時間の 88% を占め、1 件あたり iOS の 16 倍**（2,056ms 対 126ms）。⚠ **APNs だけが永続 HTTP/2 接続を保持しており、WNS / FCM は 1 通ごとに TLS を張り直している**。改善は [relay#54](https://github.com/pooza/capsicum-relay/issues/54)（接続再利用・v1.65）/ [relay#55](https://github.com/pooza/capsicum-relay/issues/55)（非同期化・#597 と同じ回）/ [relay#56](https://github.com/pooza/capsicum-relay/issues/56)（バックオフ・on-hold）。⚠ **WNS の `dropped` は「端末が落ちている / スリープ」**であって dedup ではない。**raw notification は queue されない**ので、その間の通知は失われる。
 
