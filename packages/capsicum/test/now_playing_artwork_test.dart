@@ -42,6 +42,37 @@ class _Server implements HttpClientAdapter {
   void close({bool force = false}) {}
 }
 
+/// 止めない限り、1MB の塊を送り続けるサーバー。
+class _EndlessServer implements HttpClientAdapter {
+  int sentChunks = 0;
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    Stream<Uint8List> body() async* {
+      while (true) {
+        sentChunks++;
+        yield Uint8List(1024 * 1024);
+        await Future<void>.delayed(Duration.zero);
+      }
+    }
+
+    return ResponseBody(
+      body(),
+      200,
+      headers: {
+        Headers.contentTypeHeader: ['image/jpeg'],
+      },
+    );
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
+
 void main() {
   late Directory tempDir;
 
@@ -57,6 +88,26 @@ void main() {
   );
 
   group('http(s)', () {
+    test('⚠⚠ 上限を超えたら、残りを受け取らずに打ち切る', () async {
+      // PR #1256 の Codex P2。以前は全量をメモリへ載せてから大きさを見ていた
+      // ので、終わらない応答は受け取り続けていた。
+      final server = _EndlessServer();
+
+      final file = await fetchNowPlayingArtwork(
+        uri,
+        tempDir: tempDir,
+        dio: Dio()..httpClientAdapter = server,
+      );
+
+      expect(file, isNull);
+      // 上限は 10MB。1MB の塊なので、11 個目で超える（先読みの余裕を少し見る）。
+      final sentAtReturn = server.sentChunks;
+      expect(sentAtReturn, lessThan(16));
+      // ⚠ 返ったあとも読み続けていない（打ち切りがサーバーまで届いている）。
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(server.sentChunks, lessThanOrEqualTo(sentAtReturn + 1));
+    });
+
     test('取得して一時ファイルに書き出す', () async {
       final server = _Server();
 

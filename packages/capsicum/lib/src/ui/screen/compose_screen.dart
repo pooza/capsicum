@@ -3141,6 +3141,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       return;
     }
     if (file == null || !mounted) return;
+    // ⚠⚠ **取得を待つ間に変わった条件を見直す**（リリース前レビュー・2026-10-10）。
+    // 本文は先に入っているので、取得（最大 15 秒）を待たずに送信できる。
+    // 送信が始まったあとに足すと、添付は投稿に載らないうえ、下の下書き保存が
+    // 送信の入口で止めた保存を張り直す（#1012 の競合が戻る）。
+    // ⚠ 待つ間に投票を有効にした回も足さない（上の入口と同じ理由）。
+    if (_sending || _pollEnabled) return;
     final before = _attachments.length;
     await _addLocalMedia([file]);
     if (!mounted || _attachments.length == before) return;

@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:cross_file/cross_file.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 
 import '../util/exception_scrub.dart';
 
@@ -70,14 +73,63 @@ Dio _defaultDio() => Dio(
   ),
 );
 
-Future<XFile?> _download(Uri uri, Directory tempDir, Dio dio) async {
-  final response = await dio.getUri<List<int>>(
-    uri,
-    options: Options(responseType: ResponseType.bytes),
+/// 本文を受け取りきるまでの上限。⚠ dio の `receiveTimeout` は塊ごとに数え直す
+/// ので、少しずつ送り続ける相手には効かない。
+@visibleForTesting
+const Duration kNowPlayingArtworkBodyTimeout = Duration(seconds: 15);
+
+/// 本文を、上限を数えながら受け取る。超えたら null（残りは読まない）。
+///
+/// ⚠⚠ **全部を受け取ってから大きさを見ない**（PR #1256 の Codex P2）。
+/// 以前は `ResponseType.bytes` で全量をメモリへ載せてから上限を見ていたので、
+/// 大きな応答を返す URL に対しては上限が上限になっていなかった。
+///
+/// ⚠ **打ち切るときは [abort] で要求ごと止める。**購読を解くだけでは、dio が
+/// 元の応答を読み続ける（テストで実測。止めたあとも数百 MB ぶん流れた）。
+Future<Uint8List?> _readLimited(
+  Stream<Uint8List> body, {
+  required void Function() abort,
+}) async {
+  final buffer = BytesBuilder(copy: false);
+  final done = Completer<Uint8List?>();
+  late final StreamSubscription<Uint8List> subscription;
+  subscription = body.listen(
+    (chunk) {
+      buffer.add(chunk);
+      if (buffer.length > kNowPlayingArtworkMaxBytes && !done.isCompleted) {
+        done.complete(null);
+        unawaited(subscription.cancel());
+        abort();
+      }
+    },
+    onError: (Object e, StackTrace st) {
+      if (!done.isCompleted) done.completeError(e, st);
+    },
+    onDone: () {
+      if (!done.isCompleted) done.complete(buffer.takeBytes());
+    },
+    cancelOnError: true,
   );
-  final bytes = response.data;
+  try {
+    return await done.future.timeout(kNowPlayingArtworkBodyTimeout);
+  } on TimeoutException {
+    unawaited(subscription.cancel());
+    abort();
+    return null;
+  }
+}
+
+Future<XFile?> _download(Uri uri, Directory tempDir, Dio dio) async {
+  final cancelToken = CancelToken();
+  final response = await dio.getUri<ResponseBody>(
+    uri,
+    options: Options(responseType: ResponseType.stream),
+    cancelToken: cancelToken,
+  );
+  final body = response.data;
+  if (body == null) return null;
+  final bytes = await _readLimited(body.stream, abort: cancelToken.cancel);
   if (bytes == null || bytes.isEmpty) return null;
-  if (bytes.length > kNowPlayingArtworkMaxBytes) return null;
   // `image/jpeg; charset=binary` のように引数が付くことがある。
   final mime = (response.headers.value(Headers.contentTypeHeader) ?? '')
       .split(';')
