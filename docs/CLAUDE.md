@@ -338,7 +338,7 @@ dart analyze --fatal-infos > /tmp/analyze.log 2>&1; echo "ANALYZE_EXIT=$?"
 
 ⚠⚠ **v2.0 を出したので、`main` は 2.x 線に戻った。**`develop` → `main` の通常のフローが使える（v2.0.1 はそれで出した）。⚠ **develop は 2026-10-09 に `2.1.0+199` へ上げた**（Apple 2 つの 2.0.1 が審査中のまま、pooza の判断で v2.1 に着手。iOS は 10-10 までに公開され、残るのは macOS）。⚠ **審査で差し戻されて 2.0.x を出し直すときは、`origin/main` から `release/2.0.x` を切り、ビルド番号は develop で使った最大値より上を取る**（そのあと develop も、それより上へ上げ直す）。
 
-⚠ **#1248 は推定に基づく修正で、Windows 実機では確かめていない。**効いたかどうかの読み方は Issue の末尾にある（⚠ 効いても時間切れの記録は減らない）。
+⚠ **#1248（Windows で投げ銭の商品が出ない）は、v2.0.1 の修正では直っていない。**原因は 2026-10-10 に Windows 実機で特定し、v2.1 で直した（ネイティブのワーカーが Store の結果を捨てていた。経緯は Issue、検証の経路は [tech-notes-native.md](tech-notes-native.md)）。
 
 過去リリースの詳細ログは [archive/release-log.md](archive/release-log.md) に退避した（正本は [GitHub Releases](https://github.com/pooza/capsicum/releases) / Milestones）。マイルストーン移行時のログトリム手順は [milestone-transition スキル](../.claude/skills/milestone-transition/SKILL.md) の step 7。
 

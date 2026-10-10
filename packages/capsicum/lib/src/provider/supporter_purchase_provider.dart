@@ -297,9 +297,11 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
   /// いて（[supporterEntryVisibleProvider]）、読み直しの口は投げ銭画面の中に
   /// しか無い ＝ **入口が出ないので、読み直しにも行けない**。
   ///
-  /// ⚠ [storeTimeout] の根拠は Play と Apple の実測で、**Microsoft Store は
-  /// 測っていなかった**。`GetAssociatedStoreProductsAsync` は起動直後に 15 秒を
-  /// 超えることがある（Sentry では起動のたびに時間切れ）。
+  /// ⚠ **Windows で起動のたびに時間切れになっていた原因は、遅さではなかった。**
+  /// Microsoft Store の往復は実測で 1.0〜1.5 秒（2026-10-10・製品版のパッケージ
+  /// の中で計測）。返った結果をネイティブのワーカーが捨てていたので、Dart には
+  /// 答えが届かなかった（`flutter_window.cpp` の `window_alive`）。この関数は
+  /// 「本当に遅いストア」への備えとして残す。
   ///
   /// ⚠⚠ **時間切れは「画面を固着させない」ためのもので、「使えない」の判定では
   /// ない。**答えが出たら、その答えに従う。

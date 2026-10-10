@@ -117,6 +117,23 @@ Windows 実機（[プラットフォームゲート](CLAUDE.md)の x64 端末）
 
 ⚠ **単一スロットの push 観測にコードを足すときは 2 箇所を同時に直す。** `windows/runner/push_diagnostics.cpp` の `IsBenignCode` と `packages/capsicum/lib/main.dart` の `benign` 集合は必ず揃える。片方だけだと、正常系のはずのコードが平常時の端末から毎回 warning で上がる（#997 の `wns.announcement_deduped` がその形だった）。⚠ **この一致を守る自動テストは無い**（コメントで揃えろと書いてあるだけ・[#1012](https://github.com/pooza/capsicum/issues/1012) に起票済み）。
 
+### 手元でビルドした exe を、Store 版のパッケージ ID の中で走らせる（#1248 で確立）
+
+⚠⚠ **「Windows の課金は製品版でしか確かめられない」は誤りだった。**Microsoft Store から入れた capsicum がある端末なら、**手元の exe にそのパッケージの ID とライセンスを貸して起動できる**。`StoreContext` は本物の Store へ繋がり、商品も返る。
+
+```powershell
+Invoke-CommandInDesktopPackage -PackageFamilyName '9AFBB08E.capsicum_8ekzzj58251a2' `
+  -AppId 'capsicum' -Command '<exe の絶対パス>' -Args '<引数>' -PreventBreakaway
+```
+
+- 前提は**開発者モードが ON** であることと、Store 版が入っていること（`Get-AppxPackage 9AFBB08E.capsicum` の `SignatureKind` が `Store`）。入っているパッケージは置き換わらない
+- **`-Command` は何でもよい。**`powershell.exe` を渡せば WinRT を数行で叩けるし、`cl` で作った数十行の exe でも、`flutter build windows` の `capsicum.exe` でもよい。⚠ **小さいものから順に試す** —— #1248 は「PowerShell から 1 秒で返る → 呼び方を写した小さな exe でも返る → 本物の exe でだけ届かない」の 3 段で、Store・呼び方・プロセスの中身を切り分けた
+- ⚠ **標準出力は取れない**（切り離されて起動する）。記録はファイルへ書く。⚠⚠ **書き先は `%USERPROFILE%` の直下にする** —— `AppData` の下はパッケージごとの場所へ付け替えられることがあり、書いたはずのファイルが見つからない
+- ⚠⚠ **`capsicum.exe` を走らせると、Store 版と同じ利用者データ（`%APPDATA%\net.shrieker\capsicum`）を読み書きする。****入っている版と同じタグからビルドする**（develop の exe は DB や設定を先へ進めてしまい、Store 版へ戻れなくなりうる）。`RELAY_SECRET` も `--dart-define` で渡す（渡さないとプッシュの登録が 401 になる）
+- 🔴 **購入の API（`RequestPurchaseAsync`）は呼ばない。**本物のライセンスなので、本当に課金される
+
+⚠ **#1248 の原因はこの経路で 1 時間ほどで出た。**`Win32Window::Create()` は**ウィンドウを作る前に必ず `Destroy()` → `OnDestroy()` を通る**（Flutter のテンプレートの作り）。`OnDestroy` で倒したフラグを `OnCreate` で立て直さないと、**起動した時点から「破棄済み」のまま**になる。⚠⚠ **`OnDestroy` は「終了時に 1 回だけ走る」関数ではない。**再発は [`windows_window_alive_guard_test.dart`](../packages/capsicum/test/windows_window_alive_guard_test.dart) で止めている。
+
 ### native テストの大半は macOS でも走る（`windows.h` の最小シム・#1014）
 
 上の「実機で回すまで一度もコンパイルされない」は **`wns_push.cpp` のような WinRT 依存のファイルに限った話**。`notification_dedup` のような**純粋なロジック**は Win32 API をほとんど使っておらず、`windows.h` を 1 ファイルで代替すれば macOS の clang でそのままビルド・実行できる。**Windows 端末が空くのを待たずにロジックの誤りを潰せる**ので、実機は「本当に WinRT が要る検証」だけに使う。

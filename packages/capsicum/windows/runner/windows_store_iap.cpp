@@ -82,17 +82,20 @@ flutter::EncodableValue QueryStoreProducts(
     // ⚠ **問い合わせの前にもウィンドウを渡す (#1248)。**Win32 デスクトップでは
     // StoreContext にアプリの HWND を結び付けるのが前提で、購入 (下の
     // RequestStorePurchase) では渡していたのに、問い合わせでは渡していなかった。
-    // 製品版でこの問い合わせが返らない原因の候補。渡せなくても問い合わせは
-    // 試す (try_as / 戻り値を見ない) —— ここを必須にすると、いま通る環境を壊す。
+    // ⚠ 製品版で商品が出なかった原因はこれではない (渡さなくても 1 秒ほどで
+    // 返ることを実測した。原因は flutter_window.cpp の window_alive)。作法として
+    // 残す。渡せなくても問い合わせは試す (try_as / 戻り値を見ない) —— ここを
+    // 必須にすると、いま通る環境を壊す。
     if (hwnd) {
       if (auto init = context.try_as<::IInitializeWithWindow>()) {
         init->Initialize(hwnd);
       }
     }
 
-    // 🔴 **`.get()` で無期限に待たない (#1248)。**製品版 2.0.0 / 2.0.1 では
-    // この問い合わせが返らず、ワーカーが塞がったまま Dart の時間切れだけが
-    // 立っていた。上限を切り、切れた回はその旨を返す。
+    // 🔴 **`.get()` で無期限に待たない (#1248)。**Store が返さない回に
+    // ワーカーが塞がったままにならないよう、上限を切り、切れた回はその旨を返す。
+    // ⚠ 製品版 2.0.0 / 2.0.1 で商品が出なかったのは、ここが返らなかったから
+    // ではない (返った結果を flutter_window.cpp のワーカーが捨てていた)。
     auto operation = context.GetAssociatedStoreProductsAsync(ConsumableKinds());
     if (operation.wait_for(kQueryTimeout) == AsyncStatus::Started) {
       operation.Cancel();
