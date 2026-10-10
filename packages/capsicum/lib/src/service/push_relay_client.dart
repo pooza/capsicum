@@ -131,10 +131,24 @@ class PushRelayClient {
   }
 
   /// リレーサーバーからデバイストークン登録を解除する。
-  Future<void> unregister(int id) async {
+  ///
+  /// [deviceId] はこの端末の ID（[register] に渡したものと同じ）。relay は行の
+  /// `device_id` と照合し、食い違えば 404 を返す (#1262 / capsicum-relay#91)。
+  /// この口は連番の id と共有シークレットだけで叩けるので、**消す対象を
+  /// 呼び出し元の端末に縛る**ための材料になる。
+  ///
+  /// ⚠ **null でも送る**（ヘッダを省くだけ）。端末の ID を読めない回に解除
+  /// そのものを止めると、relay に行が残り続ける。⚠ **URL には載せない** ——
+  /// アクセスログに残る（利用権の token と同じ扱い）。
+  Future<void> unregister(int id, {String? deviceId}) async {
     await _dio.delete(
       '/register/$id',
-      options: Options(headers: {'X-Relay-Secret': _secret}),
+      options: Options(
+        headers: {
+          'X-Relay-Secret': _secret,
+          if (deviceId != null && deviceId.isNotEmpty) 'X-Device-Id': deviceId,
+        },
+      ),
     );
   }
 

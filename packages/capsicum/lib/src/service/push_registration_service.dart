@@ -612,10 +612,28 @@ class PushRegistrationService {
   /// 全件を渡すこと。
   ///
   /// 個々の失敗で残りを止めない（部分的にでも消えた方がよい）。
-  static Future<void> unregisterDevice(List<int> relayIds) async {
+  ///
+  /// 端末の ID を一緒に送る (#1262)。⚠ **読めなかった回は送らずに続ける** ——
+  /// relay は送ってこない要求も（当面）通すので、解除を止める理由にしない。
+  static Future<void> unregisterDevice(
+    List<int> relayIds, {
+    @visibleForTesting PushRelayClient? client,
+    @visibleForTesting Future<String> Function()? readDeviceId,
+  }) async {
+    if (relayIds.isEmpty) return;
+    String? deviceId;
+    try {
+      deviceId = await (readDeviceId ?? DeviceInstallId.get)();
+    } catch (e) {
+      debugLogException(
+        'capsicum: push.registration: device id unreadable on unregister',
+        e,
+      );
+    }
+    final relay = client ?? _client;
     for (final relayId in relayIds) {
       try {
-        await _client.unregister(relayId);
+        await relay.unregister(relayId, deviceId: deviceId);
       } catch (e, st) {
         debugLogException(
           'capsicum: push.registration: relay unregister failed',
