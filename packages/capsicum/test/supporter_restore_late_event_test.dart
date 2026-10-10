@@ -113,6 +113,54 @@ void main() {
   );
 
   test(
+    '⚠⚠ 発行が済んだあとの後始末の最中に復元が返っても、ボタンが戻る',
+    () async {
+      // v2.1 のリリース前レビュー（2026-10-10）。発行の出口がフラグを戻したあと、
+      // 復元の側が「まだ処理中のイベントがある」と見て立て直すと、戻す者が
+      // 居なくなり、購入も復元も再起動まで押せなくなっていた。
+      final (:container, :backend, :relay) = setUpAll();
+      final notifier = container.read(supporterPurchaseProvider.notifier);
+      await turn();
+
+      backend.emitOnRestore = true;
+      backend.restoreGate = Completer<void>();
+      backend.completeGate = Completer<void>();
+      final restoring = notifier.restoreAndReregister();
+      await turn();
+      await turn();
+      expect(relay.issuing, isNotNull, reason: '前提: 発行が始まっている');
+
+      // 発行は済み、ストアの確定（後始末）で止まっている。
+      relay.issuing!.complete({'token': 't', 'store': 'apple'});
+      await turn();
+      await turn();
+      expect(backend.completeCalls, 1, reason: '前提: 後始末まで進んでいる');
+      expect(
+        container.read(supporterPurchaseProvider).purchaseInProgress,
+        isTrue,
+        reason: '⚠ 後始末（ストアの確定と登録のやり直し）が済むまで押させない',
+      );
+
+      // ここで復元の要求が返る（処理中のイベントが 1 件ある状態）。
+      backend.restoreGate!.complete();
+      expect(await restoring, isTrue);
+
+      // 後始末が終わったら、ボタンは戻っている。
+      backend.completeGate!.complete();
+      await turn();
+      await turn();
+      final after = container.read(supporterPurchaseProvider);
+      expect(after.lastOutcome?.kind, SupporterPurchaseOutcomeKind.success);
+      expect(
+        after.purchaseInProgress,
+        isFalse,
+        reason: '⚠ 直す前は true のまま残り、再起動まで押せなかった',
+      );
+    },
+    skip: subscriptionPurchaseSupported ? false : 'サブスクを扱えないホスト',
+  );
+
+  test(
     '前提: 購入が 1 つも返らなければ「復元できる購入はありません」',
     () async {
       final (:container, backend: _, relay: _) = setUpAll();
@@ -171,6 +219,7 @@ class _Backend implements SupporterPurchaseBackend {
       productId: supporterSubscriptionProductId,
       status: SupporterPurchaseEventStatus.purchased,
       purchaseId: 'p1',
+      needsCompletion: true,
     ),
   );
 
@@ -195,13 +244,24 @@ class _Backend implements SupporterPurchaseBackend {
   /// true なら、復元の要求の最中に購入イベントを流す。
   bool emitOnRestore = false;
 
+  /// 立ててあれば、復元の要求はこれが済むまで返らない。
+  Completer<void>? restoreGate;
+
+  /// 立ててあれば、ストアの確定はこれが済むまで返らない。
+  Completer<void>? completeGate;
+  int completeCalls = 0;
+
   @override
   Future<void> restore() async {
     if (emitOnRestore) emitSubscriptionPurchased();
+    await restoreGate?.future;
   }
 
   @override
-  Future<void> complete(SupporterPurchaseEvent event) async {}
+  Future<void> complete(SupporterPurchaseEvent event) async {
+    completeCalls++;
+    await completeGate?.future;
+  }
 
   @override
   void dispose() => _events.close();

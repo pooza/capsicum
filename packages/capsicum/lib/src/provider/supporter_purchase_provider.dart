@@ -211,6 +211,10 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
   ///   で上書きされ、結果が一瞬矛盾して見えていた）
   int _subscriptionInFlight = 0;
 
+  /// [restoreAndReregister] が、自分の登録のやり直しを待っている最中か。
+  /// その間は、購入イベントの側がボタンを戻さない（復元の finally が戻す）。
+  bool _restoreReregistering = false;
+
   /// [loadProducts] の世代 (#1248)。時間切れのあとに届いた答えを反映するとき、
   /// その間に読み直しが始まっていないかを見分ける。
   int _loadGeneration = 0;
@@ -617,6 +621,7 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
     // ⚠ 登録は端末のトークンを待つことがある（最大 10 秒）。その間に押し直せない
     // ようにする。
     state = state.copyWith(purchaseInProgress: true);
+    _restoreReregistering = true;
     try {
       final accounts = ref.read(accountManagerProvider).accounts;
       if (accounts.isNotEmpty) {
@@ -635,6 +640,7 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
         },
       );
     } finally {
+      _restoreReregistering = false;
       // 🔴 **復元できる購入が無かったことを伝える**（リリース前レビュー
       // 2026-10-06）。以前は何も立てなかったので、ボタンが一瞬無効になって
       // 戻るだけで、**「押しても何も起きない」に見えた**。
@@ -828,10 +834,24 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
       await _issueEntitlementFor(event);
     } finally {
       _subscriptionInFlight--;
+      // ⚠⚠ **最後の 1 件が抜けるときに、フラグを必ず戻す**（リリース前レビュー・
+      // 2026-10-10）。発行の出口が戻したあと、登録のやり直し
+      // （[_completeAndReregister]・端末のトークンを最大 10 秒待つ）の最中に
+      // 復元の側が `_subscriptionInFlight > 0` を見て立て直すと、戻す者が
+      // 居なくなり、**購入も復元も再起動まで押せなくなっていた**。
+      // ⚠ 復元の側が自分の登録を待っている間は、そちらの finally に任せる。
+      if (_subscriptionInFlight == 0 &&
+          !_restoreReregistering &&
+          state.purchaseInProgress) {
+        state = state.copyWith(purchaseInProgress: false);
+      }
     }
   }
 
-  /// [_onSubscriptionPurchased] の中身。どの出口も `purchaseInProgress` を戻す。
+  /// [_onSubscriptionPurchased] の中身。失敗の出口は `purchaseInProgress` を戻す。
+  /// ⚠ **ほかの購入イベントの発行が残っていれば戻さない**（`> 1` は自分を除いた
+  /// 残り）。1 件目が済んだ時点で戻すと、2 件目の発行中に押し直せた (#1237)。
+  /// ⚠ 成功の出口は戻さない（後始末が済むまで押させない）。
   Future<void> _issueEntitlementFor(SupporterPurchaseEvent event) async {
     final store = entitlementStoreName();
     final purchaseId = event.purchaseId;
@@ -845,7 +865,7 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
         },
       );
       state = state.copyWith(
-        purchaseInProgress: false,
+        purchaseInProgress: _subscriptionInFlight > 1,
         lastOutcome: const SupporterPurchaseOutcome(
           SupporterPurchaseOutcomeKind.entitlementError,
           isSubscription: true,
@@ -880,7 +900,7 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
         },
       );
       state = state.copyWith(
-        purchaseInProgress: false,
+        purchaseInProgress: _subscriptionInFlight > 1,
         lastOutcome: const SupporterPurchaseOutcome(
           SupporterPurchaseOutcomeKind.entitlementError,
           isSubscription: true,
@@ -889,8 +909,10 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
       return; // ⚠ 確定させない（再配信で拾い直す）
     }
 
+    // ⚠ **ここではボタンを戻さない**（PR #1256 の Codex P2）。このあとの
+    // ストアの確定と登録のやり直しが済むまで、押し直すと 2 本目が 1 本目と
+    // 競う。戻すのは [_onSubscriptionPurchased] の finally。
     state = state.copyWith(
-      purchaseInProgress: false,
       hasEntitlement: true,
       lastOutcome: const SupporterPurchaseOutcome(
         SupporterPurchaseOutcomeKind.success,
