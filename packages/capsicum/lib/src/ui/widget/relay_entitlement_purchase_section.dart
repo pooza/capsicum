@@ -316,7 +316,18 @@ class RelayEntitlementPurchaseSection extends ConsumerWidget {
       ),
     );
     if (ok != true) return;
-    await purchase.forgetEntitlement();
+    // ⚠ `context` は次の待ちの前に使い切る（ダイアログを閉じた直後なので
+    // 生きているかを見てから）。
+    if (!context.mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final cleared = await purchase.forgetEntitlement();
+    // 🔴 **消せなかった回は、そう伝える** (#1247)。以前は成功として扱い、
+    // 画面は消えたように見えるのに、再起動すると記録が戻っていた。
+    if (!cleared) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('利用権の記録を消せませんでした。時間をおいて再度お試しください。')),
+      );
+    }
     // ⚠ 消しただけでは画面が古い状態のままなので引き直す（`absent` へ落ちる）。
     await status.refresh();
   }

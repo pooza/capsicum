@@ -132,26 +132,42 @@ class EntitlementTokenStore {
   /// ⚠⚠ **購入の画面はこちらを使う。**null を「持っていない」と読むと、
   /// キーホルダが一時的に読めないだけで**購入済みの人に購入ボタンを出す**。
   /// 呼び出し側は例外を「分からない」として扱い、**未購入へ倒さない**。
+  ///
+  /// ## 読みと書き換えの順序 (#1247)
+  ///
+  /// 読みは**待ち行列の外**で走る。⚠ 行列に通さないのは意図どおり —— 通すと、
+  /// **詰まった読みが購入直後の保存まで止める**（保存は読みが返るまで始まらない）。
+  ///
+  /// 代わりに、**読みが返ったあとの合流点を 1 か所だけ置く**。読んでいる間に
+  /// [save] / [clear] が済んでいたら、そちらが新しいので、読んだ結果は
+  /// **成功でも失敗でも**使わずキャッシュを返す。
+  ///
+  /// 🔴 以前はこの判定を結果ごとに書いていた（成功のあと・失敗の catch の中）。
+  /// 片方にしか無かった時期があり、リリース PR の締めに 2 巡続けて穴が見つかった:
+  /// - 成功の側に無い → 古い中身でキャッシュを上書きし、買った直後の token が
+  ///   消える / 消した token が戻る
+  /// - 失敗の側に無い → 済んだ保存を捨てて投げ、[load] が null に倒して、
+  ///   買った直後の登録に token が載らない
+  ///
+  /// ⚠⚠ **読みの出口を増やすときも、必ず合流点を通す**（早期 return を足さない）。
   static Future<EntitlementToken?> loadOrThrow() async {
     if (_loaded) return _cached;
 
-    final String? raw;
+    String? raw;
+    Object? failure;
+    StackTrace? failureStack;
     try {
       raw = await _gate.read(key: _key);
-    } catch (_) {
-      // 🔴 **読みが失敗で返った回も同じ**（同・2 巡目）。その間に書き換えが
-      // 済んでいれば、キャッシュは確かな値なので、失敗を投げずにそれを返す。
-      // ⚠ 投げると [load] が null に倒し、買った直後の登録に token が載らない。
-      if (_loaded) return _cached;
-      rethrow;
+    } catch (e, st) {
+      failure = e;
+      failureStack = st;
     }
-    // 🔴 **読んでいる間に [save] / [clear] が済んでいたら、そちらが新しい**
-    // （リリース PR の Codex P1・2026-10-08）。読みは待ち行列の外で走るので、
-    // 書き換えより前に読みはじめた 1 本があとから返ると、**古い中身で
-    // キャッシュを上書きし、プロセスが終わるまでそれを返し続ける** —— 買った
-    // 直後の token が消える / 消した token が戻る。
-    // ⚠ 書き換えは終わるときに `_loaded` を立てるので、それを見れば足りる。
+
+    // ⚠⚠ **合流点。**書き換えは終わるときに `_loaded` を立てるので、それを見る。
     if (_loaded) return _cached;
+
+    // ⚠ 読めなかった回は確定させない（次に呼ばれたときにもう一度読む）。
+    if (failure != null) Error.throwWithStackTrace(failure, failureStack!);
     _cached = _decode(raw);
     _loaded = true;
     return _cached;
@@ -188,16 +204,26 @@ class EntitlementTokenStore {
   static Future<T> serializedForTesting<T>(Future<T> Function() body) =>
       _serialized(body);
 
-  /// ⚠ 購入が無くなったときに消す。**消せなくても例外にしない**（load と同じ理由）。
-  static Future<void> clear() {
+  /// 保存した利用権を消す。**消せたか**を返す。
+  ///
+  /// ⚠ 例外にはしない（呼び出し側が握り忘れても落ちない）が、**結果は必ず返す**。
+  ///
+  /// 🔴 **消せなかった回は、キャッシュを「消えた」にしない** (#1247)。以前は削除の
+  /// 失敗を握ったうえでキャッシュを空に確定させていたので、画面は「消えた」と
+  /// 伝えるのに、**再起動すると token が読み直されて戻っていた**。
+  /// ⚠ 消去は利用者が押した操作なので、失敗は伝えてよい（読みの側の
+  /// 「push 登録を道連れにしない」とは事情が違う）。
+  static Future<bool> clear() {
     return _serialized(() async {
       try {
         await _gate.delete(key: _key);
       } catch (e) {
         debugPrint('capsicum: entitlement: clear failed (${e.runtimeType})');
+        return false;
       }
       _cached = null;
       _loaded = true;
+      return true;
     });
   }
 

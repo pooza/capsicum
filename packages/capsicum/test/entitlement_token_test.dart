@@ -12,6 +12,8 @@ import 'package:fake_async/fake_async.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/dart_source.dart';
+
 /// 有償リレーの利用権トークン (#597 / #1121)。
 ///
 /// ⚠⚠ **ここで固定したいのは 3 点。**
@@ -199,7 +201,7 @@ void main() {
       ).readAsStringSync();
       for (final head in [
         'static Future<void> save(EntitlementToken token) {',
-        'static Future<void> clear() {',
+        'static Future<bool> clear() {',
       ]) {
         final at = source.indexOf(head);
         expect(at, greaterThan(0), reason: '$head が見つからない');
@@ -285,6 +287,101 @@ void main() {
       mockStorage(() => Future.value('{"token":"et-old","store":"apple"}'));
 
       expect((await EntitlementTokenStore.loadOrThrow())?.token, 'et-old');
+    });
+
+    // #1247: 順序の守り方を「結果ごとの分岐」から「合流点 1 か所」にまとめた。
+    // 上の 5 本が守っている振る舞いは変えていない。ここは作りの側を見る。
+    test('⚠⚠ 読みの出口は、合流点を通ってからしか出ない（配線）', () {
+      final source = maskComments(
+        File('lib/src/service/entitlement_token_store.dart').readAsStringSync(),
+      );
+      final start = source.indexOf(
+        'static Future<EntitlementToken?> loadOrThrow() async {',
+      );
+      final end = source.indexOf('static Future<void> save(', start);
+      expect(start, greaterThan(0));
+      expect(end, greaterThan(start), reason: '本体を切り出せていない');
+      final body = source.substring(start, end);
+
+      // 読みを待ったあとの出口は 3 つ: 合流点・失敗の投げ直し・確定した値。
+      final afterRead = body.substring(body.indexOf('_gate.read('));
+      expect(
+        'if (_loaded) return _cached;'.allMatches(afterRead),
+        hasLength(1),
+        reason: '⚠ 合流点が複数ある ＝ 結果ごとの分岐へ戻っている',
+      );
+      // ⚠ catch の中で投げ直さない（合流点を飛ばす出口になる）。
+      expect(afterRead, isNot(contains('rethrow')));
+      // 合流点は、失敗の投げ直しより前。
+      expect(
+        afterRead.indexOf('if (_loaded) return _cached;'),
+        lessThan(afterRead.indexOf('Error.throwWithStackTrace(')),
+      );
+    });
+  });
+
+  // #1247（リリース PR の Codex P2・2026-10-08）: 消去が失敗しても「消えた」と
+  // 確定させていたので、再起動すると token が読み直されて戻っていた。
+  group('EntitlementTokenStore — 消せなかった回', () {
+    const channel = MethodChannel(
+      'plugins.it_nomads.com/flutter_secure_storage',
+    );
+    var deleteThrows = false;
+
+    setUp(() {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      deleteThrows = false;
+      final store = <String, String>{
+        'entitlement_token_v1': '{"token":"et-kept","store":"apple"}',
+      };
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            final args =
+                (call.arguments as Map?)?.cast<String, Object?>() ?? {};
+            final key = args['key'] as String?;
+            switch (call.method) {
+              case 'read':
+                return store[key!];
+              case 'delete':
+                if (deleteThrows) throw PlatformException(code: 'boom');
+                store.remove(key!);
+                return null;
+              default:
+                return null;
+            }
+          });
+      EntitlementTokenStore.resetCacheForTesting();
+    });
+
+    tearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+      EntitlementTokenStore.resetCacheForTesting();
+    });
+
+    test('前提: 消せたら true を返し、以降は持っていない', () async {
+      expect((await EntitlementTokenStore.loadOrThrow())?.token, 'et-kept');
+      expect(await EntitlementTokenStore.clear(), isTrue);
+      expect(await EntitlementTokenStore.loadOrThrow(), isNull);
+    });
+
+    test('🔴 消せなかったら false を返し、キャッシュを「消えた」にしない', () async {
+      expect((await EntitlementTokenStore.loadOrThrow())?.token, 'et-kept');
+      deleteThrows = true;
+
+      expect(await EntitlementTokenStore.clear(), isFalse);
+      expect(
+        (await EntitlementTokenStore.loadOrThrow())?.token,
+        'et-kept',
+        reason: '⚠ 直す前はここが null（画面は消えたと伝え、再起動で戻る）',
+      );
+    });
+
+    test('⚠ まだ読んでいない状態で消せなかった回も、空に確定させない', () async {
+      deleteThrows = true;
+
+      expect(await EntitlementTokenStore.clear(), isFalse);
+      expect((await EntitlementTokenStore.loadOrThrow())?.token, 'et-kept');
     });
   });
 

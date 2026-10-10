@@ -239,7 +239,7 @@ void main() {
       // 🔴 `restoreEntitlement` は復元すべき購入が無ければイベントが流れて
       // こないので、**何も起きずトークンも残る** —— 手元の保存を捨てる口が
       // 無いと、そこから抜けられない。
-      expect(read(providerPath), contains('Future<void> forgetEntitlement()'));
+      expect(read(providerPath), contains('Future<bool> forgetEntitlement()'));
       expect(read(providerPath), contains('EntitlementTokenStore.clear()'));
       expect(read(sectionPath), contains('forgetEntitlement()'));
       expect(read(sectionPath), contains("const Text('利用権の記録を消す')"));

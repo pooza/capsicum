@@ -534,15 +534,19 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
   /// 「勝手に消さない」としているのと同じ理由で、**通信の失敗やストア側の一過性
   /// の不調で有効な利用権を捨てると、再登録の手掛かりごと失う**。⚠ **利用者が
   /// 確認してから**押す口にしてある（画面側がダイアログを出す）。
-  Future<void> forgetEntitlement() async {
-    if (state.purchaseInProgress) return;
+  ///
+  /// 戻り値は「消せたか」。⚠ **false は、消そうとして消せなかった回だけ**
+  /// (#1247)。その回は `hasEntitlement` も落とさない（記録は残っている）。
+  Future<bool> forgetEntitlement() async {
+    if (state.purchaseInProgress) return true;
     // ⚠⚠ **消す前に、応答待ちの読み直しを無効にする**（2 回目の差分レビュー・
     // 2026-10-06）。消している最中に着いた古い応答が、記録を保存し直せた。
     ref.read(entitlementStatusProvider.notifier).invalidatePending();
-    await EntitlementTokenStore.clear();
+    if (!await EntitlementTokenStore.clear()) return false;
     // ⚠ 画面の「購入を復元する / 記録を消す」の出し分けはこの値を見るので、
     // **保存を消したらここも落とす**（残すとボタンが消えない）。
     state = state.copyWith(hasEntitlement: false);
+    return true;
   }
 
   Future<void> restoreEntitlement() async {

@@ -556,7 +556,7 @@ void main() {
         read('lib/src/provider/supporter_purchase_provider.dart'),
       );
 
-      expect(provider, contains('Future<void> forgetEntitlement()'));
+      expect(provider, contains('Future<bool> forgetEntitlement()'));
       expect(provider, contains('EntitlementTokenStore.clear()'));
       // ⚠ 捨てたら `hasEntitlement` も落とす（残すとボタンが消えない）。
       expect(provider, contains('hasEntitlement: false'));
