@@ -141,6 +141,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   void initState() {
     super.initState();
     _itemPositionsListener.itemPositions.addListener(_onPositionsChanged);
+    // ⚠⚠ **保存役を、この画面が生きている間は保持する**（PR #1256 の Codex P2）。
+    // autoDispose なので、`ref.read` だけでは数フレームのうちに破棄され、
+    // 待っていた保存がその場で流れる（実測）。**5 秒の間引きが効かず、スクロールのたびに
+    // 既読位置をサーバーへ送っていた**（#25 の初版から）。
+    ref.listenManual(homeMarkerSaverProvider, (_, _) {});
     WidgetsBinding.instance.addObserver(this);
     // Shell 上のデスクトップメニュー (#834) の「タイムラインを更新」/ Ctrl+R が
     // 現在表示中のタイムラインをリフレッシュできるよう、自身の

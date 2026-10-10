@@ -4,6 +4,7 @@ import 'package:capsicum/src/provider/account_manager_provider.dart';
 import 'package:capsicum/src/provider/marker_provider.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:fake_async/fake_async.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
@@ -233,6 +234,65 @@ void main() {
         'if (positions.any((p) => p.index == 0)) {\n        saver',
         reason: '条件と呼び出しの間に別の文が入っている。同じ分岐に居るかを確かめること',
       );
+    });
+
+    test('⚠⚠ 保存役を、画面が生きている間は保持している', () {
+      // PR #1256 の Codex P2。autoDispose の provider は `ref.read` だけでは
+      // すぐ破棄され、間引きも「同じ先頭では呼び直さない」も効かない。
+      expect(
+        src,
+        contains('ref.listenManual(notificationReadSaverProvider, (_, _) {});'),
+      );
+      expect(
+        src,
+        contains(
+          'ref.listenManual(notificationMarkerSaverProvider, (_, _) {});',
+        ),
+      );
+      final home = File(
+        'lib/src/ui/screen/home_screen.dart',
+      ).readAsStringSync();
+      expect(
+        home,
+        contains('ref.listenManual(homeMarkerSaverProvider, (_, _) {});'),
+      );
+    });
+
+    testWidgets('前提: autoDispose の保存役は、read だけではすぐ破棄される', (tester) async {
+      late WidgetRef captured;
+      await tester.pumpWidget(
+        ProviderScope(
+          child: Consumer(
+            builder: (_, ref, _) {
+              captured = ref;
+              return const SizedBox();
+            },
+          ),
+        ),
+      );
+      final first = captured.read(notificationReadSaverProvider);
+      // ⚠ 破棄は 1 フレームでは起きない（実測）。もう 1 フレーム進める。
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      expect(
+        identical(captured.read(notificationReadSaverProvider), first),
+        isFalse,
+        reason: 'read だけで保持されるなら、画面側の listenManual は要らない',
+      );
+
+      // 購読していれば、同じものが返り続ける。
+      final sub = captured.listenManual(
+        notificationReadSaverProvider,
+        (_, _) {},
+      );
+      final held = captured.read(notificationReadSaverProvider);
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      expect(
+        identical(captured.read(notificationReadSaverProvider), held),
+        isTrue,
+      );
+      sub.close();
     });
 
     test('⚠ 先頭から離れた側で、予約を取り消している', () {

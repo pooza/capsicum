@@ -61,6 +61,13 @@ class _NotificationViewState extends ConsumerState<NotificationView>
   void initState() {
     super.initState();
     _itemPositionsListener.itemPositions.addListener(_onPositionsChanged);
+    // ⚠⚠ **保存役を、この画面が生きている間は保持する**（PR #1256 の Codex P2）。
+    // どちらも autoDispose で、`ref.read` だけでは数フレームのうちに破棄される
+    // （実測）。破棄は待っていた保存をその場で流すので、**5 秒の間引きも、
+    // 覚えている位置（古いほうへ戻さない / 同じ先頭で呼び直さない）も効かず、
+    // 位置の通知が来るたびにサーバーへ送っていた。**
+    ref.listenManual(notificationMarkerSaverProvider, (_, _) {});
+    ref.listenManual(notificationReadSaverProvider, (_, _) {});
 
     // Clear unread notification count for the current account.
     final account = ref.read(currentAccountProvider);
