@@ -255,6 +255,55 @@ void main() {
       await tester.pump();
       expect(dot, findsNothing);
     });
+
+    // #1238: 状態の色は固定なので、サーバーの色が明るい黄や緑だと点が埋もれる。
+    // 色は状態の意味を持つので変えず、見出しの文字と同じ色で縁を取る。
+    BoxDecoration dotDecoration(WidgetTester tester) =>
+        tester.widget<Container>(find.byKey(deckStreamDotKey)).decoration!
+            as BoxDecoration;
+
+    Future<void> pumpWithHostColor(WidgetTester tester, Color color) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            currentAccountProvider.overrideWithValue(account),
+            hostThemeColorProvider.overrideWithValue({
+              'misskey.example': color,
+            }),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: DeckColumnView(
+                column: DeckColumn(
+                  id: 'x',
+                  account: account.key,
+                  tab: const TimelineTab(TimelineType.home),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+    }
+
+    testWidgets('⚠ 明るい色のサーバーでは、点を暗い色で縁取る (#1238)', (tester) async {
+      await pumpWithHostColor(tester, const Color(0xFFFFEB3B));
+      final border = dotDecoration(tester).border! as Border;
+      expect(border.top.color, Colors.black87);
+      expect(border.top.color, foregroundOnHostColor(const Color(0xFFFFEB3B)));
+    });
+
+    testWidgets('暗い色のサーバーでは白で縁取り、塗りは状態の色のまま', (tester) async {
+      await pumpWithHostColor(tester, const Color(0xFF3F51B5));
+      final decoration = dotDecoration(tester);
+      expect((decoration.border! as Border).top.color, Colors.white);
+      expect(
+        decoration.color,
+        isNot(Colors.white),
+        reason: '縁を足しただけで、状態の色は変えていない',
+      );
+    });
   });
 
   group('見出しの大きさ (#1242)', () {

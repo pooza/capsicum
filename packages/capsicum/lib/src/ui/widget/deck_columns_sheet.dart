@@ -6,6 +6,7 @@ import '../../model/account.dart';
 import '../../model/account_key.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/channel_provider.dart';
+import '../../provider/hashtag_provider.dart';
 import '../../provider/list_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../util/deck_tabs.dart';
@@ -523,7 +524,7 @@ class _DeckColumnCandidatesState extends ConsumerState<_DeckColumnCandidates> {
                     hintText: 'ハッシュタグを入力',
                     // ⚠ AND 指定できることが画面のどこにも書かれておらず、
                     // 入口が無いと受け取られていた (#1158)。
-                    helperText: '+ でつなぐと AND（例: nitiasa+precure）',
+                    helperText: kHashtagAndHelperText,
                     helperMaxLines: 2,
                     prefixText: '#',
                     isDense: true,

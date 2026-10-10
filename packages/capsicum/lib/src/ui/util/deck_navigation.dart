@@ -182,8 +182,8 @@ void openQuotes(BuildContext context, WidgetRef ref, String postId) {
     push: () => context.push(
       '/posts',
       extra: {
-        'title': '引用',
-        'emptyMessage': '引用している投稿はありません',
+        'title': kQuotesListTitle,
+        'emptyMessage': kQuotesListEmptyMessage,
         'fetcher': fetcher,
       },
     ),

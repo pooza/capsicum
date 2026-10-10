@@ -291,7 +291,7 @@ double _previewOpacity(WidgetTester tester) => tester
 
 /// テキストを 1 枚足して選択済みにする（操作行を出すため）。
 Future<void> _selectFirstLayer(WidgetTester tester) async {
-  await tester.tap(find.text('テキストを追加'));
+  await tester.tap(find.text('文字を追加'));
   await tester.pumpAndSettle();
   await tester.enterText(find.byType(TextField), 'あ');
   await tester.tap(find.text('OK'));

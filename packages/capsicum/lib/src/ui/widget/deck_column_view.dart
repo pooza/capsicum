@@ -71,7 +71,7 @@ class DeckColumnView extends ConsumerWidget {
     // **そのまま描くと別のアカウントとして操作が外に出る**（B-2）ので出さない。
     // TL の family も、キーのアカウントと現在のアカウントが一致しないと取らない。
     if (column.account != ref.watch(currentAccountKeyProvider)) {
-      return const _DeckColumnMessage('このカラムを表示できません');
+      return const _DeckColumnMessage('このカラムは表示できません');
     }
     final account = column.account;
     return switch (column.tab) {
@@ -174,8 +174,8 @@ class DeckColumnView extends ConsumerWidget {
         postId,
       )) {
         final fetcher? => PostListScreen(
-          title: '引用',
-          emptyMessage: '引用している投稿はありません',
+          title: kQuotesListTitle,
+          emptyMessage: kQuotesListEmptyMessage,
           fetcher: fetcher,
           embedded: true,
         ),
@@ -370,6 +370,7 @@ class _DeckColumnHeader extends ConsumerWidget {
                 _DeckStreamDot(
                   key: ValueKey(type),
                   timelineKey: (account: account, type: type),
+                  ringColor: foreground,
                 ),
               // 新規投稿の入口（案 A・#1172・決定済み事項 10）。⚠ **このカラムの
               // アカウント**で開く。誰として投稿するかは、すぐ左の見出し（アイコン・
@@ -411,6 +412,9 @@ class _DeckColumnHeader extends ConsumerWidget {
     );
   }
 }
+
+/// 接続ドットの丸そのもの (#1238)。テストから色と縁を読むための目印。
+const deckStreamDotKey = Key('deck_stream_dot');
 
 /// カラム見出しのアイコンの大きさ (#1242)。AppBar（24dp）より一回り小さい。
 const double kDeckColumnHeaderIconSize = 20;
@@ -490,9 +494,20 @@ class _DeckSeededBodyState<T extends Object>
 
 /// カラム単位の接続状態 (#1092・決定済み事項 7-2)。
 class _DeckStreamDot extends ConsumerWidget {
-  const _DeckStreamDot({super.key, required this.timelineKey});
+  const _DeckStreamDot({
+    super.key,
+    required this.timelineKey,
+    required this.ringColor,
+  });
 
   final TimelineKey timelineKey;
+
+  /// 縁取りの色。見出しの文字と同じ色を渡す (#1238)。
+  ///
+  /// ⚠ 状態の色（緑・黄・橙・赤・灰）は固定なので、サーバーの色が明るい黄や緑だと
+  /// 点が背景に埋もれる。**色は状態の意味を持つので変えず**、背景と必ず対比する
+  /// 色で縁を取る。
+  final Color ringColor;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -505,11 +520,18 @@ class _DeckStreamDot extends ConsumerWidget {
     return Tooltip(
       message: streamConnectionTooltip(label),
       child: Padding(
-        padding: const EdgeInsets.all(8),
+        // ⚠ 縁のぶん（1dp × 2）だけ箱を広げ、余白を詰める。塗りの直径 8dp と
+        // 行の中で占める幅（24dp）は変えない。
+        padding: const EdgeInsets.all(7),
         child: Container(
-          width: 8,
-          height: 8,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          key: deckStreamDotKey,
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+            border: Border.all(color: ringColor),
+          ),
         ),
       ),
     );

@@ -18,6 +18,11 @@ import 'timeline_provider.dart';
   return (tags.first, all);
 }
 
+/// タグの入力欄に出す、AND 指定の案内 (#1238)。
+///
+/// ⚠ タブの追加とデッキのカラムの追加に同じ欄があるので、文面を 2 か所に書かない。
+const kHashtagAndHelperText = '+ でつなぐと AND（例: nitiasa+precure）';
+
 /// spec の表示ラベル（`#a + #b`）。
 String hashtagSpecLabel(String spec) =>
     hashtagSpecTags(spec).map((t) => '#$t').join(' + ');
@@ -102,11 +107,7 @@ class HashtagTimelineNotifier
     final liveGeneration = resetLiveIngestState();
     // 🔴 `Account` 全体ではなく、解決したアダプタだけを見る（本線の
     // `TimelineNotifier.build` と同じ理由。全体を見ると、復帰のたびに読み直す）。
-    final adapter = ref.watch(
-      currentAccountProvider.select(
-        (current) => adapterForTimelineKey(current, key.account),
-      ),
-    );
+    final adapter = watchAdapterForTimelineKey(ref, key.account);
     final contextKey = timelineContextKey(key.account, HashtagTab(key.spec));
     if (adapter == null || adapter is! HashtagSupport) {
       return TimelineState(hasMore: false, contextKey: contextKey);

@@ -214,7 +214,7 @@ void main() {
       expect(find.text('元に戻す'), findsNothing, reason: '削除自体が起きていない');
     });
 
-    testWidgets('ロック中は文字レイヤの「テキストを編集」も無効', (tester) async {
+    testWidgets('ロック中は文字レイヤの「文字を編集」も無効', (tester) async {
       final harness = await ImageEditorHarness.open(
         tester,
         imageData: basePng,
@@ -223,13 +223,13 @@ void main() {
       await harness.addText('ロックされた文字');
       await harness.openLayers();
       expect(
-        _iconButton(tester, 'テキストを編集').onPressed,
+        _iconButton(tester, '文字を編集').onPressed,
         isNotNull,
         reason: 'ロック前は押せる',
       );
 
       await _lock(harness, 0);
-      expect(_iconButton(tester, 'テキストを編集').onPressed, isNull);
+      expect(_iconButton(tester, '文字を編集').onPressed, isNull);
       expect(_iconButton(tester, '削除').onPressed, isNull);
     });
 

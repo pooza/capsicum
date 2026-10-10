@@ -278,9 +278,9 @@ class ImageEditorHarness {
     await settle();
   }
 
-  /// 「テキストを追加」を押し、ダイアログに [text] を入れて確定する。
+  /// 「文字を追加」を押し、ダイアログに [text] を入れて確定する。
   Future<void> addText(String text) async {
-    await tester.tap(find.text('テキストを追加'));
+    await tester.tap(find.text('文字を追加'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), text);
     await tester.tap(find.text('OK'));

@@ -298,7 +298,7 @@ class RelayEntitlementPurchaseSection extends ConsumerWidget {
         title: const Text('利用権の記録を消しますか？'),
         content: const Text(
           'この端末に保存した利用権の記録を消します。\n\n'
-          '・ご購入そのものは消えません。ストアの購読は解約されません\n'
+          '・ご購入そのものは消えません。ストアでの自動更新も止まりません\n'
           '・「購入を復元する」で元に戻せます\n'
           '・消すと、買い直しのボタンが出るようになります\n\n'
           '復元しても直らないときにお使いください。',

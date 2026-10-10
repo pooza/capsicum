@@ -41,6 +41,7 @@ import 'post_touch_action_row.dart';
 import 'preview_card_widget.dart';
 import 'reaction_picker_sheet.dart';
 import 'report_comment_dialog.dart';
+import 'server_badge.dart';
 import 'user_avatar.dart';
 
 String _stripHtml(String html) => stripHtml(html);
@@ -2113,7 +2114,6 @@ class _PostTileState extends ConsumerState<PostTile> {
     final themeColors = ref.watch(hostThemeColorProvider);
     final color = resolveHostColor(themeColors, host);
     final cached = ServerMetadataCache.instance.getCached(host);
-    final label = cached?.name ?? host;
 
     if (cached == null) {
       ServerMetadataCache.instance.fetch(host).then((_) {
@@ -2129,25 +2129,11 @@ class _PostTileState extends ConsumerState<PostTile> {
       padding: const EdgeInsets.only(top: 2),
       child: Row(
         children: [
+          // ⚠ 箱と文字色は [ServerBadge] に任せる (#1238)。以前は同じ箱をここへ
+          // 写していて、文字色の直し (#1240) を 2 か所へ入れる必要があった。
+          // サーバー名は [ServerBadge] が同じキャッシュから読む。
           Flexible(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-              decoration: BoxDecoration(
-                color: color,
-                borderRadius: BorderRadius.circular(3),
-              ),
-              child: Text(
-                label,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  fontSize: 11,
-                  // ⚠ 白に固定しない（#1240）。
-                  color: foregroundOnHostColor(color),
-                  fontWeight: FontWeight.w500,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
+            child: ServerBadge(host: host, color: color),
           ),
         ],
       ),

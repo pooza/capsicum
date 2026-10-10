@@ -567,7 +567,7 @@ void main() {
 
       expect(section, contains('showDialog<bool>'));
       // ⚠ 何が消えないかを文面で言うこと（購入そのものは消えない）。
-      expect(section, contains('ストアの購読は解約されません'));
+      expect(section, contains('ストアでの自動更新も止まりません'));
       // ⚠⚠ **ウィジェットが自分から `clear` を呼んでいない**（必ず provider 経由
       // で、ダイアログの後ろ）。
       expect(section, isNot(contains('EntitlementTokenStore')));

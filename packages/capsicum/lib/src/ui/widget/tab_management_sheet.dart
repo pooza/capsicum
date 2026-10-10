@@ -417,7 +417,7 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
                             decoration: const InputDecoration(
                               hintText: 'ハッシュタグを入力',
                               // ⚠ デッキのカラム編集と同じ文言にする (#1158)。
-                              helperText: '+ でつなぐと AND（例: nitiasa+precure）',
+                              helperText: kHashtagAndHelperText,
                               helperMaxLines: 2,
                               prefixText: '#',
                               isDense: true,

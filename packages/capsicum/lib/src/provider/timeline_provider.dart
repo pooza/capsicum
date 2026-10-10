@@ -96,6 +96,24 @@ DecentralizedBackendAdapter? adapterForTimelineKey(
   AccountKey? account,
 ) => current != null && current.key == account ? current.adapter : null;
 
+/// [adapterForTimelineKey] の結果だけを watch する (#1238)。4 系統の `build()` が使う。
+///
+/// 🔴 **`Account` 全体ではなく、解決したアダプタだけを見る。**`Account` は `==` を
+/// 持たないので、全体を watch すると中身が同じでもインスタンスが替わるたびに
+/// `build()` がやり直され、アプリへ戻るたびに TL が最新 1 ページから読み直しになる
+/// （経緯は `TimelineNotifier.build`）。
+///
+/// ⚠ 同じ 3 行の閉包が 4 系統へ写されていた。**条件を変えるときにここだけ直せば
+/// 揃う**ように 1 本にした。
+DecentralizedBackendAdapter? watchAdapterForTimelineKey(
+  Ref ref,
+  AccountKey? account,
+) => ref.watch(
+  currentAccountProvider.select(
+    (current) => adapterForTimelineKey(current, account),
+  ),
+);
+
 /// `null` 自体が「明示的にクリア」を意味する nullable フィールドを
 /// `copyWith` で保持／差し替えするための sentinel (#455 / #450 と同型)。
 const Object _keepLoadMoreError = Object();
@@ -1310,7 +1328,7 @@ class TimelineNotifier
     // なっていた —— 読み進めた分と未表示の新着が消え、WebSocket も張り直す。
     // ⚠ プロフィールの差し替えではアダプタは同じインスタンスのまま
     // （`copyWithUser`）なので、ここは動かない。上のコメントの意図どおりになる。
-    final adapter = ref.watch(currentAccountProvider.select(_adapterFor));
+    final adapter = watchAdapterForTimelineKey(ref, key.account);
     if (adapter == null) return TimelineState(contextKey: contextKey);
 
     // #716 計測: ホーム TL の初回描画を fetch (サーバー応答) / enrich (isCat) /
