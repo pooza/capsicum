@@ -282,6 +282,20 @@ class _MfmParser {
   static final _hashtagChar = RegExp(r'[\p{L}\p{N}\p{M}_·\-]', unicode: true);
   static final _hashtagHasLetter = RegExp(r'\p{L}', unicode: true);
 
+  // Misskey の投稿（MFM）でタグを**終わらせる**文字 (#1151)。mfm-js の `hashtag` の
+  // 文字の集合をそのまま写した（`src/internal/parser.ts` の `hashTagChar`）。
+  // これ以外の文字は、すべてタグの一部になる —— 中黒もハイフンも、全角の句読点も。
+  //
+  // ⚠⚠ **括弧の対の中身は取り込まない**（2026-10-10 pooza）。mfm-js は `「」` `()`
+  // `（）` `[]` の対を中身ごとタグに含めるが、そこまで合わせると
+  // `#26「夏だ！海だ！…」を視聴。` が丸ごとタグになる（#566 の出発点だった見え方）。
+  // 括弧は「終わらせる文字」のままにしてあるので、開き括弧でタグが切れる。
+  // ⚠ 意図して mfm-js から外れている点はここだけ。
+  static final _mfmHashtagStop = RegExp(
+    r'''[\s\u3000.,!?'"#:/\[\]【】()「」（）<>]''',
+  );
+  static final _digitsOnly = RegExp(r'^[0-9]+$');
+
   List<_Node> parse() => _parseInline(null);
 
   /// plainOnly で拾う 4 種（mention / hashtag / url / emoji）を試す (#1068)。
@@ -861,15 +875,26 @@ class _MfmParser {
     final start = _pos;
     _pos++; // skip #
     final tagBuf = StringBuffer();
+    // ⚠ **どの文字までをタグとするかは、タグを決めた実装に合わせる** (#1151)。
+    // - Misskey の投稿（MFM）: mfm-js の文字の集合（[_mfmHashtagStop]）
+    // - Mastodon の CW（[plainOnly]）: 従来の Mastodon 寄せ（#566）。⚠ CW の
+    //   タグをリンクにするのはユーザー要望で入れた動きなので、ここは変えない
     while (_pos < input.length) {
       final c = input[_pos];
-      if (!_hashtagChar.hasMatch(c)) break;
+      final belongs = plainOnly
+          ? _hashtagChar.hasMatch(c)
+          : !_mfmHashtagStop.hasMatch(c);
+      if (!belongs) break;
       tagBuf.write(c);
       _pos++;
     }
     final tag = tagBuf.toString();
-    // 数字 / 記号のみは拒否 (Mastodon は [[:alpha:]_·] を 1 文字以上要求)
-    if (tag.isEmpty || !_hashtagHasLetter.hasMatch(tag)) {
+    // 数字だけのタグは成立しない（Mastodon は文字を 1 つ以上要求し、mfm-js は
+    // 数字だけを弾く）。
+    final rejected = plainOnly
+        ? !_hashtagHasLetter.hasMatch(tag)
+        : _digitsOnly.hasMatch(tag);
+    if (tag.isEmpty || rejected) {
       _pos = start;
       return null;
     }

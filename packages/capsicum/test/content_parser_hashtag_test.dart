@@ -73,4 +73,57 @@ void main() {
       expect(parseHashtagsForTesting('#hyphen-tag'), ['hyphen-tag']);
     });
   });
+
+  // #1151: Misskey の投稿（MFM）は、どの文字までをタグとするかを mfm-js に
+  // 合わせる。⚠ 期待値は mfm.js の `src/internal/parser.ts` の `hashTagChar` を
+  // 読んで決めた（終わらせる文字は 空白 と `.,!?'"#:/[]【】()「」（）<>`）。
+  group('Misskey の投稿: タグに使える文字は mfm-js に合わせる (#1151)', () {
+    test('⚠⚠ 中黒はタグの一部（以前はここで切っていた）', () {
+      expect(parseHashtagsForTesting('#ねこ・いぬ を見た'), ['ねこ・いぬ']);
+      expect(parseHashtagsForTesting('#プリキュア・オールスターズ'), ['プリキュア・オールスターズ']);
+    });
+
+    test('絵文字や全角の記号もタグの一部（mfm-js が終わらせない文字）', () {
+      expect(parseHashtagsForTesting('#ねこ🐈 かわいい'), ['ねこ🐈']);
+      expect(parseHashtagsForTesting('#やった！ うれしい'), ['やった！']);
+    });
+
+    test('ASCII の句読点・コロン・スラッシュでは終わる', () {
+      expect(parseHashtagsForTesting('#tag. 続き'), ['tag']);
+      expect(parseHashtagsForTesting('#tag, 続き'), ['tag']);
+      expect(parseHashtagsForTesting('#tag!'), ['tag']);
+      expect(parseHashtagsForTesting('#tag:x'), ['tag']);
+      expect(parseHashtagsForTesting('#tag/x'), ['tag']);
+    });
+
+    test('全角スペースで終わる', () {
+      expect(parseHashtagsForTesting('#ねこ　いぬ'), ['ねこ']);
+    });
+
+    // ⚠⚠ ここだけ、意図して mfm-js から外れている（2026-10-10 pooza）。mfm-js は
+    // 括弧の対を中身ごとタグに含めるが、そこまで合わせると #566 で直した
+    // 見え方が Misskey の投稿では元に戻る。
+    group('⚠ 括弧の対の中身は取り込まない（mfm-js と違う）', () {
+      test('開き括弧でタグが切れる', () {
+        expect(parseHashtagsForTesting('#お題「世界」'), ['お題']);
+        expect(parseHashtagsForTesting('#お題（世界）'), ['お題']);
+        expect(parseHashtagsForTesting('#topic(world)'), ['topic']);
+        expect(parseHashtagsForTesting('#topic[world]'), ['topic']);
+        expect(parseHashtagsForTesting('#お題【世界】'), ['お題']);
+      });
+
+      test('⚠⚠ #566 の出発点だった形は、タグにならないまま', () {
+        expect(
+          parseHashtagsForTesting('#26「夏だ！海だ！キラパティ漂流記！」を視聴。'),
+          isEmpty,
+          reason: '括弧で切れて「26」＝数字だけになり、成立しない',
+        );
+      });
+    });
+
+    test('数字だけのタグは成立しない', () {
+      expect(parseHashtagsForTesting('#2026'), isEmpty);
+      expect(parseHashtagsForTesting('#2026年'), ['2026年']);
+    });
+  });
 }
