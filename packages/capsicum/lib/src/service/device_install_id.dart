@@ -109,11 +109,28 @@ class DeviceInstallId {
   /// このインストールの ID を返す。未生成なら生成して永続化する。
   static Future<String> get() => _pending ??= _load();
 
+  /// 保存してあった値を読めなかったので、このプロセスでは作り直した値を
+  /// 返している。
+  static bool _regeneratedAfterReadFailure = false;
+
+  /// 「この登録は自分のもの」と relay に示すための ID (#1262)。
+  ///
+  /// ⚠⚠ **読めずに作り直した回は null**（リリース前レビュー・2026-10-10）。
+  /// [get] は読めなくても新しい値を返して続けるので、そのまま送ると
+  /// **relay の行が持つ以前の ID と食い違い、自分の登録を消せなくなる**
+  /// （relay は食い違いを拒み、送ってこない要求は通す）。
+  /// ⚠ 初回の生成（保存が無かっただけ）は食い違わないので、そのまま返す。
+  static Future<String?> getForOwnershipProof() async {
+    final id = await get();
+    return _regeneratedAfterReadFailure ? null : id;
+  }
+
   static Future<String> _load() async {
     String? existing;
     try {
       existing = await _gate.read(key: storageKey);
     } catch (e, st) {
+      _regeneratedAfterReadFailure = true;
       // Android の復元直後（マスター鍵が別）や Keychain 一過性失敗。前者は
       // 作り直すのが正解、後者もこの起動では読めないので同じ扱いにする。
       // 一過性で作り直してしまうと relay に行が 1 つ増えるが、恒久的に
@@ -198,6 +215,7 @@ class DeviceInstallId {
   @visibleForTesting
   static void resetForTest() {
     _pending = null;
+    _regeneratedAfterReadFailure = false;
     debugReportHook = null;
   }
 

@@ -301,14 +301,19 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     // ⚠⚠ **プリセットを足して初めて対象になったアカウントも、ここで登録する**
     // (#1237)。以前は足したアカウントしか登録せず、先に居た外部サーバーの
     // アカウントは**次に起動するまで「登録対象外」のまま**だった（通知が届かない）。
-    for (final target in accountsToRegisterAfterAdd(
-      added: enriched,
-      all: newAccounts,
-      hadPreset: hadPreset,
-      hasPreset: hasPreset,
-    )) {
-      PushRegistrationService.registerAccount(target, eligible: hasPreset);
-    }
+    // ⚠ 全員を登録する回は、プリセットのアカウントを先に済ませる
+    // （`PushRegistrationService.registrationWaves`）。
+    unawaited(
+      PushRegistrationService.registerAccounts(
+        accountsToRegisterAfterAdd(
+          added: enriched,
+          all: newAccounts,
+          hadPreset: hadPreset,
+          hasPreset: hasPreset,
+        ),
+        eligible: hasPreset,
+      ),
+    );
   }
 
   void switchAccount(Account account) {

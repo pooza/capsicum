@@ -68,6 +68,66 @@ class PushRegistrationService {
     required bool hasEntitlement,
   }) => eligible || isPresetServer(host) || hasEntitlement;
 
+  /// 登録を打つ順番（リリース前レビュー・2026-10-10）。先頭の組が済んでから
+  /// 次の組へ進む。
+  ///
+  /// ⚠⚠ **プリセットを持つ人は、プリセットのアカウントを先に済ませる。**relay は
+  /// `/register` のたびに「この端末にプリセットの行があるか」を**その瞬間に**
+  /// 引いて、無ければ外部サーバーの登録を 403 で拒む。全員を並行に打つと、
+  /// 外部の要求がプリセットの行より先に着いた回に拒まれ、**プリセットの利用者の
+  /// 外部アカウントが、次に起動するまで通知を受け取れない**
+  /// （`docs/product-policy.md` の不変条件の側）。⚠ 起きるのは relay に
+  /// プリセットの行がまだ無い回 —— プリセットを初めて足した直後と、
+  /// トークンが変わって登録を畳み直した回。
+  ///
+  /// ⚠ プリセットを持たない人は 1 組のまま（順番に意味が無い）。
+  @visibleForTesting
+  static List<List<T>> registrationWaves<T>(
+    List<T> accounts, {
+    required bool hasPreset,
+    required String Function(T account) hostOf,
+  }) {
+    if (!hasPreset) return [accounts];
+    final preset = <T>[];
+    final others = <T>[];
+    for (final account in accounts) {
+      (isPresetServer(hostOf(account)) ? preset : others).add(account);
+    }
+    return [if (preset.isNotEmpty) preset, if (others.isNotEmpty) others];
+  }
+
+  /// 複数のアカウントを [registrationWaves] の順で登録する。
+  ///
+  /// [registerAccount] は in-flight ガード付きで内部 try/catch も備えるため、
+  /// 組の中は並列にして待ち時間を縮める。
+  ///
+  /// ただし Windows は flutter_secure_storage が単一ファイル
+  /// (flutter_secure_storage.dat) を read-modify-write するため、複数アカウント
+  /// を並列登録すると PushKeyStore の write 同士が同ファイルを同時に開いて
+  /// PathAccessException（共有違反）になる (#474)。iOS/Android/macOS は
+  /// Keychain/Keystore が並行安全なので並列のまま。Windows のみ直列化する。
+  static Future<void> registerAccounts(
+    List<Account> accounts, {
+    required bool eligible,
+  }) async {
+    final waves = registrationWaves(
+      accounts,
+      hasPreset: eligible,
+      hostOf: (a) => a.key.host,
+    );
+    for (final wave in waves) {
+      if (Platform.isWindows) {
+        for (final a in wave) {
+          await registerAccount(a, eligible: eligible);
+        }
+      } else {
+        await Future.wait(
+          wave.map((a) => registerAccount(a, eligible: eligible)),
+        );
+      }
+    }
+  }
+
   /// サーバーソフトウェアの仕様で、このアカウントへのプッシュ通知が成立しないか
   /// (2026-10-06 pooza)。
   ///
@@ -410,7 +470,11 @@ class PushRegistrationService {
           reason: subscribePhase
               ? PushRegistrationFailureReason.subscribeFailed
               // ⚠ relay の「利用権が要る」は、ほかの失敗と分けて持つ (#1237)。
-              : PushRelayClient.isEntitlementRequired(e)
+              // ⚠⚠ **プリセットを持つ人には言わない**（リリース前レビュー・
+              // 2026-10-10）。その人に利用権は要らないので、拒まれたのは
+              // relay にプリセットの行がまだ無かった回（[registrationWaves]）。
+              // 課金の状態を見せず、やり直せる失敗として出す。
+              : PushRelayClient.isEntitlementRequired(e) && !eligible
               ? PushRegistrationFailureReason.entitlementRejected
               : PushRegistrationFailureReason.relayFailed,
           errorMessage: _shortMessage(e),
@@ -615,15 +679,18 @@ class PushRegistrationService {
   ///
   /// 端末の ID を一緒に送る (#1262)。⚠ **読めなかった回は送らずに続ける** ——
   /// relay は送ってこない要求も（当面）通すので、解除を止める理由にしない。
+  /// ⚠⚠ 「読めなかった」には、**読めずに作り直した回**も含む
+  /// （`DeviceInstallId.getForOwnershipProof`）。作り直した値を送ると relay の
+  /// 行と食い違い、拒まれて登録が残る。
   static Future<void> unregisterDevice(
     List<int> relayIds, {
     @visibleForTesting PushRelayClient? client,
-    @visibleForTesting Future<String> Function()? readDeviceId,
+    @visibleForTesting Future<String?> Function()? readDeviceId,
   }) async {
     if (relayIds.isEmpty) return;
     String? deviceId;
     try {
-      deviceId = await (readDeviceId ?? DeviceInstallId.get)();
+      deviceId = await (readDeviceId ?? DeviceInstallId.getForOwnershipProof)();
     } catch (e) {
       debugLogException(
         'capsicum: push.registration: device id unreadable on unregister',
@@ -908,24 +975,10 @@ class PushRegistrationService {
       }
     }
 
-    // registerAccount は in-flight ガード付きで内部 try/catch も備えるため、
     // 並列化して起動時のブロック時間を短縮する。N アカウント × 2 HTTP が
-    // 直列で数秒積み上がっていたのを 1 ラウンドに圧縮する。
-    //
-    // ただし Windows は flutter_secure_storage が単一ファイル
-    // (flutter_secure_storage.dat) を read-modify-write するため、複数アカウント
-    // を並列登録すると PushKeyStore の write 同士が同ファイルを同時に開いて
-    // PathAccessException（共有違反）になる (#474)。iOS/Android/macOS は
-    // Keychain/Keystore が並行安全なので並列のまま。Windows のみ直列化する。
-    if (Platform.isWindows) {
-      for (final a in accounts) {
-        await registerAccount(a, eligible: hasPreset);
-      }
-    } else {
-      await Future.wait(
-        accounts.map((a) => registerAccount(a, eligible: hasPreset)),
-      );
-    }
+    // 直列で数秒積み上がっていたのを、多くて 2 ラウンドに圧縮する
+    // （順番と Windows の直列化は [registerAccounts]）。
+    await registerAccounts(accounts, eligible: hasPreset);
 
     // Windows: 登録で生成・更新した鍵を LocalState のバックグラウンドタスク用
     // コピー (push_keys.json) へ反映する (#474 フェーズ C)。起動時のネイティブ

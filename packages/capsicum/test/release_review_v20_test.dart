@@ -269,21 +269,17 @@ void main() {
         // ⚠ #1237 で、登録の相手は [accountsToRegisterAfterAdd] が決める形に
         // なった（プリセットが初めて居るようになった回は全員）。見ているのは
         // 従来どおり「その直前の判定が、届かないアカウントも数えていること」。
-        final at = source.indexOf(
-          'for (final target in accountsToRegisterAfterAdd(',
-        );
+        // ⚠ v2.1 のリリース前レビューで、順番を決める `registerAccounts` 経由に
+        // なった（プリセットのアカウントを先に済ませる）。
+        final at = source.indexOf('PushRegistrationService.registerAccounts(');
         expect(at, greaterThan(0));
         final before = source.substring(at - 900, at);
         expect(before, contains('final hasPreset = hasPresetAccountIn('));
         expect(before, contains('offlineAccounts:'));
         // 判定の結果が、そのまま登録へ渡っている。
         final after = source.substring(at, at + 400);
-        expect(
-          after,
-          contains(
-            'PushRegistrationService.registerAccount(target, eligible: hasPreset)',
-          ),
-        );
+        expect(after, contains('accountsToRegisterAfterAdd('));
+        expect(after, contains('eligible: hasPreset'));
       });
     });
 
