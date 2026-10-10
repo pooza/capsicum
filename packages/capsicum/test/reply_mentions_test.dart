@@ -254,45 +254,4 @@ void main() {
       });
     });
   });
-
-  group('composeVisibleUserIds（送る宛先）', () {
-    Post note({required String authorId, List<String> ids = const []}) => Post(
-      id: 'n',
-      postedAt: DateTime.utc(2026, 9, 21),
-      author: User(id: authorId, username: 'x'),
-      scope: PostScope.direct,
-      visibleUserIds: ids,
-    );
-
-    // v1.66 リリース前レビュー（赤）: 返信先の宛先を足すと、外した人に届く。
-    test('⚠⚠ redraft は元の投稿の宛先だけ', () {
-      final result = composeVisibleUserIds(
-        scope: PostScope.direct,
-        redraft: note(authorId: 'me', ids: ['a', 'me']),
-        me: me,
-      );
-      expect(result, ['a'], reason: '自分は入れない');
-    });
-
-    // ⚠⚠ 通常の返信では返信先の宛先を引き継がない（#1165 へ先送り）。宛先を
-    // 見せて外せる UI が無いまま引き継ぐと、本文から消した人にも届く。
-    // サーバーが返信先の投稿者を足すので、送る宛先は空でよい。
-    test('⚠⚠ 通常の返信では送らない（サーバーが投稿者を足す）', () {
-      expect(
-        composeVisibleUserIds(scope: PostScope.direct, redraft: null, me: me),
-        isEmpty,
-      );
-    });
-
-    test('指名でなければ送らない', () {
-      expect(
-        composeVisibleUserIds(
-          scope: PostScope.followersOnly,
-          redraft: note(authorId: 'me', ids: ['a']),
-          me: me,
-        ),
-        isEmpty,
-      );
-    });
-  });
 }

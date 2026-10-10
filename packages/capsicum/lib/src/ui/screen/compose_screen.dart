@@ -42,6 +42,7 @@ import '../util/annict_link.dart';
 import '../util/compose_draft_notice.dart';
 import '../util/compose_settings_display.dart';
 import '../util/compose_template_display.dart';
+import '../util/direct_recipients.dart';
 import '../util/draft_display.dart';
 import '../util/drive_description_sync.dart';
 import '../util/hashtag_body.dart';
@@ -56,9 +57,11 @@ import '../util/reply_mentions.dart';
 import '../util/shortcode_warning_controller.dart';
 import '../util/text_length_counter.dart';
 import '../util/visible_timeline.dart';
+import '../widget/account_multi_select_sheet.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/content_parser.dart';
 import '../widget/desktop_menu_model.dart';
+import '../widget/direct_recipients_row.dart';
 import '../widget/emoji_text.dart';
 import '../widget/insert_picker_sheet.dart';
 import '../widget/overflow_icon_row.dart';
@@ -574,16 +577,99 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// 取得に失敗した / まだ返ってきていない。
   bool _redraftReplyToUnavailable = false;
 
-  /// 指名（Misskey の `specified`）で送るときの宛先 (#1161)。
+  /// 指名（Misskey の `specified`）の宛先 (#1161 / #1165)。利用者の id → 利用者。
   ///
-  /// ⚠ **サーバーが自動で足すのは返信先の投稿者だけ**なので、返信先の宛先を
-  /// 引き継がないと、スレッドにいた他の人へ届かない。redraft は元の宛先も戻す。
-  /// Mastodon の adapter はこの値を読まない（宛先は本文のメンションで決まる）。
-  List<String> get _visibleUserIds => composeVisibleUserIds(
+  /// 値は id からサーバーへ問い合わせて入れる。**取れるまで・取れなかった回は
+  /// null**（そのあいだも宛先としては有効で、外すこともできる）。並び順は
+  /// 足した順。
+  ///
+  /// ⚠⚠ **画面の「宛先」の行に、ここに居る全員が出ている。**以前は宛先を見る
+  /// 手段が無く、返信先の宛先を引き継ぐと「本文から消した人にも届く」ことに
+  /// なったので、引き継ぎごと外していた（v1.66 のレビュー）。見えていて外せる
+  /// ようになったので、引き継ぐ。
+  final _recipients = <String, User?>{};
+
+  /// 問い合わせ中の宛先の id。
+  final _recipientsLoading = <String>{};
+
+  /// 宛先を利用者の id の一覧で渡すサーバーか（Misskey）。
+  ///
+  /// ⚠ Mastodon は本文のメンションで宛先が決まり、adapter もこの値を読まない。
+  bool get _usesRecipientList =>
+      ref.read(currentAdapterProvider) is MisskeyAdapter;
+
+  /// 指名で送るときに渡す宛先。指名でなければ空。
+  List<String> get _visibleUserIds => directRecipientIdsToSend(
     scope: _scope,
-    redraft: widget.redraft,
+    recipientIds: _recipients.keys,
     me: ref.read(currentAccountProvider)?.user,
   );
+
+  /// 外せない宛先（返信先の投稿者。サーバーが必ず足す）。
+  String? get _lockedRecipientId => lockedDirectRecipientId(
+    replyTo: _replyToPost,
+    me: ref.read(currentAccountProvider)?.user,
+  );
+
+  /// 開いたときの宛先を入れ、名前とアイコンを取りにいく (#1165)。
+  void _initRecipients(Draft? restoreDraft) {
+    if (!_usesRecipientList) return;
+    final replyTo = widget.replyTo;
+    final ids = initialDirectRecipientIds(
+      replyTo: replyTo,
+      redraft: widget.redraft,
+      draftRecipientIds: restoreDraft?.visibleUserIds ?? const [],
+      me: ref.read(currentAccountProvider)?.user,
+    );
+    for (final id in ids) {
+      // 返信先の投稿者は、問い合わせなくても手元に居る。
+      _recipients[id] = replyTo != null && replyTo.author.id == id
+          ? replyTo.author
+          : null;
+    }
+    for (final id in ids) {
+      if (_recipients[id] == null) unawaited(_resolveRecipient(id));
+    }
+  }
+
+  /// 宛先 1 人の名前とアイコンを取る。⚠ 取れなくても宛先からは外さない
+  /// （届くことは変わらないので、見えなくするほうが害が大きい）。
+  Future<void> _resolveRecipient(String id) async {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter == null) return;
+    _recipientsLoading.add(id);
+    try {
+      final user = await adapter.getUserById(id);
+      if (!mounted || !_recipients.containsKey(id)) return;
+      setState(() => _recipients[id] = user);
+    } catch (e) {
+      debugLogException('capsicum: direct recipient lookup failed', e);
+    } finally {
+      _recipientsLoading.remove(id);
+      if (mounted) setState(() {});
+    }
+  }
+
+  void _removeRecipient(String id) {
+    if (id == _lockedRecipientId) return;
+    setState(() => _recipients.remove(id));
+  }
+
+  /// 利用者を検索して宛先に足す。
+  Future<void> _addRecipients() async {
+    final me = ref.read(currentAccountProvider)?.user;
+    final picked = await showAccountMultiSelectSheet(
+      context,
+      // ⚠ 既に入っている人と自分は選べないようにする。
+      excludeIds: {..._recipients.keys, ?me?.id},
+    );
+    if (picked == null || picked.isEmpty || !mounted) return;
+    setState(() {
+      for (final user in picked) {
+        _recipients[user.id] = user;
+      }
+    });
+  }
 
   Future<void> _loadRedraftReplyTo(String id) async {
     final adapter = ref.read(currentAdapterProvider);
@@ -596,6 +682,13 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       // （v1.64 のリリース前レビュー）。
       if (_redraftReplyToUnavailable) return;
       setState(() => _redraftReplyTo = post);
+      // ⚠ 返信先が分かったので、投稿者（外せない宛先）の名前も入れておく (#1165)。
+      // 再編集では宛先に投稿者を足さない（元の投稿の宛先だけ）が、元の宛先に
+      // 居れば、ここで問い合わせずに済む。
+      if (_recipients.containsKey(post.author.id) &&
+          _recipients[post.author.id] == null) {
+        setState(() => _recipients[post.author.id] = post.author);
+      }
     } catch (e) {
       // ⚠ **失敗しても送信は成立する。**プレビューが出ないだけなので、
       // ユーザーの操作は止めない。1 行の注記へ落とす。
@@ -613,6 +706,17 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// ユーザーに選び直してもらう。
   String? get _unsendableScopeReason {
     final adapter = ref.read(currentAdapterProvider);
+    // ⚠ 宛先を一覧で渡すサーバー（Misskey）は、**宛先が空かどうか**で決める
+    // (#1165)。宛先の画面ができたので、「指定する画面がありません」ではなくなった。
+    if (_usesRecipientList) {
+      return directRecipientsProblem(
+        scope: _scope,
+        hasRecipients: _recipients.isNotEmpty,
+        isReply: _isReply,
+        replyTargetIsSelf: _replyTargetIsSelf,
+        directLabel: postScopeLabel(PostScope.direct, adapter),
+      );
+    }
     return unsendableDirectScopeReason(
       scope: _scope,
       selectable: selectableScopes(adapter),
@@ -861,6 +965,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     final redraft = widget.redraft;
     final replyTo = widget.replyTo;
     final restoreDraft = widget.restoreDraft;
+    _initRecipients(restoreDraft);
     if (restoreDraft != null) {
       // サーバー下書き（Misskey）からの復元 (#174)。Misskey の本文は MFM 平文
       // なので HTML 復元は不要。CW・公開範囲・添付（drive エントリ）を引き継ぐ。
@@ -5473,6 +5578,23 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                   // 下書き復元・サーバー既定という「開いた瞬間に決まる」経路
                   // なので、消える通知だと**送信ボタンを押す時点で情報が無い**。
                   // 送信もブロックするので、理由は出したままにする。
+                  // 指名の宛先 (#1165)。⚠ **指名を選んでいるときだけ出す**
+                  // （ほかの公開範囲では行を増やさない）。
+                  if (_usesRecipientList && _scope == PostScope.direct)
+                    DirectRecipientsRow(
+                      recipients: [
+                        for (final entry in _recipients.entries)
+                          DirectRecipient(
+                            id: entry.key,
+                            user: entry.value,
+                            loading: _recipientsLoading.contains(entry.key),
+                            locked: entry.key == _lockedRecipientId,
+                          ),
+                      ],
+                      onRemove: _removeRecipient,
+                      onAdd: _addRecipients,
+                      enabled: !_sending,
+                    ),
                   if (_unsendableScopeReason != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 8),

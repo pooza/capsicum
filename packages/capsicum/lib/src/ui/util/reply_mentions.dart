@@ -60,31 +60,6 @@ List<String> buildReplyMentions({
   return result;
 }
 
-/// 投稿フォームが送る指名（`specified`）の宛先 (#1161)。
-///
-/// - 指名でなければ送らない（空）
-/// - ⚠⚠ **redraft は元の投稿の宛先だけを使う。**返信先の宛先を足さない。
-///   自分が Web UI 等で宛先を絞った返信を再編集すると、以前は返信先の宛先
-///   全員との和集合になり、**外した人に黙って届いていた**（v1.66 リリース前
-///   レビューの赤）。宛先は画面に出ないので、利用者は気づけない。⚠ 返信先の
-///   取得が送信より先に終わるかどうかで結果が変わる、という揺れも消える
-/// - ⚠⚠ **通常の返信では返信先の宛先を引き継がない**（2026-09-21 pooza 判断）。
-///   サーバーは返信先の投稿者だけを宛先に足す（`NoteCreateService.ts`）ので、
-///   **スレッドの他の人には届かない**（v1.65 までと同じ）。引き継ぐと、capsicum
-///   には宛先を見る手段も外す手段も無いまま、本文から消した人にも届く（v1.66
-///   リリース前レビュー）。Web UI のように宛先を見せて外せる UI と一緒に
-///   入れる（#1165）
-/// - どの場合も自分は入れない
-List<String> composeVisibleUserIds({
-  required PostScope scope,
-  required Post? redraft,
-  required User? me,
-}) {
-  if (scope != PostScope.direct) return const [];
-  final ids = redraft?.visibleUserIds ?? const <String>[];
-  return {...ids}.where((id) => id != me?.id).toList();
-}
-
 /// 自サーバーと同じ host はローカル扱い（null）に畳む。
 String? _remoteHost(String? host, String localHost) {
   if (host == null || host.isEmpty) return null;
