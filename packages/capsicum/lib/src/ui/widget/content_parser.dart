@@ -192,11 +192,13 @@ List<({String username, String? host})> extractMfmMentions(String mfm) {
   List<String> urls,
   List<String> hashtags,
   bool hasRawTag,
+  String plainText,
 })
 parseHtmlForTesting(String html) {
   final links = <({String text, String url})>[];
   final urls = <String>[];
   final hashtags = <String>[];
+  final plain = StringBuffer();
   var hasRawTag = false;
   void walk(List<_Node> nodes) {
     for (final n in nodes) {
@@ -209,6 +211,7 @@ parseHtmlForTesting(String html) {
           hashtags.add(n.text);
         case _NodeType.text:
           if (n.text.contains('<a')) hasRawTag = true;
+          plain.write(n.text);
         default:
           break;
       }
@@ -217,7 +220,14 @@ parseHtmlForTesting(String html) {
   }
 
   walk(_parseHtml(html));
-  return (links: links, urls: urls, hashtags: hashtags, hasRawTag: hasRawTag);
+  return (
+    links: links,
+    urls: urls,
+    hashtags: hashtags,
+    hasRawTag: hasRawTag,
+    // 文字として残ったぶん（タグにもリンクにもならなかった部分）。
+    plainText: plain.toString(),
+  );
 }
 
 class _MfmParser {
@@ -233,7 +243,32 @@ class _MfmParser {
   /// ⚠ **Misskey の `cw` は MFM なので、そちらはこのモードを使わない。**
   final bool plainOnly;
 
-  _MfmParser(this.input, {this.plainOnly = false});
+  /// ハッシュタグを**送信元が決めた範囲のまま**受け取るモード (#1151)。
+  /// Mastodon の HTML を読むとき（[_parseHtml]）だけ立てる。
+  ///
+  /// ⚠⚠ **表示する側は、タグを決める立場ではない。**Mastodon の API が返す
+  /// `content` の HTML には、そのタグを決めたサーバーの判定が `<a>` として焼き
+  /// 込まれている（ローカル投稿は自サーバーの判定、リモート投稿は送信元の HTML
+  /// そのまま）。以前はこの `<a>` を素の `#tag` に戻して**自前の判定で読み直して
+  /// いた**ので、送信元と範囲がずれた:
+  /// - 送信元が `#プリキュア・オールスターズ` 全体をタグにしていても、途中で切る
+  /// - 送信元がタグにしなかった `#…`（リンクになっていない）を、タグにする
+  ///
+  /// このモードでは:
+  /// - [_parseHtml] が `<a>` を [_hashtagOpen]…[_hashtagClose] で囲んで渡し、
+  ///   その中身を**判定せずに**タグとする
+  /// - **裸の `#` はタグにしない**（送信元がリンクにしなかった）
+  final bool anchoredHashtags;
+
+  /// [anchoredHashtags] のときに、タグの範囲を囲む印。本文に現れない制御文字。
+  static const _hashtagOpen = '\x02';
+  static const _hashtagClose = '\x03';
+
+  _MfmParser(
+    this.input, {
+    this.plainOnly = false,
+    this.anchoredHashtags = false,
+  });
 
   // Mastodon HASHTAG_NAME_RE 相当のハッシュタグ仕様 (#566)。
   //  - 直前境界: Mastodon の lookbehind `(?<![=\/)\w])` に揃え、ASCII word
@@ -407,6 +442,16 @@ class _MfmParser {
       if (c == '@' && (_pos == 0 || !_isAlnum(input[_pos - 1]))) {
         flushBuf();
         final node = _tryMention();
+        if (node != null) {
+          nodes.add(node);
+          continue;
+        }
+      }
+
+      // 送信元が決めたハッシュタグ（HTML 経路のみ・#1151）。
+      if (anchoredHashtags && c == _hashtagOpen) {
+        flushBuf();
+        final node = _tryAnchoredHashtag();
         if (node != null) {
           nodes.add(node);
           continue;
@@ -792,8 +837,23 @@ class _MfmParser {
     return _Node(type: _NodeType.mention, text: acct);
   }
 
+  /// [anchoredHashtags] の印で囲まれた範囲を、そのままタグにする (#1151)。
+  _Node? _tryAnchoredHashtag() {
+    if (input[_pos] != _hashtagOpen) return null;
+    final close = input.indexOf(_hashtagClose, _pos + 1);
+    if (close == -1) return null;
+    var tag = input.substring(_pos + 1, close);
+    // 全角の `＃` で書くサーバーもある。先頭の 1 文字だけ落とす。
+    if (tag.startsWith('#') || tag.startsWith('＃')) tag = tag.substring(1);
+    _pos = close + 1;
+    if (tag.isEmpty) return _Node.text('#');
+    return _Node(type: _NodeType.hashtag, text: tag);
+  }
+
   _Node? _tryHashtag() {
     if (input[_pos] != '#') return null;
+    // ⚠ 送信元がリンクにしなかった `#` は、タグにしない (#1151)。
+    if (anchoredHashtags) return null;
     // 直前境界チェック: =, /, ), word char (L/M/N + _) の直後の # はタグにしない
     if (_pos > 0 && _hashtagBoundaryBefore.hasMatch(input[_pos - 1])) {
       return null;
@@ -850,7 +910,10 @@ class _MfmParser {
       if (_pos < input.length) _pos++; // skip \n
     }
     final quoteText = lines.join('\n');
-    final children = _MfmParser(quoteText).parse();
+    final children = _MfmParser(
+      quoteText,
+      anchoredHashtags: anchoredHashtags,
+    ).parse();
     return _Node(type: _NodeType.quote, children: children);
   }
 }
@@ -864,6 +927,31 @@ List<_Node> _parseHtml(String html) {
   // Order matters: convert MFM-origin HTML elements to MFM syntax BEFORE
   // stripping remaining tags, so the MFM parser can render them.
   var text = html
+      // ⚠⚠ **ハッシュタグの `<a>` を、いちばん先に印へ置き換える** (#1151)。
+      // 送信元が決めた範囲をそのまま運ぶため（[_MfmParser.anchoredHashtags]）。
+      // ⚠ 先頭でやるのは、後ろの変換（引用ブロック等）が中のタグを落とす前に
+      // 拾うため —— 落ちたあとでは裸の `#tag` になり、タグにならない。
+      //
+      // 何をハッシュタグの `<a>` とみなすかは従来どおり: 可視ラベルが `#` で
+      // 始まる単一トークン (#595)。空白を含むものは実リンクのラベルなので
+      // 触らない (#750)。Mastodon は `class="mention hashtag" rel="tag"` を
+      // 付けるが、Misskey 由来は class を付けないので属性では絞らない。
+      .replaceAllMapped(
+        RegExp(
+          r'<a\b[^>]*?\bhref="[^"]*"[^>]*>(.*?)</a>',
+          caseSensitive: false,
+          dotAll: true,
+        ),
+        (m) {
+          final label = m[1]!.replaceAll(RegExp(r'<[^>]*>'), '').trim();
+          final isHashtag =
+              (label.startsWith('#') || label.startsWith('＃')) &&
+              label.length > 1 &&
+              !RegExp(r'\s').hasMatch(label);
+          if (!isHashtag) return m[0]!;
+          return '${_MfmParser._hashtagOpen}$label${_MfmParser._hashtagClose}';
+        },
+      )
       .replaceAll(RegExp(r'<br\s*/?>'), '\n')
       .replaceAll(RegExp(r'</p>\s*<p>'), '\n\n')
       // Preserve <pre><code> as code block before handling inline <code>
@@ -1012,7 +1100,7 @@ List<_Node> _parseHtml(String html) {
   text = _unescape.convert(text);
   // Re-parse for URLs, emoji, hashtags, mentions using MFM parser
   // (these patterns are shared)
-  return _parseMfm(text);
+  return _MfmParser(text, anchoredHashtags: true).parse();
 }
 
 // ---------------------------------------------------------------------------
