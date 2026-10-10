@@ -297,7 +297,7 @@ class PushRelayClient {
         if (!_isTransient(e) || attempt >= _registerRetryDelays.length) {
           rethrow;
         }
-        final delay = _registerRetryDelays[attempt];
+        final delay = retryDelayFor(e, attempt);
         _breadcrumb(
           '$operation transient, retrying',
           data: {
@@ -326,6 +326,47 @@ class PushRelayClient {
         );
   }
 
+  /// relay の `Retry-After` を待つ上限 (#1237)。
+  static const _maxRetryAfter = Duration(seconds: 30);
+
+  /// [attempt] 回目（0 始まり）の失敗のあと、次に送るまで待つ時間 (#1237)。
+  ///
+  /// 既定は [_registerRetryDelays]。relay が `Retry-After`（秒）を付けていて、
+  /// それが既定より**長い**ときだけそちらに従う。
+  ///
+  /// ⚠ いまは relay の値（`VERIFICATION_BUSY_RETRY_AFTER` = 2 秒）と既定の
+  /// 最初の間隔（2 秒）が同じなので、結果は変わらない。**relay 側を伸ばしたときに
+  /// 追随する**ための読み。以前は読んでおらず、relay が「10 秒待て」と言っても
+  /// 2 秒後に打ち返していた。
+  /// ⚠ **短くはしない**（既定のカーブは起動直後の回線の準備待ちも兼ねている）。
+  /// ⚠ 上限を置く（[_maxRetryAfter]）—— 購入の完了を待たせている最中なので、
+  /// 桁を取り違えた値で画面を止めない。
+  @visibleForTesting
+  static Duration retryDelayFor(DioException error, int attempt) {
+    final base = _registerRetryDelays[attempt];
+    final raw = error.response?.headers.value('retry-after');
+    final seconds = int.tryParse(raw?.trim() ?? '');
+    if (seconds == null || seconds <= 0) return base;
+    final asked = Duration(seconds: seconds);
+    if (asked <= base) return base;
+    return asked > _maxRetryAfter ? _maxRetryAfter : asked;
+  }
+
+  /// relay が「利用権が要る」と断った回か（`/register` の 403・#1237）。
+  ///
+  /// ⚠ **ステータスだけで見ない。**relay は 401（シークレット違い）と区別できる
+  /// ように `reason: entitlement_required` を付けて返す（capsicum-relay の
+  /// `docs/entitlements.md`）。403 を一律にここへ寄せると、別の理由の 403 まで
+  /// 「利用権を確認できませんでした」と案内してしまう。
+  ///
+  /// ⚠ この回は [_isTransient] に当たらないので、送り直さない。
+  static bool isEntitlementRequired(Object error) {
+    if (error is! DioException) return false;
+    if (error.response?.statusCode != 403) return false;
+    final data = error.response?.data;
+    return data is Map && data['reason'] == 'entitlement_required';
+  }
+
   /// 送り直せば通る見込みのある失敗か。接続段階の失敗（[_isTransientNetwork]）
   /// と、relay が「いまは手が塞がっている」と断った回（[_isRelayBusy]）。
   static bool _isTransient(DioException e) =>
@@ -343,6 +384,17 @@ class PushRelayClient {
     final data = e.response?.data;
     return data is Map && data['reason'] == 'verification_busy';
   }
+
+  /// relay に**届かなかっただけ**の回か (#1237)。圏外・不安定な回線。
+  ///
+  /// ⚠⚠ **「応答が無い」だけで決めない。**証明書の検証に失敗した回
+  /// （`badCertificate`）も応答は無いが、**圏外とは別物**で、黙らせると証明書の
+  /// 事故がどこからも見えなくなる。一時的な通信の失敗の型（[_isTransientNetwork]）
+  /// に限る。
+  static bool isUnreachable(Object error) =>
+      error is DioException &&
+      error.response == null &&
+      _isTransientNetwork(error);
 
   /// 接続段階の transient エラーか判定する。`badResponse` (4xx/5xx) は
   /// サーバー応答が返っている = 接続自体は成立しているので transient 扱い

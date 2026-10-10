@@ -409,6 +409,9 @@ class PushRegistrationService {
           PushRegistrationState.failed,
           reason: subscribePhase
               ? PushRegistrationFailureReason.subscribeFailed
+              // ⚠ relay の「利用権が要る」は、ほかの失敗と分けて持つ (#1237)。
+              : PushRelayClient.isEntitlementRequired(e)
+              ? PushRegistrationFailureReason.entitlementRejected
               : PushRegistrationFailureReason.relayFailed,
           errorMessage: _shortMessage(e),
         );

@@ -49,7 +49,7 @@ class PushNotificationSettingsScreen extends ConsumerWidget {
     // **または読めなくて分からない**（`unknown`）。分からない回も登録は試みる。
     // **登録を試みる側の判定に使う** (#1218)。⚠ **`status` では切らない**
     // （`expired` でも登録は試みて、止めるのは relay の仕事）。
-    final hasEntitlement = entitlementView != EntitlementView.absent;
+    final hasEntitlement = attemptsRegistrationWith(entitlementView);
 
     // 利用権の購入結果を知らせ、この画面の表示を購入後の状態へ追いつかせる
     // (#1217)。
@@ -70,7 +70,7 @@ class PushNotificationSettingsScreen extends ConsumerWidget {
     // サポーター画面で買ったものの結果をここで出すと文脈が合わない。
     // ⚠⚠ **門は `hasPreset` だけにした (#1224)。**以前は「購入の入口が出る
     // とき」(`absent` / `expired`) に限っていたが、節のできることを 2 画面で
-    // 揃えたので、**`unverified` で「取り直す」を押した結果もここで出す**
+    // 揃えたので、**`unverified` で「購入を復元する」を押した結果もここで出す**
     // 必要がある。⚠ プリセットのみの人には節が出ないので待ち受けない。
     if (!hasPreset) {
       ref.listen<SupporterPurchaseState>(supporterPurchaseProvider, (
@@ -86,7 +86,7 @@ class PushNotificationSettingsScreen extends ConsumerWidget {
           SnackBar(content: Text(supporterPurchaseOutcomeMessage(outcome))),
         );
         if (outcome.kind == SupporterPurchaseOutcomeKind.success) {
-          ref.read(entitlementStatusProvider.notifier).refresh();
+          ref.read(entitlementStatusProvider.notifier).refreshCoalesced();
         }
       });
     }
@@ -187,8 +187,9 @@ class PushNotificationSettingsScreen extends ConsumerWidget {
       // ないほうがよく、**capsicum-site の特商法表記の商品名と完全一致する**。
       // ⚠ 「この見出しだけ短く」は検討の上で採らなかった（再提案しない）。
       const SectionHeader('プッシュ通知リレーの利用権'),
-      // ⚠⚠ **中身は共有ウィジェット 1 本 (#1224)。**状態表示・購入・取り直す・
-      // 登録し直す・記録を消すが、**サポーター画面と完全に同じ**出方になる。
+      // ⚠⚠ **中身は共有ウィジェット 1 本 (#1224)。**状態表示・購入・復元・
+      // 記録を消すが、**サポーター画面と完全に同じ**出方になる（復元の口は
+      // #1234 で 1 つにまとめた）。
       // ⚠ **ここで組み立て直さない** —— 以前はこちらだけが状態表示と
       // 「登録し直す」を持ち、あちらだけが「取り直す」を持っていた。
       const RelayEntitlementPurchaseSection(
@@ -356,7 +357,7 @@ class _AccountStatusTileState extends ConsumerState<_AccountStatusTile> {
             ].join('\n'),
           ),
           isThreeLine: snapshot?.errorMessage != null,
-          trailing: _isRetryable(state, eligible)
+          trailing: isPushRegistrationRetryable(state, eligible: eligible)
               ? TextButton(
                   onPressed: () => _retry(account),
                   child: const Text('再試行'),
@@ -370,13 +371,6 @@ class _AccountStatusTileState extends ConsumerState<_AccountStatusTile> {
         },
       ],
     );
-  }
-
-  bool _isRetryable(PushRegistrationState state, bool eligible) {
-    if (!eligible) return false;
-    return state == PushRegistrationState.failed ||
-        state == PushRegistrationState.idle ||
-        state == PushRegistrationState.skipped;
   }
 
   void _retry(Account account) {

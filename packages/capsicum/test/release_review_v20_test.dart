@@ -266,13 +266,24 @@ void main() {
         final source = maskComments(
           read('lib/src/provider/account_manager_provider.dart'),
         );
+        // ⚠ #1237 で、登録の相手は [accountsToRegisterAfterAdd] が決める形に
+        // なった（プリセットが初めて居るようになった回は全員）。見ているのは
+        // 従来どおり「その直前の判定が、届かないアカウントも数えていること」。
         final at = source.indexOf(
-          'PushRegistrationService.registerAccount(enriched',
+          'for (final target in accountsToRegisterAfterAdd(',
         );
         expect(at, greaterThan(0));
-        final before = source.substring(at - 400, at);
-        expect(before, contains('hasPresetAccountIn('));
+        final before = source.substring(at - 900, at);
+        expect(before, contains('final hasPreset = hasPresetAccountIn('));
         expect(before, contains('offlineAccounts:'));
+        // 判定の結果が、そのまま登録へ渡っている。
+        final after = source.substring(at, at + 400);
+        expect(
+          after,
+          contains(
+            'PushRegistrationService.registerAccount(target, eligible: hasPreset)',
+          ),
+        );
       });
     });
 
@@ -560,12 +571,18 @@ void main() {
       final head = source.substring(at, at + 200);
       expect(head, contains('entitlementView != EntitlementView.unknown'));
       // ⚠ 登録を試みる側の判定は変えていない（分からない回も試みる）。
+      // ⚠ #1237 で 2 画面の写しを [attemptsRegistrationWith] へ寄せたので、
+      // 配線と、判定そのものの両方を見る。
       expect(
         source,
         contains(
-          'final hasEntitlement = entitlementView != EntitlementView.absent;',
+          'final hasEntitlement = attemptsRegistrationWith(entitlementView);',
         ),
       );
+      expect(attemptsRegistrationWith(EntitlementView.unknown), isTrue);
+      expect(attemptsRegistrationWith(EntitlementView.expired), isTrue);
+      expect(attemptsRegistrationWith(EntitlementView.active), isTrue);
+      expect(attemptsRegistrationWith(EntitlementView.absent), isFalse);
     });
 
     test('読めなければ load は null、loadOrThrow は例外（区別できる）', () async {
@@ -701,9 +718,21 @@ void main() {
       expect(end, greaterThan(start));
       final body = source.substring(start, end);
 
-      expect(body, contains('SupporterPurchaseOutcomeKind.nothingToRestore'));
+      // ⚠ #1237 で、何を立てるかの判定は [outcomeAfterRestoreFallback] へ
+      // 切り出した（遅れて届いた購入があれば「無かった」と言わない）。配線と、
+      // 判定そのものの両方を見る。
+      expect(body, contains('outcomeAfterRestoreFallback('));
+      expect(body, contains('state.lastOutcome,'));
+      expect(
+        outcomeAfterRestoreFallback(null, arrivedLate: false)?.kind,
+        SupporterPurchaseOutcomeKind.nothingToRestore,
+      );
       // ⚠ 復元そのものの失敗（restoreError）を上書きしない。
-      expect(body, contains('state.lastOutcome ??'));
+      const failed = SupporterPurchaseOutcome(
+        SupporterPurchaseOutcomeKind.restoreError,
+        isSubscription: true,
+      );
+      expect(outcomeAfterRestoreFallback(failed, arrivedLate: false), failed);
     });
   });
 
@@ -783,7 +812,7 @@ void main() {
       final end = source.indexOf('Future<void> _clearDraft(');
       final restore = source.substring(start, end);
       final tryAt = restore.indexOf('resolveComposeDraftAttachments(');
-      final catchAt = restore.indexOf('} catch (e) {', tryAt);
+      final catchAt = restore.indexOf('} catch (e, st) {', tryAt);
       expect(catchAt, greaterThan(tryAt), reason: '失敗時の分岐を切り出せていない');
       final failure = restore.substring(
         catchAt,

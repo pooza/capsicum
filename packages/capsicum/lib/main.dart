@@ -718,7 +718,7 @@ void _routeFromNotificationPayload(String? payload) {
       }
       // 未払いの案内 (#1123)。⚠ **relay を経由しないローカル通知**なので
       // account を持たない。行き先は登録ステータス画面（そこに直し方と
-      // 「登録し直す」ボタンがある）。
+      // 「購入を復元する」ボタンがある）。
       if (type == 'entitlement_unpaid') {
         _routeToPushSettings();
         return;
@@ -914,7 +914,7 @@ void _routeToAnnouncements(String? accountString, {int attempt = 0}) {
 }
 
 /// 未払いの案内をタップしたときの行き先 (#1123)。登録ステータス画面には
-/// 直し方と「購入を確認して登録し直す」ボタンがある。
+/// 直し方と「購入を復元する」ボタンがある（#1234 で復元の口を 1 つにまとめた）。
 ///
 /// ⚠ **アカウントの切り替えをしない。**利用権はストアのアカウントに紐づく
 /// （fedi のアカウントではない・設計書 2-A）ので、切り替える先が無い。

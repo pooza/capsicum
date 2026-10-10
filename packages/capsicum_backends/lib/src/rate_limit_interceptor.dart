@@ -27,6 +27,13 @@ class RateLimitInterceptor extends Interceptor {
   /// 429 をそのまま受け取り、利用者に伝えて終われる。
   static const _maxResetWait = Duration(seconds: 60);
 
+  /// 先回りの待機の上限 (#1237)。これより先の窓は待たない。
+  ///
+  /// ⚠ **429 の経路（[_maxResetWait]）より短くしてある。**あちらは「サーバーに
+  /// 断られたので待つ」で、利用者に伝える材料がある。こちらは**まだ断られて
+  /// いないのに待つ**ので、長く待つ理由が無い。
+  static const _maxPreemptiveWait = Duration(seconds: 10);
+
   /// `X-RateLimit-Reset` として受け入れる最大の先 (#1103)。これを超える値は
   /// **読めなかったものとして捨てる**。
   ///
@@ -83,7 +90,16 @@ class RateLimitInterceptor extends Interceptor {
         resetAt != null) {
       final now = DateTime.now();
       if (resetAt.isAfter(now)) {
-        await Future<void>.delayed(resetAt.difference(now));
+        final wait = resetAt.difference(now);
+        // ⚠⚠ **窓が遠ければ待たずに送る** (#1237)。以前は残りが閾値以下になると
+        // 窓が明けるまで黙って待っていた（Mastodon の 5 分窓なら最大約 5 分）。
+        // `onRequest` の中の遅延には Dio のタイムアウトが効かないので、利用者には
+        // **読み込み中のまま固まった**ように見える。
+        // ⚠ 残りが 0 でない限り要求は通る。0 だったら 429 が返り、そちらの
+        // 経路（[_maxResetWait]）が「待つか諦めるか」を決める。
+        if (wait <= _maxPreemptiveWait) {
+          await Future<void>.delayed(wait);
+        }
         // Clear after waiting so we don't block subsequent requests.
         _remaining = null;
         _resetAt = null;

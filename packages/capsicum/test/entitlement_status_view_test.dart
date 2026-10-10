@@ -302,6 +302,51 @@ void main() {
       );
     });
 
+    // #1237: 購入の成立を節と画面の 2 か所が待ち受けているので、そのまま
+    // refresh() を呼ぶと relay への問い合わせが 2 本飛んでいた。
+    test('⚠ 同じ回の通知で続けて呼ばれた引き直しは 1 本にまとまる', () async {
+      final container = ProviderContainer(
+        overrides: [
+          accountManagerProvider.overrideWith(
+            () => _PresetAccounts([_account('mstdn.b-shock.org')]),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(entitlementStatusProvider.notifier);
+      await Future<void>.delayed(Duration.zero);
+      final before = notifier.debugGeneration;
+
+      final first = notifier.refreshCoalesced();
+      final second = notifier.refreshCoalesced();
+      expect(notifier.debugGeneration, before + 1, reason: '2 本目は始めない');
+      expect(identical(first, second), isTrue, reason: '同じ 1 本を待つ');
+      await first;
+
+      // ⚠ 束ねるのは同じ回だけ。あとから起きた別の出来事は読み直す。
+      await Future<void>.delayed(Duration.zero);
+      await notifier.refreshCoalesced();
+      expect(notifier.debugGeneration, before + 2);
+    });
+
+    test('前提: 素の refresh() は呼んだ数だけ始まる', () async {
+      final container = ProviderContainer(
+        overrides: [
+          accountManagerProvider.overrideWith(
+            () => _PresetAccounts([_account('mstdn.b-shock.org')]),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(entitlementStatusProvider.notifier);
+      await Future<void>.delayed(Duration.zero);
+      final before = notifier.debugGeneration;
+
+      final runs = [notifier.refresh(), notifier.refresh()];
+      expect(notifier.debugGeneration, before + 2);
+      await Future.wait(runs);
+    });
+
     // ⚠⚠ **文字列の一致では書かない。**文面を言い換えた瞬間に歯が抜ける。
     // 「出てはいけない語が出ていないか」で見る。
     test('⚠⚠ プリセットの文面が、課金を促したり「無い」と告げたりしない', () {

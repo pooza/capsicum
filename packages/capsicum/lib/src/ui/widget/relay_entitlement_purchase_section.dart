@@ -92,7 +92,7 @@ class RelayEntitlementPurchaseSection extends ConsumerWidget {
       if (outcome == null || outcome == prev?.lastOutcome) return;
       if (!outcome.isSubscription) return;
       if (outcome.kind != SupporterPurchaseOutcomeKind.success) return;
-      ref.read(entitlementStatusProvider.notifier).refresh();
+      ref.read(entitlementStatusProvider.notifier).refreshCoalesced();
     });
 
     return Column(
@@ -135,7 +135,7 @@ class RelayEntitlementPurchaseSection extends ConsumerWidget {
             ),
             subtitle: Text(unsupportedNote),
           ),
-        // ⚠ **商品が取れなければ、買う / 取り直す側は丸ごと出さない** ——
+        // ⚠ **商品が取れなければ、買う / 復元する側は丸ごと出さない** ——
         // ストア未登録・審査前・サブスクを扱えない OS。**押しても買えない入口を
         // 作らない。**
         if (product != null) ...[

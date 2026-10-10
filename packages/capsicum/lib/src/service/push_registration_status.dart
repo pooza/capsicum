@@ -33,6 +33,13 @@ enum PushRegistrationFailureReason {
   /// リレーサーバー登録が失敗。
   relayFailed,
 
+  /// リレーが利用権を認めなかった（`403 entitlement_required`・#1237）。
+  ///
+  /// 手元に利用権の記録はあるのに、relay から見ると失効 / 未検証の回。
+  /// ⚠ **[relayFailed] に混ぜない** —— 「登録に失敗しました」だけだと、同じ画面の
+  /// 利用権の節が言っていることと噛み合わず、次に何をすればよいか分からない。
+  entitlementRejected,
+
   /// SNS 側サブスクリプション登録が失敗（Mastodon / Misskey）。
   subscribeFailed,
 

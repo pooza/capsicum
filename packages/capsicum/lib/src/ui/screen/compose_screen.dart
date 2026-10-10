@@ -1594,12 +1594,44 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     }
   }
 
+  /// 下書きの復元（本体・添付の実在確認）を待つ上限 (#1237)。
+  ///
+  /// ⚠ どちらも本来は即座に返る（端末内の設定とファイルを見るだけ）。上限は
+  /// 「返ってこない」を「失敗」に変えるためのもので、遅い端末を切るためではない。
+  static const _draftRestoreTimeout = Duration(seconds: 10);
+
+  /// 下書きを戻せなかった回を Sentry へ残す (#1237)。
+  ///
+  /// ⚠ 以前は `debugLogException` だけで、release では何も残らなかった
+  /// （頻度が分からない）。⚠ 本文もパスも載せない（`scrubException` を通す）。
+  void _reportDraftRestoreFailure(String stage, Object error, StackTrace st) {
+    unawaited(
+      Sentry.captureException(
+        scrubException(error),
+        stackTrace: st,
+        withScope: (scope) {
+          scope.level = SentryLevel.warning;
+          scope.setTag('compose.draft.restore', stage);
+          scope.fingerprint = [
+            'compose.draft.restore',
+            stage,
+            error.runtimeType.toString(),
+          ];
+        },
+      ),
+    );
+  }
+
   /// Restore a previously saved draft into the controllers.
   Future<void> _restoreDraft() async {
     final ComposeDraft? saved;
     try {
-      saved = await _draftStore.restore();
-    } catch (e) {
+      // ⚠⚠ **上限を掛ける** (#1237)。投稿は復元が済むまで止めているので、
+      // 返ってこないと**毎回「下書きを読み込んでいます」が出て投稿できない**。
+      // 時間切れは下の catch へ落ち、ふつうの失敗と同じに扱う。
+      saved = await _draftStore.restore().timeout(_draftRestoreTimeout);
+    } catch (e, st) {
+      _reportDraftRestoreFailure('restore', e, st);
       // 復元に失敗しても離脱時保存 (#966) は解禁する。ここで抜けると
       // `_draftRestored` が false のまま `_saveDraft` が永久に no-op になり、
       // **書きかけが黙って保存されなくなる**（#969 で解禁条件を足すまでは、
@@ -1686,8 +1718,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     final epoch = _draftClearEpoch;
     final ComposeDraftAttachmentRestore resolved;
     try {
-      resolved = await resolveComposeDraftAttachments(saved.attachments);
-    } catch (e) {
+      // ⚠ こちらも上限を掛ける（理由は上の `restore()` と同じ・#1237）。
+      resolved = await resolveComposeDraftAttachments(
+        saved.attachments,
+      ).timeout(_draftRestoreTimeout);
+    } catch (e, st) {
+      _reportDraftRestoreFailure('attachments', e, st);
       if (epoch != _draftClearEpoch) {
         _draftRestored = true;
         return;
@@ -1717,9 +1753,13 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       if (mounted && saved.attachments.isNotEmpty) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('下書きの添付を復元できませんでした')));
+          ScaffoldMessenger.of(context).showSnackBar(
+            // ⚠ **どうすれば戻るかも言う** (#1237)。控えは残してあり、開き直せば
+            // もう一度試す。
+            const SnackBar(
+              content: Text('下書きの添付を復元できませんでした。投稿画面を開き直すと、もう一度試します。'),
+            ),
+          );
         });
       }
       return;
@@ -3905,7 +3945,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           content: Text(
             '下書きにあった添付 $count 件を復元できませんでした。\n\n'
             'このまま投稿すると、添付なしで投稿され、下書きに残っていた添付の'
-            '控えは破棄されます。',
+            '控えは破棄されます。\n\n'
+            'キャンセルして投稿画面を開き直すと、復元をもう一度試します。',
           ),
           actions: [
             TextButton(

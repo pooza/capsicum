@@ -516,7 +516,7 @@ void main() {
 
       expect(tail, contains('SupporterPurchaseOutcomeKind.success'));
       expect(tail, contains('entitlementStatusProvider.notifier'));
-      expect(tail, contains('refresh()'));
+      expect(tail, contains('refreshCoalesced()'));
     });
 
     test('⚠⚠ どちらの画面も自前では持たない（集約が「使わなくなる」形で崩れない）', () {
@@ -586,7 +586,7 @@ void main() {
       // ⚠ 足りないのは利用権の引き直しだけ（これが無いと買っても
       // 「利用権がありません」のまま残る）。
       expect(listener, contains('entitlementStatusProvider.notifier'));
-      expect(listener, contains('refresh()'));
+      expect(listener, contains('refreshCoalesced()'));
     });
 
     test('⚠ 手押しで登録をやり直す口は残っている', () {

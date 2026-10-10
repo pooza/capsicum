@@ -46,14 +46,22 @@ import 'section_header.dart';
       Colors.green.shade400,
       Icons.check_circle,
     ),
-    PushRegistrationState.failed =>
-      reason == PushRegistrationFailureReason.permissionDenied
-          ? (
-              '通知の権限が許可されていません',
-              theme.colorScheme.error,
-              Icons.notifications_off_outlined,
-            )
-          : ('登録に失敗しました', theme.colorScheme.error, Icons.error_outline),
+    PushRegistrationState.failed => switch (reason) {
+      PushRegistrationFailureReason.permissionDenied => (
+        '通知の権限が許可されていません',
+        theme.colorScheme.error,
+        Icons.notifications_off_outlined,
+      ),
+      // ⚠ **利用権の節と同じことを言う (#1237)。**手元に記録はあるのに relay が
+      // 認めなかった回。「登録に失敗しました」だけだと、節の説明と行が別々の
+      // ことを言っているように見える。次の一手（復元）も節にある。
+      PushRegistrationFailureReason.entitlementRejected => (
+        'プッシュ通知リレーの利用権を確認できませんでした',
+        theme.colorScheme.error,
+        Icons.error_outline,
+      ),
+      _ => ('登録に失敗しました', theme.colorScheme.error, Icons.error_outline),
+    },
     PushRegistrationState.notSupported => (
       'このサーバーでは対応していません',
       theme.colorScheme.outline,
@@ -66,6 +74,18 @@ import 'section_header.dart';
     ),
   };
 }
+
+/// 「再試行」を出すか (#1237)。登録対象で、まだ登録できていない状態のとき。
+///
+/// ⚠ 設定 → プッシュ通知の行と、サーバー情報の節に同じ式が写されていた。
+bool isPushRegistrationRetryable(
+  PushRegistrationState state, {
+  required bool eligible,
+}) =>
+    eligible &&
+    (state == PushRegistrationState.failed ||
+        state == PushRegistrationState.idle ||
+        state == PushRegistrationState.skipped);
 
 /// 現アカウントのプッシュ通知登録状態を表示する共有 widget。
 ///
@@ -86,10 +106,9 @@ class PushRegistrationStatusSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // 本配線が無いプラットフォームでは UI ごと隠す
-    // （#467: macOS / #471: Linux / #423: Windows）。表示しても登録は必ず
-    // token 取得失敗となり、ユーザーが再試行を繰り返す混乱状態になるため、
-    // 本配線が入るまでの暫定対応。
+    // プッシュ通知の経路が無いプラットフォーム（現状は Linux だけ・#475）では
+    // UI ごと隠す。表示しても登録は必ず token 取得失敗となり、ユーザーが再試行を
+    // 繰り返す混乱状態になるため。macOS (#468) と Windows (#474) は配線済み。
     if (!PushRegistrationService.isPushBackendWired) {
       return const SizedBox.shrink();
     }
@@ -107,7 +126,7 @@ class PushRegistrationStatusSection extends ConsumerWidget {
     // プリセットのみの人に利用権の問い合わせを走らせない。
     final hasEntitlement =
         !hasPreset &&
-        ref.watch(entitlementStatusProvider).view != EntitlementView.absent;
+        attemptsRegistrationWith(ref.watch(entitlementStatusProvider).view);
     // ⚠⚠ **判定はサービス側の 1 本を呼ぶ (#1218)。**書き写すと経路が増えた
     // ときに取り残される（買った人に「登録対象外」と出していた）。
     final eligible = PushRegistrationService.shouldAttemptRegistration(
@@ -133,11 +152,7 @@ class PushRegistrationStatusSection extends ConsumerWidget {
       snapshot?.reason,
     );
 
-    final retryable =
-        eligible &&
-        (state == PushRegistrationState.failed ||
-            state == PushRegistrationState.idle ||
-            state == PushRegistrationState.skipped);
+    final retryable = isPushRegistrationRetryable(state, eligible: eligible);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

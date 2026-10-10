@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:capsicum_core/capsicum_core.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'compose_draft_attachment.dart';
@@ -469,12 +470,33 @@ class ComposeDraftStore {
     try {
       decoded = jsonDecode(raw);
     } on FormatException {
+      _reportUnreadableAttachments('format');
       return const [];
     }
-    if (decoded is! List) return const [];
+    if (decoded is! List) {
+      _reportUnreadableAttachments('not_a_list');
+      return const [];
+    }
     return [
       for (final entry in decoded) ?ComposeDraftAttachment.fromJson(entry),
     ];
+  }
+
+  /// 添付の記述が壊れていて、添付を落とした回を残す (#1237)。
+  ///
+  /// ⚠ 本文を巻き添えにしない判断は変えない。**黙って落とすと、増えても
+  /// 気づけない**ので記録だけ足す。⚠ 中身（パス・レイヤの記述）は載せない。
+  static void _reportUnreadableAttachments(String kind) {
+    unawaited(
+      Sentry.captureMessage(
+        'compose.draft.attachments_unreadable',
+        level: SentryLevel.warning,
+        withScope: (scope) {
+          scope.setTag('compose.draft.attachments', kind);
+          scope.fingerprint = ['compose.draft.attachments_unreadable', kind];
+        },
+      ),
+    );
   }
 
   Future<void> _removeAll(
