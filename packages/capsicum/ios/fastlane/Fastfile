@@ -53,7 +53,17 @@ platform :ios do
   end
 
   desc "Submit to App Store"
-  lane :release do
+  # `fastlane release skip_metadata:true` で、メタデータとスクリーンショットの段を
+  # 飛ばして提出する。
+  #
+  # ⚠⚠ **もう片方のプラットフォームが「審査中」の間は、これを付けないと進まない**
+  # （2026-10-10・v2.1.0）。アプリ情報（カテゴリ等）は iOS と macOS で共有で、
+  # 片方が審査中だと状態が IN_REVIEW になる。deliver は編集できるアプリ情報を
+  # PREPARE_FOR_SUBMISSION / WAITING_FOR_REVIEW / 却下 からしか探さないので、
+  # `Cannot find edit app info... Retrying after N seconds` を繰り返して止まる
+  # （版は作られ、「提出準備中」のまま残る）。⚠ 片方が「審査待ち」なら起きない。
+  lane :release do |options|
+    skip_metadata = [true, 'true'].include?(options[:skip_metadata])
     api_key = app_store_connect_api_key(
       key_id: 'WLS8G4W44L',
       issuer_id: '69a6de71-e621-47e3-e053-5b8c7c11a4d1',
@@ -65,6 +75,8 @@ platform :ios do
       submit_for_review: true,
       force: true,
       skip_binary_upload: true,
+      skip_metadata: skip_metadata,
+      skip_screenshots: skip_metadata,
       precheck_include_in_app_purchases: false,
     )
   end
