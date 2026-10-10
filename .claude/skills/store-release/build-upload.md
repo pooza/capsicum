@@ -136,8 +136,17 @@ cd ..
 
 > ⚠️ **iOS / macOS の `fastlane beta` は、TestFlight へ上げる前に Sentry へ dSYM を上げる**（`upload_dsyms_to_sentry` レーン・#1134）。
 > 上げないと capsicum 自身のフレーム（`App.framework` = Dart AOT / 本体）がスタックで復元されない。
-> **失敗してもリリースは止めない作り**なので、ログに `Sentry への dSYM アップロードに失敗` が出たら、
-> アーカイブを消す前に `fastlane upload_dsyms_to_sentry` を単独で回し直す（⚠ 次のビルドでアーカイブが上書きされると取り戻せない）。
+> **失敗してもリリースは止めない作り**なので、⚠⚠ **`fastlane beta` のログを `DSYM_UPLOAD=` で grep して、結果を必ず見る**（#1166）:
+>
+> | 出た行 | 意味 | すること |
+> | --- | --- | --- |
+> | `DSYM_UPLOAD=ok` | 上がった（`App.framework.dSYM` が入っていた） | なし |
+> | `DSYM_UPLOAD=incomplete` | 上げたが `App.framework.dSYM` が無かった ＝ Dart のフレームは復元されない | アーカイブの作り方を疑う（`flutter build ipa` / `xcodebuild archive` を通したか） |
+> | `DSYM_UPLOAD=failed` | 上がっていない | アーカイブを消す前に `fastlane upload_dsyms_to_sentry` を単独で回し直す |
+> | **どれも出ない** | レーンが走っていない | 同上 |
+>
+> ⚠ 次のビルドでアーカイブが上書きされると取り戻せない。⚠ 以前は失敗が警告 1 行で流れるだけで、
+> `sentry-cli` は対象が無くても 0 で終わるので、「上げたつもり」が見分けられなかった。
 
 > ⚠️ **`fastlane beta` は「アップロード完了」と「処理待ちの終了」を分けて扱うこと。**
 > `Successfully uploaded the new binary to App Store Connect` が出た時点でバイナリは

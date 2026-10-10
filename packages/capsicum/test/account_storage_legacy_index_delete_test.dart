@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:capsicum/src/service/account_storage.dart';
+import 'package:capsicum/src/service/secure_storage_health.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -39,7 +40,7 @@ class _LegacyIndexStorage extends FlutterSecureStorage {
     WindowsOptions? wOptions,
   }) async {
     deletes++;
-    throw TimeoutException('secure storage delete timed out');
+    throw TimeoutException(SecureStorageHealth.gateTimeoutMessage('delete'));
   }
 }
 

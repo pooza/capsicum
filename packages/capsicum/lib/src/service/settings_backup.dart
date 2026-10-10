@@ -940,19 +940,21 @@ Future<List<String>> _mergeAccountSettings(
       // で書くと、非正規形の端末から移行したとき**誰も読まないキーへ書いて
       // 「取り込みました」と報告する**。索引が既に正規形なら no-op。
       final storageKey = scoped.storageKeyFor(account);
-      final reason = await _writeAccountValue(
+      final outcome = await _writeAccountValue(
         prefs,
         scoped,
         storageKey,
         setting.value.value,
       );
-      if (reason == _accountWriteFailed) {
-        writeFailures++;
-        continue;
-      }
-      if (reason != null) {
-        rejected++;
-        continue;
+      switch (outcome) {
+        case _AccountWrite.written:
+          break;
+        case _AccountWrite.writeFailed:
+          writeFailures++;
+          continue;
+        case _AccountWrite.typeMismatch:
+          rejected++;
+          continue;
       }
       // ⚠ ホストで引く設定は、同じサーバーのアカウントが同じキーへ書く。
       // 件数を水増ししない。
@@ -969,20 +971,24 @@ Future<List<String>> _mergeAccountSettings(
   return applied;
 }
 
-/// [_writeAccountValue] の「書けなかった」。形式違いと数え分けるために名前を持つ。
-const _accountWriteFailed = '設定を保存できませんでした';
+/// [_writeAccountValue] の結果 (#1166)。
+///
+/// ⚠ **表示文言で数え分けない。**以前は理由を文字列で返し、呼ぶ側が
+/// 「書けなかった」の文言と一致するかで数え分けていた。ここの理由は画面に
+/// 出ない（出るのは件数だけ）ので、文言を持つ意味も無かった。
+enum _AccountWrite { written, typeMismatch, writeFailed }
 
-/// アカウント別設定 1 件を書く。書けたら null、書かなかったら理由 (#1119)。
+/// アカウント別設定 1 件を書く (#1119)。
 ///
 /// ⚠ **setter の戻り値を捨てない**（[_writeValue] と同じ理由）。
-Future<String?> _writeAccountValue(
+Future<_AccountWrite> _writeAccountValue(
   SharedPreferences prefs,
   AccountScopedSetting setting,
   String storageKey,
   Object? value,
 ) async {
-  const typeMismatch = '値の形式が設定と合いません';
-  const writeFailed = _accountWriteFailed;
+  const typeMismatch = _AccountWrite.typeMismatch;
+  const writeFailed = _AccountWrite.writeFailed;
   switch (setting.type) {
     case BackupValueType.boolean:
       if (value is! bool) return typeMismatch;
@@ -1008,7 +1014,7 @@ Future<String?> _writeAccountValue(
       ]);
       if (!ok) return writeFailed;
   }
-  return null;
+  return _AccountWrite.written;
 }
 
 /// バックアップの `accounts:` を索引へ**マージ**する (#1001)。返り値は新しく

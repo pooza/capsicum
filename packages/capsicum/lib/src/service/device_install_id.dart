@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../util/exception_scrub.dart';
 import 'secure_storage_gate.dart';
@@ -111,12 +113,13 @@ class DeviceInstallId {
     String? existing;
     try {
       existing = await _gate.read(key: storageKey);
-    } catch (e) {
+    } catch (e, st) {
       // Android の復元直後（マスター鍵が別）や Keychain 一過性失敗。前者は
       // 作り直すのが正解、後者もこの起動では読めないので同じ扱いにする。
       // 一過性で作り直してしまうと relay に行が 1 つ増えるが、恒久的に
       // 復元端末と ID を共有するより害が小さい。
       debugLogException('capsicum: device install id unreadable', e);
+      _report('read', e, st);
     }
     if (existing != null && existing.isNotEmpty) {
       await _removeLegacyPrefsKey();
@@ -126,7 +129,8 @@ class DeviceInstallId {
     final generated = _generateUuidV4();
     try {
       await _gate.write(key: storageKey, value: generated);
-    } catch (e) {
+    } catch (e, st) {
+      _report('write', e, st);
       // 永続化に失敗しても push 登録そのものは従来どおり（token をキーにした
       // 動作）で通したいので、その場限りの値を返して続行する。
       //
@@ -139,6 +143,43 @@ class DeviceInstallId {
     await _removeLegacyPrefsKey();
     return generated;
   }
+
+  /// 読み書きの失敗を Sentry へ送る (#1166)。
+  ///
+  /// ⚠⚠ **`debugLogException` だけでは release で何も残らない**（breadcrumb 止まり）。
+  /// 読めない / 書けない状態が続く端末は、**起動のたびに新しい ID を作って relay の
+  /// 行を増やし続ける**のに、どこからも見えなかった。
+  ///
+  /// ⚠ **関所の打ち切りは送らない。**[ReportingSecureStorageGate] が
+  /// `secure_storage.timeout` として記録済みなので、ここでも送ると二重になる。
+  /// ⚠ 起動直後に同時多発で呼ばれても、[_pending] が 1 本に束ねるので 1 回だけ。
+  static void _report(String operation, Object error, StackTrace stackTrace) {
+    if (SecureStorageGate.isGateTimeout(error)) return;
+    final hook = debugReportHook;
+    if (hook != null) {
+      hook(operation, error);
+      return;
+    }
+    unawaited(
+      Sentry.captureException(
+        scrubException(error),
+        stackTrace: stackTrace,
+        withScope: (scope) {
+          scope.level = SentryLevel.warning;
+          scope.setTag('device_install_id.operation', operation);
+          scope.fingerprint = [
+            'device_install_id',
+            operation,
+            error.runtimeType.toString(),
+          ];
+        },
+      ),
+    );
+  }
+
+  /// テスト用。設定すると Sentry の代わりにこれを呼ぶ。
+  @visibleForTesting
+  static void Function(String operation, Object error)? debugReportHook;
 
   /// #932 の初版が SharedPreferences に書いた ID を消す。値は引き継がない
   /// （引き継ぐと複製された ID が生き残る）。失敗しても実害はないので握る。
@@ -155,7 +196,10 @@ class DeviceInstallId {
 
   /// テスト間で状態を持ち越さないためのリセット。
   @visibleForTesting
-  static void resetForTest() => _pending = null;
+  static void resetForTest() {
+    _pending = null;
+    debugReportHook = null;
+  }
 
   /// RFC 9562 の UUID v4（version / variant ビットを立てた 122 bit 乱数）。
   ///

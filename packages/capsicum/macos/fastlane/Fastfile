@@ -1,3 +1,5 @@
+require 'yaml'
+
 default_platform(:mac)
 
 platform :mac do
@@ -22,11 +24,20 @@ platform :mac do
   lane :upload_dsyms_to_sentry do
     dsyms = File.expand_path('../../build/macos/capsicum.xcarchive/dSYMs')
     begin
+      # ⚠ org は pubspec.yaml の `sentry: org` が正本（二重に持たない・#1166）。
+      org = YAML.load_file(File.expand_path('../../pubspec.yaml')).dig('sentry', 'org')
+      UI.user_error!('pubspec.yaml に sentry.org が無い') if org.to_s.empty?
       UI.user_error!("dSYM が見つからない: #{dsyms}") unless Dir.exist?(dsyms)
       sh('sentry-cli', 'debug-files', 'upload',
-         '--org', 'b-shock-co-ltd', '--project', 'capsicum', dsyms)
+         '--org', org, '--project', 'capsicum', dsyms)
+      # ⚠⚠ 結果は `DSYM_UPLOAD=` の 1 行で出す（理由は iOS の Fastfile と同じ・#1166）。
+      if Dir.exist?(File.join(dsyms, 'App.framework.dSYM'))
+        UI.success('DSYM_UPLOAD=ok')
+      else
+        UI.error("DSYM_UPLOAD=incomplete App.framework.dSYM が無い（Dart のフレームが復元されない）: #{dsyms}")
+      end
     rescue => e
-      UI.important("Sentry への dSYM アップロードに失敗（リリースは続行）: #{e.message}")
+      UI.error("DSYM_UPLOAD=failed Sentry への dSYM アップロードに失敗（リリースは続行）: #{e.message}")
     end
   end
 

@@ -1,5 +1,6 @@
 import 'package:capsicum_core/capsicum_core.dart';
 
+import '../../util/user_acct.dart';
 import '../widget/content_parser.dart';
 
 /// 返信の本文の先頭に並べる宛先（`@` を除いた acct）を組む (#1161)。
@@ -30,13 +31,11 @@ List<String> buildReplyMentions({
   final author = replyTo.author;
   final authorHost = _remoteHost(author.host, localHost);
   if (me == null || author.id != me.id) {
-    // ⚠ `userAcct` は使わない。ローカルユーザーの `User.host` には自サーバーの
-    // host が入っており、`@user@自サーバー` になって Mastodon の `mentions`
-    // （ローカルは `user`）と重複判定がずれる。Web UI と同じくローカルは
-    // username だけにする。
-    add(
-      authorHost == null ? author.username : '${author.username}@$authorHost',
-    );
+    // ⚠ **`localHost` を渡す。**ローカルユーザーの `User.host` には自サーバーの
+    // host が入っており、渡さないと `@user@自サーバー` になって Mastodon の
+    // `mentions`（ローカルは `user`）と重複判定がずれる。Web UI と同じく
+    // ローカルは username だけにする。
+    add(userAcct(author, localHost: localHost));
   }
 
   if (replyTo.isHtml) {
@@ -56,7 +55,7 @@ List<String> buildReplyMentions({
         m.username.toLowerCase() == me.username.toLowerCase()) {
       continue;
     }
-    add(host == null ? m.username : '${m.username}@$host');
+    add(acctOf(m.username, host));
   }
   return result;
 }

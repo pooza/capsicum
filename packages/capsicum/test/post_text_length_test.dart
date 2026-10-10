@@ -96,6 +96,50 @@ void main() {
       // URL 内の (x) は釣り合っているので落とさない
       expect(mastodon('https://example.com/a_(x)'), 23);
     });
+
+    // #1166: サーバー（twitter-text）が URL と認めない形を縮めると、**少なく
+    // 数える**（カウンタは収まっているのに送ると拒否される）。素の文字数で数える。
+    group('サーバーが URL と認めない形は縮めない (#1166)', () {
+      const path = '/0123456789012345678901234567890123456789';
+
+      test('⚠ 直前が英数字・@・\$・# なら URL にしない', () {
+        for (final before in ['a', 'Z', '9', '@', '＠', r'$', '#', '＃']) {
+          final text = '${before}https://example.com$path';
+          expect(mastodon(text), text.length, reason: '直前が「$before」');
+        }
+      });
+
+      test('前提: 直前が空白・日本語・括弧なら URL のまま', () {
+        for (final before in [' ', 'あ', '（', '、']) {
+          expect(
+            mastodon('${before}https://example.com$path'),
+            1 + 23,
+            reason: '直前が「$before」',
+          );
+        }
+      });
+
+      test('⚠ TLD の直前のラベルに _ があれば URL にしない', () {
+        final text = 'https://exam_ple.com$path';
+        expect(mastodon(text), text.length);
+      });
+
+      test('サブドメインの _ は URL のまま', () {
+        expect(mastodon('https://my_sub.example.com$path'), 23);
+      });
+
+      test('⚠ ラベルが - で始まる / 終わるなら URL にしない', () {
+        for (final host in ['-example.com', 'example-.com', 'a.-b.com']) {
+          final text = 'https://$host$path';
+          expect(mastodon(text), text.length, reason: host);
+        }
+      });
+
+      test('前提: ラベルの途中の - は URL のまま（punycode も）', () {
+        expect(mastodon('https://my-site.example.com$path'), 23);
+        expect(mastodon('https://xn--eckwd4c7c.xn--zckzah$path'), 23);
+      });
+    });
   });
 
   group('Mastodon: メンションはドメイン部を落とす', () {

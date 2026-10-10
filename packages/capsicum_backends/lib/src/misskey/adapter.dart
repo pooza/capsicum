@@ -347,9 +347,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         cw: draft.spoilerText,
         localOnly: draft.localOnly ? true : null,
         channelId: draft.channelId,
-        visibleUserIds: draft.visibleUserIds.isNotEmpty
-            ? draft.visibleUserIds.toSet().toList()
-            : null,
+        visibleUserIds: _visibleUserIdsOf(draft),
       );
       return null;
     }
@@ -371,9 +369,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       cw: draft.spoilerText,
       localOnly: draft.localOnly ? true : null,
       channelId: draft.channelId,
-      visibleUserIds: draft.visibleUserIds.isNotEmpty
-          ? draft.visibleUserIds.toSet().toList()
-          : null,
+      visibleUserIds: _visibleUserIdsOf(draft),
       poll: poll,
       extraHeaders: draft.skipMulukhiya ? {'X-Mulukhiya': 'capsicum'} : null,
     );
@@ -406,9 +402,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       cw: draft.spoilerText,
       localOnly: draft.localOnly ? true : null,
       channelId: draft.channelId,
-      visibleUserIds: draft.visibleUserIds.isNotEmpty
-          ? draft.visibleUserIds.toSet().toList()
-          : null,
+      visibleUserIds: _visibleUserIdsOf(draft),
     );
   }
 
@@ -2714,3 +2708,15 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     _chatRoomStreamings.remove(roomId)?.dispose();
   }
 }
+
+/// 下書きの指名先を、API へ送る形にする (#1166)。
+///
+/// - 重複を落とす（サーバーは重複した id を弾く）
+/// - 空なら**キーごと送らない**（null）。空の配列を送ると「宛先なし」の指定になる
+///
+/// ⚠ 投稿・予約投稿・下書き保存の 3 か所が同じ式を持っていた。片方だけ直すと、
+/// 同じ下書きが経路によって違う宛先で出る。
+List<String>? _visibleUserIdsOf(PostDraft draft) =>
+    draft.visibleUserIds.isNotEmpty
+    ? draft.visibleUserIds.toSet().toList()
+    : null;

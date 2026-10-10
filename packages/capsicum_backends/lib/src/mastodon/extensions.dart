@@ -328,6 +328,13 @@ bool _isQuotable(Map<String, dynamic>? quoteApproval) {
               e['url'] is String)
             e['shortcode'] as String: e['url'] as String,
       },
+      // ⚠ 引用カードから直接返信できるので、宛先も運ぶ (#1166)。入れないと、
+      // 引用元に含まれるメンションが返信の宛先から落ち、投稿者だけになる。
+      mentions: _parseMentions(
+        (quote['mentions'] as List<dynamic>?)
+            ?.whereType<Map<String, dynamic>>()
+            .toList(),
+      ),
     ),
     state: quoteState ?? QuoteState.accepted,
   );

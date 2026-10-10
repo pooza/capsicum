@@ -194,4 +194,44 @@ void main() {
       expect(ids.first, isNotEmpty);
     });
   });
+
+  // #1166: 読めない / 書けない端末は起動のたびに ID を作り直して relay の行を
+  // 増やすのに、release では何も残っていなかった。
+  group('失敗の記録 (#1166)', () {
+    late List<String> reported;
+
+    setUp(() {
+      reported = [];
+      DeviceInstallId.debugReportHook = (operation, error) =>
+          reported.add('$operation:${error.runtimeType}');
+    });
+
+    test('前提: 読み書きできる端末では何も送らない', () async {
+      await DeviceInstallId.get();
+      expect(reported, isEmpty);
+    });
+
+    test('⚠ 読めなかったら送る', () async {
+      readThrows = true;
+      await DeviceInstallId.get();
+      expect(reported, ['read:PlatformException']);
+    });
+
+    test('⚠ 書けなかったら送る', () async {
+      writeThrows = true;
+      await DeviceInstallId.get();
+      expect(reported, ['write:PlatformException']);
+    });
+
+    test('⚠ 同時に呼ばれても 1 回だけ（アカウントの数だけ送らない）', () async {
+      readThrows = true;
+      writeThrows = true;
+      await Future.wait([
+        DeviceInstallId.get(),
+        DeviceInstallId.get(),
+        DeviceInstallId.get(),
+      ]);
+      expect(reported, ['read:PlatformException', 'write:PlatformException']);
+    });
+  });
 }

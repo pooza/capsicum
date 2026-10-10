@@ -477,6 +477,11 @@ Xcode でワークスペースを一度開いて自動署名させてもよい�
 
 次の拡張タイミング: ストア公開後ユーザーが増えた段階でパフォーマンスモニタリング導入を検討。
 
+### `secure_storage.timeout` の読み方（#1166）
+
+- **1 プロセスにつき 1 回しか送らない。**最初に打ち切られた処理の `phase` だけが載るので、**`phase` の内訳は「どの処理が多いか」ではなく「どの処理が先に走るか」を表す**。`push_key` が先に出た起動では、アカウントの secret のぶんは上がらない。件数の比で優先度を決めないこと。
+- アカウントの secret の `phase` は 2.1 から `account_secret`（2.0 までは `startup_secret`。起動時の復元だけでなく保存・削除にも使われていて、名前と実態がずれていた）。過去のぶんを引くときは旧い値で絞る。どの操作かは `secure_storage_stage` タグ（`probe` / `read` / `write` / `delete` ほか）で分かる。
+
 ### Issue 読み取り用トークン
 
 リポジトリ直下の `.sentryclirc` は dSYM アップロード用の `org:ci` スコープのみで、Issue 読み取り不可。進捗同期時は `~/.sentryclirc`（広スコープ、`project:read` あり）のトークンを [`.claude/scripts/sentry-api.sh`](../.claude/scripts/sentry-api.sh) 経由で使う（`cli` サブコマンドがそのプロセスにだけ `SENTRY_AUTH_TOKEN` を渡す。⚠ シェルへ `export` するとプロジェクトごとのトークン使い分けを壊すので、環境変数として常駐させない）。詳細は [sync-procedure.md](sync-procedure.md) の同期手順を参照。

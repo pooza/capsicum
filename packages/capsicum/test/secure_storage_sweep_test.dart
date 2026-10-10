@@ -16,7 +16,7 @@ void main() {
   tearDown(SecureStorageHealth.resetForTest);
 
   TimeoutException readTimeout() => TimeoutException(
-    'secure storage read timed out',
+    SecureStorageHealth.gateTimeoutMessage('read'),
     kSecureStorageReadTimeout,
   );
 

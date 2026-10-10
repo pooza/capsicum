@@ -736,35 +736,60 @@ class _MfmParser {
     );
   }
 
+  static final _mentionGrammar = RegExp(
+    r'@([a-zA-Z0-9_.-]+)(?:@([a-zA-Z0-9_.-]+))?',
+  );
+  static final _dotDashTail = RegExp(r'[.-]+$');
+  static final _dotDashHead = RegExp(r'^[.-]');
+
+  /// メンション。**mfm-js の `mention` をそのまま写す** (#1166)。
+  ///
+  /// 文字の集合（`[a-z0-9_.-]+`）で取ったあと、端の `.` `-` を整える:
+  ///
+  /// - host の末尾の `.` `-` は落とす（全部が `.` `-` なら不成立）
+  /// - username の末尾の `.` `-` は、**host が無いときだけ**落とす。host が
+  ///   あるのに username が `.` `-` で終わるなら不成立
+  /// - username / host が `.` `-` で始まるなら不成立
+  /// - 不成立なら、取った範囲を**そのまま文字として**出す
+  ///
+  /// ⚠ 以前は端を整えておらず、`@alice.` が `alice.` という利用者への
+  /// メンションになっていた（文末の句点を巻き込む）。返信の宛先が
+  /// `@alice @alice. ` と二重になる原因でもあった。
+  /// ⚠ 落とした `.` `-` は消さない —— メンションの長さぶんだけ進め、残りは
+  /// 続きの文字として読み直させる。
   _Node? _tryMention() {
-    if (input[_pos] != '@') return null;
-    final start = _pos;
-    _pos++; // skip @
-    final userBuf = StringBuffer();
-    while (_pos < input.length &&
-        RegExp(r'[a-zA-Z0-9_.-]').hasMatch(input[_pos])) {
-      userBuf.write(input[_pos]);
-      _pos++;
-    }
-    if (userBuf.isEmpty) {
-      _pos = start;
-      return null;
-    }
-    var mention = '@${userBuf.toString()}';
-    // Optional @host
-    if (_pos < input.length && input[_pos] == '@') {
-      _pos++;
-      final hostBuf = StringBuffer();
-      while (_pos < input.length &&
-          RegExp(r'[a-zA-Z0-9_.-]').hasMatch(input[_pos])) {
-        hostBuf.write(input[_pos]);
-        _pos++;
-      }
-      if (hostBuf.isNotEmpty) {
-        mention += '@${hostBuf.toString()}';
+    final match = _mentionGrammar.matchAsPrefix(input, _pos);
+    if (match == null) return null;
+    final username = match.group(1)!;
+    final hostname = match.group(2);
+
+    var invalid = false;
+    String? host = hostname;
+    if (hostname != null) {
+      host = hostname.replaceFirst(_dotDashTail, '');
+      if (host.isEmpty) {
+        invalid = true;
+        host = null;
       }
     }
-    return _Node(type: _NodeType.mention, text: mention);
+    var name = username;
+    if (_dotDashTail.hasMatch(username)) {
+      if (host == null) {
+        name = username.replaceFirst(_dotDashTail, '');
+      } else {
+        invalid = true;
+      }
+    }
+    if (name.isEmpty || _dotDashHead.hasMatch(name)) invalid = true;
+    if (host != null && _dotDashHead.hasMatch(host)) invalid = true;
+
+    if (invalid) {
+      _pos = match.end;
+      return _Node.text(match.group(0)!);
+    }
+    final acct = host != null ? '@$name@$host' : '@$name';
+    _pos += acct.length;
+    return _Node(type: _NodeType.mention, text: acct);
   }
 
   _Node? _tryHashtag() {

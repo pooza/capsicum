@@ -199,6 +199,60 @@ void main() {
     test('メールアドレスはメンションではない', () {
       expect(extractMfmMentions('mail@example.com'), isEmpty);
     });
+
+    // #1166: 端の `.` `-` の扱いは mfm-js の `mention` と同じにする。
+    // ⚠ 期待値は mfm.js の `src/internal/parser.ts` を読んで決めた（記憶で
+    // 書くと、ずれた判定をそのまま固定する）。
+    group('端の . と - (#1166)', () {
+      test('⚠ 文末の句点を巻き込まない（host なしは末尾を落とす）', () {
+        expect(extractMfmMentions('@alice. こんにちは'), [
+          (username: 'alice', host: null),
+        ]);
+        expect(extractMfmMentions('@alice- と @bob.-'), [
+          (username: 'alice', host: null),
+          (username: 'bob', host: null),
+        ]);
+      });
+
+      test('host の末尾は落とす', () {
+        expect(extractMfmMentions('@alice@remote.example. です'), [
+          (username: 'alice', host: 'remote.example'),
+        ]);
+      });
+
+      test('途中の . と - は名前の一部', () {
+        expect(extractMfmMentions('@a.b-c@re-mote.example'), [
+          (username: 'a.b-c', host: 're-mote.example'),
+        ]);
+      });
+
+      test('⚠ 成立しない形はメンションにしない', () {
+        // host があるのに username が . - で終わる
+        expect(extractMfmMentions('@alice.@remote.example'), isEmpty);
+        // 先頭が . -
+        expect(extractMfmMentions('@.alice'), isEmpty);
+        expect(extractMfmMentions('@-alice'), isEmpty);
+        expect(extractMfmMentions('@alice@.remote.example'), isEmpty);
+        // host が . - だけ
+        expect(extractMfmMentions('@alice@.'), isEmpty);
+        // 名前が . - だけ
+        expect(extractMfmMentions('@...'), isEmpty);
+      });
+
+      test('⚠ 返信の宛先が二重にならない', () {
+        final result = buildReplyMentions(
+          replyTo: Post(
+            id: 'n',
+            postedAt: DateTime.utc(2026, 9, 21),
+            author: const User(id: 'a', username: 'alice', host: local),
+            content: '@alice. と @bob. に',
+          ),
+          me: me,
+          localHost: local,
+        );
+        expect(result, ['alice', 'bob']);
+      });
+    });
   });
 
   group('composeVisibleUserIds（送る宛先）', () {
