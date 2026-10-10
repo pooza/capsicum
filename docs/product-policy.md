@@ -130,17 +130,17 @@ v1.15 の観測性強化（#293）により、iOS のバックグラウンド通
 
 #### アプリが前面に出ている間の扱い（[#1222](https://github.com/pooza/capsicum/issues/1222)）
 
-⚠⚠ **relay が `outcome=success` を返していても、端末に何も出ない場合がある。**不達を疑う前にここを見る（2026-10-04 に、これを知らずに relay・payload・Sentry・NSE まで 1 時間追った）。
+**開いている間に届いた通知も出す**（2026-10-10 pooza 決定・iOS は 2.1 から）。
 
 | | capsicum が前面 | バックグラウンド / 未起動 |
 | --- | --- | --- |
-| iOS | 🔴 **何も出ない**（バナーも通知センターも） | 出る |
+| iOS | 出る（バナーと通知センター・**音なし**） | 出る |
 | Android | 出る | 出る |
 
-- **iOS**: `AppDelegate` が `UNUserNotificationCenter` の delegate になっているが `willPresent` を実装していない。delegate が居て `willPresent` が無いと、iOS は前面表示中の通知を出さない（NSE も走らない）。
-- **Android**: relay は data-only で送るので OS による自動表示は起きず、`main.dart` の `_initFirebase` が復号してローカル通知を出している（#336 Phase 2）。前面でも同じ経路を通るので出る。
+- **iOS**: `AppDelegate` の `willPresent` が、リモート通知（リレー経由のプッシュ）に `[.banner, .list]` を返す。ローカル通知は flutter_local_notifications に任せる。
+- **Android**: relay は data-only で送るので OS による自動表示は起きず、`main.dart` の `_initFirebase` が復号してローカル通知を出している（#336 Phase 2）。前面でも同じ経路を通る。
 
-⚠ **この非対称は意図して決めたものではない**（片方だけ面倒を見ていた結果）。揃えるかどうかは #1222 で決める —— 判断の軸は「タイムラインを見ている最中に、自分宛の通知のバナーが重なるのは実況中に邪魔か」。
+⚠⚠ **2.0 までの iOS は、前面では何も出なかった**（バナーも通知センターも）。delegate が居て `willPresent` が何も返さないと、iOS は前面表示中の通知を捨てる。**relay が `outcome=success` を返していても端末に出ない**ので、古いビルドの不達を調べるときは、まずアプリが前面に居たかを確かめる（2026-10-04 に、これを知らずに relay・payload・Sentry・NSE まで 1 時間追った）。
 
 ⚠ **配送の重さは device_type で大きく違う**（2026-09-06 実測・正本は [paid-relay-baseline.md](paid-relay-baseline.md) 1-5）。**Windows (WNS) が処理時間の 88% を占め、1 件あたり iOS の 16 倍**（2,056ms 対 126ms）。⚠ **APNs だけが永続 HTTP/2 接続を保持しており、WNS / FCM は 1 通ごとに TLS を張り直している**。改善は [relay#54](https://github.com/pooza/capsicum-relay/issues/54)（接続再利用・v1.65）/ [relay#55](https://github.com/pooza/capsicum-relay/issues/55)（非同期化・#597 と同じ回）/ [relay#56](https://github.com/pooza/capsicum-relay/issues/56)（バックオフ・on-hold）。⚠ **WNS の `dropped` は「端末が落ちている / スリープ」**であって dedup ではない。**raw notification は queue されない**ので、その間の通知は失われる。
 
