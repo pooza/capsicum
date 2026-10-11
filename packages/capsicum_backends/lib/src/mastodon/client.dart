@@ -1255,7 +1255,11 @@ class MastodonClient {
     String? sinceId,
     int? limit,
     List<String>? all,
+    List<String>? any,
+    List<String>? none,
   }) async {
+    // パスのタグと `any[]` が OR、`all[]` が AND、`none[]` が除外になる
+    // （サーバーの `TagFeed`・#1209）。
     final response = await dio.get(
       '/api/v1/timelines/tag/${Uri.encodeComponent(hashtag)}',
       queryParameters: {
@@ -1263,6 +1267,8 @@ class MastodonClient {
         'since_id': ?sinceId,
         'limit': ?limit,
         if (all != null && all.isNotEmpty) 'all[]': all,
+        if (any != null && any.isNotEmpty) 'any[]': any,
+        if (none != null && none.isNotEmpty) 'none[]': none,
       },
     );
     return (response.data as List)

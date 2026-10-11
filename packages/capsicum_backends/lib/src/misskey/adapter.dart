@@ -1595,12 +1595,16 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
 
   @override
   Future<List<Post>> getPostsByHashtag(
-    String hashtag, {
+    HashtagQuery condition, {
     TimelineQuery? query,
-    List<String>? all,
   }) async {
+    final tagQuery = condition.orOfAnds;
+    // 含む側の条件が無い。サーバーは空の `query` を受けない。
+    if (tagQuery.isEmpty) return const [];
+    // ⚠ 除外（`condition.none`）はサーバーに受け口が無い。呼び出し側が落とす
+    // （[HashtagSupport.getPostsByHashtag] の注記）。
     final notes = await client.searchByTag(
-      hashtag,
+      tagQuery,
       sinceId: query?.sinceId,
       untilId: query?.maxId,
       limit: query?.limit,

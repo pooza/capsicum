@@ -11,6 +11,7 @@ import '../../provider/list_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../util/deck_tabs.dart';
 import 'emoji_text.dart';
+import 'hashtag_condition_dialog.dart';
 import 'home_menu.dart' show tabLabel;
 import 'user_avatar.dart';
 
@@ -167,6 +168,24 @@ class _DeckColumnsSheetState extends ConsumerState<DeckColumnsSheet> {
                                   size: 18,
                                   semanticLabel: 'ロック中',
                                 ),
+                              ),
+                            // タグのカラムは条件を直せる (#1209)。⚠ 行を押すのは
+                            // 「そのカラムへ移動」に使っているので、入口は別に置く。
+                            if (column.tab case HashtagTab(:final tag))
+                              IconButton(
+                                icon: const Icon(Icons.tune),
+                                tooltip: 'タグの条件',
+                                onPressed: () async {
+                                  final spec = await showHashtagConditionDialog(
+                                    context,
+                                    tag,
+                                  );
+                                  if (spec == null || spec == tag) return;
+                                  await notifier.replaceTab(
+                                    column.id,
+                                    HashtagTab(spec),
+                                  );
+                                },
                               ),
                             IconButton(
                               icon: const Icon(Icons.delete_outline),

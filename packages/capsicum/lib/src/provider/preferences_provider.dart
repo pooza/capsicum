@@ -806,6 +806,22 @@ class DeckColumnsNotifier extends Notifier<List<DeckColumn>> {
     await _save();
   }
 
+  /// [id] のカラムの中身を [tab] に差し替える (#1209・タグの条件を直したとき)。
+  ///
+  /// ⚠ **id・位置・アカウントは変えない。**外して足し直すと、フォーカス・ロック
+  /// （どちらも id で持っている）が外れ、列の末尾へ飛ぶ。
+  Future<void> replaceTab(String id, TabType tab) async {
+    if (!state.any((c) => c.id == id)) return;
+    state = [
+      for (final c in state)
+        if (c.id == id)
+          DeckColumn(id: c.id, account: c.account, tab: tab)
+        else
+          c,
+    ];
+    await _save();
+  }
+
   /// [id] のカラムを [newIndex] へ動かす。
   ///
   /// [newIndex] は**取り除いたあとの列での挿入位置**（`ReorderableListView` の

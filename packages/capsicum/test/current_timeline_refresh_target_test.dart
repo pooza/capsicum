@@ -59,9 +59,8 @@ class _Adapter extends Mock
 
   @override
   Future<List<Post>> getPostsByHashtag(
-    String hashtag, {
+    HashtagQuery hashtag, {
     TimelineQuery? query,
-    List<String>? all,
   }) async {
     hashtagCalls++;
     return const [];

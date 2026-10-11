@@ -30,9 +30,8 @@ class _FakeAdapter extends Mock
 
   @override
   Future<List<Post>> getPostsByHashtag(
-    String hashtag, {
+    HashtagQuery hashtag, {
     TimelineQuery? query,
-    List<String>? all,
   }) async => query?.maxId == null ? posts : const [];
 
   @override

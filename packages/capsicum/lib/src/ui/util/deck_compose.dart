@@ -74,7 +74,8 @@ Map<String, dynamic> deckComposeExtra(
   List<Channel> channels = const [],
 }) {
   return switch (column.tab) {
-    HashtagTab(:final tag) => {'hashtags': hashtagSpecTags(tag)},
+    // ⚠ 付けるのは「すべて含む」の全部と「いずれか」の先頭 (#1209)。
+    HashtagTab(:final tag) => {'hashtags': HashtagQuery.parse(tag).tagsToPost},
     ChannelTab(:final id, :final name) => {
       'channelId': id,
       // ⚠ 読み戻したカラムの `name` は null（保存キーが [TabType.toIdentityKey]

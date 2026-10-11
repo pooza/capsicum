@@ -33,11 +33,12 @@ MastodonStreamTarget? mastodonStreamTarget(TabType tab) {
       };
       return name == null ? null : (stream: name, tag: null, list: null);
     case HashtagTab() && final tab:
-      // ⚠ 割り方の正本は capsicum_core の hashtagSpecTags (#1159)。
-      final tags = tab.tags;
-      // AND 指定は Mastodon の streaming で表現できないので張らない。
-      if (tags.length != 1) return null;
-      return (stream: 'hashtag', tag: tags.first, list: null);
+      // ⚠ 割り方の正本は capsicum_core の HashtagQuery (#1159 / #1209)。
+      // Mastodon の `hashtag` ストリームはタグ 1 つしか受けないので、AND・OR・
+      // 除外のある条件には張らない（複数タグのライブ更新は #1277）。
+      final single = tab.query.singleTag;
+      if (single == null) return null;
+      return (stream: 'hashtag', tag: single, list: null);
     case ListTab(id: final id):
       return id.isEmpty ? null : (stream: 'list', tag: null, list: id);
     default:

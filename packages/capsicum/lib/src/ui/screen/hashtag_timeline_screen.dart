@@ -30,8 +30,7 @@ class _HashtagTimelineScreenState extends ConsumerState<HashtagTimelineScreen> {
   /// そのままサーバーへ渡さない (#1159)。`#c%2B%2B` という別のタグをフォロー
   /// してしまう。⚠ AND 指定はサーバー側に「組のフォロー」が無いので出さない。
   String? get _followTarget {
-    final tags = hashtagSpecTags(widget.hashtag);
-    return tags.length == 1 ? tags.single : null;
+    return HashtagQuery.parse(widget.hashtag).singleTag;
   }
 
   @override
@@ -197,7 +196,7 @@ class _HashtagTimelineScreenState extends ConsumerState<HashtagTimelineScreen> {
             ),
           ),
           SimplePostBar(
-            hashtags: hashtagSpecTags(widget.hashtag),
+            hashtags: HashtagQuery.parse(widget.hashtag).tagsToPost,
             onPosted: () => ref.invalidate(hashtagTimelineProvider(key)),
           ),
         ],

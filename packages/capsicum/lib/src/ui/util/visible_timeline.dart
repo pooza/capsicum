@@ -170,16 +170,14 @@ class VisibleTimelineMutator {
   static const detached = VisibleTimelineMutator._();
 }
 
-/// 投稿がハッシュタグ TL の spec（`tag` / AND 指定 `tag+tag2`）に載るか。
-/// タグ名の大小は無視する（Mastodon / Misskey とも大小を区別しない）。
+/// 投稿がハッシュタグ TL の spec の条件（すべて含む / いずれかを含む / 含まない・
+/// #1209）に合うか。タグ名の大小は無視する（Mastodon / Misskey とも大小を
+/// 区別しない）。
 bool postMatchesHashtagSpec(Post post, String spec) {
   // ⚠ サーバーの `tags` を正本に、本文のパースをフォールバックにする (#1056)。
   // ⚠⚠ **本文が null でも打ち切らない。**サーバーがタグを返していれば、本文が
   // 無い（添付だけの投稿等）でもタグ TL には載る。
-  final tags = postHashtags(post).map((t) => t.toLowerCase()).toSet();
-  if (tags.isEmpty) return false;
-  final (primary, all) = parseHashtagSpec(spec);
-  return [primary, ...?all].every((t) => tags.contains(t.toLowerCase()));
+  return HashtagQuery.parse(spec).matches(postHashtags(post));
 }
 
 /// 本線 TL（[timelineProvider]）がいま HomeScreen の body に描かれているか。

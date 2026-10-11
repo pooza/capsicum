@@ -1673,16 +1673,20 @@ class MastodonAdapter extends DecentralizedBackendAdapter
 
   @override
   Future<List<Post>> getPostsByHashtag(
-    String hashtag, {
+    HashtagQuery condition, {
     TimelineQuery? query,
-    List<String>? all,
   }) async {
+    final request = condition.tagFeedRequest;
+    // 含む側の条件が無い（パスに置くタグが決まらない）。
+    if (request == null) return const [];
     final statuses = await client.getTagTimeline(
-      hashtag,
+      request.primary,
       maxId: query?.maxId,
       sinceId: query?.sinceId,
       limit: query?.limit,
-      all: all,
+      all: request.all,
+      any: request.any,
+      none: condition.none,
     );
     return _safeConvert(
       statuses,

@@ -30,13 +30,23 @@ library;
 
 const _plusEscape = '%2B';
 const _percentEscape = '%25';
+// 条件の節の区切り (#1209)。両 SNS ともタグには入らない文字だが、連合してきた
+// タグに紛れていても節として読まないよう、同じくエスケープする。
+const _questionEscape = '%3F';
+const _bangEscape = '%21';
 
 /// タグ 1 つを spec の 1 要素へ変換する。
-String _escapeTag(String tag) =>
-    tag.replaceAll('%', _percentEscape).replaceAll('+', _plusEscape);
+String _escapeTag(String tag) => tag
+    .replaceAll('%', _percentEscape)
+    .replaceAll('+', _plusEscape)
+    .replaceAll('?', _questionEscape)
+    .replaceAll('!', _bangEscape);
 
-String _unescapeTag(String part) =>
-    part.replaceAll(_plusEscape, '+').replaceAll(_percentEscape, '%');
+String _unescapeTag(String part) => part
+    .replaceAll(_plusEscape, '+')
+    .replaceAll(_questionEscape, '?')
+    .replaceAll(_bangEscape, '!')
+    .replaceAll(_percentEscape, '%');
 
 /// タグの列から spec を組み立てる。⚠ **spec を作るときは必ずここを通す。**
 ///
@@ -50,10 +60,162 @@ String hashtagSpecFromTags(Iterable<String> tags) =>
 /// 素のまま spec にすると AND 指定として割れる。
 String hashtagSpecFromTag(String tag) => hashtagSpecFromTags([tag]);
 
-/// spec をタグの列へ分解する。⚠ **spec を割るときは必ずここを通す。**
+/// spec に出てくる、**含む側**のタグ（すべて含む + いずれかを含む）。
 ///
-/// AND 指定なら 2 つ以上、単独のタグなら 1 つ返る。空のタグは落とす。
-List<String> hashtagSpecTags(String spec) => [
-  for (final part in spec.split('+'))
-    if (part.isNotEmpty) _unescapeTag(part),
+/// ⚠ **条件の中身が要るときは [HashtagQuery.parse] を使う。**ここは「どのタグが
+/// 関わっているか」だけを返し、AND か OR かの別と、除外のタグは落ちる (#1209)。
+List<String> hashtagSpecTags(String spec) {
+  final query = HashtagQuery.parse(spec);
+  return [...query.all, ...query.any];
+}
+
+/// ハッシュタグ TL の条件 (#1209)。
+///
+/// 「[all] を**すべて**含み、（[any] があれば）そのうち**いずれか**を含み、
+/// [none] を**どれも含まない**」投稿。
+///
+/// ## spec の形
+///
+/// `<all>?<any>!<none>`。各節はタグを `+` でつなぐ。`?` 以降と `!` 以降は無ければ
+/// 書かない。
+///
+/// | 条件 | spec |
+/// | --- | --- |
+/// | a | `a` |
+/// | a かつ b | `a+b` |
+/// | a または b | `?a+b` |
+/// | a かつ（b または c）・d は除く | `a?b+c!d` |
+///
+/// ⚠⚠ **以前からの spec（タグ 1 つ・`+` の AND 指定）は、そのまま [all] として
+/// 読める。**保存済みの値を読み替える移行は要らない。
+///
+/// ⚠ 区切りに `?` と `!` を選んだのは、**両 SNS ともタグに使えない文字**だから
+/// （Mastodon は語を作る文字だけ。Misskey の MFM も `.,!?'"#:/[]()<>` と空白で
+/// タグを切る）。念のため、タグに入っていたらエスケープする（`+` と同じ扱い）。
+///
+/// ⚠ **[any] が 1 つだけなら [all] へ寄せる**（「a のいずれか」は「a を含む」と
+/// 同じ）。同じ条件が 2 通りの spec になると、タブやカラムの重複の判定が割れる。
+class HashtagQuery {
+  HashtagQuery({
+    Iterable<String> all = const [],
+    Iterable<String> any = const [],
+    Iterable<String> none = const [],
+  }) : this._normalized(_clean(all), _clean(any), _clean(none));
+
+  HashtagQuery._normalized(
+    List<String> all,
+    List<String> any,
+    List<String> none,
+  ) : all = List.unmodifiable(any.length == 1 ? _clean([...all, ...any]) : all),
+      any = List.unmodifiable(any.length == 1 ? const <String>[] : any),
+      none = List.unmodifiable(none);
+
+  /// spec から読む。⚠ **spec を割るときは必ずここを通す。**
+  factory HashtagQuery.parse(String spec) {
+    final bang = spec.indexOf('!');
+    final positive = bang < 0 ? spec : spec.substring(0, bang);
+    final question = positive.indexOf('?');
+    return HashtagQuery(
+      all: _splitPart(
+        question < 0 ? positive : positive.substring(0, question),
+      ),
+      any: question < 0
+          ? const []
+          : _splitPart(positive.substring(question + 1)),
+      none: bang < 0 ? const [] : _splitPart(spec.substring(bang + 1)),
+    );
+  }
+
+  /// すべて含む（AND）。
+  final List<String> all;
+
+  /// いずれかを含む（OR）。空か、2 つ以上。
+  final List<String> any;
+
+  /// どれも含まない（除外）。
+  final List<String> none;
+
+  /// 含む側の条件が 1 つも無い。⚠ 除外だけの条件は TL にならない（全投稿から
+  /// 引くことになる）ので、これが true の条件は保存しない。
+  bool get isEmpty => all.isEmpty && any.isEmpty;
+
+  /// タグ 1 つだけの条件なら、そのタグ。タグのフォローや、タグ 1 つしか受けない
+  /// ストリームを張れるかの判定に使う。
+  String? get singleTag =>
+      all.length == 1 && any.isEmpty && none.isEmpty ? all.single : null;
+
+  /// spec へ書く。⚠ **spec を作るときは必ずここ（か [hashtagSpecFromTags]）を通す。**
+  String toSpec() => [
+    hashtagSpecFromTags(all),
+    if (any.isNotEmpty) '?${hashtagSpecFromTags(any)}',
+    if (none.isNotEmpty) '!${hashtagSpecFromTags(none)}',
+  ].join();
+
+  /// 「タグ 1 つ + `any[]` + `all[]`」の形（Mastodon の `timelines/tag/:hashtag`）。
+  /// パスのタグと `any[]` が OR、`all[]` が AND になる。条件が空なら null。
+  ({String primary, List<String> any, List<String> all})? get tagFeedRequest {
+    if (any.isNotEmpty) {
+      return (primary: any.first, any: any.sublist(1), all: all);
+    }
+    if (all.isEmpty) return null;
+    return (primary: all.first, any: const [], all: all.sublist(1));
+  }
+
+  /// 「外側が OR・内側が AND」の 2 次元配列（Misskey の `notes/search-by-tag` の
+  /// `query`・ストリーミングの `hashtag` チャンネルの `q`）。条件が空なら空。
+  ///
+  /// ⚠ **[none] は入らない**（受け口が無い）。除外は [excludes] で端末側が見る。
+  List<List<String>> get orOfAnds {
+    if (isEmpty) return const [];
+    if (any.isEmpty) return [all];
+    return [
+      for (final tag in any) [tag, ...all],
+    ];
+  }
+
+  /// [tags]（投稿のタグ）が [none] のどれかを含むか。大小は区別しない。
+  bool excludes(Iterable<String> tags) {
+    if (none.isEmpty) return false;
+    final lower = {for (final t in tags) t.toLowerCase()};
+    return none.any((t) => lower.contains(t.toLowerCase()));
+  }
+
+  /// [tags]（投稿のタグ）がこの条件に合うか。大小は区別しない（両 SNS とも
+  /// 区別しない）。
+  bool matches(Iterable<String> tags) {
+    if (isEmpty) return false;
+    final lower = {for (final t in tags) t.toLowerCase()};
+    bool has(String tag) => lower.contains(tag.toLowerCase());
+    return all.every(has) && (any.isEmpty || any.any(has)) && !none.any(has);
+  }
+
+  /// この TL から投稿するときに付けるタグ。[all] の全部と、[any] の先頭。
+  ///
+  /// ⚠ [any] を全部付けない —— 「a または b」の TL から書いた投稿に両方が付くと、
+  /// 利用者が選んでいないタグまで付く。先頭 1 つで、この TL には載る。
+  List<String> get tagsToPost => [...all, if (any.isNotEmpty) any.first];
+
+  @override
+  bool operator ==(Object other) =>
+      other is HashtagQuery && other.toSpec() == toSpec();
+
+  @override
+  int get hashCode => toSpec().hashCode;
+
+  @override
+  String toString() => 'HashtagQuery(${toSpec()})';
+}
+
+List<String> _splitPart(String part) => [
+  for (final piece in part.split('+'))
+    if (piece.isNotEmpty) _unescapeTag(piece),
 ];
+
+/// 空と重複（大小を区別しない）を落とす。先に出たほうを残す。
+List<String> _clean(Iterable<String> tags) {
+  final seen = <String>{};
+  return [
+    for (final tag in tags)
+      if (tag.isNotEmpty && seen.add(tag.toLowerCase())) tag,
+  ];
+}

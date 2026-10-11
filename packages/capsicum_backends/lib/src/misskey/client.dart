@@ -1076,8 +1076,16 @@ class MisskeyClient {
   }
 
   /// POST /api/notes/search-by-tag
+  ///
+  /// [query] は**外側が OR・内側が AND** の 2 次元配列（`[["a","b"],["c"]]` ＝
+  /// 「a かつ b」または「c」）。ストリーミングの `hashtag` チャンネルの `q` と
+  /// 同じ形 (#1209)。
+  ///
+  /// ⚠⚠ **以前は `tag`（タグ 1 つ）だけを送っていた。**AND 指定のタブでも先頭の
+  /// タグしか渡らず、過去分は AND になっていなかった（ストリーミングで届くぶん
+  /// だけが AND だった）。
   Future<List<MisskeyNote>> searchByTag(
-    String tag, {
+    List<List<String>> query, {
     String? sinceId,
     String? untilId,
     int? limit,
@@ -1085,7 +1093,7 @@ class MisskeyClient {
     final response = await dio.post(
       '/api/notes/search-by-tag',
       data: createBody({
-        'tag': tag,
+        'query': query,
         'sinceId': ?sinceId,
         'untilId': ?untilId,
         'limit': ?limit,

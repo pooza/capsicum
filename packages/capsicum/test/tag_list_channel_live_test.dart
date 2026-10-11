@@ -73,9 +73,8 @@ class _LiveAdapter extends Mock
 
   @override
   Future<List<Post>> getPostsByHashtag(
-    String hashtag, {
+    HashtagQuery hashtag, {
     TimelineQuery? query,
-    List<String>? all,
   }) => _page();
 
   @override

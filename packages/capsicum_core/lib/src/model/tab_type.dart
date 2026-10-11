@@ -147,8 +147,8 @@ class HashtagTab extends TabType {
   /// AND 指定として割れて別物になる。**タグ名を持っているときは必ずこちらを使う。
   HashtagTab.single(String tag) : tag = hashtagSpecFromTag(tag);
 
-  /// この指定が表すタグの列。単独なら 1 つ、AND 指定なら 2 つ以上。
-  List<String> get tags => hashtagSpecTags(tag);
+  /// この指定が表す条件（すべて含む / いずれかを含む / 含まない・#1209）。
+  HashtagQuery get query => HashtagQuery.parse(tag);
 
   @override
   String toKey() => 'hashtag:$tag';
