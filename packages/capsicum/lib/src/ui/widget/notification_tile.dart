@@ -503,6 +503,26 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
                     );
                   },
                 ),
+              // 会話のミュート (#1208)。⚠ **通知では常に出す** —— 通知が来ている
+              // 時点でその会話に関わっており、「荒れたスレッドの通知を止める」の
+              // 入口はここが本命。
+              if (adapter is ThreadMuteSupport)
+                ListTile(
+                  leading: Icon(
+                    targetPost.threadMuted == true
+                        ? Icons.notifications_active_outlined
+                        : Icons.notifications_off_outlined,
+                  ),
+                  title: Text(threadMuteLabel(targetPost)),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _runner(messenger).toggleThreadMute(
+                      adapter: adapter as ThreadMuteSupport,
+                      post: targetPost,
+                      confirmUnmute: () => confirmThreadUnmute(context),
+                    );
+                  },
+                ),
               if (targetPost.url != null)
                 ListTile(
                   leading: const Icon(Icons.link),

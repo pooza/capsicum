@@ -48,6 +48,13 @@ class Post {
   final bool favourited;
   final bool reblogged;
   final bool bookmarked;
+
+  /// この投稿の会話（スレッド）をミュートしているか (#1208)。
+  ///
+  /// ⚠ **null は「分からない」**で、false ではない。Mastodon は投稿に `muted` が
+  /// 載るが、Misskey の Note には載らない（`notes/state` を別に引く）。
+  /// Misskey でも、ミュート / 解除の直後に返す投稿には入れる。
+  final bool? threadMuted;
   final bool sensitive;
   final Map<String, int> reactions;
   final String? myReaction;
@@ -135,6 +142,7 @@ class Post {
     this.favourited = false,
     this.reblogged = false,
     this.bookmarked = false,
+    this.threadMuted,
     this.sensitive = false,
     this.reactions = const {},
     this.myReaction,
@@ -176,6 +184,7 @@ class Post {
     int? reblogCount,
     List<Attachment>? attachments,
     bool? bookmarked,
+    bool? threadMuted,
     FilterAction? filterAction,
     String? filterTitle,
   }) => Post(
@@ -193,6 +202,7 @@ class Post {
     favourited: favourited,
     reblogged: reblogged ?? this.reblogged,
     bookmarked: bookmarked ?? this.bookmarked,
+    threadMuted: threadMuted ?? this.threadMuted,
     sensitive: sensitive,
     reactions: reactions,
     myReaction: myReaction,

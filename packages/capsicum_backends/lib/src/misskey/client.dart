@@ -786,6 +786,39 @@ class MisskeyClient {
     return false;
   }
 
+  /// POST /api/notes/state — スレッドをミュートしているか (#1208)。
+  ///
+  /// Note 自体はこの状態を持たないので、ここで引く（[isNoteFavorited] と同じ
+  /// エンドポイントの別のフィールド）。
+  Future<bool> isThreadMuted(String noteId) async {
+    final response = await dio.post(
+      '/api/notes/state',
+      data: createBody({'noteId': noteId}),
+    );
+    final data = response.data;
+    if (data is Map) return data['isMutedThread'] == true;
+    return false;
+  }
+
+  /// POST /api/notes/thread-muting/create (#1208)
+  ///
+  /// [noteId] はスレッドのどのノートでもよい（サーバーが `threadId ?? id` で
+  /// 引く）。⚠ 流量制限は 1 時間に 10 回。
+  Future<void> muteThread(String noteId) async {
+    await dio.post(
+      '/api/notes/thread-muting/create',
+      data: createBody({'noteId': noteId}),
+    );
+  }
+
+  /// POST /api/notes/thread-muting/delete (#1208)
+  Future<void> unmuteThread(String noteId) async {
+    await dio.post(
+      '/api/notes/thread-muting/delete',
+      data: createBody({'noteId': noteId}),
+    );
+  }
+
   /// POST /api/notes/favorites/create
   Future<void> favoriteNote(String noteId) async {
     await dio.post(

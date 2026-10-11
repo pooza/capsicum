@@ -668,6 +668,21 @@ class MastodonClient {
     return MastodonStatus.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// POST /api/v1/statuses/:id/mute — 会話（スレッド）のミュート (#1208)。
+  ///
+  /// ⚠ 人のミュート（`/api/v1/accounts/:id/mute`）とは別物。投稿の会話から
+  /// 自分へ届く通知だけを止める。[id] は会話のどの投稿でもよい。
+  Future<MastodonStatus> muteConversation(String id) async {
+    final response = await dio.post('/api/v1/statuses/$id/mute');
+    return MastodonStatus.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// POST /api/v1/statuses/:id/unmute
+  Future<MastodonStatus> unmuteConversation(String id) async {
+    final response = await dio.post('/api/v1/statuses/$id/unmute');
+    return MastodonStatus.fromJson(response.data as Map<String, dynamic>);
+  }
+
   /// GET /api/v1/notifications
   ///
   /// [excludeTypes] は出さない種別のサーバー側名 (#1042)。⚠ **許可リスト

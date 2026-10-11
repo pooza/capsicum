@@ -111,6 +111,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     with
         FavoriteSupport,
         BookmarkSupport,
+        ThreadMuteSupport,
         // 引用の一覧 (#1072)。Misskey には無いので Mastodon adapter だけが持つ。
         QuoteSupport,
         AnnouncementSupport,
@@ -896,6 +897,24 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     final status = await client.unbookmarkStatus(id);
     return status.toCapsicum(host, adminRoleIds: _adminRoleIds);
   }
+
+  // ThreadMuteSupport (#1208)
+
+  @override
+  Future<Post> muteThread(String postId) async {
+    final status = await client.muteConversation(postId);
+    return status.toCapsicum(host, adminRoleIds: _adminRoleIds);
+  }
+
+  @override
+  Future<Post> unmuteThread(String postId) async {
+    final status = await client.unmuteConversation(postId);
+    return status.toCapsicum(host, adminRoleIds: _adminRoleIds);
+  }
+
+  @override
+  Future<bool> isThreadMuted(String postId) async =>
+      (await client.getStatus(postId)).muted ?? false;
 
   // PinSupport
 

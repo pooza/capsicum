@@ -131,6 +131,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     with
         AchievementSupport,
         BookmarkSupport,
+        ThreadMuteSupport,
         AnnouncementSupport,
         FollowSupport,
         FollowRequestSupport,
@@ -928,6 +929,45 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   Future<Post> unbookmarkPost(String id) async {
     await client.unfavoriteNote(id);
     return _noteWithFavoriteState(id, fallback: false);
+  }
+
+  // ThreadMuteSupport (#1208)
+
+  @override
+  Future<Post> muteThread(String postId) async {
+    try {
+      await client.muteThread(postId);
+    } on DioException catch (e) {
+      // 既にミュート中なら成功と同じに倒す。状態は投稿に載っておらず、押す前に
+      // 引いた値が古いことがある（別の端末でミュートした等）。
+      if (!_hasErrorCode(e, 'ALREADY_MUTING')) rethrow;
+    }
+    return _noteWithThreadMuted(postId, true);
+  }
+
+  @override
+  Future<Post> unmuteThread(String postId) async {
+    await client.unmuteThread(postId);
+    return _noteWithThreadMuted(postId, false);
+  }
+
+  @override
+  Future<bool> isThreadMuted(String postId) => client.isThreadMuted(postId);
+
+  /// Note は状態を持たないので、いま終えた操作の結果を載せて返す。
+  ///
+  /// ⚠ お気に入りの状態も引き直す。返した投稿は TL の行を置き換えるので、
+  /// 素の変換のまま返すと `bookmarked` が false へ戻る（#902 と同じ筋）。
+  Future<Post> _noteWithThreadMuted(String id, bool muted) async {
+    final post = await _noteWithFavoriteState(id, fallback: false);
+    return post.copyWith(threadMuted: muted);
+  }
+
+  bool _hasErrorCode(DioException e, String code) {
+    final data = e.response?.data;
+    if (data is! Map) return false;
+    final error = data['error'];
+    return error is Map && error['code'] == code;
   }
 
   @override

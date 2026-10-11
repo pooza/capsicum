@@ -18,6 +18,10 @@ class MastodonStatus {
   final bool? favourited;
   final bool? reblogged;
   final bool? bookmarked;
+
+  /// この投稿の会話をミュートしているか (#1208)。会話単位なので、同じ会話の
+  /// どの投稿でも同じ値になる。
+  final bool? muted;
   final String? inReplyToId;
   final MastodonStatus? reblog;
   @JsonKey(fromJson: _readQuote)
@@ -62,6 +66,7 @@ class MastodonStatus {
     this.favourited,
     this.reblogged,
     this.bookmarked,
+    this.muted,
     this.inReplyToId,
     this.reblog,
     this.quote,
