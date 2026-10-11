@@ -9,14 +9,6 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import '../../util/exception_scrub.dart';
 import '../util/image_crop_geometry.dart';
 
-/// 添付画像をトリミング・回転する全画面エディタ (#577 / #647 / #662)。
-///
-/// crop_your_image は platform channel を持たない純 Flutter 実装のため、
-/// image_cropper 非対応の macOS / Windows / Linux でも動作する。デスクトップ
-/// (#577) とモバイル (#647) の双方で同じ本画面が使われる。入力のバイト列を
-/// メモリ上で処理し、トリミング結果のバイト列を [Navigator.pop] で呼び出し元に
-/// 返す（キャンセル時は null）。90 度回転は #662 で追加。戻り値は
-/// [ImageCropResult]（#1132）。
 /// トリミング画面の戻り値 (#1132)。
 ///
 /// ⚠ 以前は PNG だけを返していた。レイヤを載せた画像を切ると平らな画像に戻り、
@@ -31,6 +23,14 @@ class ImageCropResult {
   final ImageCropGeometry? geometry;
 }
 
+/// 添付画像をトリミング・回転する全画面エディタ (#577 / #647 / #662)。
+///
+/// crop_your_image は platform channel を持たない純 Flutter 実装のため、
+/// image_cropper 非対応の macOS / Windows / Linux でも動作する。デスクトップ
+/// (#577) とモバイル (#647) の双方で同じ本画面が使われる。入力のバイト列を
+/// メモリ上で処理し、トリミング結果のバイト列を [Navigator.pop] で呼び出し元に
+/// 返す（キャンセル時は null）。90 度回転は #662 で追加。戻り値は
+/// [ImageCropResult]（#1132）。
 class ImageCropScreen extends StatefulWidget {
   const ImageCropScreen({super.key, required this.imageData, this.title});
 

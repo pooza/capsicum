@@ -579,22 +579,6 @@ class TabConfigNotifier extends FamilyNotifier<List<TabConfigEntry>, String> {
   }
 }
 
-/// デッキのカラム列 (#1091)。
-///
-/// タブ設定（[tabConfigProvider]）の一般化で、永続化も同じ `List<String>`
-/// （`docs/deck-ui-plan.md` 決定済み事項 6-1）。⚠ 違いは 2 つ:
-///
-/// - **family ではない。**カラムごとにアカウントを持つので、列そのものは
-///   アカウントに依存しない
-/// - ⚠⚠ **同じ中身を重複して置ける**（6-2）。並べ替え・削除は [DeckColumn.id] で
-///   指す。**中身（アカウント + 種別）で指さない**
-///   - ⚠ **重複を許すのは [DeckColumnsNotifier.add]（カラム設定から足す）だけ**
-///     （#1182）。操作の結果として開く [DeckColumnsNotifier.insertAfter] は許さない
-///   - ⚠⚠ **ただし [SearchTab] は [insertAfter] でも重複できる**（#1193）。検索は
-///     「中身へのナビゲーション」ではなく道具で、語が違えば中身も違う
-///
-/// ⚠ 削除しても購読を明示的に止めない（6-3）。重複カラムは provider を共有するので、
-/// 最後の 1 本が消えたときに autoDispose が片づける。
 /// 最後にフォーカスしていたカラムの id (#1239)。無ければ null。
 ///
 /// ⚠ **スクロール量ではなく id で持つ。**列は並べ替え・削除で動くので、位置で
@@ -684,6 +668,23 @@ class DeckLockedColumnsNotifier extends Notifier<Set<String>> {
   }
 }
 
+/// デッキのカラム列 (#1091)。
+///
+/// タブ設定（[tabConfigProvider]）の一般化で、永続化も同じ `List<String>`
+/// （`docs/deck-ui-plan.md` 決定済み事項 6-1）。⚠ 違いは 2 つ:
+///
+/// - **family ではない。**カラムごとにアカウントを持つので、列そのものは
+///   アカウントに依存しない
+/// - ⚠⚠ **同じ中身を重複して置ける**（6-2）。並べ替え・削除は [DeckColumn.id] で
+///   指す。**中身（アカウント + 種別）で指さない**
+///   - ⚠ **重複を許すのは [DeckColumnsNotifier.add]（カラム設定から足す）だけ**
+///     （#1182）。操作の結果として開く [DeckColumnsNotifier.insertAfter] は許さない
+///   - ⚠⚠ **ただし [SearchTab] は [DeckColumnsNotifier.insertAfter] でも重複
+///     できる**（#1193）。検索は「中身へのナビゲーション」ではなく道具で、語が
+///     違えば中身も違う
+///
+/// ⚠ 削除しても購読を明示的に止めない（6-3）。重複カラムは provider を共有するので、
+/// 最後の 1 本が消えたときに autoDispose が片づける。
 final deckColumnsProvider =
     NotifierProvider<DeckColumnsNotifier, List<DeckColumn>>(
       DeckColumnsNotifier.new,

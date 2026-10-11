@@ -496,8 +496,6 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
     return carryProviderScope(_containerFor(account), bar);
   }
 
-  /// [content] の下に [postBar] を置く。バーが無いときは下端の inset を
-  /// [BottomSafeArea] で吸う（#1037 / #1062・上の `body` の注記）。
   /// 中身の下に、カラムへ飛ぶ帯 (#1241) と簡易投稿バーを並べる。
   ///
   /// ⚠ 下端の inset は**いちばん下に来るもの**が吸う。簡易投稿バーは自分で

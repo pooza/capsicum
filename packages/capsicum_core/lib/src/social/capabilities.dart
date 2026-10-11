@@ -37,4 +37,14 @@ abstract class AdapterCapabilities {
   /// ときに「どちらの規則か」を考えないまま通ってしまう（黙って片方の規則が
   /// 当たる）。コンパイラに問わせる。
   PostLengthRule get postLengthRule;
+
+  /// 指名の宛先を、**利用者の id の一覧**で渡すサーバーか (#1165 / #1267)。
+  ///
+  /// Misskey は `visibleUserIds` で渡すので true。Mastodon は本文のメンションで
+  /// 宛先が決まり、一覧を送る口が無いので false。投稿フォームは、true のときだけ
+  /// 宛先の行を出し、宛先が空の指名を止める。
+  ///
+  /// ⚠ 抽象メンバにしてある理由は [postLengthRule] と同じ（新しい backend を
+  /// 足したときに、考えないまま片方に倒れない）。
+  bool get directRecipientsAsIdList;
 }

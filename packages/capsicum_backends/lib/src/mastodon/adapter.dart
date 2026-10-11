@@ -105,6 +105,10 @@ class MastodonCapabilities extends AdapterCapabilities {
   /// ドメイン部なしへ短縮し、CW も同じ枠に含める (#1034)。
   @override
   PostLengthRule get postLengthRule => PostLengthRule.shortenedGraphemes;
+
+  // 宛先は本文のメンションで決まる。一覧を送る口は無い。
+  @override
+  bool get directRecipientsAsIdList => false;
 }
 
 class MastodonAdapter extends DecentralizedBackendAdapter

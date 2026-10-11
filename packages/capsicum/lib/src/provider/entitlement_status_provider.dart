@@ -390,17 +390,17 @@ class EntitlementStatusNotifier extends Notifier<EntitlementStatus> {
     }
   }
 
+  /// 手元のキーホルダ読み出しの上限。⚠ 本来は即座に返る。
+  ///
+  /// ⚠ 購入側（`SupporterPurchaseNotifier.localTimeout`）もこの値を使う。
+  static const localTimeout = Duration(seconds: 5);
+
   /// 手元の利用権を読む。**読めなかったら例外のまま返す**（呼び出し側が
   /// [EntitlementView.unknown] にする）。
   ///
   /// 🔴 **以前は [EntitlementTokenStore.load] を呼んでいた。**あちらは読めなく
   /// ても null を返すので、**ここの catch には一度も来ておらず**、読めない回は
   /// 「未購入」として表示されていた（リリース前レビュー・2026-10-06）。
-  /// 手元のキーホルダ読み出しの上限。⚠ 本来は即座に返る。
-  ///
-  /// ⚠ 購入側（`SupporterPurchaseNotifier.localTimeout`）もこの値を使う。
-  static const localTimeout = Duration(seconds: 5);
-
   Future<EntitlementToken?> _loadLocal() async {
     try {
       // ⚠⚠ **上限を掛ける** (#1237)。キーホルダの読み出しが詰まると、上限が

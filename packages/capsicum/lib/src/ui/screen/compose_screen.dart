@@ -596,8 +596,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// 宛先を利用者の id の一覧で渡すサーバーか（Misskey）。
   ///
   /// ⚠ Mastodon は本文のメンションで宛先が決まり、adapter もこの値を読まない。
+  /// ⚠ アダプタの型では見ない (#1267)。答えを知っているのはアダプタの側。
   bool get _usesRecipientList =>
-      ref.read(currentAdapterProvider) is MisskeyAdapter;
+      ref.read(currentAdapterProvider)?.capabilities.directRecipientsAsIdList ??
+      false;
 
   /// 指名で送るときに渡す宛先。指名でなければ空。
   List<String> get _visibleUserIds => directRecipientIdsToSend(
@@ -721,14 +723,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         directLabel: postScopeLabel(PostScope.direct, adapter),
       );
     }
-    return unsendableDirectScopeReason(
-      scope: _scope,
-      selectable: selectableScopes(adapter),
-      directLabel: postScopeLabel(PostScope.direct, adapter),
-      // ⚠ redraft で引き継いだ返信も「宛先がある」側 (#1113)。
-      isReply: _isReply,
-      replyTargetIsSelf: _replyTargetIsSelf,
-    );
+    // 宛先を本文のメンションで決めるサーバー（Mastodon）には、「宛先を作れない
+    // 指名」が無い。以前あった別の判定は、どのサーバーでも通らなくなっていた
+    // ので消した (#1267)。
+    return null;
   }
 
   /// 返信先が**自分の投稿だと分かっている**か (#1117-B)。
@@ -5609,12 +5607,6 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                       ),
                     ),
                   ],
-                  // 送れない公開範囲が入っていることを画面に出す (#1043)。
-                  //
-                  // ⚠ **SnackBar にしない。**この状態になるのは返信・redraft・
-                  // 下書き復元・サーバー既定という「開いた瞬間に決まる」経路
-                  // なので、消える通知だと**送信ボタンを押す時点で情報が無い**。
-                  // 送信もブロックするので、理由は出したままにする。
                   // 指名の宛先 (#1165)。⚠ **指名を選んでいるときだけ出す**
                   // （ほかの公開範囲では行を増やさない）。
                   if (_usesRecipientList && _scope == PostScope.direct)
@@ -5632,6 +5624,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                       onAdd: _addRecipients,
                       enabled: !_sending,
                     ),
+                  // 送れない公開範囲が入っていることを画面に出す (#1043)。
+                  //
+                  // ⚠ **SnackBar にしない。**この状態になるのは返信・redraft・
+                  // 下書き復元・サーバー既定という「開いた瞬間に決まる」経路
+                  // なので、消える通知だと**送信ボタンを押す時点で情報が無い**。
+                  // 送信もブロックするので、理由は出したままにする。
                   if (_unsendableScopeReason != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 8),

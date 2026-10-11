@@ -98,6 +98,10 @@ class MisskeyCapabilities extends AdapterCapabilities {
   /// コードポイント。CW は `text` とは別枠の 500 (#1034)。
   @override
   PostLengthRule get postLengthRule => PostLengthRule.codePoints;
+
+  // 指名の宛先は `visibleUserIds` で渡す (#1165)。
+  @override
+  bool get directRecipientsAsIdList => true;
 }
 
 /// 400 の本文が「`excludeTypes` に知らない種別が入っていた」を指しているか
