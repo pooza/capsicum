@@ -464,7 +464,8 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     TimelineType type, {
     TimelineQuery? query,
   }) async {
-    // DM timeline uses conversation IDs for pagination, not status IDs.
+    // DM の一覧は会話の列だが、カーソル（max_id）は**会話の最後の投稿の id**
+    // (#1266)。会話の id を送ると空が返るので、client が返す nextMaxId を使う。
     if (type == TimelineType.directMessages) {
       final result = await client.getConversations(
         maxId: query?.maxId,
@@ -484,8 +485,8 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       );
       return TimelineResponse(
         posts: converted.results,
-        rawCount: converted.rawCount,
-        rawLastId: result.lastConversationId,
+        rawCount: result.rawCount,
+        rawLastId: result.nextMaxId,
         skippedPosts: converted.skipped,
       );
     }

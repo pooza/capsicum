@@ -831,14 +831,24 @@ class MastodonClient {
 
   /// GET /api/v1/conversations
   /// Returns the last_status from each conversation (DM thread) along with
-  /// the conversation ID of the last entry for cursor-based pagination.
+  /// the cursor for the next (older) page.
+  ///
+  /// ⚠⚠ **カーソルは会話の id ではない** (#1266)。サーバーは `max_id` を
+  /// **会話の最後の投稿の id**（`last_status_id`）と比べるので、会話の id（小さい
+  /// 連番）を送ると空が返って打ち切られる。`nextMaxId` は `Link` ヘッダの
+  /// `rel="next"` から取る。ヘッダが無い応答（最後のページ・ヘッダを落とす
+  /// 中継）では、`last_status` を持つ最後の会話の投稿 id に倒す。
+  ///
+  /// `rawCount` は応答に入っていた会話の数（`last_status` が無いものも数える）。
+  /// 満ページかどうかの判定に使うので、`statuses` の長さで代用しない。
   ///
   /// `conversations` は、`last_status` を持つ会話ごとの id と未読 (#1206)。
   /// 既読・削除は会話に対する操作なので、投稿から会話を引けるように返す。
   Future<
     ({
       List<MastodonStatus> statuses,
-      String? lastConversationId,
+      String? nextMaxId,
+      int rawCount,
       List<({String id, bool unread, String lastStatusId})> conversations,
     })
   >
@@ -852,19 +862,19 @@ class MastodonClient {
       },
     );
     final conversations = response.data as List;
-    String? lastConversationId;
+    String? lastStatusId;
     final statuses = <MastodonStatus>[];
     final refs = <({String id, bool unread, String lastStatusId})>[];
     for (final e in conversations) {
       final m = e as Map<String, dynamic>;
       final id = m['id']?.toString();
-      lastConversationId = id;
       final lastStatus = m['last_status'];
       if (lastStatus != null) {
         final status = MastodonStatus.fromJson(
           lastStatus as Map<String, dynamic>,
         );
         statuses.add(status);
+        lastStatusId = status.id;
         if (id != null) {
           refs.add((
             id: id,
@@ -876,7 +886,8 @@ class MastodonClient {
     }
     return (
       statuses: statuses,
-      lastConversationId: lastConversationId,
+      nextMaxId: _parseLinkNextMaxId(response) ?? lastStatusId,
+      rawCount: conversations.length,
       conversations: refs,
     );
   }
