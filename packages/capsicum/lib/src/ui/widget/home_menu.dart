@@ -187,6 +187,16 @@ void saveLastTab(WidgetRef ref) {
 /// [announcementsShownAsTab] はお知らせがタブとして可視のときに true で、
 /// その場合ドロワー / メニューからは「お知らせ」項目を出さない（重複回避）。
 /// [onActivate] はドロワー経由のとき `dismiss`（ドロワーを閉じる）を渡す。
+///
+/// [inDeck] は**デッキ画面のドロワー**から呼ぶとき (#1272)。次の項目を出さない:
+///
+/// - 「デッキ」: 自分自身。押すとデッキ画面が 2 枚積まれる。
+/// - 「検索」「通知」「すべての通知」: デッキの AppBar に入口があり、そちらは
+///   カラムとして開く（決定済み事項 7-3）。ここから開くと全画面になり、結果から
+///   開いた先がデッキの外へ出る。
+///
+/// ⚠ メニューバーの「移動」はデッキ中でも [inDeck] を渡さない（決定済み事項 11 の
+/// 差し替えは 3 か所だけで、ここは対象外）。
 List<HomeNavItem> buildHomeNavItems(
   BuildContext context,
   WidgetRef ref,
@@ -195,6 +205,7 @@ List<HomeNavItem> buildHomeNavItems(
   int unreadAnnouncements,
   bool announcementsShownAsTab, {
   VoidCallback? onActivate,
+  bool inDeck = false,
 }) {
   final adapter = ref.read(currentAdapterProvider);
   final hasMulukhiya = ref.read(currentMulukhiyaProvider) != null;
@@ -204,30 +215,32 @@ List<HomeNavItem> buildHomeNavItems(
   }
 
   return [
-    HomeNavItem(
-      title: '検索',
-      icon: Icons.search,
-      shortcut: const MenuShortcut(LogicalKeyboardKey.keyF),
-      onSelected: () => act(() => context.push('/search')),
-    ),
-    HomeNavItem(
-      title: '通知',
-      icon: Icons.notifications_outlined,
-      onSelected: () => act(() => context.push('/notifications')),
-    ),
-    if (accountState.accounts.length > 1)
+    if (!inDeck) ...[
       HomeNavItem(
-        title: 'すべての通知',
-        icon: Icons.notifications_active_outlined,
-        onSelected: () => act(() => context.push('/notifications/all')),
+        title: '検索',
+        icon: Icons.search,
+        shortcut: const MenuShortcut(LogicalKeyboardKey.keyF),
+        onSelected: () => act(() => context.push('/search')),
       ),
-    // デッキ (#720 / #1092)。⚠ タブ UI とは別画面（`docs/deck-ui-plan.md`
-    // 決定済み事項 8）。
-    HomeNavItem(
-      title: 'デッキ',
-      icon: Icons.view_week_outlined,
-      onSelected: () => act(() => context.push('/deck')),
-    ),
+      HomeNavItem(
+        title: '通知',
+        icon: Icons.notifications_outlined,
+        onSelected: () => act(() => context.push('/notifications')),
+      ),
+      if (accountState.accounts.length > 1)
+        HomeNavItem(
+          title: 'すべての通知',
+          icon: Icons.notifications_active_outlined,
+          onSelected: () => act(() => context.push('/notifications/all')),
+        ),
+      // デッキ (#720 / #1092)。⚠ タブ UI とは別画面（`docs/deck-ui-plan.md`
+      // 決定済み事項 8）。
+      HomeNavItem(
+        title: 'デッキ',
+        icon: Icons.view_week_outlined,
+        onSelected: () => act(() => context.push('/deck')),
+      ),
+    ],
     HomeNavItem(
       title: ref.read(bookmarkLabelProvider),
       icon: Icons.bookmark_outline,

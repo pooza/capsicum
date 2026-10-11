@@ -9,6 +9,7 @@ import '../../model/account.dart';
 import '../../model/account_key.dart';
 import '../../model/deck_column.dart';
 import '../../provider/account_manager_provider.dart';
+import '../../provider/announcement_provider.dart';
 import '../../provider/channel_provider.dart';
 import '../../provider/deck_provider.dart';
 import '../../provider/preferences_provider.dart';
@@ -22,6 +23,7 @@ import '../widget/deck_column_focus.dart';
 import '../widget/deck_column_strip.dart';
 import '../widget/deck_column_view.dart';
 import '../widget/deck_columns_sheet.dart';
+import '../widget/home_drawer.dart';
 import '../widget/livecure_filter_button.dart';
 import '../widget/simple_post_bar.dart';
 import '../widget/user_avatar.dart';
@@ -543,12 +545,56 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
     // ⚠ **設定 (#574) に従う**（2026-09-19 pooza 判断）。既定の OFF では
     // トラックパッド 2 本指スワイプの既存挙動をそのまま維持する。
     final mouseDragEnabled = ref.watch(mouseDragScrollProvider);
+    final unreadAnnouncements = ref.watch(unreadAnnouncementCountProvider);
     final scaffold = Scaffold(
+      // タブ表示と同じドロワー (#1272・2026-10-11 pooza)。メニューバーの無い端末
+      // では、ブックマーク・リスト・予約投稿などへデッキから届かなかった。
+      //
+      // ⚠ **常駐はさせない**（決定済み事項 7-1 / 8）。禁じているのは広い幅で
+      // 出しっぱなしになるドロワーで、押したときだけ重なるものは当たらない。
+      // ⚠ アカウントの切り替えは持ち込まない（`inDeck`・決定済み事項 8 / 11）。
+      // ⚠ 項目は**現在のアカウント**のもので、開いた先は全画面（タブ表示の
+      // ドロワーと同じ挙動のまま）。フォーカス中のカラムへ合わせるか・カラムで
+      // 開くかは未決（#1272）。
+      drawer: buildHomeDrawer(
+        context,
+        ref,
+        ref.watch(currentAccountProvider),
+        ref.watch(accountManagerProvider),
+        unreadAnnouncements,
+        inDeck: true,
+      ),
+      // ⚠⚠ **左端からのスワイプでは開かない。**狭幅のデッキは横スワイプで
+      // カラムを移るので、左端で競合する。ボタンからだけ開く。
+      drawerEnableOpenDragGesture: false,
+      // タブ表示と同じく、開くたびにサーバーのメタデータを取り直す
+      // （版の表示 #774・モロヘイヤのフラグ #775。TTL 内は no-op）。
+      onDrawerChanged: (isOpened) {
+        if (isOpened) {
+          ref
+              .read(accountManagerProvider.notifier)
+              .refreshCurrentServerMetadata();
+        }
+      },
       appBar: AppBar(
         // ⚠ 戻る（←）は出さない (#1153・2026-09-22 pooza)。タブ UI へ戻るのは
         // 右端の「タブ表示に切り替え」に一本化した（AppBar の切り替えと役割が
         // 重なるため）。
         automaticallyImplyLeading: false,
+        // 左端は空いていたので、タブ表示と同じハンバーガーを置く (#1272)。
+        // 右側のアイコンは 6 つのまま（#1242 の「歯車を足す」は変えない）。
+        // ⚠ 幅に依らず出す（デッキは常駐ドロワーを持たないので、広い幅でも
+        // 入口はここだけ）。
+        leading: Builder(
+          builder: (context) => IconButton(
+            icon: Badge(
+              isLabelVisible: unreadAnnouncements > 0,
+              child: const Icon(Icons.menu),
+            ),
+            tooltip: MaterialLocalizations.of(context).openAppDrawerTooltip,
+            onPressed: () => Scaffold.of(context).openDrawer(),
+          ),
+        ),
         // ⚠ **題は置かない (#1242・2026-10-06 pooza)。**デッキ画面であることは
         // 見れば分かるので、自己紹介のような題で幅を使わない。
         //
