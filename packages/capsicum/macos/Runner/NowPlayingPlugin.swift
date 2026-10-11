@@ -1,3 +1,4 @@
+import CryptoKit
 import FlutterMacOS
 import Foundation
 
@@ -20,7 +21,8 @@ import Foundation
 ///   を compose が「許可して再試行」の案内に変換する）。
 ///
 /// 失敗種別は `__nowPlayingError`（automation_denied / automation_pending / no_track /
-/// script_error + __code）で返す。実曲は title/artist を持つマップ。
+/// script_error + __code）で返す。実曲は title/artist を持つマップ。ジャケットが
+/// 取れた回は、書き出した一時ファイルのパスを `artworkPath` に添える (#1273)。
 final class NowPlayingPlugin {
   static func register(with registrar: FlutterPluginRegistrar) {
     let channel = FlutterMethodChannel(
@@ -41,12 +43,22 @@ final class NowPlayingPlugin {
   /// ミュージック.app の現在の曲を title / artist / albumTitle のマップにする。
   /// `application "Music" is running` を tell の外で判定し、未起動のミュージックを
   /// 副作用で起動しない。**try で包まない**ことで TCC 拒否/応答待ちを表面化させる。
+  ///
+  /// ジャケット（アートワーク）も一緒に取る (#1273)。`raw data of artwork 1` は
+  /// ストリーミングの曲（`shared track`）でも画像のバイト列を返す（2026-10-12 実測・
+  /// 600x600 の JPEG）。⚠ **こちらだけは try で包む** —— アートワークの無い曲は
+  /// ここでエラーになるが、曲名までは取れているので文字情報を巻き込まない。
+  /// TCC の拒否 / 応答待ちは手前の `player state` で先に表面化する。
   private static func currentItemMap() -> [String: Any]? {
     let source = """
       if application "Music" is running then
         tell application "Music"
           if player state is stopped then return {}
-          return {name of current track, artist of current track, album of current track}
+          set trackInfo to {name of current track, artist of current track, album of current track}
+          try
+            set end of trackInfo to raw data of artwork 1 of current track
+          end try
+          return trackInfo
         end tell
       else
         return {}
@@ -88,6 +100,46 @@ final class NowPlayingPlugin {
     if map["title"] == nil && map["artist"] == nil {
       return ["__nowPlayingError": "no_track"]
     }
+    if items >= 4, let data = descriptor.atIndex(4)?.data,
+      let path = writeArtwork(data)
+    {
+      map["artworkPath"] = path
+    }
     return map
+  }
+
+  /// Dart 側の `kNowPlayingArtworkMaxBytes` と同じ上限。超えるものは書き出さない。
+  private static let artworkMaxBytes = 10 * 1024 * 1024
+
+  /// アートワークのバイト列を一時ファイルへ書き出し、そのパスを返す (#1273)。
+  /// 画像（JPEG / PNG）でなければ nil。
+  ///
+  /// Dart 側は `file://` として既存の添付の経路（`fetchNowPlayingArtwork`）へ流す。
+  /// ⚠ **置き場所は中身のハッシュで決める。**投稿フォームは「同じジャケットを
+  /// 2 枚添付しない」を URI の一致で見ているので、同じ絵は同じパスに、違う絵は
+  /// 違うパスになる必要がある。押すたびに一時ファイルが増えることもない。
+  /// ⚠ ファイル名は固定（そのまま投稿先のファイル名になる）。
+  private static func writeArtwork(_ data: Data) -> String? {
+    guard !data.isEmpty, data.count <= artworkMaxBytes else { return nil }
+    let ext: String
+    if data.starts(with: [0xFF, 0xD8, 0xFF]) {
+      ext = "jpg"
+    } else if data.starts(with: [0x89, 0x50, 0x4E, 0x47]) {
+      ext = "png"
+    } else {
+      return nil
+    }
+    let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+      .appendingPathComponent("nowplaying_native_\(digest.prefix(16))")
+    let file = dir.appendingPathComponent("nowplaying-artwork.\(ext)")
+    do {
+      try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+      try data.write(to: file, options: .atomic)
+    } catch {
+      // 書けなくても曲の文字情報は返す（ジャケットは上積み）。
+      return nil
+    }
+    return file.path
   }
 }

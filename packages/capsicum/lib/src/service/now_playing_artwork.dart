@@ -41,7 +41,8 @@ String nowPlayingArtworkAlt(NowPlayingInfo info) {
 /// - `http` / `https`: 取得して [tempDir] へ書き出す（モロヘイヤの
 ///   `artwork_url`・MPRIS の `mpris:artUrl`）
 /// - `file`: その場所の画像をそのまま使う（MPRIS がローカルのキャッシュを
-///   指すことがある）
+///   指すことがある。macOS はミュージックアプリから取った絵をネイティブが
+///   一時ファイルへ書き出す・#1273）
 ///
 /// ⚠ **失敗はすべて null に倒す。**ジャケットは上積みで、取れなくても本文だけの
 /// ナウプレとして投稿は成立する。
