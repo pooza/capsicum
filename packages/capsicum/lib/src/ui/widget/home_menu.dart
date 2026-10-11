@@ -197,6 +197,13 @@ void saveLastTab(WidgetRef ref) {
 ///
 /// ⚠ メニューバーの「移動」はデッキ中でも [inDeck] を渡さない（決定済み事項 11 の
 /// 差し替えは 3 か所だけで、ここは対象外）。
+///
+/// [columnContext] は、**選ぶとタイムラインになる項目**（リスト・チャンネル・
+/// プロフィールタグ）を開くときに使う `context` (#1272・2026-10-12 pooza)。
+/// デッキのドロワーは [DeckColumnScope] の下の `context` を渡し、選んだ先を
+/// カラムとして開く。null なら [context]（タブ表示・全画面で開く）。
+/// ⚠ ほかの項目には使わない（設定・サーバー情報などは全画面のまま。Play のように
+/// カラムの種別があっても、タイムラインにならないものは対象外）。
 List<HomeNavItem> buildHomeNavItems(
   BuildContext context,
   WidgetRef ref,
@@ -206,9 +213,11 @@ List<HomeNavItem> buildHomeNavItems(
   bool announcementsShownAsTab, {
   VoidCallback? onActivate,
   bool inDeck = false,
+  BuildContext? columnContext,
 }) {
   final adapter = ref.read(currentAdapterProvider);
   final hasMulukhiya = ref.read(currentMulukhiyaProvider) != null;
+  final timelineContext = columnContext ?? context;
   void act(VoidCallback action) {
     onActivate?.call();
     action();
@@ -281,13 +290,13 @@ List<HomeNavItem> buildHomeNavItems(
       HomeNavItem(
         title: 'リスト',
         icon: Icons.list,
-        onSelected: () => act(() => showListChooser(context, ref)),
+        onSelected: () => act(() => showListChooser(timelineContext, ref)),
       ),
     if (adapter is ChannelSupport)
       HomeNavItem(
         title: 'チャンネル',
         icon: Icons.forum,
-        onSelected: () => act(() => showChannelList(context, ref)),
+        onSelected: () => act(() => showChannelList(timelineContext, ref)),
       ),
     if (adapter is ChatSupport && (adapter as ChatSupport).canReadChat)
       HomeNavItem(
@@ -335,7 +344,7 @@ List<HomeNavItem> buildHomeNavItems(
       HomeNavItem(
         title: 'プロフィールタグ',
         icon: Icons.tag,
-        onSelected: () => act(() => showFavoriteTags(context, ref)),
+        onSelected: () => act(() => showFavoriteTags(timelineContext, ref)),
       ),
       HomeNavItem(
         title: 'リンク',
@@ -1192,7 +1201,8 @@ Future<void> showListChooser(BuildContext context, WidgetRef ref) async {
                 dense: true,
                 onTap: () {
                   Navigator.pop(context);
-                  context.push('/list/${list.id}', extra: list.title);
+                  // ⚠ デッキのドロワーから開いたときはカラムになる (#1272)。
+                  openList(context, list.id, list.title);
                 },
               ),
           const Divider(height: 1),

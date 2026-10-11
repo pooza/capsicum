@@ -39,6 +39,11 @@ import 'user_avatar.dart';
 ///   決定済み事項 8 / 11）。メニューバーが「他アカウントへ切り替え」を隠すのと
 ///   同じ扱い。追加・ログアウト・未接続アカウントの復帰は残す。
 /// - 「デッキ」「検索」「通知」の項目は出さない（[buildHomeNavItems] の側）。
+///
+/// [columnContext] は、選ぶとタイムラインになる項目（リスト・チャンネル・
+/// プロフィールタグ）をカラムで開くための `context` を返す（デッキだけが渡す）。
+/// ⚠ 関数で受けるのは、ドロワーの中身が組まれる時点（＝開いた時点）の値を
+/// 使うため。この関数が呼ばれる時点では、まだ無いことがある。
 Widget buildHomeDrawer(
   BuildContext context,
   WidgetRef ref,
@@ -47,6 +52,7 @@ Widget buildHomeDrawer(
   int unreadAnnouncements, {
   bool wideLayout = false,
   bool inDeck = false,
+  BuildContext? Function()? columnContext,
 }) {
   final otherAccounts = inDeck
       ? const <Account>[]
@@ -92,6 +98,7 @@ Widget buildHomeDrawer(
           announcementsShownAsTab,
           onActivate: dismiss,
           inDeck: inDeck,
+          columnContext: columnContext?.call(),
         );
         // ドロワーは `Scaffold.drawer` で body ではないため、#1037 の
         // `BottomSafeArea` が掛かっていない。padding を 0 のままにすると

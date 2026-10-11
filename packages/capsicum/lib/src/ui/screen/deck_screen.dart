@@ -333,6 +333,34 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
     null,
   );
 
+  /// ドロワーの項目がカラムを開くときの足場 (#1272)。常に載っている題に付ける。
+  ///
+  /// ⚠ ドロワーの中身の `context` は使えない（ドロワーを閉じると捨てられるので、
+  /// 一覧を取って選ばせている間に無くなる）。
+  final _drawerColumnAnchor = GlobalKey();
+
+  /// [child] を、ドロワーからカラムを開くための [DeckColumnScope] で包む (#1272)。
+  ///
+  /// - 開く位置は**フォーカス中のカラムの右隣**（カラムから開いたときと同じ）
+  /// - ⚠⚠ **アカウントは現在のアカウントに固定する。**ドロワーの項目は現在の
+  ///   アカウントのもの（一覧もそのアダプタで引いている）なので、フォーカス中の
+  ///   カラムのアカウントで開くと、別のサーバーの id を引くことになる
+  /// - フォーカスが無い（列が空）ときは包まない。全画面で開く
+  Widget _withDrawerColumnScope(
+    DeckColumn? focused,
+    AccountKey? currentKey,
+    Widget child,
+  ) {
+    if (focused == null || currentKey == null) return child;
+    return DeckColumnScope(
+      column: focused,
+      onOpen: (from, tab, seed, {account}) =>
+          _openColumn(from, tab, seed, account: currentKey),
+      onClose: (_) {},
+      child: child,
+    );
+  }
+
   /// 中身の画面が「閉じる」とき（コレクションを削除した等）にカラムを外す (#1150)。
   void _closeColumn(DeckColumn column) =>
       ref.read(deckColumnsProvider.notifier).remove(column.id);
@@ -563,6 +591,11 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
         ref.watch(accountManagerProvider),
         unreadAnnouncements,
         inDeck: true,
+        // 選ぶとタイムラインになる項目（リスト・チャンネル・プロフィールタグ）は
+        // カラムで開く（2026-10-12 pooza）。下の題に置いた目印の `context` を
+        // 渡す —— そこは [DeckColumnScope] の下なので、既存の `open*` が
+        // フォーカス中のカラムの右隣へ足す。
+        columnContext: () => _drawerColumnAnchor.currentContext,
       ),
       // ⚠⚠ **左端からのスワイプでは開かない。**狭幅のデッキは横スワイプで
       // カラムを移るので、左端で競合する。ボタンからだけ開く。
@@ -601,10 +634,15 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
         // ⚠ **見えない題は置く。**`AppBar` は `title` を画面名として読み上げに
         // 渡すので、題を外すとデッキへ入ったときに何も読まれなくなる。見た目を
         // 変えずに画面名だけ渡す（`namesRoute`）。
-        title: Semantics(
-          namesRoute: true,
-          label: 'デッキ',
-          child: const SizedBox.shrink(),
+        title: _withDrawerColumnScope(
+          focusedColumn,
+          currentKey,
+          Semantics(
+            key: _drawerColumnAnchor,
+            namesRoute: true,
+            label: 'デッキ',
+            child: const SizedBox.shrink(),
+          ),
         ),
         actions: [
           // ⚠ アイコンが増えたので、タブ UI と同じコンパクト枠に詰める (#1173)。
