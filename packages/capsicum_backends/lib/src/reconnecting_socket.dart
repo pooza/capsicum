@@ -125,9 +125,15 @@ class ReconnectingSocket {
         .timeout(connectTimeout)
         .then((_) {
           if (_disposed || _channel != channel) return;
+          // ⚠ 握手が成立した直後に、切断のほうが先に処理されていることがある
+          // (#1267)。そのまま進むと、失敗のあとに安定タイマーを張り、張り直しを
+          // 待っている間に試行回数が 0 へ戻る（バックオフが効かなくなる）。
+          // 「つながった」の記録も、切れたあとに出すことになる。
+          if (identical(_handledFailureOf, channel)) return;
           _notifyEvent(connected);
           _stableTimer = Timer(stableAfter, () {
             if (_disposed || _channel != channel) return;
+            if (identical(_handledFailureOf, channel)) return;
             _attempts = 0;
             _exhaustedNotified = false;
           });
