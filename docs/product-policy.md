@@ -155,7 +155,7 @@ v1.15 の観測性強化（#293）により、iOS のバックグラウンド通
   - **添付は自動**（選ばせない）。代替テキストも自動で入れる（`曲名 / アーティスト のアルバムアートワーク`）
   - ⚠ **リサイズ / 形式変換を capsicum 側で作らない。**モロヘイヤの既存の処理と重ねない
   - ⚠ **取れなくても投稿は止めない。**ジャケットは上積みで、失敗した回は本文だけのナウプレになる
-  - 出どころは 2 つ: 源が自前で持つもの（Linux の MPRIS）と、モロヘイヤの `artwork_url`（5.39.0〜・全プラットフォーム）。**源が持っていればそちらを優先する**（いま鳴っている音源そのものの絵）。⚠ モロヘイヤ非導入サーバーで macOS / Windows / iOS のジャケットを出すには OS ごとの実装が要り、未着手（macOS / iOS は [#1273](https://github.com/pooza/capsicum/issues/1273)・Windows は [#1274](https://github.com/pooza/capsicum/issues/1274)）
+  - 出どころは 2 つ: 源が自前で持つもの（Linux の MPRIS）と、モロヘイヤの `artwork_url`（5.39.0〜・全プラットフォーム）。**源が持っていればそちらを優先する**（いま鳴っている音源そのものの絵）。⚠ モロヘイヤ非導入サーバーで macOS / Windows / iOS のジャケットを出すには OS ごとの実装が要り、未着手（macOS は [#1273](https://github.com/pooza/capsicum/issues/1273)・iOS は [#1275](https://github.com/pooza/capsicum/issues/1275)・Windows は [#1274](https://github.com/pooza/capsicum/issues/1274)）。⚠ **macOS → ミュージックアプリの経路が、要望の本体**（2026-10-11 pooza）
 
 ### サポート優先順位
 
