@@ -280,6 +280,9 @@ class _DeckColumnHeader extends ConsumerWidget {
     // 中身は全アカウントのもので、カラムが持つアカウントと対応しない。出すと
     // 「このアカウントの通知」に見える。アイコン・表示名・サーバーの色を外す。
     final spansAccounts = column.tab.spansAccounts;
+    final locked = ref.watch(
+      deckLockedColumnsProvider.select((ids) => ids.contains(column.id)),
+    );
     // ⚠ 背景はカラムのアカウントのサーバーの色 (#1152・2026-09-22 pooza)。
     // サーバーバッジと同じ [resolveHostColor] を使う。
     // ⚠⚠ **文字とアイコンを白に固定しない (#1240)。**モロヘイヤの色はそのまま
@@ -396,15 +399,44 @@ class _DeckColumnHeader extends ConsumerWidget {
               if (column.tab is NotificationsTab ||
                   column.tab is AllNotificationsTab)
                 NotificationFilterButton(color: foreground),
-              // カラムから開いたカラムは使い捨てなので、ヘッダーで閉じられるようにする
-              // (#1148)。⚠ 列から外すだけで購読は止めない（autoDispose に任せる・#1093）。
-              IconButton(
-                icon: Icon(Icons.close, color: foreground),
-                tooltip: 'カラムを閉じる',
-                visualDensity: VisualDensity.compact,
-                onPressed: () =>
-                    ref.read(deckColumnsProvider.notifier).remove(column.id),
-              ),
+              // カラムのロック (#1271・2026-10-12 pooza)。常設のカラムをうっかり
+              // 閉じないための道具で、**ロック中は × を出さない**（鍵だけになり、
+              // 押すと解除 ＝ 閉じるには 2 回押す）。⚠ 掛け外しは見出しで済ませる
+              // （カラム編集のシートを開かせない）。
+              if (locked)
+                IconButton(
+                  icon: Icon(Icons.lock, color: foreground),
+                  tooltip: 'ロックを解除',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => ref
+                      .read(deckLockedColumnsProvider.notifier)
+                      .setLocked(column.id, false),
+                )
+              else ...[
+                IconButton(
+                  icon: Icon(
+                    Icons.lock_open,
+                    // ⚠ 掛かっていない側は控えめに出す。全カラムに並ぶので、
+                    // × と同じ濃さだと見出しがうるさい。
+                    color: foreground.withValues(alpha: 0.6),
+                  ),
+                  tooltip: 'カラムをロック（閉じられないようにする）',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => ref
+                      .read(deckLockedColumnsProvider.notifier)
+                      .setLocked(column.id, true),
+                ),
+                // カラムから開いたカラムは使い捨てなので、ヘッダーで閉じられる
+                // ようにする (#1148)。⚠ 列から外すだけで購読は止めない
+                // （autoDispose に任せる・#1093）。
+                IconButton(
+                  icon: Icon(Icons.close, color: foreground),
+                  tooltip: 'カラムを閉じる',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () =>
+                      ref.read(deckColumnsProvider.notifier).remove(column.id),
+                ),
+              ],
             ],
           ),
         ),

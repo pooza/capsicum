@@ -61,6 +61,7 @@ class _DeckColumnsSheetState extends ConsumerState<DeckColumnsSheet> {
     final theme = Theme.of(context);
     final notifier = ref.read(deckColumnsProvider.notifier);
     final columns = ref.watch(deckColumnsProvider);
+    final locked = ref.watch(deckLockedColumnsProvider);
     final accounts = ref.watch(accountManagerProvider).accounts;
     final currentKey = ref.watch(currentAccountKeyProvider);
     final selected = accounts.any((a) => a.key == _selectedAccount)
@@ -148,10 +149,28 @@ class _DeckColumnsSheetState extends ConsumerState<DeckColumnsSheet> {
                               ? 'すべてのアカウント'
                               : '@${column.account.username}@${column.account.host}',
                         ),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.delete_outline),
-                          tooltip: 'カラムを削除',
-                          onPressed: () => notifier.remove(column.id),
+                        // ⚠ **ロック中でもここからは外せる** (#1271)。ロックが
+                        // 止めるのは見出しの × の押し間違いで、ここは意図して
+                        // 開く場所。鍵はロック中の目印としてだけ出す（掛け外しは
+                        // 見出しで行う）。
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (locked.contains(column.id))
+                              const Padding(
+                                padding: EdgeInsets.only(right: 4),
+                                child: Icon(
+                                  Icons.lock,
+                                  size: 18,
+                                  semanticLabel: 'ロック中',
+                                ),
+                              ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline),
+                              tooltip: 'カラムを削除',
+                              onPressed: () => notifier.remove(column.id),
+                            ),
+                          ],
                         ),
                       );
                     },
