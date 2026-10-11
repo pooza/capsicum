@@ -42,6 +42,7 @@ import '../util/annict_link.dart';
 import '../util/compose_draft_notice.dart';
 import '../util/compose_settings_display.dart';
 import '../util/compose_template_display.dart';
+import '../util/compose_text_style.dart';
 import '../util/direct_recipients.dart';
 import '../util/draft_display.dart';
 import '../util/drive_description_sync.dart';
@@ -5143,8 +5144,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     // 揃えないのが #1035-A3 の形。
     final lengthRule = ref.watch(postLengthRuleProvider);
     // 本文入力に使うフォント (#892)。空 = 既定。誤入力・未インストールは OS の
-    // フォント解決が黙って既定へフォールバックする。
-    final composeFontFamily = ref.watch(composeFontFamilyProvider);
+    // フォント解決が黙って既定へフォールバックする。⚠ スタイルはここで組まず、
+    // 同じ設定を当てるほかの欄と揃える (#1233)。
+    final composeStyle = composeTextStyle(ref);
 
     final scaffold = Scaffold(
       appBar: AppBar(
@@ -5342,9 +5344,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                             enabled: !_sending,
                             // #892: デスクトップで等幅フォント名が設定されていれば
                             // 本文入力に適用（空なら null = 既定フォント）。
-                            style: composeFontFamily.isEmpty
-                                ? null
-                                : TextStyle(fontFamily: composeFontFamily),
+                            style: composeStyle,
                             decoration: const InputDecoration(
                               hintText: '今なにしてる？',
                               border: InputBorder.none,

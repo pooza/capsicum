@@ -11,6 +11,7 @@ import '../../provider/server_config_provider.dart';
 import '../../service/sentry_op_failure.dart';
 import '../../util/post_text_length.dart';
 import '../util/compose_template_display.dart';
+import '../util/compose_text_style.dart';
 import '../util/provider_scope_carrier.dart';
 import '../util/text_length_counter.dart';
 import '../widget/bottom_safe_area.dart';
@@ -412,39 +413,46 @@ class _TemplateEditorDialogState extends State<_TemplateEditorDialog> {
             ),
             const SizedBox(height: 8),
             // 本文は残り高さいっぱいに広げる。超過分は欄内でスクロールする。
+            //
+            // ⚠ 投稿フォームのフォント設定を当てる (#1233)。このダイアログは
+            // `ref` を持たないので、欄だけ `Consumer` で包む。
             Expanded(
-              child: TextField(
-                controller: _bodyController,
-                maxLength: widget.maxBodyLength,
-                // ⚠⚠ **compose と同じ上限を使うなら、数え方も enforcement も
-                // 揃える (#1035-A3)。**上限は投稿フォームと同じ
-                // [maxPostLengthProvider] なのに、ここだけ**既定の書記素
-                // カウンタ + 既定の enforcement（＝切り詰める）**のままだった。
-                //
-                // - **黙って切られる** — Misskey (3000) で絵文字混じりのテンプレ
-                //   本文が、入力途中で予告なく切り捨てられる
-                // - **compose と数字が食い違う** — 家族絵文字 👨‍👩‍👧‍👦 は書記素 1・
-                //   コードポイント 7。同じ本文を compose に貼ると別の数字が出る
-                //
-                // `text_length.dart` が立てた「切らずにサーバーと同じ単位で
-                // 数える」方針と真逆だったので揃える。
-                // 数え方も compose と同じ規則で (#1034)。テンプレの CW は
-                // ここでは別枠（下の欄に独自の 200）なので本文だけ渡す。
-                buildCounter: serverLengthCounter(
-                  _bodyController,
-                  count: (text) => postTextLength(widget.bodyLengthRule, text),
-                ),
-                maxLengthEnforcement: MaxLengthEnforcement.none,
-                expands: true,
-                maxLines: null,
-                minLines: null,
-                textAlignVertical: TextAlignVertical.top,
-                keyboardType: TextInputType.multiline,
-                decoration: const InputDecoration(
-                  labelText: '本文（空でも可）',
-                  border: OutlineInputBorder(),
-                  // 複数行なのでラベルを枠の上端に揃える。
-                  alignLabelWithHint: true,
+              child: Consumer(
+                builder: (context, ref, _) => TextField(
+                  controller: _bodyController,
+                  style: composeTextStyle(ref),
+                  maxLength: widget.maxBodyLength,
+                  // ⚠⚠ **compose と同じ上限を使うなら、数え方も enforcement も
+                  // 揃える (#1035-A3)。**上限は投稿フォームと同じ
+                  // [maxPostLengthProvider] なのに、ここだけ**既定の書記素
+                  // カウンタ + 既定の enforcement（＝切り詰める）**のままだった。
+                  //
+                  // - **黙って切られる** — Misskey (3000) で絵文字混じりのテンプレ
+                  //   本文が、入力途中で予告なく切り捨てられる
+                  // - **compose と数字が食い違う** — 家族絵文字 👨‍👩‍👧‍👦 は書記素 1・
+                  //   コードポイント 7。同じ本文を compose に貼ると別の数字が出る
+                  //
+                  // `text_length.dart` が立てた「切らずにサーバーと同じ単位で
+                  // 数える」方針と真逆だったので揃える。
+                  // 数え方も compose と同じ規則で (#1034)。テンプレの CW は
+                  // ここでは別枠（下の欄に独自の 200）なので本文だけ渡す。
+                  buildCounter: serverLengthCounter(
+                    _bodyController,
+                    count: (text) =>
+                        postTextLength(widget.bodyLengthRule, text),
+                  ),
+                  maxLengthEnforcement: MaxLengthEnforcement.none,
+                  expands: true,
+                  maxLines: null,
+                  minLines: null,
+                  textAlignVertical: TextAlignVertical.top,
+                  keyboardType: TextInputType.multiline,
+                  decoration: const InputDecoration(
+                    labelText: '本文（空でも可）',
+                    border: OutlineInputBorder(),
+                    // 複数行なのでラベルを枠の上端に揃える。
+                    alignLabelWithHint: true,
+                  ),
                 ),
               ),
             ),
