@@ -131,6 +131,74 @@ void main() {
     });
   });
 
+  test('⚠⚠ 送らない時間はホストごと（A が落ちている間の B の失敗を落とさない・#1267）', () {
+    fakeAsync((async) {
+      final (reporter, sent) = make(async);
+
+      fail(reporter, 'a');
+      async.elapse(const Duration(seconds: 6));
+      expect(sent, hasLength(1));
+
+      // A の「送らない 60 秒」の最中に、B が落ちる。A の再試行も続いている。
+      async.elapse(const Duration(seconds: 10));
+      fail(reporter, 'a');
+      fail(reporter, 'b');
+      async.elapse(const Duration(seconds: 6));
+
+      expect(sent, hasLength(2), reason: '以前は B の失敗が件数にもホストにも入らなかった');
+      expect(sent.last.hosts, {'b'}, reason: 'A は送らない時間の中なので入らない');
+      expect(sent.last.connectionCount, 1);
+      expect(sent.last.looksLikeNetworkDown, isFalse);
+    });
+  });
+
+  test('⚠⚠ 「回線側」のあとの次のまとめは、1 ホストでも続きとして読む (#1267)', () {
+    fakeAsync((async) {
+      final (reporter, sent) = make(async);
+
+      for (final host in ['a', 'b', 'c']) {
+        fail(reporter, host);
+      }
+      async.elapse(const Duration(seconds: 6));
+      expect(sent.single.looksLikeNetworkDown, isTrue);
+
+      // 長い圏外。再接続の間隔が広がってホストごとにずれ、次の窓には A だけが入る。
+      async.elapse(const Duration(seconds: 70));
+      fail(reporter, 'a');
+      async.elapse(const Duration(seconds: 6));
+
+      expect(sent, hasLength(2));
+      expect(sent.last.hosts, {'a'});
+      expect(
+        sent.last.looksLikeNetworkDown,
+        isTrue,
+        reason: '同じ圏外の続きを、単一ホストの error として積まない',
+      );
+
+      // 続きとして読んだ回が、また次の起点になる。
+      async.elapse(const Duration(seconds: 100));
+      fail(reporter, 'b');
+      async.elapse(const Duration(seconds: 6));
+      expect(sent.last.looksLikeNetworkDown, isTrue);
+    });
+  });
+
+  test('⚠ 間が空けば、続きとは読まない（サーバー側の合図を消さない）', () {
+    fakeAsync((async) {
+      final (reporter, sent) = make(async);
+
+      fail(reporter, 'a');
+      fail(reporter, 'b');
+      async.elapse(const Duration(seconds: 6));
+      async.elapse(const Duration(minutes: 10));
+      fail(reporter, 'a');
+      async.elapse(const Duration(seconds: 6));
+
+      expect(sent, hasLength(2));
+      expect(sent.last.looksLikeNetworkDown, isFalse);
+    });
+  });
+
   /// 報告役が正しくても、購読の側が自前で Sentry へ送っていれば元へ戻る。
   group('接続の失敗を、購読の側が直接 Sentry へ送っていない', () {
     const sites = {

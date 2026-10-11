@@ -14,6 +14,7 @@ class StreamConnectFailureBatch {
     required this.stackTrace,
     required this.hosts,
     required this.connectionCount,
+    this.continuesNetworkDown = false,
   });
 
   /// 最初に失敗した接続の種別（`timeline.stream.connect` 等）。
@@ -29,8 +30,15 @@ class StreamConnectFailureBatch {
   /// 窓の中で失敗した接続の本数。
   final int connectionCount;
 
-  /// 複数のホストが同時に落ちた ＝ 回線側の事象と読む。
-  bool get looksLikeNetworkDown => hosts.length >= 2;
+  /// 直前のまとめが「回線側」で、その続きと読める回か (#1267)。
+  ///
+  /// 長い圏外では再接続の間隔が最大 60 秒まで広がり、ホストごとにずれる。
+  /// 2 回目以降の窓には 1 ホストしか入らないことが多く、ホストの数だけで
+  /// 判定すると、同じ圏外の続きが単一ホストの error として積まれる。
+  final bool continuesNetworkDown;
+
+  /// 複数のホストが同時に落ちた（か、その続き）＝ 回線側の事象と読む。
+  bool get looksLikeNetworkDown => hosts.length >= 2 || continuesNetworkDown;
 }
 
 /// ストリーミング接続の失敗を、**アプリ全体で 1 つにまとめて** Sentry へ送る
@@ -47,14 +55,20 @@ class StreamConnectFailureBatch {
 /// - ⚠⚠ **1 ホストだけの回は従来どおり error。**「特定のサーバーだけ引けない」
 ///   （回線は生きている）はサーバー側の障害の合図なので、見えるままにする。
 ///   種別ごとの fingerprint も変えない（既存のイシューへ積まれ続ける）
-/// - 送ったあと [quiet] のあいだは送らない（切断中の連発を抑える・従来の
-///   購読ごとの間引きと同じ長さ）
+/// - 送ったあと [quiet] のあいだは、**そのホストのぶん**を送らない（切断中の
+///   連発を抑える・従来の購読ごとの間引きと同じ長さ）。⚠ **窓は全体で 1 つ、
+///   送らない時間はホストごと** (#1267)。以前は送らない時間もアプリ全体で 1 つ
+///   だったので、ホスト A が長く落ちている間にホスト B が落ちても、B の失敗が
+///   件数にもホストの集合にも入らなかった
+/// - 「回線側」と読んだあと [networkDownCarryOver] のうちに来た次のまとめは、
+///   1 ホストだけでも続きとして「回線側」に読む (#1267)
 ///
 /// ⚠ breadcrumb は呼ぶ側が毎回残す（ここは「イベントにするか」だけを決める）。
 class StreamConnectFailureReporter {
   StreamConnectFailureReporter({
     this.window = const Duration(seconds: 5),
     this.quiet = const Duration(seconds: 60),
+    this.networkDownCarryOver = const Duration(minutes: 3),
     void Function(StreamConnectFailureBatch batch)? send,
     DateTime Function()? now,
   }) : _send = send ?? _sendToSentry,
@@ -63,19 +77,31 @@ class StreamConnectFailureReporter {
   /// 同時に起きた失敗をまとめる窓。
   final Duration window;
 
-  /// 送ったあと、次を送らない長さ。
+  /// 送ったあと、同じホストのぶんを送らない長さ。
   final Duration quiet;
+
+  /// 「回線側」と読んだあと、次のまとめを続きとして読む長さ。
+  ///
+  /// ⚠ 再接続の間隔（最大 60 秒）と [quiet]（60 秒）が重なっても続きが途切れない
+  /// よう、その合計より長く取る。続きとして読んだ回が、また次の起点になる。
+  final Duration networkDownCarryOver;
 
   final void Function(StreamConnectFailureBatch batch) _send;
   final DateTime Function() _now;
 
   Timer? _timer;
-  DateTime? _lastSentAt;
+
+  /// ホストごとの、最後に送った時刻。ホストが分からない接続は `null` のキー。
+  final Map<String?, DateTime> _lastSentAt = {};
+
+  /// 最後に「回線側」として送った時刻。
+  DateTime? _lastNetworkDownAt;
 
   String? _category;
   Object? _error;
   StackTrace? _stackTrace;
   final Set<String> _hosts = {};
+  bool _hostless = false;
   int _count = 0;
 
   /// 接続の失敗を 1 件報告する。
@@ -88,10 +114,14 @@ class StreamConnectFailureReporter {
     StackTrace? stackTrace,
     String? host,
   }) {
-    final lastSentAt = _lastSentAt;
+    final lastSentAt = _lastSentAt[host];
     if (lastSentAt != null && _now().difference(lastSentAt) < quiet) return;
     _count++;
-    if (host != null) _hosts.add(host);
+    if (host != null) {
+      _hosts.add(host);
+    } else {
+      _hostless = true;
+    }
     if (_timer != null) return;
     _category = category;
     _error = error;
@@ -104,19 +134,32 @@ class StreamConnectFailureReporter {
     final category = _category;
     final error = _error;
     if (category == null || error == null) return;
+    final now = _now();
+    final lastNetworkDownAt = _lastNetworkDownAt;
     final batch = StreamConnectFailureBatch(
       category: category,
       error: error,
       stackTrace: _stackTrace,
       hosts: Set.of(_hosts),
       connectionCount: _count,
+      continuesNetworkDown:
+          lastNetworkDownAt != null &&
+          now.difference(lastNetworkDownAt) < networkDownCarryOver,
     );
+    // ⚠ 送らない時間は、このまとめに入ったホストにだけ掛ける (#1267)。
+    for (final host in _hosts) {
+      _lastSentAt[host] = now;
+    }
+    if (_hostless) _lastSentAt[null] = now;
+    // 古い記録を残さない（接続先は増減する）。
+    _lastSentAt.removeWhere((_, at) => now.difference(at) >= quiet);
+    if (batch.looksLikeNetworkDown) _lastNetworkDownAt = now;
     _category = null;
     _error = null;
     _stackTrace = null;
     _hosts.clear();
+    _hostless = false;
     _count = 0;
-    _lastSentAt = _now();
     _send(batch);
   }
 
@@ -125,11 +168,13 @@ class StreamConnectFailureReporter {
   void reset() {
     _timer?.cancel();
     _timer = null;
-    _lastSentAt = null;
+    _lastSentAt.clear();
+    _lastNetworkDownAt = null;
     _category = null;
     _error = null;
     _stackTrace = null;
     _hosts.clear();
+    _hostless = false;
     _count = 0;
   }
 

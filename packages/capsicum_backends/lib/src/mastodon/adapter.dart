@@ -1286,9 +1286,29 @@ class MastodonAdapter extends DecentralizedBackendAdapter
 
   // NotificationUnreadCountSupport
 
+  /// 未読数の口（`/api/v1/notifications/unread_count`）がこのサーバーに無いと
+  /// 分かったら立てる (#1267)。Mastodon 4.3 未満と、実装していない互換サーバー。
+  ///
+  /// ⚠ **立てないと、バッジの更新のたび（30 秒ごと）に 404 を打ち続ける。**
+  /// 立てっぱなしでよい理由は [_groupingUnsupported] と同じ（アダプタは
+  /// アカウント 1 つ・サーバー 1 台。サーバーが更新されても、次に作り直される
+  /// までは 0 のまま、という保守側に倒れる）。
+  bool _unreadCountUnsupported = false;
+
   @override
-  Future<int> getUnreadNotificationCount() =>
-      client.getNotificationUnreadCount();
+  Future<int> getUnreadNotificationCount() async {
+    if (_unreadCountUnsupported) return 0;
+    try {
+      return await client.getNotificationUnreadCount();
+    } on DioException catch (e) {
+      // ⚠ 「口が無い」と読むのは 404 / 501 だけ。401 / 429 / 5xx は一時的な
+      // 失敗で、ここで立てると未読数が二度と出なくなる。
+      final status = e.response?.statusCode;
+      if (status != 404 && status != 501) rethrow;
+      _unreadCountUnsupported = true;
+      return 0;
+    }
+  }
 
   // SearchSupport
 
