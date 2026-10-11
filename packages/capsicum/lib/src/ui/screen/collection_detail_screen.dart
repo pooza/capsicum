@@ -672,6 +672,7 @@ class _CollectionDetailScreenState
                                 ? const Icon(Icons.check, color: Colors.grey)
                                 : IconButton(
                                     icon: const Icon(Icons.add),
+                                    tooltip: 'コレクションに追加',
                                     onPressed: () async {
                                       final r = await _addMember(user);
                                       // シートが閉じられた後の setState を避ける。

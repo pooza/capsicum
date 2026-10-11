@@ -223,6 +223,7 @@ class _ListMembersScreenState extends ConsumerState<ListMembersScreen> {
                             ? const Icon(Icons.check, color: Colors.grey)
                             : IconButton(
                                 icon: const Icon(Icons.add),
+                                tooltip: 'リストに追加',
                                 onPressed: () =>
                                     _addMember(user, setSheetState),
                               ),

@@ -619,6 +619,7 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
           IconButton(
             onPressed: () => _removeField(index),
             icon: const Icon(Icons.remove_circle_outline),
+            tooltip: 'この項目を削除',
             iconSize: 20,
           ),
         ],

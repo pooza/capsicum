@@ -2689,6 +2689,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                   if (_pollControllers.length > 2)
                     IconButton(
                       icon: const Icon(Icons.close, size: 18),
+                      // ⚠ × は「閉じる」と読める。選択肢を消すボタン (#1197)。
+                      tooltip: 'この選択肢を削除',
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
                       onPressed: _sending ? null : () => _removePollOption(i),
@@ -3617,6 +3619,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                       const Spacer(),
                       IconButton(
                         icon: const Icon(Icons.close),
+                        tooltip: MaterialLocalizations.of(
+                          sheetContext,
+                        ).closeButtonTooltip,
                         onPressed: () => Navigator.pop(sheetContext),
                       ),
                     ],

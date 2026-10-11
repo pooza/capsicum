@@ -336,6 +336,9 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
                   const Spacer(),
                   IconButton(
                     icon: const Icon(Icons.close),
+                    tooltip: MaterialLocalizations.of(
+                      context,
+                    ).closeButtonTooltip,
                     onPressed: () => Navigator.pop(context),
                   ),
                 ],
@@ -389,6 +392,7 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
                             if (tab is HashtagTab)
                               IconButton(
                                 icon: const Icon(Icons.delete_outline),
+                                tooltip: 'このタブを削除',
                                 onPressed: () => _notifier.removeTab(tab),
                               ),
                             // Visibility toggle.
@@ -398,6 +402,9 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
                                     ? Icons.visibility
                                     : Icons.visibility_off,
                               ),
+                              // ⚠ アイコンは**いまの状態**。押した結果を言葉で
+                              // 添える（どちらなのかが絵からは読めない・#1197）。
+                              tooltip: entry.visible ? 'タブを隠す' : 'タブを表示する',
                               onPressed: () => _notifier.toggleVisibility(tab),
                             ),
                           ],
@@ -428,6 +435,7 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
                         const SizedBox(width: 8),
                         IconButton(
                           icon: const Icon(Icons.add),
+                          tooltip: 'ハッシュタグのタブを追加',
                           onPressed: _addHashtag,
                         ),
                       ],

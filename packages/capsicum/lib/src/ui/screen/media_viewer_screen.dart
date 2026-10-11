@@ -432,6 +432,7 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
           foregroundColor: Colors.white,
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
+            tooltip: MaterialLocalizations.of(context).backButtonTooltip,
             onPressed: _popWithResult,
           ),
           title: widget.attachments.length > 1

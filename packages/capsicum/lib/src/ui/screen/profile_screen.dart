@@ -612,6 +612,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                             Icons.arrow_back,
                             color: Colors.white,
                           ),
+                          tooltip: MaterialLocalizations.of(
+                            context,
+                          ).backButtonTooltip,
                           onPressed: () => Navigator.of(context).pop(),
                         ),
                       ),

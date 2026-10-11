@@ -180,6 +180,7 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
           IconButton(
             onPressed: _loading ? null : _searchWorks,
             icon: const Icon(Icons.search),
+            tooltip: '作品を検索',
           ),
         ],
       ),
@@ -346,6 +347,7 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
+          tooltip: '作品の一覧へ戻る',
           onPressed: _backToWorks,
         ),
         title: Text(work.title),

@@ -313,6 +313,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     final submit = IconButton(
       onPressed: _serverLoading ? null : _search,
       icon: const Icon(Icons.search),
+      tooltip: '検索する',
     );
 
     if (widget.embedded) {

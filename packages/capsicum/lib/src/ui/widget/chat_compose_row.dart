@@ -197,6 +197,7 @@ class ChatComposeRow extends ConsumerWidget {
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Icon(Icons.send),
+                  tooltip: '送信',
                   onPressed: busy ? null : onSend,
                 ),
               ],

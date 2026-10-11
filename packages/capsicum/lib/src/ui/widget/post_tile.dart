@@ -3966,7 +3966,11 @@ class _RetagSheetState extends State<_RetagSheet> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                IconButton(onPressed: _addTag, icon: const Icon(Icons.add)),
+                IconButton(
+                  onPressed: _addTag,
+                  icon: const Icon(Icons.add),
+                  tooltip: 'タグを追加',
+                ),
               ],
             ),
             if (_suggestions.isNotEmpty)
