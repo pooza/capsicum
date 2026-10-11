@@ -354,8 +354,17 @@ class MastodonClient {
   }
 
   /// POST /api/v1/accounts/:id/follow
-  Future<void> followAccount(String id) async {
-    await dio.post('/api/v1/accounts/$id/follow');
+  ///
+  /// [reblogs] は、この相手のブーストをホームに出すか (#1245)。**フォロー中の
+  /// 相手へ送ると、フォローの属性の更新になる。**
+  /// ⚠ 省いた属性（`notify` / `languages`）は今の値のまま残る —— サーバーは
+  /// 送られたキーだけを書き換える（`Account#follow!`・2026-10-12 にソースで確認）。
+  /// なので `reblogs` だけを送ってよい。null なら送らない（従来のフォロー）。
+  Future<void> followAccount(String id, {bool? reblogs}) async {
+    await dio.post(
+      '/api/v1/accounts/$id/follow',
+      data: reblogs == null ? null : {'reblogs': reblogs},
+    );
   }
 
   /// POST /api/v1/accounts/:id/unfollow

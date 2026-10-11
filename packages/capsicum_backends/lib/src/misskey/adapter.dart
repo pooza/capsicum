@@ -132,6 +132,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         AchievementSupport,
         BookmarkSupport,
         ThreadMuteSupport,
+        RepostMuteSupport,
         AnnouncementSupport,
         FollowSupport,
         FollowRequestSupport,
@@ -1022,8 +1023,18 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       followedBy: r['isFollowed'] as bool? ?? false,
       muting: r['isMuted'] as bool? ?? false,
       blocking: r['isBlocking'] as bool? ?? false,
+      showingReposts: !(r['isRenoteMuted'] as bool? ?? false),
     );
   }
+
+  // RepostMuteSupport (#1245)
+
+  @override
+  bool get repostMuteRequiresFollow => false;
+
+  @override
+  Future<void> setShowReposts(String userId, {required bool show}) =>
+      show ? client.unmuteRenotes(userId) : client.muteRenotes(userId);
 
   @override
   Future<void> followUser(String id) => client.followUser(id);

@@ -294,6 +294,23 @@ class MisskeyClient {
     );
   }
 
+  /// POST /api/renote-mute/create — この相手のリノートを TL に出さない (#1245)。
+  /// フォローしていない相手にも掛けられる。
+  Future<void> muteRenotes(String userId) async {
+    await dio.post(
+      '/api/renote-mute/create',
+      data: createBody({'userId': userId}),
+    );
+  }
+
+  /// POST /api/renote-mute/delete (#1245)
+  Future<void> unmuteRenotes(String userId) async {
+    await dio.post(
+      '/api/renote-mute/delete',
+      data: createBody({'userId': userId}),
+    );
+  }
+
   /// POST /api/following/delete
   Future<void> unfollowUser(String userId) async {
     await dio.post(

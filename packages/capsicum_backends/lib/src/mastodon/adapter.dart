@@ -112,6 +112,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         FavoriteSupport,
         BookmarkSupport,
         ThreadMuteSupport,
+        RepostMuteSupport,
         // 引用の一覧 (#1072)。Misskey には無いので Mastodon adapter だけが持つ。
         QuoteSupport,
         AnnouncementSupport,
@@ -978,8 +979,18 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       mutingExpiresAt: r['muting_expires_at'] is String
           ? DateTime.tryParse(r['muting_expires_at'] as String)
           : null,
+      showingReposts: r['showing_reblogs'] as bool? ?? true,
     );
   }
+
+  // RepostMuteSupport (#1245)
+
+  @override
+  bool get repostMuteRequiresFollow => true;
+
+  @override
+  Future<void> setShowReposts(String userId, {required bool show}) =>
+      client.followAccount(userId, reblogs: show);
 
   @override
   Future<void> followUser(String id) => client.followAccount(id);
