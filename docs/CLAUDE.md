@@ -100,24 +100,13 @@ capsicum はサーバーが提供する API を検出し、利用可能な機能
 
 #### v2.0 開発中は、1.x のリリースが全部この形になる
 
-✅ **この期間は 2026-10-08 の v2.0.0 で終わった。**`main` は 2.x 線に戻り、`develop` → `main` の通常のフローが使える（v2.0.1 はそれで出した）。⚠ **以下は、次にメジャーを仕込むときの手引きとして残す**（この形になったのは v1.66.0 / v1.66.1 の 2 回）。
+✅ **この期間は 2026-10-08 の v2.0.0 で終わった。**`main` は 2.x 線に戻り、`develop` → `main` の通常のフローが使える。⚠ **経緯と手引きは [archive/release-flow-major-dev-settled.md](archive/release-flow-major-dev-settled.md) へ移した**（2026-10-11）。**次にメジャーを develop へ仕込むときに読む。**
 
-**v2.0 の実装が develop に乗ると、`develop` → `main` は 1.x に使えなくなる**（大玉 3 本・長期のため、develop は「まだ出せないもの」を数か月抱える）。一方 [roadmap.md](roadmap.md) のとおり **1.x は止められない** —— ユーザー報告・上流追従・Sentry 起点の修正はその間も発生するので、「v2.0 まで 1.x 凍結」は選べない。
+結論だけ残す:
 
-したがってこの期間は、**`main` が 1.x 線・`develop` が 2.x 線**になる:
-
-| | 通常 | v2.0 開発中 |
-| --- | --- | --- |
-| 1.x の修正を切る元 | `develop` | **`main`** |
-| 1.x のリリース PR | `develop` → `main` | **`release/x.y.z`** → `main` |
-| 取り込みの向き | — | **`main` → `develop`** の一方向 back-merge |
-| `develop` → `main` | 毎リリース | **v2.0 を出すとき 1 回だけ** |
-
-⚠ **新しい仕組みではない。**上のホットフィックス手順そのままで、**それが常態になる**というだけ。
-
-⚠⚠ **専用の長寿命ブランチ（`develop-2.0` 等）は作らない。**v2.0 の土台側（[#1087](https://github.com/pooza/capsicum/issues/1087) `timelineProvider` の family 化 / [#1088](https://github.com/pooza/capsicum/issues/1088) family キー / [#1089](https://github.com/pooza/capsicum/issues/1089)・[#1090](https://github.com/pooza/capsicum/issues/1090) streaming の多重化 / [#1095](https://github.com/pooza/capsicum/issues/1095)・[#1096](https://github.com/pooza/capsicum/issues/1096) ProviderScope）は **provider と streaming の根を組み替える**。そして 1.x の不具合修正（ログイン・タイムライン・通知）も、ほぼ必ず同じ層に触る。長寿命ブランチを 2 本持つと、**その面積の乖離を挟んで毎回 cherry-pick する**ことになる。**乖離を抱えるブランチを `develop` 1 本に限る**のが要点。
-
-**切り替えのトリガーは「develop に 1.x として出せない最初のコミットが入った瞬間」。**⚠ どのコミットがそれに当たるかは**系列の境界＝製品判断**（「[マイルストーン運用](#マイルストーン運用)」節）で、技術構造からは導けない。
+- メジャーの実装が develop に乗っている間は、**`main` が現行系列・`develop` が次の系列**になり、現行系列のリリースは毎回上のホットフィックス手順で出す。
+- ⚠⚠ **専用の長寿命ブランチ（`develop-2.0` 等）は作らない。**乖離を抱えるブランチを `develop` 1 本に限る。
+- **切り替えのトリガーは「develop に現行系列として出せない最初のコミットが入った瞬間」。**⚠ どのコミットがそれに当たるかは**系列の境界＝製品判断**（「[マイルストーン運用](#マイルストーン運用)」節）で、技術構造からは導けない。
 
 ### Codex レビューの回し方（open PR）
 
@@ -189,7 +178,7 @@ claude plugin install ginseng@ginseng-style
 
 ⚠ **1.x と 2.x は並走系列で、境界は「時期」でも「技術的な線」でもない。****メジャーに何を載せるかは製品判断（売りの束ね方）**で、pooza が決める。`v2.0` は [#720](https://github.com/pooza/capsicum/issues/720) デッキ UI + [#597](https://github.com/pooza/capsicum/issues/597) 有償リレー + [#884](https://github.com/pooza/capsicum/issues/884) 画像編集レイヤの **3 本を束ねるメジャーリリース**。⚠ **この枠には「大更新 0〜1 件」の目安を当てない**（容量は通常枠の数倍。実績の最大は v1.0 の 46 件に対し直近の平均は 13 件）。技術規模が決めるのは「点リリースで単独配置するか」と「万一入りきらないとき何から逃がすか（＝ #884）」だけ。⚠ **2026-08-17〜 の「外部要因の発生ベース」運用は v1.65 をもって終了**した。
 
-⚠⚠ **容量の特例が当たるのは「メジャーアップグレードの枠」（x.0）だけ**（2026-09-23 pooza）。**x.1 以降は通常の枠**なので、下の「大更新 0〜1 件 + 小粒・中粒 5〜12 件」がそのまま当たる。⚠ **特例を系列の性質（2.x だから大きい）と読み違えないこと** —— 大きいのは **v1.0 / v2.0 のような x.0 の枠**で、理由は**売りを束ねるメジャーだから**。⚠ 2026-09-23 に v2.1 がこの読み違いで過積載（13 件・大更新 2 件）になり、[v2.2](https://github.com/pooza/capsicum/milestone/88) を作って #1074 / #1053 / #1073 を逃がした。⚠ **積載を見るときは、件数より先に「大更新が何件あるか」を数える**（件数だけ見ると 13 件は「わずかな超過」に見える）。⚠ **次に特例が当たるのは 3.0 だが、起こすネタが無いので当分は発生しない見込み**（2026-09-23 pooza）。
+⚠⚠ **容量の特例が当たるのは「メジャーアップグレードの枠」（x.0）だけ**（2026-09-23 pooza）。**x.1 以降は通常の枠**なので、下の「大更新 0〜1 件 + 小粒・中粒 5〜12 件」がそのまま当たる。⚠ **特例を系列の性質（2.x だから大きい）と読み違えないこと** —— 大きいのは **v1.0 / v2.0 のような x.0 の枠**で、理由は**売りを束ねるメジャーだから**。⚠ 2026-09-23 に v2.1 がこの読み違いで過積載（13 件・大更新 2 件）になり、[v2.2](https://github.com/pooza/capsicum/milestone/88) を作って #1074 / #1053 / #1073 を逃がした。⚠ **積載を見るときは、件数より先に「大更新が何件あるか」を数える**（件数だけ見ると 13 件は「わずかな超過」に見える）。⚠ **v2.1 は過積載のまま完走させたが、「2.0 の取りこぼし分」という性格があっての例外で、前例にしない** —— v2.2 から平常運用に戻した（2026-10-11 pooza・[roadmap.md](roadmap.md) 決定済み事項 3 の (5)）。⚠ **次に特例が当たるのは 3.0 だが、起こすネタが無いので当分は発生しない見込み**（2026-09-23 pooza）。
 
 - **大更新は独立マイルストーンに単独配置**。UI の構造変更・既存モデルの拡張・複数画面への影響などが絡む「大更新」は、他に同規模以上の項目がないマイルストーンに入れる。並走させると設計検討・実装・動作確認がいずれも中途半端になるため
 - **規模の測り方は「大更新の数」が主軸**。1 マイルストーンに入れるのは大更新 0〜1 件 + 小粒・中粒 5〜12 件程度を目安とする。件数は目安であって閾値ではない。リリース前レビュー（5 観点）の followup が膨らんだ場合、上限に縛られて後送りするより同一マイルストーンに取り込んで消化する方が望ましい（直前リリースの設計理解が新鮮なうちに直したいため）。**P1（緊急性あり）に加え、極めて容易な P2/P3 も同一マイルストーンで消化する**（数行の bug fix・コメント書き直し・リネーム・型変更等）。それでも入りきらない場合は、(a) リファクタ系を次マイルストーンに送る、(b) 観測性強化系を分離する、のどちらかで調整する
@@ -334,11 +323,13 @@ dart analyze --fatal-infos > /tmp/analyze.log 2>&1; echo "ANALYZE_EXIT=$?"
 
 [GitHub Milestones](https://github.com/pooza/capsicum/milestones) が正本。各マイルストーンの概要・スコープはマイルストーンの description に記載し、CLAUDE.md には複写しない。個別 Issue の一覧・ステータスも同様。
 
-最新リリース: **v2.0.0**（2026-10-08 タグ、build 197、リリース PR [#1147](https://github.com/pooza/capsicum/pull/1147)、merge `9b738ca3`）+ **v2.0.1**（同日タグ、build 198、リリース PR [#1253](https://github.com/pooza/capsicum/pull/1253)、merge `4822059c`）。**v2.0 はメジャーリリース**（デッキ表示 [#720](https://github.com/pooza/capsicum/issues/720)・有償プッシュ通知リレー [#597](https://github.com/pooza/capsicum/issues/597)・添付画像のレイヤ編集 [#884](https://github.com/pooza/capsicum/issues/884) の 3 本）。**v2.0.1 は公開直後に見つかった不具合だけを出すホットフィックス**（[#1249](https://github.com/pooza/capsicum/issues/1249) デスクトップの通知用接続 / [#1248](https://github.com/pooza/capsicum/issues/1248) Windows の投げ銭の入口 / [#1236](https://github.com/pooza/capsicum/issues/1236) 通知の一覧 / [#1250](https://github.com/pooza/capsicum/issues/1250) デッキのスレッドの背景）。**公開状況（2026-10-10 実測）**: Android は production 198 が `completed` / Windows は Microsoft Store が `2.0.198.0` を返す / Linux AppImage は [GitHub Release v2.0.1](https://github.com/pooza/capsicum/releases/tag/v2.0.1)（Latest）/ iOS は 2.0.1 が公開済み / macOS は 2.0.1 が審査中（公開中は 1.66.0。⚠ **macOS の 2.0.0 は審査待ちのまま 2.0.1 へ差し替えたので、公開されていない**）。利用権の商品 `supporter.relay.monthly` は承認済みで、iOS と Android で販売中。マイルストーンは [v2.0](https://github.com/pooza/capsicum/milestone/65)（2026-10-08 close）/ [v2.0.1](https://github.com/pooza/capsicum/milestone/93)（2026-10-10 close）。relay は [v2.0](https://github.com/pooza/capsicum-relay/milestone/12) が残 0 で close 済み、v2.0.1 に同名枠は無い。
+最新リリース: **v2.1.0**（2026-10-10 タグ、build 200、リリース PR [#1256](https://github.com/pooza/capsicum/pull/1256)、merge `9e2ba7d6`）。**大更新なし — v2.0 の公開後に出た不具合と、デッキの使い勝手を直す回**（通知の既読と未読数 [#1205](https://github.com/pooza/capsicum/issues/1205) / [#1207](https://github.com/pooza/capsicum/issues/1207)・Mastodon の会話と通報 [#1206](https://github.com/pooza/capsicum/issues/1206) / [#1203](https://github.com/pooza/capsicum/issues/1203)・デッキのカラム移動 [#1241](https://github.com/pooza/capsicum/issues/1241) / [#1244](https://github.com/pooza/capsicum/issues/1244)・ナウプレのアートワーク [#1133](https://github.com/pooza/capsicum/issues/1133)・Misskey の指名の宛先 [#1165](https://github.com/pooza/capsicum/issues/1165)）。**公開状況（2026-10-11 実測）**: Android は production 200 が `completed` / iOS は 2.1.0 が公開済み（`READY_FOR_SALE`）/ Windows は公開済み（ストアが `2.1.200.0` を返す）/ Linux AppImage は [GitHub Release v2.1.0](https://github.com/pooza/capsicum/releases/tag/v2.1.0)（Latest） / ⚠ **macOS は未提出**（2.0.1 が審査中で、公開前の版はプラットフォームごとに 1 つしか持てない。**2.0.1 の公開を待ってから、TestFlight に上げてある 200 を提出する** —— 取り下げると審査の列に並び直すため・pooza 判断）。マイルストーンは [v2.1](https://github.com/pooza/capsicum/milestone/86) を **2026-10-11 に閉じた**（macOS の審査は長引く見込みなので待たない・pooza 判断。リリース後に確かめる 2 件は札を付けたまま [v2.2](https://github.com/pooza/capsicum/milestone/88) へ移した）。relay の [v2.1](https://github.com/pooza/capsicum-relay/milestone/14) も同日に閉じた（残っていた 3 件は [v2.2](https://github.com/pooza/capsicum-relay/milestone/15) へ繰り下げ済み）。**稼働中の枠は v2.2 で、develop は `2.2.0+201`。**
 
-⚠⚠ **v2.0 を出したので、`main` は 2.x 線に戻った。**`develop` → `main` の通常のフローが使える（v2.0.1 はそれで出した）。⚠ **develop は 2026-10-09 に `2.1.0+199` へ上げた**（Apple 2 つの 2.0.1 が審査中のまま、pooza の判断で v2.1 に着手。iOS は 10-10 までに公開され、残るのは macOS）。⚠ **審査で差し戻されて 2.0.x を出し直すときは、`origin/main` から `release/2.0.x` を切り、ビルド番号は develop で使った最大値より上を取る**（そのあと develop も、それより上へ上げ直す）。
+⚠ **内部テストに出した 199 ではなく、200 が製品版。**リリース前レビュー（5 観点）と Codex の指摘を直したあとに作り直した（修正は `89068523`〜`7a3528e4`）。レビューで見つかった実害のうち大きいもの: プリセットと外部サーバーを併用する人の、外部側のプッシュ通知の登録が順番しだいで拒まれる（relay 側の対応は [relay#97](https://github.com/pooza/capsicum-relay/issues/97)）/ 既読位置の保存役が画面に保持されておらず、5 秒の間引きが効いていなかった（ホームは初版から）。
 
-⚠ **#1248（Windows で投げ銭の商品が出ない）は、v2.0.1 の修正では直っていない。**原因は 2026-10-10 に Windows 実機で特定し、v2.1 で直した（ネイティブのワーカーが Store の結果を捨てていた。経緯は Issue、検証の経路は [tech-notes-native.md](tech-notes-native.md)）。
+⚠ **リリース後に確かめるものが 2 件残っている**（どちらも出荷前に確かめる手段が無かった）: [#1248](https://github.com/pooza/capsicum/issues/1248) Windows の投げ銭の入口（Store から入れた版でしか動かない）/ [#1163](https://github.com/pooza/capsicum/issues/1163) Android のログイン中の前景サービス（まずければ `b4577293` を戻す）。
+
+⚠ **develop は 201 を使っている**（2026-10-11 に `2.2.0+201` へ上げた）。macOS の 2.1.0 が差し戻されて出し直すときは、`origin/main` から `release/2.1.x` を切り、develop で使った最大値より上を取る。
 
 過去リリースの詳細ログは [archive/release-log.md](archive/release-log.md) に退避した（正本は [GitHub Releases](https://github.com/pooza/capsicum/releases) / Milestones）。マイルストーン移行時のログトリム手順は [milestone-transition スキル](../.claude/skills/milestone-transition/SKILL.md) の step 7。
 
