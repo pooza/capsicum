@@ -214,7 +214,7 @@ grep -rhoE "\['[a-zA-Z_][a-zA-Z0-9_]*'\]" packages/capsicum_backends/lib/src/mis
 
 | | 内容 | 行き先 |
 | --- | --- | --- |
-| **12-1 ★** | 添付のプレースホルダ情報（`blurhash` / 縦横比）を**両 SNS とも 1 つも読んでいない** → 読み込み時にタイムラインが伸び縮みする | [#1186](https://github.com/pooza/capsicum/issues/1186) |
+| **12-1 ★** | 添付のプレースホルダ情報（`blurhash` / 縦横比）を**両 SNS とも 1 つも読んでいない** → ~~読み込み時にタイムラインが伸び縮みする~~ ⚠ **伸び縮みは起きていなかった**（投稿タイルは #718 以降ずっと固定枠・2026-10-12 に着手して判明）。残る効用は読み込み中の枠に色を敷けることだけ。⚠⚠ **「読んでいない」から症状を推定するときは、表示側を確かめる** | [#1186](https://github.com/pooza/capsicum/issues/1186)（主題を書き換えて v2.4 へ） |
 | **12-2 ★** | 通知の**種別固有フィールド**（`role` / `exportedEntity` / `noteDraft` ほか 6 種）が未読で、[#1177](https://github.com/pooza/capsicum/issues/1177) の種別名だけが出ていた | [#1187](https://github.com/pooza/capsicum/issues/1187)。✅ **2026-10-01 に出荷済み** |
 | **12-3** | `drive-file` の `md5` / `size` / `folder` | 小粒・未起票（画面を触る回に） |
 | **12-5** | chat 系 23 経路は層②③ とも**取りこぼし 0 件**。① で `chat/messages/search` だけ未呼び出し | [#1188](https://github.com/pooza/capsicum/issues/1188) |
