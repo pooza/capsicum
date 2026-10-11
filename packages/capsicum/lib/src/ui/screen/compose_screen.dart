@@ -653,6 +653,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   void _removeRecipient(String id) {
     if (id == _lockedRecipientId) return;
     setState(() => _recipients.remove(id));
+    // 宛先も下書きに入る (#1264)。外したことを保存しないと、次に開いたときに戻る。
+    _scheduleDraftSave();
   }
 
   /// 利用者を検索して宛先に足す。
@@ -669,6 +671,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         _recipients[user.id] = user;
       }
     });
+    _scheduleDraftSave();
   }
 
   Future<void> _loadRedraftReplyTo(String id) async {
@@ -1554,6 +1557,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       _chosen
         ..clear()
         ..addAll(before?.chosen ?? const <String>{});
+      // 復元で入った宛先も外す (#1264)。⚠ 復元前から居た人は残す。
+      final keep = {...?before?.recipientIds};
+      _recipients.removeWhere((id, _) => !keep.contains(id));
       _draftRestoredNotice = false;
       _draftSavedAt = null;
     });
@@ -1628,6 +1634,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       // ⚠ **何を自分で選んだか (#1195)。**これが空で本文も無ければ、ストアは
       // 「下書きなし」として消す（開いて閉じただけで残らない）。
       chosen: _chosen,
+      // 指名の宛先 (#1264)。⚠ 公開範囲が指名でなくても持つ（範囲を切り替えても
+      // 画面に残っているので、保存だけ落とすと指名へ戻したときに消える）。
+      recipientIds: [..._recipients.keys],
     );
 
     // 取消の消去と直列化する (Codex P2 / PR #1013)。並行に走ると、消去の
@@ -1775,6 +1784,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       // ⚠ **控えにも印を入れる (#1195)。**取消で戻すときに使う。ここは復元の
       // 直前なので、**たいてい空**（既定が入っているだけ）。
       chosen: {..._chosen},
+      recipientIds: [..._recipients.keys],
     );
 
     if (saved.hasText) {
@@ -1786,6 +1796,15 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     if (saved.cwText.isNotEmpty) {
       _cwController.text = saved.cwText;
     }
+    // ⚠ 宛先を一覧で渡すサーバー（Misskey）だけ。Mastodon では保存もされないが、
+    // 読む側でも見ておく（宛先の行が無いので、入れると見えない宛先になる）。
+    final restoredRecipientIds = _usesRecipientList
+        ? draftRecipientIdsToRestore(
+            saved: saved.recipientIds,
+            current: _recipients.keys,
+            me: ref.read(currentAccountProvider)?.user,
+          )
+        : const <String>[];
     setState(() {
       if (saved!.cwEnabled) _cwEnabled = true;
       // 設定値も戻す (#964)。⚠ **scope が null なら触らない** — 旧スロット由来
@@ -1810,11 +1829,18 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         _chosen.add(ComposeDraftStore.chosenSensitive);
       }
       _localOnly = saved.localOnly;
+      // 指名の宛先も戻す (#1264)。名前とアイコンは下で取りにいく。
+      for (final id in restoredRecipientIds) {
+        _recipients[id] = null;
+      }
       _draftSavedAt = saved.savedAt;
       // 復元したこと自体を伝える (#964)。「復元されたことも伝わっていない」が
       // 「わかりづらい」のもう半分の原因だった。
       _draftRestoredNotice = true;
     });
+    for (final id in restoredRecipientIds) {
+      unawaited(_resolveRecipient(id));
+    }
     // ローカル添付を戻す (#1130)。⚠ **実在を確かめてから**（一時領域が消えて
     // いれば落とす）。ドライブ添付はそもそも保存対象外なので、ここには来ない。
     // ⚠⚠ **待っている間に下書きが消されたら、添付も控えも入れない**（2 回目の

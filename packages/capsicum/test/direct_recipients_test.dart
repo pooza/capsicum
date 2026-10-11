@@ -107,6 +107,44 @@ void main() {
     });
   });
 
+  group('端末内の下書きから戻す宛先 (#1264)', () {
+    test('保存した順のまま足す', () {
+      expect(
+        draftRecipientIdsToRestore(
+          saved: ['c', 'a', 'b'],
+          current: const [],
+          me: me,
+        ),
+        ['c', 'a', 'b'],
+      );
+    });
+
+    test('⚠ 既に宛先に居る人は入れ直さない（取れている名前を消さない）', () {
+      expect(
+        draftRecipientIdsToRestore(saved: ['a', 'b'], current: ['a'], me: me),
+        ['b'],
+      );
+    });
+
+    test('自分と重複は落とす', () {
+      expect(
+        draftRecipientIdsToRestore(
+          saved: ['a', 'me', 'a'],
+          current: const [],
+          me: me,
+        ),
+        ['a'],
+      );
+    });
+
+    test('保存が空なら空', () {
+      expect(
+        draftRecipientIdsToRestore(saved: const [], current: ['a'], me: me),
+        isEmpty,
+      );
+    });
+  });
+
   group('外せない宛先', () {
     test('⚠ 返信先の投稿者は外せない（サーバーが必ず足す）', () {
       expect(
