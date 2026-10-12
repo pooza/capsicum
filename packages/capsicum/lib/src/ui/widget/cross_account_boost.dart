@@ -16,16 +16,30 @@ import 'emoji_text.dart';
 import 'server_badge.dart';
 import 'user_avatar.dart';
 
-/// アクティブなアカウント以外に、ログイン済みアカウントが存在するか。
+/// 「別アカウントでブースト / リノート」の候補。ログイン済みのアカウントから、
+/// **今この投稿を見ているアカウント**を除いたもの。
 ///
-/// 「別アカウントでブースト / リノート」メニューの表示判定に使う。
-bool hasOtherAccounts(WidgetRef ref) {
-  final state = ref.read(accountManagerProvider);
-  final currentKey = state.current?.key;
-  return state.accounts.any((a) => a.key != currentKey);
+/// ⚠⚠ **除く相手は [currentAccountProvider] から取る (#1279)。**
+/// `accountManagerProvider` の `current` を直接読むと、デッキのカラムが
+/// 掛けている上書き（カラムのアカウント）を通らず、アプリ全体の「現在の
+/// アカウント」を除いてしまう。デッキではそれが画面のどこにも見えないので、
+/// 出るべきアカウントが理由なく欠け、カラム自身が候補に出ていた。
+List<Account> crossAccountBoostCandidates(WidgetRef ref) {
+  final viewingKey = ref.read(currentAccountProvider)?.key;
+  return ref
+      .read(accountManagerProvider)
+      .accounts
+      .where((a) => a.key != viewingKey)
+      .toList();
 }
 
-/// 表示中の投稿を、今アクティブなアカウント以外のログイン済みアカウントで
+/// 見ているアカウント以外に、ログイン済みアカウントが存在するか。
+///
+/// 「別アカウントでブースト / リノート」メニューの表示判定に使う。
+bool hasOtherAccounts(WidgetRef ref) =>
+    crossAccountBoostCandidates(ref).isNotEmpty;
+
+/// 表示中の投稿を、今それを見ているアカウント以外のログイン済みアカウントで
 /// ブースト（Mastodon）/ リノート（Misskey）する導線（#744）。
 ///
 /// 別垢 B の鯖は元投稿を知らないことがあるため、投稿 URL を B の鯖で
@@ -37,9 +51,7 @@ Future<void> showCrossAccountBoostPicker({
   required WidgetRef ref,
   required Post targetPost,
 }) async {
-  final state = ref.read(accountManagerProvider);
-  final currentKey = state.current?.key;
-  final others = state.accounts.where((a) => a.key != currentKey).toList();
+  final others = crossAccountBoostCandidates(ref);
   if (others.isEmpty) return;
 
   // メニュー外側の context が後で deactivate されても使えるよう退避。
