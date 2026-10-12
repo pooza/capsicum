@@ -16,6 +16,9 @@
 /// | プロフィールの自己紹介（`profile_edit_screen.dart`） | 当てる |
 /// | チャットの入力（`chat_compose_row.dart`） | 当てる |
 /// | チャットルームの説明（`chat_room_edit_screen.dart`） | 当てる |
+/// | コレクションの説明（`collections_list_screen.dart`・`collection_detail_screen.dart`） | 当てる |
+/// | 通報の理由（`report_comment_dialog.dart`） | 当てる |
+/// | メディアの説明の編集（`media_viewer_screen.dart`） | 当てる |
 /// | 画像に重ねる文字（`image_overlay_screen.dart`） | 当てない |
 /// | 1 行の欄（表示名・検索・CW など） | 当てない |
 ///
@@ -32,6 +35,12 @@
 /// **高さが伸びる欄（`maxLines: null`）を持つ画面**も数え、どれも当てている
 /// ことを見る。⚠ 行数に上限のある欄は `Text` の `maxLines` と字面で区別できない
 /// ので、機械では拾っていない。足すときは上の表とガードの表を直す。
+/// ⚠ 実際、この線引きに広げた直後のリリース前レビューで、行数に上限のある欄が
+/// さらに 4 つ（コレクションの説明 2 か所・通報の理由・メディアの説明の編集）
+/// 漏れていた。**複数行の入力欄を足すときは、ここに行を足すこと。**
+///
+/// ⚠ `ref` を持たない場所（`StatefulWidget` のダイアログ）では、欄を `Consumer`
+/// で包んで読む。
 library;
 
 import 'package:flutter/widgets.dart';

@@ -183,6 +183,35 @@ void main() {
     });
   });
 
+  test('⚠⚠ どこかの接続が成立したら、続きはそこで終わる（1 ホストの障害を畳み続けない）', () {
+    fakeAsync((async) {
+      final (reporter, sent) = make(async);
+
+      // スリープ明け。全ホストが同時に落ちる。
+      for (final host in ['a', 'b', 'c']) {
+        fail(reporter, host);
+      }
+      async.elapse(const Duration(seconds: 6));
+      expect(sent.single.looksLikeNetworkDown, isTrue);
+
+      // 回線が戻り、B と C はつながる。A だけ本当に落ちている。
+      reporter.noteConnected();
+
+      // A の失敗は 3 分より短い間隔で来続ける。
+      for (var i = 0; i < 3; i++) {
+        async.elapse(const Duration(seconds: 70));
+        fail(reporter, 'a');
+        async.elapse(const Duration(seconds: 6));
+        expect(sent.last.hosts, {'a'});
+        expect(
+          sent.last.looksLikeNetworkDown,
+          isFalse,
+          reason: '回線は生きている。A の障害は error で見えるままにする',
+        );
+      }
+    });
+  });
+
   test('⚠ 間が空けば、続きとは読まない（サーバー側の合図を消さない）', () {
     fakeAsync((async) {
       final (reporter, sent) = make(async);

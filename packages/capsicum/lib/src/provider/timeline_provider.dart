@@ -1098,6 +1098,8 @@ mixin TimelineLiveIngest<Arg>
         // （実況中の取りこぼし報告の根因）。装飾でなく本機能なので最新 state へ
         // マージする。
         if (connState == StreamConnectionState.live) {
+          // 回線は生きている。「回線側」の失敗の続きをここで終わらせる。
+          streamConnectFailureReporter.noteConnected();
           unawaited(_catchUpSinceTop());
         }
         final current = state.valueOrNull;

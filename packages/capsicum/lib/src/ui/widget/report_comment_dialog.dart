@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../constants.dart';
+import '../util/compose_text_style.dart';
 
 /// 通報ダイアログの入力 (#1203)。
 typedef ReportInput = ({String comment, bool forward});
@@ -65,18 +67,21 @@ class _ReportCommentDialogState extends State<_ReportCommentDialog> {
           children: [
             Text(widget.message),
             const SizedBox(height: 12),
-            TextField(
-              controller: _controller,
-              decoration: const InputDecoration(
-                hintText: '理由（任意）',
-                border: OutlineInputBorder(),
+            Consumer(
+              builder: (context, ref, _) => TextField(
+                controller: _controller,
+                decoration: const InputDecoration(
+                  hintText: '理由（任意）',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 3,
+                style: composeTextStyle(ref),
+                // ⚠ **client で止める (#1012)。**超えるとサーバーが 400 / 422 で
+                // 断り、画面には「通報に失敗しました」しか出ないので、理由も
+                // 分からず書いた文章も失われる。上限の根拠は
+                // [InputLimits.reportComment]。
+                maxLength: InputLimits.reportComment,
               ),
-              maxLines: 3,
-              // ⚠ **client で止める (#1012)。**超えるとサーバーが 400 / 422 で
-              // 断り、画面には「通報に失敗しました」しか出ないので、理由も
-              // 分からず書いた文章も失われる。上限の根拠は
-              // [InputLimits.reportComment]。
-              maxLength: InputLimits.reportComment,
             ),
             if (forwardHost != null)
               CheckboxListTile(

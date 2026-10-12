@@ -34,7 +34,7 @@ MisskeyStreamChannel? misskeyStreamChannel(TabType tab) {
       };
       return name == null ? null : (channel: name, params: null);
     case HashtagTab() && final tab:
-      // ⚠ 割り方の正本は capsicum_core の hashtagSpecTags (#1159)。タグに含まれる
+      // ⚠ 割り方の正本は capsicum_core の HashtagQuery (#1159)。タグに含まれる
       // `+` はエスケープされているので、ここで素の split をしない。
       // `q` は REST の `query` と同じ「外側が OR・内側が AND」(#1209)。
       // ⚠ 除外は入らない（受け口が無い）。届いたあと、TL の側が落とす。

@@ -23,6 +23,11 @@ void main() {
     'lib/src/ui/screen/profile_edit_screen.dart',
     'lib/src/ui/screen/chat_room_edit_screen.dart',
     'lib/src/ui/widget/chat_compose_row.dart',
+    // リリース前レビューで漏れていたぶん（2026-10-12）。
+    'lib/src/ui/screen/collections_list_screen.dart',
+    'lib/src/ui/screen/collection_detail_screen.dart',
+    'lib/src/ui/screen/media_viewer_screen.dart',
+    'lib/src/ui/widget/report_comment_dialog.dart',
   };
 
   late Map<String, String> sources;

@@ -7,6 +7,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/is_cat_provider.dart';
 import '../../service/sentry_op_failure.dart';
 import '../../util/user_acct.dart';
+import '../util/compose_text_style.dart';
 import '../util/deck_navigation.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/emoji_text.dart';
@@ -430,10 +431,13 @@ class _CollectionDetailScreenState
                     controller: nameController,
                     decoration: const InputDecoration(labelText: '名前'),
                   ),
-                  TextField(
-                    controller: descController,
-                    decoration: const InputDecoration(labelText: '説明'),
-                    maxLines: 3,
+                  Consumer(
+                    builder: (context, ref, _) => TextField(
+                      controller: descController,
+                      decoration: const InputDecoration(labelText: '説明'),
+                      maxLines: 3,
+                      style: composeTextStyle(ref),
+                    ),
                   ),
                   TextField(
                     controller: tagController,

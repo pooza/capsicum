@@ -103,6 +103,7 @@ class DesktopNotificationDispatcher {
         '(account=${sentrySafeAccount(account.key)} '
         'adapter=${adapter.runtimeType})',
       );
+      _subscribedAt[account.key] = now();
       _subs[account.key] = (adapter as NotificationStreamSupport)
           .streamNotifications(
             onParseError: _onStreamParseError,
@@ -128,6 +129,7 @@ class DesktopNotificationDispatcher {
     for (final key in removed) {
       _subs.remove(key)?.cancel();
       _disconnectedAt.remove(key);
+      _subscribedAt.remove(key);
       debugPrint(
         'capsicum: push.desktop: unsubscribed '
         '(account=${sentrySafeAccount(key)})',
@@ -135,8 +137,32 @@ class DesktopNotificationDispatcher {
     }
   }
 
-  /// 回線が切れた時刻（アカウントごと・#1261）。つながっている間は持たない。
+  /// 拾い直しの起点（アカウントごと・#1261）。つながっている間は持たない。
+  /// ⚠ 切断を**検知した**時刻そのものではない（[_catchUpBaseline]）。
   final Map<AccountKey, DateTime> _disconnectedAt = {};
+
+  /// 購読を始めた時刻（アカウントごと）。拾い直しの起点の下限に使う。
+  final Map<AccountKey, DateTime> _subscribedAt = {};
+
+  /// 切断を検知した時点から、拾い直しの起点を決める。
+  ///
+  /// ⚠⚠ **検知した時刻をそのまま起点にしない**（v2.2 のリリース前レビュー）。
+  /// Wi-Fi の切り替えのようにエラーが来ないまま切れた回線は、ping の応答が
+  /// 途切れるまで検知できない。実際に切れてから検知するまでの間に届いた通知は、
+  /// 検知した時刻より前なので拾い直しから落ちていた —— #1261 が狙っている
+  /// 短い切断そのものの場面。起点を [kSilentDisconnectAllowance] ぶん手前へ下げる。
+  ///
+  /// - 下げたぶん、切れる前に接続から受けた通知も入ってくるが、出す側の重複の
+  ///   除去で落ちる
+  /// - ⚠ **購読を始めた時刻より前へは下げない。**起動より前に届いた通知を
+  ///   バナーで出さない
+  DateTime _catchUpBaseline(AccountKey key) {
+    final assumed = now().subtract(kSilentDisconnectAllowance);
+    final subscribedAt = _subscribedAt[key];
+    return subscribedAt != null && subscribedAt.isAfter(assumed)
+        ? subscribedAt
+        : assumed;
+  }
 
   /// 時計の差し替え口（テスト用）。
   @visibleForTesting
@@ -152,10 +178,12 @@ class DesktopNotificationDispatcher {
   /// 時刻だけを持つ。
   void _trackConnection(AccountKey key, String event) {
     if (event == _eventDisconnected) {
-      _disconnectedAt.putIfAbsent(key, now);
+      _disconnectedAt.putIfAbsent(key, () => _catchUpBaseline(key));
       return;
     }
     if (event != _eventConnected) return;
+    // 回線は生きている。「回線側」の失敗の続きをここで終わらせる。
+    streamConnectFailureReporter.noteConnected();
     final since = _disconnectedAt.remove(key);
     // 起動して最初の接続。切れていた間が無いので、拾い直すものも無い。
     if (since == null) return;
@@ -506,6 +534,10 @@ const int kMissedNotificationMaxCount = 3;
 
 /// 拾い直す時間の幅。これより前に届いたものは、切れていた間のものでも出さない。
 const Duration kMissedNotificationWindow = Duration(minutes: 10);
+
+/// 無音で切れた回線を検知するまでに掛かりうる長さ。通知用の接続の ping 間隔
+/// （60 秒）の 2 回ぶん。
+const Duration kSilentDisconnectAllowance = Duration(minutes: 2);
 
 /// 端末とサーバーの時計のずれを吸う幅。切れた時刻の少し前から拾う。
 /// ⚠ 広げたぶん、切れる直前に接続から受けた通知も入ってくるが、そちらは出す側の

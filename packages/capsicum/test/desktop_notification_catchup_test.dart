@@ -255,6 +255,44 @@ void main() {
       expect(subsystem.shown, hasLength(1));
     });
 
+    test('⚠⚠ 無音で切れた回線では、検知するより前に届いた通知も拾う', () async {
+      // 購読は 10 分前から。回線は 12:10:00 に無音で切れ、ping の応答切れで
+      // 検知するのは 90 秒後。その間（切れて 30 秒後）に通知が届いている。
+      connectionEvent('connected');
+      clock = _t0.add(const Duration(minutes: 10, seconds: 90));
+      connectionEvent('disconnected');
+      fetched = [
+        _mention('silent', _t0.add(const Duration(minutes: 10, seconds: 30))),
+      ];
+      clock = _t0.add(const Duration(minutes: 10, seconds: 100));
+
+      connectionEvent('connected');
+      await _settle();
+
+      expect(
+        subsystem.shown,
+        hasLength(1),
+        reason: '検知した時刻より前に届いているが、切れていた間の通知',
+      );
+    });
+
+    test('⚠⚠ 起点は購読を始めた時刻より前へは下がらない（起動前の通知を出さない）', () async {
+      // 起動して 20 秒で切断を検知。起動の 30 秒前に届いていた通知は出さない。
+      connectionEvent('connected');
+      clock = _t0.add(const Duration(seconds: 20));
+      connectionEvent('disconnected');
+      fetched = [
+        _mention('before-launch', _t0.subtract(const Duration(seconds: 30))),
+      ];
+      clock = _t0.add(const Duration(seconds: 40));
+
+      connectionEvent('connected');
+      await _settle();
+
+      expect(fetches, 1);
+      expect(subsystem.shown, isEmpty);
+    });
+
     test('⚠ つなぎ直しに失敗し続けても、基準は最初に切れた時刻のまま', () async {
       connectionEvent('connected');
       connectionEvent('disconnected');

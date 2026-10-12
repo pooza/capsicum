@@ -62,6 +62,11 @@ class StreamConnectFailureBatch {
 ///   件数にもホストの集合にも入らなかった
 /// - 「回線側」と読んだあと [networkDownCarryOver] のうちに来た次のまとめは、
 ///   1 ホストだけでも続きとして「回線側」に読む (#1267)
+/// - ⚠⚠ **どこかの接続が成立したら、続きはそこで終わる**（[noteConnected]）。
+///   続きとして読んだ回は次の起点になるので、失敗が 3 分より短い間隔で来る
+///   かぎり鎖は切れない。回線が戻ったあとも 1 ホストだけ落ち続けていると、
+///   その障害が warning に畳まれ続け、上の「見えるままにする」が破れていた
+///   （v2.2 のリリース前レビュー）。接続の成立は「回線は生きている」証拠
 ///
 /// ⚠ breadcrumb は呼ぶ側が毎回残す（ここは「イベントにするか」だけを決める）。
 class StreamConnectFailureReporter {
@@ -128,6 +133,13 @@ class StreamConnectFailureReporter {
     _stackTrace = stackTrace;
     _timer = Timer(window, _flush);
   }
+
+  /// どこかのサーバーへの接続が成立した（＝ 回線は生きている）と知らせる。
+  ///
+  /// 「回線側」の続きをここで終わらせる。以後に来る 1 ホストだけの失敗は、
+  /// サーバー側の障害の合図として error に戻る。⚠ 呼ぶ側はホストを問わない ——
+  /// 1 本でも通れば回線側の事象ではない。
+  void noteConnected() => _lastNetworkDownAt = null;
 
   void _flush() {
     _timer = null;

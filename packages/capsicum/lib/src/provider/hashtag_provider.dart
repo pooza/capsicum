@@ -129,6 +129,7 @@ class HashtagTimelineNotifier
 
   @override
   Future<TimelineState> build(HashtagTimelineKey key) async {
+    _olderCursor = null;
     // 前のタグ / アカウントの新着を、このカラムへ漏らさない (#1098)。
     final liveGeneration = resetLiveIngestState();
     // 🔴 `Account` 全体ではなく、解決したアダプタだけを見る（本線の
@@ -171,6 +172,18 @@ class HashtagTimelineNotifier
     );
   }
 
+  /// 続き読みが空振りしたとき、続けて先を引く上限（ページ数）。
+  static const _maxEmptyOlderPages = 5;
+
+  /// 続き読みの、**絞る前の**末尾の id（次に引く起点）。
+  ///
+  /// ⚠⚠ **表示中の最後の投稿を起点にしない。**除外（Misskey は端末側で絞る・
+  /// #1209）や実況フィルタで 1 ページぶんが丸ごと落ちると、表示中の最後は
+  /// 動かないので、同じページを引き直し続けて先へ進めなくなる（v2.2 の
+  /// リリース前レビュー）。初回取得と取りこぼしの補いは、もとから生の末尾で
+  /// 進んでいる。
+  String? _olderCursor;
+
   Future<void> loadMore() async {
     final current = state.valueOrNull;
     if (current == null || current.isLoadingMore || !current.hasMore) return;
@@ -188,27 +201,37 @@ class HashtagTimelineNotifier
           return;
         }
 
-        final base = state.valueOrNull ?? current;
-        final lastId = base.posts.last.id;
         final hideLivecure = ref.read(hideLivecureProvider);
-        final raw = await (adapter as HashtagSupport).getPostsByHashtag(
-          _query,
-          query: TimelineQuery(maxId: lastId, limit: _pageSize),
-        );
-        final older = raw
-            .where(_keeps)
-            .where((p) => !hideLivecure || !hasLivecureTag(p))
-            .toList();
+        var cursor =
+            _olderCursor ?? (state.valueOrNull ?? current).posts.lastOrNull?.id;
+        final older = <Post>[];
+        var hasMore = true;
+        // ⚠ 絞った結果が空のページは、上限まで続けて先を引く。空のまま返すと、
+        // 画面には何も足されないので、続きを読む合図が二度と来ない。
+        for (var page = 0; page < _maxEmptyOlderPages; page++) {
+          final raw = await (adapter as HashtagSupport).getPostsByHashtag(
+            _query,
+            query: TimelineQuery(maxId: cursor, limit: _pageSize),
+          );
+          if (raw.isNotEmpty) cursor = raw.last.id;
+          older.addAll(
+            raw.where(_keeps).where((p) => !hideLivecure || !hasLivecureTag(p)),
+          );
+          hasMore = raw.length >= _pageSize;
+          if (older.isNotEmpty || !hasMore) break;
+        }
+        _olderCursor = cursor;
 
         // 既にリストにある投稿は落とす (#909)。各行は id をキーにしているので、
         // ページ境界の重複をそのまま足すと Duplicate keys で描画ごと落ちる。
+        final base = state.valueOrNull ?? current;
         final knownIds = {for (final p in base.posts) p.id};
         final appended = older.where((p) => knownIds.add(p.id)).toList();
         state = AsyncData(
           base.copyWith(
             posts: [...base.posts, ...appended],
             isLoadingMore: false,
-            hasMore: raw.length >= _pageSize,
+            hasMore: hasMore,
             loadMoreError: null,
           ),
         );

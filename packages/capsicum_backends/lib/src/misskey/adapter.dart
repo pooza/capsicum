@@ -1037,8 +1037,16 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   bool get repostMuteRequiresFollow => false;
 
   @override
-  Future<void> setShowReposts(String userId, {required bool show}) =>
-      show ? client.unmuteRenotes(userId) : client.muteRenotes(userId);
+  Future<void> setShowReposts(String userId, {required bool show}) async {
+    try {
+      await (show ? client.unmuteRenotes(userId) : client.muteRenotes(userId));
+    } on DioException catch (e) {
+      // 既にその状態なら成功と同じに倒す（会話のミュートと同じ扱い）。押す前に
+      // 引いた関係が古いことがある（別の端末で切り替えた等）。失敗にすると、
+      // メニューの文面が古いまま残り、押すたびに失敗し続ける。
+      if (!_hasErrorCode(e, show ? 'NOT_MUTING' : 'ALREADY_MUTING')) rethrow;
+    }
+  }
 
   @override
   Future<void> followUser(String id) => client.followUser(id);

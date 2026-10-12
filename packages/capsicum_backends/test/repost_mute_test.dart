@@ -9,9 +9,12 @@ import 'package:test/test.dart';
 /// 経路が SNS で違う —— Mastodon はフォローの属性（`reblogs`）、Misskey は
 /// フォローと独立した `renote-mute/*`。
 class _RecordingAdapter implements HttpClientAdapter {
-  _RecordingAdapter(this.routes);
+  _RecordingAdapter(this.routes, {this.statuses = const {}});
 
   final Map<String, Object> routes;
+
+  /// 経路ごとの HTTP ステータス（無ければ 200）。
+  final Map<String, int> statuses;
   final List<(String path, Object? data)> calls = [];
 
   @override
@@ -27,7 +30,7 @@ class _RecordingAdapter implements HttpClientAdapter {
     );
     return ResponseBody.fromString(
       jsonEncode(entry.value),
-      200,
+      statuses[entry.key] ?? 200,
       headers: {
         Headers.contentTypeHeader: ['application/json'],
       },
@@ -135,6 +138,42 @@ void main() {
 
       await adapter.setShowReposts('u1', show: true);
       expect(http.calls.last.$1, contains('renote-mute/delete'));
+    });
+
+    test('⚠ 既にその状態（ALREADY_MUTING / NOT_MUTING）は成功と同じに倒す', () async {
+      // 別の端末で切り替えたあとに押した回。失敗にすると、メニューの文面が
+      // 古いまま残り、押すたびに失敗し続ける。
+      Future<void> run(String route, String code, {required bool show}) async {
+        final adapter = await MisskeyAdapter.create('misskey.example');
+        adapter.client.dio.httpClientAdapter = _RecordingAdapter(
+          {
+            route: {
+              'error': {'message': 'x', 'code': code, 'id': 'x'},
+            },
+          },
+          statuses: {route: 400},
+        );
+        await adapter.setShowReposts('u1', show: show);
+      }
+
+      await run('renote-mute/create', 'ALREADY_MUTING', show: false);
+      await run('renote-mute/delete', 'NOT_MUTING', show: true);
+    });
+
+    test('⚠ それ以外の失敗は握らない', () async {
+      final adapter = await MisskeyAdapter.create('misskey.example');
+      adapter.client.dio.httpClientAdapter = _RecordingAdapter(
+        {
+          'renote-mute/create': {
+            'error': {'message': 'x', 'code': 'NO_SUCH_USER', 'id': 'x'},
+          },
+        },
+        statuses: {'renote-mute/create': 400},
+      );
+      await expectLater(
+        adapter.setShowReposts('u1', show: false),
+        throwsA(isA<DioException>()),
+      );
     });
   });
 }

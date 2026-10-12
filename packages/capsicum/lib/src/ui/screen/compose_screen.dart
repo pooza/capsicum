@@ -444,8 +444,8 @@ class ComposeScreen extends ConsumerStatefulWidget {
   /// そのタグを引き継ぐためのもの。⚠ **カーソルは本文の先頭に置く**（タグを消さずに
   /// 書き始められるように・`docs/deck-ui-plan.md` 決定済み事項 10）。
   ///
-  /// ⚠ **spec（`c%2B%2B` / `a+b`）を渡さない** (#1159)。`hashtagSpecTags` で分解
-  /// してから渡す。タグの区切り・`#` の付け方は [SimplePostBar] の送信と揃える。
+  /// ⚠ **spec（`c%2B%2B` / `a+b`）を渡さない** (#1159)。`HashtagQuery.parse(spec).tagsToPost`
+  /// を渡す。タグの区切り・`#` の付け方は [SimplePostBar] の送信と揃える。
   final List<String> hashtags;
 
   const ComposeScreen({
@@ -3036,12 +3036,26 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       // URL を持たない源 (Apple Music / MPRIS / SMTC) は、モロヘイヤ enrich で
       // 共有 URL を任意に補完する (#669)。enrich が無効・未ヒット・失敗でも元の
       // info をそのまま整形するため投稿は成立する（URL なしフォールバック）。
-      info = await _enrichNowPlayingUrl(info);
+      // ⚠ 補完は上積み。呼ばれる側は失敗を null に倒す契約だが、破られても
+      // 本文の挿入まで巻き込まない（元の info のまま進める）。
+      var enriched = info;
+      try {
+        enriched = await _enrichNowPlayingUrl(info);
+      } catch (e) {
+        debugLogException('nowplaying enrich error', e);
+        Sentry.addBreadcrumb(
+          Breadcrumb(
+            category: 'compose.nowplaying',
+            message: 'enrich_failed: ${e.runtimeType}',
+            level: SentryLevel.warning,
+          ),
+        );
+      }
       if (!mounted) return;
-      _appendToBody(formatNowPlayingFallback(info));
+      _appendToBody(formatNowPlayingFallback(enriched));
       // ジャケットを添付する (#1133)。本文を先に入れてから取りに行く（取得を
       // 待っている間も、何が入るかは見えている）。
-      await _attachNowPlayingArtwork(info);
+      await _attachNowPlayingArtwork(enriched);
     } finally {
       if (mounted) setState(() => _insertingNowPlaying = false);
     }
@@ -3153,9 +3167,19 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// 480px 程度で、添付としてそのまま使える大きさ。
   Future<void> _attachNowPlayingArtwork(NowPlayingInfo info) async {
     final uri = info.artworkUrl;
-    if (uri == null || _attachedNowPlayingArtwork.contains(uri)) return;
+    if (uri == null) {
+      _noteNowPlayingArtwork('no_source');
+      return;
+    }
+    if (_attachedNowPlayingArtwork.contains(uri)) {
+      _noteNowPlayingArtwork('already_attached', uri);
+      return;
+    }
     // ⚠ 投票とメディアは同居できない（Mastodon）。自動で足して投稿を失敗させない。
-    if (_pollEnabled) return;
+    if (_pollEnabled) {
+      _noteNowPlayingArtwork('skipped_poll', uri);
+      return;
+    }
     final XFile? file;
     try {
       file = await fetchNowPlayingArtwork(
@@ -3165,23 +3189,61 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     } catch (e) {
       // 契約では null に倒すが、破られても投稿フォームを巻き込まない。
       debugLogException('nowplaying artwork fetch error', e);
+      _noteNowPlayingArtwork('fetch_failed', uri);
       return;
     }
-    if (file == null || !mounted) return;
+    if (file == null) {
+      _noteNowPlayingArtwork('fetch_null', uri);
+      return;
+    }
+    if (!mounted) return;
     // ⚠⚠ **取得を待つ間に変わった条件を見直す**（リリース前レビュー・2026-10-10）。
     // 本文は先に入っているので、取得（最大 15 秒）を待たずに送信できる。
     // 送信が始まったあとに足すと、添付は投稿に載らないうえ、下の下書き保存が
     // 送信の入口で止めた保存を張り直す（#1012 の競合が戻る）。
     // ⚠ 待つ間に投票を有効にした回も足さない（上の入口と同じ理由）。
-    if (_sending || _pollEnabled) return;
+    if (_sending || _pollEnabled) {
+      _noteNowPlayingArtwork(
+        _sending ? 'skipped_sending' : 'skipped_poll',
+        uri,
+      );
+      return;
+    }
     final before = _attachments.length;
     await _addLocalMedia([file]);
-    if (!mounted || _attachments.length == before) return;
+    if (!mounted) return;
+    if (_attachments.length == before) {
+      _noteNowPlayingArtwork('not_added', uri);
+      return;
+    }
     _attachedNowPlayingArtwork.add(uri);
+    _noteNowPlayingArtwork('attached', uri);
     // 読み上げに何も出ない添付にしない。⚠ 利用者が書いた ALT は上書きしない
     // （ここで足した直後の 1 枚にだけ入れる）。
     setState(() => _attachments.last.description = nowPlayingArtworkAlt(info));
     _scheduleDraftSave();
+  }
+
+  /// ジャケットがどの段で付いた / 付かなかったかを残す（v2.2 のリリース前
+  /// レビュー）。
+  ///
+  /// ジャケットは「取れなくても投稿は止めない」ので、失敗はすべて無言で抜ける。
+  /// 記録が無いと、「付かなかった」という報告を受けても、源が絵を持って
+  /// いなかったのか・取得で落ちたのか・添付の段で弾かれたのかを切り分けられない
+  /// （#1273 の動作確認で実際に手間取った）。
+  ///
+  /// ⚠ breadcrumb だけで、イベントにはしない。⚠ **載せるのは理由と、出どころの
+  /// 種別（`file` / `https`）だけ。**パス・URL・曲名は載せない。
+  void _noteNowPlayingArtwork(String outcome, [Uri? uri]) {
+    Sentry.addBreadcrumb(
+      Breadcrumb(
+        category: 'compose.nowplaying',
+        message: uri == null
+            ? 'artwork: $outcome'
+            : 'artwork: $outcome (${uri.scheme})',
+        level: SentryLevel.info,
+      ),
+    );
   }
 
   /// 本文末尾に [snippet] を追記する。直前が改行でなければ改行を 1 つ挟む。

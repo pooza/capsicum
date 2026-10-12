@@ -7,7 +7,7 @@ import 'package:flutter/services.dart';
 /// タグが消える**という食い違いが出ていた（2026-09-26 に発見・`docs/deck-ui-plan.md`
 /// 決定済み事項 10）。
 ///
-/// ⚠ **spec（`c%2B%2B` / `a+b`）を渡さない** (#1159)。`hashtagSpecTags` で分解した
+/// ⚠ **spec（`c%2B%2B` / `a+b`）を渡さない** (#1159)。`HashtagQuery.parse(spec).tagsToPost` で取り出した
 /// タグ名の列を渡すこと。
 ///
 /// [body] が空でも区切りの空行は入れる。**タグは常に本文の末尾**で、書き始める

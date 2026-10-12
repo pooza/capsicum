@@ -1703,15 +1703,30 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     final request = condition.tagFeedRequest;
     // 含む側の条件が無い（パスに置くタグが決まらない）。
     if (request == null) return const [];
-    final statuses = await client.getTagTimeline(
-      request.primary,
-      maxId: query?.maxId,
-      sinceId: query?.sinceId,
-      limit: query?.limit,
-      all: request.all,
-      any: request.any,
-      none: condition.none,
-    );
+    // ⚠⚠ **パスに置いたタグがサーバーに無いと、`any[]` を見ずに空が返る**
+    // （`Api::V1::Timelines::TagController` は、パスのタグを引けなければ
+    // そこで空を返す・v2.2 のリリース前レビュー）。「既にあるタグ または
+    // これから使われるタグ」で後者が先頭だと、前者に投稿があっても TL が空に
+    // なる。空だった回は、「いずれか」の残りのタグを順にパスへ回して引き直す。
+    // ⚠ 引き直しは「いずれか」の数まで。本当に空の回（TL の終端）でも、
+    // 余分な問い合わせはその数で止まる。
+    final primaries = condition.any.isEmpty ? [request.primary] : condition.any;
+    var statuses = const <MastodonStatus>[];
+    for (final primary in primaries) {
+      statuses = await client.getTagTimeline(
+        primary,
+        maxId: query?.maxId,
+        sinceId: query?.sinceId,
+        limit: query?.limit,
+        all: request.all,
+        any: [
+          for (final tag in condition.any)
+            if (tag != primary) tag,
+        ],
+        none: condition.none,
+      );
+      if (statuses.isNotEmpty) break;
+    }
     return _safeConvert(
       statuses,
       (s) => s.toCapsicum(host, adminRoleIds: _adminRoleIds),

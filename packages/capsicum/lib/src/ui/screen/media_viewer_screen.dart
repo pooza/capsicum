@@ -23,6 +23,7 @@ import '../../service/sentry_op_failure.dart';
 import '../../util/media_filename.dart';
 import '../../util/text_length.dart';
 import '../util/attachment_description_edit.dart';
+import '../util/compose_text_style.dart';
 import '../util/text_length_counter.dart';
 
 /// メディア URL を Sentry breadcrumb に載せる際、クエリ（署名トークンや
@@ -588,29 +589,32 @@ class _DescriptionEditDialogState extends State<_DescriptionEditDialog> {
   @override
   Widget build(BuildContext context) => AlertDialog(
     title: const Text('メディアの説明を編集'),
-    content: TextField(
-      controller: _controller,
-      maxLines: 4,
-      decoration: const InputDecoration(
-        hintText: '説明を入力…',
-        border: OutlineInputBorder(),
+    content: Consumer(
+      builder: (context, ref, _) => TextField(
+        controller: _controller,
+        maxLines: 4,
+        style: composeTextStyle(ref),
+        decoration: const InputDecoration(
+          hintText: '説明を入力…',
+          border: OutlineInputBorder(),
+        ),
+        autofocus: true,
+        // ⚠ **client で止める (#1012)。**超えるとサーバーが 400 / 422 で断り、
+        // 画面には「更新に失敗しました」しか出ない。
+        //
+        // ⚠⚠ **切り詰めてはいけない。**Mastodon の ALT 上限は 1 万字なので、
+        // Web UI で書いた 512 超の ALT が普通に存在する。素の `maxLength` は
+        // `LengthLimitingTextInputFormatter` を通すので、**開いて 1 文字打った
+        // 瞬間に切り詰められ、本人の ALT が消える**。数えるだけにして判断は
+        // ユーザーへ返す（#121 の導線が出た瞬間に踏む・v1.60 レビュー）。
+        //
+        // ⚠⚠ **切らないなら、上限はサーバーの実値でなければならない**
+        // （Codex P2 / PR #1023）。小さいほうへ寄せたまま切るのをやめると、
+        // **Misskey で 512 超を入力して保存でき 400 で落ちる**。
+        maxLength: widget.maxLength,
+        buildCounter: serverLengthCounter(_controller),
+        maxLengthEnforcement: MaxLengthEnforcement.none,
       ),
-      autofocus: true,
-      // ⚠ **client で止める (#1012)。**超えるとサーバーが 400 / 422 で断り、
-      // 画面には「更新に失敗しました」しか出ない。
-      //
-      // ⚠⚠ **切り詰めてはいけない。**Mastodon の ALT 上限は 1 万字なので、
-      // Web UI で書いた 512 超の ALT が普通に存在する。素の `maxLength` は
-      // `LengthLimitingTextInputFormatter` を通すので、**開いて 1 文字打った
-      // 瞬間に切り詰められ、本人の ALT が消える**。数えるだけにして判断は
-      // ユーザーへ返す（#121 の導線が出た瞬間に踏む・v1.60 レビュー）。
-      //
-      // ⚠⚠ **切らないなら、上限はサーバーの実値でなければならない**
-      // （Codex P2 / PR #1023）。小さいほうへ寄せたまま切るのをやめると、
-      // **Misskey で 512 超を入力して保存でき 400 で落ちる**。
-      maxLength: widget.maxLength,
-      buildCounter: serverLengthCounter(_controller),
-      maxLengthEnforcement: MaxLengthEnforcement.none,
     ),
     actions: [
       TextButton(
