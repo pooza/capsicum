@@ -529,11 +529,9 @@ void main() {
       '800',
       '700',
     ], reason: '権威ページに続きが正しく連結され、loadMore ぶんが捨てられない');
-    expect(
-      adapter.seenMaxIds.where((m) => m != null),
-      ['800'],
-      reason: 'cached-last(100) ではなく fresh の最深(800) を起点にする',
-    );
+    expect(adapter.seenMaxIds.where((m) => m != null), [
+      '800',
+    ], reason: 'cached-last(100) ではなく fresh の最深(800) を起点にする');
   });
 
   // Linux 限定 (#958)。キャッシュには生のホーム TL（フォロワー限定 / DM 本文）が

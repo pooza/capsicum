@@ -210,11 +210,10 @@ void main() {
       adapter.emit(streamKey, _post('103'));
       await settle();
 
-      expect(
-        container.read(p).requireValue.posts.map((e) => e.id),
-        ['102', '101'],
-        reason: 'スクロール中に一覧を動かさない',
-      );
+      expect(container.read(p).requireValue.posts.map((e) => e.id), [
+        '102',
+        '101',
+      ], reason: 'スクロール中に一覧を動かさない');
       expect(container.read(p).requireValue.pendingCount, 1);
 
       notifier.flushPending();
@@ -240,11 +239,10 @@ void main() {
 
       expect(container.read(p).requireValue.pendingCount, 0);
       notifier.flushPending();
-      expect(
-        container.read(p).requireValue.posts.map((e) => e.id),
-        ['102', '101'],
-        reason: '⚠⚠ 一覧からだけ消すと「新着 N 件」を開いた瞬間に現れる',
-      );
+      expect(container.read(p).requireValue.posts.map((e) => e.id), [
+        '102',
+        '101',
+      ], reason: '⚠⚠ 一覧からだけ消すと「新着 N 件」を開いた瞬間に現れる');
     });
 
     test('⚠⚠ ブロックした相手の投稿も未表示バッファから消える (#887)', () async {
@@ -291,11 +289,12 @@ void main() {
       await settle();
       await settle();
 
-      expect(
-        container.read(p).requireValue.posts.map((e) => e.id),
-        ['104', '103', '102', '101'],
-        reason: '既知（since 以下）は混ざらない',
-      );
+      expect(container.read(p).requireValue.posts.map((e) => e.id), [
+        '104',
+        '103',
+        '102',
+        '101',
+      ], reason: '既知（since 以下）は混ざらない');
     });
 
     test('⚠⚠ 別のタグのカラムは別の購読になる（片方が止まらない）', () async {
