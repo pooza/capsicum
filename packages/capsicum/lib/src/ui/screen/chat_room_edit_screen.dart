@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/chat_provider.dart';
 import '../util/chat_error.dart';
+import '../util/compose_text_style.dart';
 import '../util/op_error.dart';
 
 /// 新規ルーム作成 / 既存ルーム編集を兼ねる画面 (#438)。[initialRoom] が null
@@ -138,6 +139,7 @@ class _ChatRoomEditScreenState extends ConsumerState<ChatRoomEditScreen> {
                   maxLength: 1024,
                   maxLines: 4,
                   minLines: 3,
+                  style: composeTextStyle(ref),
                   enabled: !_submitting,
                 ),
                 const SizedBox(height: 16),

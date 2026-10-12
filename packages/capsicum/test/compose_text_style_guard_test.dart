@@ -16,8 +16,13 @@ void main() {
   /// 表も直す**（線引きの正本はあちら）。
   const appliedIn = {
     'lib/src/ui/screen/compose_screen.dart',
+    'lib/src/ui/screen/annict_record_screen.dart',
     'lib/src/ui/screen/annict_review_screen.dart',
     'lib/src/ui/screen/templates_manage_screen.dart',
+    // 行数に上限のある欄（2026-10-12 に広げた）。
+    'lib/src/ui/screen/profile_edit_screen.dart',
+    'lib/src/ui/screen/chat_room_edit_screen.dart',
+    'lib/src/ui/widget/chat_compose_row.dart',
   };
 
   late Map<String, String> sources;
@@ -63,6 +68,24 @@ void main() {
           entry.key,
     };
     expect(callers, appliedIn);
+  });
+
+  test('⚠⚠ 高さが伸びる欄を持つ画面は、すべて当てている（当て漏れ）', () {
+    // 2026-10-12: Annict の感想の欄が 2 画面あり、片方（エピソードの記録）を
+    // 落としていた。「当てている画面」を数えるだけでは、当て漏れは見えない。
+    final growing = {
+      for (final entry in sources.entries)
+        if (hasGrowingField(entry.value)) entry.key,
+    };
+    // ⚠ 空振りしていないこと（当てている画面のうち、伸びる欄を持つのは 4 つ）。
+    expect(growing.length, greaterThanOrEqualTo(4));
+    expect(
+      growing.difference(appliedIn),
+      isEmpty,
+      reason:
+          '高さが伸びる欄（maxLines: null）を持つのに composeTextStyle(ref) を'
+          '当てていない画面がある。当てるか、線引きを見直すこと',
+    );
   });
 
   test('⚠ 設定を画面が直に読んで、スタイルを自前で組んでいない', () {
@@ -122,6 +145,16 @@ void main() {
       );
     });
 
+    test('高さが伸びる欄の形・そうでない形', () {
+      expect(hasGrowingField('maxLines: null,'), isTrue);
+      expect(hasGrowingField('maxLines:null'), isTrue);
+      // 行数に上限のある欄。
+      expect(hasGrowingField('maxLines: 5,'), isFalse);
+      // 下限だけ外している（上限は別に決まる）。
+      expect(hasGrowingField('minLines: null,'), isFalse);
+      expect(hasGrowingField('maxLines: nullable,'), isFalse);
+    });
+
     test('設定を直に読んでいる形・いない形', () {
       expect(
         readsComposeFontDirectly('ref.watch(composeFontFamilyProvider)'),
@@ -142,6 +175,10 @@ void main() {
 /// 一部は数えない）。
 bool appliesComposeTextStyle(String source) =>
     RegExp(r'(^|[^\w])composeTextStyle\(').hasMatch(source);
+
+/// 高さが伸びる欄（`maxLines: null`）を持っているか。
+bool hasGrowingField(String source) =>
+    RegExp(r'\bmaxLines:\s*null\b').hasMatch(source);
 
 /// フォントの設定を直に読んでいるか。
 bool readsComposeFontDirectly(String source) =>
