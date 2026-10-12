@@ -470,6 +470,19 @@ class DesktopNotificationDispatcher {
     }
     final post = n.post;
     if (post != null) {
+      // CW 付きは見出しだけを出す (#1282)。畳まれているはずの本文を、バナーと
+      // 通知センターに出さない。Mastodon のサーバーがモバイル向けのプッシュで
+      // 作る本文（`spoiler_text` があればそれだけ）と同じ線で、Misskey の
+      // プッシュ（`PushMessageDispatcher` と各 OS の通知拡張）も揃えてある。
+      // ⚠ 見出しが空の CW（Misskey）は、空のまま出すと本文へ落ちるので固定の
+      // 文言にする。
+      final cw = post.spoilerText;
+      if (cw != null) {
+        final heading = cw.trim();
+        return _truncate(
+          heading.isEmpty ? contentWarningFallbackLabel : heading,
+        );
+      }
       final text = _plain(post.content, isHtml: post.isHtml);
       if (text.isNotEmpty) return _truncate(text);
     }

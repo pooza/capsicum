@@ -74,6 +74,38 @@ void main() {
       expect(result.notificationId, 'abcd');
     });
 
+    group('Misskey 形式の CW 付き (#1282)', () {
+      String? bodyOf(Map<String, dynamic> note) {
+        final plaintext = _utf8(
+          jsonEncode({
+            'type': 'notification',
+            'body': {
+              'id': 'abcd',
+              'type': 'mention',
+              'user': {'name': 'Alice', 'username': 'alice'},
+              'note': note,
+            },
+          }),
+        );
+        return PushMessageDispatcher.parsePayload(plaintext)?.body;
+      }
+
+      test('見出しだけを出し、畳まれている本文を出さない', () {
+        final body = bodyOf({'cw': 'ネタバレ', 'text': '犯人はヤス'});
+        expect(body, 'ネタバレ');
+        expect(body, isNot(contains('犯人')));
+      });
+
+      test('見出しの無い CW（空文字）は固定の文言にし、本文へ落とさない', () {
+        expect(bodyOf({'cw': '', 'text': '犯人はヤス'}), '閲覧注意');
+        expect(bodyOf({'cw': '  ', 'text': '犯人はヤス'}), '閲覧注意');
+      });
+
+      test('cw が null（CW 無し）は従来どおり本文を出す', () {
+        expect(bodyOf({'cw': null, 'text': 'こんにちは'}), 'こんにちは');
+      });
+    });
+
     test('Misskey 形式 (reaction / note.text 無し) は送信者+リアクションを合成', () {
       final plaintext = _utf8(
         jsonEncode({

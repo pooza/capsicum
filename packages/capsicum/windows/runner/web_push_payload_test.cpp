@@ -100,6 +100,37 @@ int main() {
     CheckEq(p.notification_id, "n1", "misskey: inner id");
   }
 
+  // 4-2) CW 付きは見出しだけを出し、本文を出さない (#1282)。
+  {
+    ParsedPayload p;
+    ParsePushPayload(
+        "{\"type\":\"notification\",\"body\":{\"type\":\"mention\","
+        "\"id\":\"n1\",\"note\":{\"cw\":\"spoiler\",\"text\":\"hidden\"}}}",
+        &p);
+    CheckEq(p.body, "spoiler", "misskey: note.cw があれば見出しだけ");
+  }
+
+  // 4-3) 見出しの無い CW（空文字）は固定の文言。本文へ落とさない。
+  {
+    ParsedPayload p;
+    ParsePushPayload(
+        "{\"type\":\"notification\",\"body\":{\"type\":\"mention\","
+        "\"id\":\"n1\",\"note\":{\"cw\":\"\",\"text\":\"hidden\"}}}",
+        &p);
+    CheckEq(p.body, "\xe9\x96\xb2\xe8\xa6\xa7\xe6\xb3\xa8\xe6\x84\x8f",
+            "misskey: 空の note.cw は「閲覧注意」");
+  }
+
+  // 4-4) cw が null（CW 無し）は従来どおり note.text。
+  {
+    ParsedPayload p;
+    ParsePushPayload(
+        "{\"type\":\"notification\",\"body\":{\"type\":\"mention\","
+        "\"id\":\"n1\",\"note\":{\"cw\":null,\"text\":\"hi there\"}}}",
+        &p);
+    CheckEq(p.body, "hi there", "misskey: note.cw が null なら note.text");
+  }
+
   // 5) Misskey reaction（表示名あり）。
   {
     ParsedPayload p;
