@@ -59,6 +59,7 @@ const _deckColumnsKey = 'deck_columns';
 /// デッキのカラム幅の下限（ユーザー設定・#1092）。
 const _deckColumnWidthKey = 'deck_column_width';
 const _deckLastColumnKey = 'deck_last_column';
+const _deckLockedColumnsKey = 'deck_locked_columns';
 const _lastViewModeKey = 'last_view_mode';
 const _tabConfigPrefix = 'tab_config_';
 const _avatarShapeKey = 'avatar_shape';
@@ -578,22 +579,6 @@ class TabConfigNotifier extends FamilyNotifier<List<TabConfigEntry>, String> {
   }
 }
 
-/// デッキのカラム列 (#1091)。
-///
-/// タブ設定（[tabConfigProvider]）の一般化で、永続化も同じ `List<String>`
-/// （`docs/deck-ui-plan.md` 決定済み事項 6-1）。⚠ 違いは 2 つ:
-///
-/// - **family ではない。**カラムごとにアカウントを持つので、列そのものは
-///   アカウントに依存しない
-/// - ⚠⚠ **同じ中身を重複して置ける**（6-2）。並べ替え・削除は [DeckColumn.id] で
-///   指す。**中身（アカウント + 種別）で指さない**
-///   - ⚠ **重複を許すのは [DeckColumnsNotifier.add]（カラム設定から足す）だけ**
-///     （#1182）。操作の結果として開く [DeckColumnsNotifier.insertAfter] は許さない
-///   - ⚠⚠ **ただし [SearchTab] は [insertAfter] でも重複できる**（#1193）。検索は
-///     「中身へのナビゲーション」ではなく道具で、語が違えば中身も違う
-///
-/// ⚠ 削除しても購読を明示的に止めない（6-3）。重複カラムは provider を共有するので、
-/// 最後の 1 本が消えたときに autoDispose が片づける。
 /// 最後にフォーカスしていたカラムの id (#1239)。無ければ null。
 ///
 /// ⚠ **スクロール量ではなく id で持つ。**列は並べ替え・削除で動くので、位置で
@@ -618,6 +603,88 @@ LastViewMode readLastViewMode() =>
 Future<void> writeLastViewMode(LastViewMode mode) =>
     sharedPrefsOrThrow.setString(_lastViewModeKey, mode.name);
 
+/// ロック中のカラムの id (#1271・2026-10-12 pooza)。
+///
+/// デッキの構成を固定して使っていると、操作の結果として挿入されたカラム
+/// （スレッド・検索など）を閉じるつもりで、常設のカラムを閉じてしまうことが
+/// ある。狭幅ではカラムを 1 本ずつ見るので、押し間違えたときに失うものが大きい。
+/// **ロックしたカラムは、見出しの × では閉じられない**（× の位置に鍵が出て、
+/// 押すと解除になる ＝ 閉じるには 2 回押す）。
+///
+/// - **単位はカラムごと。**「いまの構成を丸ごと固定する」1 操作にはしない
+/// - ⚠ **止めるのは見出しの × だけ。**カラム編集のシート（意図して開く場所）
+///   からは外せる。中身の画面が自分で閉じる経路（コレクションを削除した等・
+///   `screenCloser`）も止めない —— 残すと「表示できません」のカラムになる
+/// - 並べ替えは対象にしない
+///
+/// ⚠ **列（`deck_columns`）の外に id で持つ**（最後に見ていたカラム #1239 と
+/// 同じ形）。保存形式 `<id>|<アカウント>|<種別>` を動かさずに済む。
+/// ⚠ 列に居ない id は読む時点で落とす（閉じた・バックアップから戻した）。
+final deckLockedColumnsProvider =
+    NotifierProvider<DeckLockedColumnsNotifier, Set<String>>(
+      DeckLockedColumnsNotifier.new,
+    );
+
+class DeckLockedColumnsNotifier extends Notifier<Set<String>> {
+  @override
+  Set<String> build() {
+    // ⚠ `ref.watch` にしない。列が動くたびに作り直す必要は無く、居なくなった
+    // id を落とすだけで足りる。
+    ref.listen<List<DeckColumn>>(deckColumnsProvider, (_, next) {
+      final ids = {for (final c in next) c.id};
+      if (state.every(ids.contains)) return;
+      state = {
+        for (final id in state)
+          if (ids.contains(id)) id,
+      };
+      unawaited(_save());
+    });
+    final saved =
+        sharedPrefsOrThrow.getStringList(_deckLockedColumnsKey) ?? const [];
+    final ids = {for (final c in ref.read(deckColumnsProvider)) c.id};
+    return {
+      for (final id in saved)
+        if (ids.contains(id)) id,
+    };
+  }
+
+  Future<void> _save() => state.isEmpty
+      ? sharedPrefsOrThrow.remove(_deckLockedColumnsKey)
+      : sharedPrefsOrThrow.setStringList(_deckLockedColumnsKey, [...state]);
+
+  /// [id] のカラムのロックを掛ける / 外す。列に居ない id には何もしない。
+  Future<void> setLocked(String id, bool locked) async {
+    if (state.contains(id) == locked) return;
+    if (locked && !ref.read(deckColumnsProvider).any((c) => c.id == id)) {
+      return;
+    }
+    state = locked
+        ? {...state, id}
+        : {
+            for (final other in state)
+              if (other != id) other,
+          };
+    await _save();
+  }
+}
+
+/// デッキのカラム列 (#1091)。
+///
+/// タブ設定（[tabConfigProvider]）の一般化で、永続化も同じ `List<String>`
+/// （`docs/deck-ui-plan.md` 決定済み事項 6-1）。⚠ 違いは 2 つ:
+///
+/// - **family ではない。**カラムごとにアカウントを持つので、列そのものは
+///   アカウントに依存しない
+/// - ⚠⚠ **同じ中身を重複して置ける**（6-2）。並べ替え・削除は [DeckColumn.id] で
+///   指す。**中身（アカウント + 種別）で指さない**
+///   - ⚠ **重複を許すのは [DeckColumnsNotifier.add]（カラム設定から足す）だけ**
+///     （#1182）。操作の結果として開く [DeckColumnsNotifier.insertAfter] は許さない
+///   - ⚠⚠ **ただし [SearchTab] は [DeckColumnsNotifier.insertAfter] でも重複
+///     できる**（#1193）。検索は「中身へのナビゲーション」ではなく道具で、語が
+///     違えば中身も違う
+///
+/// ⚠ 削除しても購読を明示的に止めない（6-3）。重複カラムは provider を共有するので、
+/// 最後の 1 本が消えたときに autoDispose が片づける。
 final deckColumnsProvider =
     NotifierProvider<DeckColumnsNotifier, List<DeckColumn>>(
       DeckColumnsNotifier.new,
@@ -736,6 +803,22 @@ class DeckColumnsNotifier extends Notifier<List<DeckColumn>> {
     state = [
       for (final c in state)
         if (c.id != id) c,
+    ];
+    await _save();
+  }
+
+  /// [id] のカラムの中身を [tab] に差し替える (#1209・タグの条件を直したとき)。
+  ///
+  /// ⚠ **id・位置・アカウントは変えない。**外して足し直すと、フォーカス・ロック
+  /// （どちらも id で持っている）が外れ、列の末尾へ飛ぶ。
+  Future<void> replaceTab(String id, TabType tab) async {
+    if (!state.any((c) => c.id == id)) return;
+    state = [
+      for (final c in state)
+        if (c.id == id)
+          DeckColumn(id: c.id, account: c.account, tab: tab)
+        else
+          c,
     ];
     await _save();
   }

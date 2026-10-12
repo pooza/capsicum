@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../service/sentry_op_failure.dart';
+import '../util/compose_text_style.dart';
 import '../util/deck_navigation.dart';
 import '../util/scroll_thresholds.dart';
 import '../widget/account_multi_select_sheet.dart';
@@ -377,10 +378,13 @@ class _CreateCollectionDialogState
               textInputAction: TextInputAction.next,
               decoration: const InputDecoration(labelText: '名前'),
             ),
-            TextField(
-              controller: _descController,
-              decoration: const InputDecoration(labelText: '説明（任意）'),
-              maxLines: 3,
+            Consumer(
+              builder: (context, ref, _) => TextField(
+                controller: _descController,
+                decoration: const InputDecoration(labelText: '説明（任意）'),
+                maxLines: 3,
+                style: composeTextStyle(ref),
+              ),
             ),
             TextField(
               controller: _tagController,

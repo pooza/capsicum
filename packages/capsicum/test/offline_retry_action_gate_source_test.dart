@@ -61,8 +61,11 @@ void main() {
 
   // ドロワーの切替リストは**アカウント単位**で同じ出し分けをしている (#967)。
   // オフラインホームだけ直してこちらが崩れると、同じ穴が別画面で開く。
+  // ⚠ ドロワーの組み立ては `home_drawer.dart` へ移した (#1272)。
   test('ドロワー側もアカウント単位で再試行を出し分ける', () {
-    final source = homeScreenSource();
+    final source = File(
+      'lib/src/ui/widget/home_drawer.dart',
+    ).readAsStringSync();
 
     expect(
       source,

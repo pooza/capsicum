@@ -62,6 +62,17 @@ class ComposeDraft {
   /// 同じ扱いにできる（bool を増やさず集合にしてあるのはそのため）。
   final Set<String>? chosen;
 
+  /// 指名（Misskey の `specified`）の宛先の利用者 id (#1264)。足した順。
+  ///
+  /// ⚠ **id だけ持つ。**表示名とアイコンは復元のあとで取り直す（サーバー側の
+  /// 下書きの `visibleUserIds` と同じ扱い・#1165）。⚠ 宛先を一覧で渡さない
+  /// サーバー（Mastodon）では常に空。
+  ///
+  /// ⚠ **公開範囲が指名でなくても持つ。**宛先は範囲を切り替えても画面に残る
+  /// ので、保存だけ範囲で落とすと「指名へ戻したら宛先が消えた」になる。送るか
+  /// どうかは送信時に決める（`directRecipientIdsToSend`）。
+  final List<String> recipientIds;
+
   const ComposeDraft({
     required this.text,
     this.cwText = '',
@@ -73,6 +84,7 @@ class ComposeDraft {
     this.localOnly = false,
     this.savedAt,
     this.chosen,
+    this.recipientIds = const [],
   });
 
   bool get hasText => text.isNotEmpty;
@@ -93,12 +105,16 @@ class ComposeDraft {
   ///
   /// ⚠ 本文が無ければ #964 の守り（本文だけ戻して公開範囲が既定へ戻る事故）は
   /// そもそも当たらないので、丸ごと捨ててよい。
+  ///
+  /// ⚠ **宛先があるなら空ではない** (#1264)。自動保存が効く画面（まっさらな
+  /// 新規投稿）では、宛先は利用者が足したものしか入らない ＝ 入力そのもの。
   bool get isEmpty =>
       text.isEmpty &&
       cwText.isEmpty &&
       !cwEnabled &&
       attachmentCount == 0 &&
       attachments.isEmpty &&
+      recipientIds.isEmpty &&
       !(chosen?.isNotEmpty ?? false);
 }
 
@@ -184,6 +200,10 @@ class ComposeDraftStore {
   /// [ComposeDraft.isChosen] が「全部選んだ」に倒す。
   static const chosenKey = 'compose_draft_chosen';
 
+  /// 指名の宛先の利用者 id (#1264)。⚠ **キーが無い＝宛先なし**（旧スロットも
+  /// 同じに読める）。
+  static const recipientsKey = 'compose_draft_recipients';
+
   /// [chosenKey] に入る名前 (#1195)。⚠ **文字列を直に書かない** —— 保存した値と
   /// 読む値がずれると、黙って「選んでいない」扱いになる。
   ///
@@ -212,6 +232,7 @@ class ComposeDraftStore {
     localOnlyKey,
     savedAtKey,
     chosenKey,
+    recipientsKey,
   ];
 
   bool _discarded = false;
@@ -369,6 +390,15 @@ class ComposeDraftStore {
           ) &&
           ok;
     }
+    // 指名の宛先 (#1264)。⚠ **空なら書かずに消す** —— 前回のぶんが残ると、
+    // 外したはずの宛先が次の復元で戻る（添付と同じ形・#1130）。
+    if (draft.recipientIds.isEmpty) {
+      await prefs.remove(_k(recipientsKey));
+    } else {
+      ok =
+          await prefs.setStringList(_k(recipientsKey), draft.recipientIds) &&
+          ok;
+    }
     // 世代印は書き込みの成否と別（このスロットに触った事実は変わらない）。
     //
     // ⚠⚠ **await をまたいだ間に [clear] が進めた印を巻き戻さない (v1.60 レビュー)。**
@@ -451,6 +481,7 @@ class ComposeDraftStore {
       savedAt: savedAt == null ? null : DateTime.tryParse(savedAt),
       // ⚠ **キーが無ければ null のまま**（旧スロット＝「分からない」）。
       chosen: chosen?.toSet(),
+      recipientIds: prefs.getStringList(key(recipientsKey)) ?? const [],
     );
     // ⚠⚠ **読む側でも空を落とす (#1195)。**[_save] で書かないようにしただけでは、
     // **修正前に書かれてしまった空の下書きが端末に残り続ける**（本文キーが `''`

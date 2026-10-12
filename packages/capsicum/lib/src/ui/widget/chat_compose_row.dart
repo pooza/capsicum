@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/platform_providers.dart';
 import '../screen/drive_picker_screen.dart';
+import '../util/compose_text_style.dart';
 import 'bottom_safe_area.dart';
 import 'insert_picker_sheet.dart';
 
@@ -181,6 +182,7 @@ class ChatComposeRow extends ConsumerWidget {
                     controller: controller,
                     minLines: 1,
                     maxLines: 5,
+                    style: composeTextStyle(ref),
                     enabled: !busy,
                     decoration: const InputDecoration(
                       hintText: 'メッセージを入力',
@@ -197,6 +199,7 @@ class ChatComposeRow extends ConsumerWidget {
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Icon(Icons.send),
+                  tooltip: '送信',
                   onPressed: busy ? null : onSend,
                 ),
               ],

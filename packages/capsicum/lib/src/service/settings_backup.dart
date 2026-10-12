@@ -158,6 +158,9 @@ const deviceLocalKeys = <String>{
   // カラムを指しうる。
   'deck_last_column',
   'last_view_mode',
+  // ロック中のカラム (#1271)。同じく列の中だけで通じる id で持っているので、
+  // 取り込み先の列では別のカラムを指しうる。
+  'deck_locked_columns',
   'insert_picker_height',
   'reaction_picker_height',
   'sticker_picker_height',

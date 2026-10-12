@@ -20,7 +20,8 @@ import 'now_playing_provider.dart';
 ///
 /// ネイティブ I/O は Windows SMTC (#484) と同じ入口に揃える — メソッドチャンネル
 /// `capsicum/now_playing` の `getNowPlaying` が title / artist / albumTitle の
-/// マップを返し、それを [NowPlayingInfo] へ変換する。
+/// マップを返し、それを [NowPlayingInfo] へ変換する。macOS はジャケットの
+/// 一時ファイルのパス（`artworkPath`）も添える (#1273)。
 ///
 /// 設計どおり Apple Music も **「文字情報のみの源」** として扱い、
 /// `NowPlayingInfo.url` は常に null（`MPMediaItem` は共有 URL を持たない。URL 源は
@@ -98,9 +99,22 @@ NowPlayingInfo? nowPlayingFromAppleMusicMetadata(Map<String, Object?> data) {
     title: title,
     artist: artist,
     album: album,
+    // ジャケット (#1273)。macOS のネイティブが、ミュージックアプリから取った
+    // 絵を一時ファイルへ書き出してパスを返す。`file://` にすると、MPRIS と同じ
+    // 添付の経路（`fetchNowPlayingArtwork`）にそのまま乗る。
+    // ⚠ iOS はまだ返さない（#1275）ので、キーが無ければ null。
+    artworkUrl: _artworkFileUri(data['artworkPath']),
     // Apple Music は文字情報源（URL 源は Spotify provider が担う）。
     url: null,
   );
+}
+
+/// ネイティブが返した絶対パスを `file://` にする。相対パスや空は捨てる
+/// （行き先の分からないファイルを添付の候補にしない）。
+Uri? _artworkFileUri(Object? value) {
+  final path = _trimmedString(value);
+  if (path == null || !path.startsWith('/')) return null;
+  return Uri.file(path);
 }
 
 String? _trimmedString(Object? value) {

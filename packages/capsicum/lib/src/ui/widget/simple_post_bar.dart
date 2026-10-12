@@ -29,7 +29,7 @@ class SimplePostBar extends ConsumerStatefulWidget {
   ///
   /// ⚠ **spec（`c%2B%2B` / `a+b`）を渡さない** (#1159)。spec はエスケープと
   /// AND 連結を含む内部表現なので、そのまま付けると `#c%2B%2B` のような
-  /// 存在しないタグで投稿してしまう。[hashtagSpecTags] で分解してから渡す。
+  /// 存在しないタグで投稿してしまう。`HashtagQuery.parse(spec).tagsToPost` を渡す。
   final List<String> hashtags;
 
   /// Called after a successful post (for refreshing the caller's timeline).

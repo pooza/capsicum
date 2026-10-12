@@ -354,8 +354,17 @@ class MastodonClient {
   }
 
   /// POST /api/v1/accounts/:id/follow
-  Future<void> followAccount(String id) async {
-    await dio.post('/api/v1/accounts/$id/follow');
+  ///
+  /// [reblogs] は、この相手のブーストをホームに出すか (#1245)。**フォロー中の
+  /// 相手へ送ると、フォローの属性の更新になる。**
+  /// ⚠ 省いた属性（`notify` / `languages`）は今の値のまま残る —— サーバーは
+  /// 送られたキーだけを書き換える（`Account#follow!`・2026-10-12 にソースで確認）。
+  /// なので `reblogs` だけを送ってよい。null なら送らない（従来のフォロー）。
+  Future<void> followAccount(String id, {bool? reblogs}) async {
+    await dio.post(
+      '/api/v1/accounts/$id/follow',
+      data: reblogs == null ? null : {'reblogs': reblogs},
+    );
   }
 
   /// POST /api/v1/accounts/:id/unfollow
@@ -668,6 +677,21 @@ class MastodonClient {
     return MastodonStatus.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// POST /api/v1/statuses/:id/mute — 会話（スレッド）のミュート (#1208)。
+  ///
+  /// ⚠ 人のミュート（`/api/v1/accounts/:id/mute`）とは別物。投稿の会話から
+  /// 自分へ届く通知だけを止める。[id] は会話のどの投稿でもよい。
+  Future<MastodonStatus> muteConversation(String id) async {
+    final response = await dio.post('/api/v1/statuses/$id/mute');
+    return MastodonStatus.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// POST /api/v1/statuses/:id/unmute
+  Future<MastodonStatus> unmuteConversation(String id) async {
+    final response = await dio.post('/api/v1/statuses/$id/unmute');
+    return MastodonStatus.fromJson(response.data as Map<String, dynamic>);
+  }
+
   /// GET /api/v1/notifications
   ///
   /// [excludeTypes] は出さない種別のサーバー側名 (#1042)。⚠ **許可リスト
@@ -831,14 +855,24 @@ class MastodonClient {
 
   /// GET /api/v1/conversations
   /// Returns the last_status from each conversation (DM thread) along with
-  /// the conversation ID of the last entry for cursor-based pagination.
+  /// the cursor for the next (older) page.
+  ///
+  /// ⚠⚠ **カーソルは会話の id ではない** (#1266)。サーバーは `max_id` を
+  /// **会話の最後の投稿の id**（`last_status_id`）と比べるので、会話の id（小さい
+  /// 連番）を送ると空が返って打ち切られる。`nextMaxId` は `Link` ヘッダの
+  /// `rel="next"` から取る。ヘッダが無い応答（最後のページ・ヘッダを落とす
+  /// 中継）では、`last_status` を持つ最後の会話の投稿 id に倒す。
+  ///
+  /// `rawCount` は応答に入っていた会話の数（`last_status` が無いものも数える）。
+  /// 満ページかどうかの判定に使うので、`statuses` の長さで代用しない。
   ///
   /// `conversations` は、`last_status` を持つ会話ごとの id と未読 (#1206)。
   /// 既読・削除は会話に対する操作なので、投稿から会話を引けるように返す。
   Future<
     ({
       List<MastodonStatus> statuses,
-      String? lastConversationId,
+      String? nextMaxId,
+      int rawCount,
       List<({String id, bool unread, String lastStatusId})> conversations,
     })
   >
@@ -852,19 +886,19 @@ class MastodonClient {
       },
     );
     final conversations = response.data as List;
-    String? lastConversationId;
+    String? lastStatusId;
     final statuses = <MastodonStatus>[];
     final refs = <({String id, bool unread, String lastStatusId})>[];
     for (final e in conversations) {
       final m = e as Map<String, dynamic>;
       final id = m['id']?.toString();
-      lastConversationId = id;
       final lastStatus = m['last_status'];
       if (lastStatus != null) {
         final status = MastodonStatus.fromJson(
           lastStatus as Map<String, dynamic>,
         );
         statuses.add(status);
+        lastStatusId = status.id;
         if (id != null) {
           refs.add((
             id: id,
@@ -876,7 +910,8 @@ class MastodonClient {
     }
     return (
       statuses: statuses,
-      lastConversationId: lastConversationId,
+      nextMaxId: _parseLinkNextMaxId(response) ?? lastStatusId,
+      rawCount: conversations.length,
       conversations: refs,
     );
   }
@@ -1220,7 +1255,11 @@ class MastodonClient {
     String? sinceId,
     int? limit,
     List<String>? all,
+    List<String>? any,
+    List<String>? none,
   }) async {
+    // パスのタグと `any[]` が OR、`all[]` が AND、`none[]` が除外になる
+    // （サーバーの `TagFeed`・#1209）。
     final response = await dio.get(
       '/api/v1/timelines/tag/${Uri.encodeComponent(hashtag)}',
       queryParameters: {
@@ -1228,6 +1267,8 @@ class MastodonClient {
         'since_id': ?sinceId,
         'limit': ?limit,
         if (all != null && all.isNotEmpty) 'all[]': all,
+        if (any != null && any.isNotEmpty) 'any[]': any,
+        if (none != null && none.isNotEmpty) 'none[]': none,
       },
     );
     return (response.data as List)

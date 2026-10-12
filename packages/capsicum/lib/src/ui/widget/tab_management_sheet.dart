@@ -10,6 +10,7 @@ import '../../provider/list_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../util/post_scope_display.dart';
+import 'hashtag_condition_dialog.dart';
 
 class TabManagementSheet extends ConsumerStatefulWidget {
   final String storageKey;
@@ -95,66 +96,14 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
     _controller.clear();
   }
 
-  void _showAndTagDialog(BuildContext context, String currentSpec) {
-    final (primary, existingAll) = parseHashtagSpec(currentSpec);
-    final andController = TextEditingController(
-      text: existingAll?.join(', ') ?? '',
-    );
-
-    showDialog(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text('#$primary のAND条件'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('AND条件で絞り込むタグをカンマ区切りで入力してください。'),
-            const Text('空にするとAND条件を解除します。'),
-            // ⚠ 追加欄は `+` 区切り、ここはカンマ区切りで記法が違う (#1158)。
-            // ⚠⚠ カンマ区切りは `+` をタグの一部として書けるので、`#c++` の
-            // ような Misskey のタグを AND に混ぜられるのはこちらだけ (#1159)。
-            const Text('タグ自体に + が入る場合もここから入力できます。'),
-            const SizedBox(height: 12),
-            TextField(
-              controller: andController,
-              decoration: const InputDecoration(
-                hintText: '例: nitiasa, precure',
-                border: OutlineInputBorder(),
-                isDense: true,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('キャンセル'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(dialogContext);
-              final input = andController.text.trim();
-              final andTags = input.isEmpty
-                  ? <String>[]
-                  : input
-                        .split(RegExp(r'[,、\s]+'))
-                        .map((t) => t.replaceFirst(RegExp('^#'), '').trim())
-                        .where((t) => t.isNotEmpty)
-                        .toList();
-              // ⚠ タグに `+` が含まれうるので、連結は hashtagSpecFromTags へ
-              // 寄せる (#1159)。
-              final newSpec = hashtagSpecFromTags([primary, ...andTags]);
-              _notifier.replaceTab(
-                HashtagTab(currentSpec),
-                HashtagTab(newSpec),
-              );
-            },
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
+  /// タグの条件（すべて含む / いずれかを含む / 含まない）を直す (#1209)。
+  ///
+  /// ⚠ 以前は Mastodon でだけ開けた（AND 条件のダイアログ）。Misskey も OR と
+  /// AND をサーバーが受けるので、両方で開く。
+  Future<void> _editHashtagCondition(String currentSpec) async {
+    final newSpec = await showHashtagConditionDialog(context, currentSpec);
+    if (newSpec == null || newSpec == currentSpec) return;
+    _notifier.replaceTab(HashtagTab(currentSpec), HashtagTab(newSpec));
   }
 
   void _reorderEntries(int oldIndex, int newIndex) {
@@ -336,6 +285,9 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
                   const Spacer(),
                   IconButton(
                     icon: const Icon(Icons.close),
+                    tooltip: MaterialLocalizations.of(
+                      context,
+                    ).closeButtonTooltip,
                     onPressed: () => Navigator.pop(context),
                   ),
                 ],
@@ -379,8 +331,8 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
                             ),
                           ],
                         ),
-                        onTap: tab is HashtagTab && widget.isMastodon
-                            ? () => _showAndTagDialog(context, tab.tag)
+                        onTap: tab is HashtagTab
+                            ? () => _editHashtagCondition(tab.tag)
                             : null,
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -389,6 +341,7 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
                             if (tab is HashtagTab)
                               IconButton(
                                 icon: const Icon(Icons.delete_outline),
+                                tooltip: 'このタブを削除',
                                 onPressed: () => _notifier.removeTab(tab),
                               ),
                             // Visibility toggle.
@@ -398,6 +351,9 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
                                     ? Icons.visibility
                                     : Icons.visibility_off,
                               ),
+                              // ⚠ アイコンは**いまの状態**。押した結果を言葉で
+                              // 添える（どちらなのかが絵からは読めない・#1197）。
+                              tooltip: entry.visible ? 'タブを隠す' : 'タブを表示する',
                               onPressed: () => _notifier.toggleVisibility(tab),
                             ),
                           ],
@@ -428,19 +384,20 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
                         const SizedBox(width: 8),
                         IconButton(
                           icon: const Icon(Icons.add),
+                          tooltip: 'ハッシュタグのタブを追加',
                           onPressed: _addHashtag,
                         ),
                       ],
                     ),
                   ),
-                  if (widget.isMastodon)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Text(
-                        'タップでAND条件のタグを追加できます',
-                        style: theme.textTheme.bodySmall,
-                      ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Text(
+                      'タグのタブを押すと、条件（すべて含む / いずれかを含む / 含まない）を'
+                      '変えられます',
+                      style: theme.textTheme.bodySmall,
                     ),
+                  ),
                   if (!hasHashtags)
                     const Padding(
                       padding: EdgeInsets.all(16),

@@ -73,110 +73,98 @@ void main() {
 
   Future<void> turn() => Future<void>.delayed(Duration.zero);
 
-  test(
-    '⚠⚠ 発行の途中は「復元できる購入はありません」を出さず、ボタンも戻さない',
-    () async {
-      final (:container, :backend, :relay) = setUpAll();
-      final notifier = container.read(supporterPurchaseProvider.notifier);
-      await turn();
+  test('⚠⚠ 発行の途中は「復元できる購入はありません」を出さず、ボタンも戻さない', () async {
+    final (:container, :backend, :relay) = setUpAll();
+    final notifier = container.read(supporterPurchaseProvider.notifier);
+    await turn();
 
-      // 復元の要求の最中に購入イベントが届き、発行は relay の応答待ちで止まる。
-      backend.emitOnRestore = true;
-      final returned = await notifier.restoreAndReregister();
-      expect(returned, isTrue, reason: '前提: 復元で購入が返った');
-      // 発行はインストール ID の読み出しを挟んでから relay へ出る。
-      await turn();
-      await turn();
-      expect(relay.issuing, isNotNull, reason: '前提: 発行が始まっている');
+    // 復元の要求の最中に購入イベントが届き、発行は relay の応答待ちで止まる。
+    backend.emitOnRestore = true;
+    final returned = await notifier.restoreAndReregister();
+    expect(returned, isTrue, reason: '前提: 復元で購入が返った');
+    // 発行はインストール ID の読み出しを挟んでから relay へ出る。
+    await turn();
+    await turn();
+    expect(relay.issuing, isNotNull, reason: '前提: 発行が始まっている');
 
-      final during = container.read(supporterPurchaseProvider);
-      expect(
-        during.lastOutcome?.kind,
-        isNot(SupporterPurchaseOutcomeKind.nothingToRestore),
-        reason: '⚠ 直す前は、ここで「復元できる購入はありません」が出ていた',
-      );
-      expect(
-        during.purchaseInProgress,
-        isTrue,
-        reason: '⚠ 直す前は戻っていて、もう一度「復元」を押せた',
-      );
+    final during = container.read(supporterPurchaseProvider);
+    expect(
+      during.lastOutcome?.kind,
+      isNot(SupporterPurchaseOutcomeKind.nothingToRestore),
+      reason: '⚠ 直す前は、ここで「復元できる購入はありません」が出ていた',
+    );
+    expect(
+      during.purchaseInProgress,
+      isTrue,
+      reason: '⚠ 直す前は戻っていて、もう一度「復元」を押せた',
+    );
 
-      // relay が答えたら、成功として終わる。
-      relay.issuing!.complete({'token': 't', 'store': 'apple'});
-      await turn();
-      await turn();
-      final after = container.read(supporterPurchaseProvider);
-      expect(after.lastOutcome?.kind, SupporterPurchaseOutcomeKind.success);
-      expect(after.purchaseInProgress, isFalse);
-    },
-    skip: subscriptionPurchaseSupported ? false : 'サブスクを扱えないホスト',
-  );
+    // relay が答えたら、成功として終わる。
+    relay.issuing!.complete({'token': 't', 'store': 'apple'});
+    await turn();
+    await turn();
+    final after = container.read(supporterPurchaseProvider);
+    expect(after.lastOutcome?.kind, SupporterPurchaseOutcomeKind.success);
+    expect(after.purchaseInProgress, isFalse);
+  }, skip: subscriptionPurchaseSupported ? false : 'サブスクを扱えないホスト');
 
-  test(
-    '⚠⚠ 発行が済んだあとの後始末の最中に復元が返っても、ボタンが戻る',
-    () async {
-      // v2.1 のリリース前レビュー（2026-10-10）。発行の出口がフラグを戻したあと、
-      // 復元の側が「まだ処理中のイベントがある」と見て立て直すと、戻す者が
-      // 居なくなり、購入も復元も再起動まで押せなくなっていた。
-      final (:container, :backend, :relay) = setUpAll();
-      final notifier = container.read(supporterPurchaseProvider.notifier);
-      await turn();
+  test('⚠⚠ 発行が済んだあとの後始末の最中に復元が返っても、ボタンが戻る', () async {
+    // v2.1 のリリース前レビュー（2026-10-10）。発行の出口がフラグを戻したあと、
+    // 復元の側が「まだ処理中のイベントがある」と見て立て直すと、戻す者が
+    // 居なくなり、購入も復元も再起動まで押せなくなっていた。
+    final (:container, :backend, :relay) = setUpAll();
+    final notifier = container.read(supporterPurchaseProvider.notifier);
+    await turn();
 
-      backend.emitOnRestore = true;
-      backend.restoreGate = Completer<void>();
-      backend.completeGate = Completer<void>();
-      final restoring = notifier.restoreAndReregister();
-      await turn();
-      await turn();
-      expect(relay.issuing, isNotNull, reason: '前提: 発行が始まっている');
+    backend.emitOnRestore = true;
+    backend.restoreGate = Completer<void>();
+    backend.completeGate = Completer<void>();
+    final restoring = notifier.restoreAndReregister();
+    await turn();
+    await turn();
+    expect(relay.issuing, isNotNull, reason: '前提: 発行が始まっている');
 
-      // 発行は済み、ストアの確定（後始末）で止まっている。
-      relay.issuing!.complete({'token': 't', 'store': 'apple'});
-      await turn();
-      await turn();
-      expect(backend.completeCalls, 1, reason: '前提: 後始末まで進んでいる');
-      expect(
-        container.read(supporterPurchaseProvider).purchaseInProgress,
-        isTrue,
-        reason: '⚠ 後始末（ストアの確定と登録のやり直し）が済むまで押させない',
-      );
+    // 発行は済み、ストアの確定（後始末）で止まっている。
+    relay.issuing!.complete({'token': 't', 'store': 'apple'});
+    await turn();
+    await turn();
+    expect(backend.completeCalls, 1, reason: '前提: 後始末まで進んでいる');
+    expect(
+      container.read(supporterPurchaseProvider).purchaseInProgress,
+      isTrue,
+      reason: '⚠ 後始末（ストアの確定と登録のやり直し）が済むまで押させない',
+    );
 
-      // ここで復元の要求が返る（処理中のイベントが 1 件ある状態）。
-      backend.restoreGate!.complete();
-      expect(await restoring, isTrue);
+    // ここで復元の要求が返る（処理中のイベントが 1 件ある状態）。
+    backend.restoreGate!.complete();
+    expect(await restoring, isTrue);
 
-      // 後始末が終わったら、ボタンは戻っている。
-      backend.completeGate!.complete();
-      await turn();
-      await turn();
-      final after = container.read(supporterPurchaseProvider);
-      expect(after.lastOutcome?.kind, SupporterPurchaseOutcomeKind.success);
-      expect(
-        after.purchaseInProgress,
-        isFalse,
-        reason: '⚠ 直す前は true のまま残り、再起動まで押せなかった',
-      );
-    },
-    skip: subscriptionPurchaseSupported ? false : 'サブスクを扱えないホスト',
-  );
+    // 後始末が終わったら、ボタンは戻っている。
+    backend.completeGate!.complete();
+    await turn();
+    await turn();
+    final after = container.read(supporterPurchaseProvider);
+    expect(after.lastOutcome?.kind, SupporterPurchaseOutcomeKind.success);
+    expect(
+      after.purchaseInProgress,
+      isFalse,
+      reason: '⚠ 直す前は true のまま残り、再起動まで押せなかった',
+    );
+  }, skip: subscriptionPurchaseSupported ? false : 'サブスクを扱えないホスト');
 
-  test(
-    '前提: 購入が 1 つも返らなければ「復元できる購入はありません」',
-    () async {
-      final (:container, backend: _, relay: _) = setUpAll();
-      final notifier = container.read(supporterPurchaseProvider.notifier);
-      await turn();
+  test('前提: 購入が 1 つも返らなければ「復元できる購入はありません」', () async {
+    final (:container, backend: _, relay: _) = setUpAll();
+    final notifier = container.read(supporterPurchaseProvider.notifier);
+    await turn();
 
-      await notifier.restoreAndReregister();
-      final state = container.read(supporterPurchaseProvider);
-      expect(
-        state.lastOutcome?.kind,
-        SupporterPurchaseOutcomeKind.nothingToRestore,
-      );
-      expect(state.purchaseInProgress, isFalse);
-    },
-    skip: subscriptionPurchaseSupported ? false : 'サブスクを扱えないホスト',
-  );
+    await notifier.restoreAndReregister();
+    final state = container.read(supporterPurchaseProvider);
+    expect(
+      state.lastOutcome?.kind,
+      SupporterPurchaseOutcomeKind.nothingToRestore,
+    );
+    expect(state.purchaseInProgress, isFalse);
+  }, skip: subscriptionPurchaseSupported ? false : 'サブスクを扱えないホスト');
 }
 
 // ⚠ 上の 2 本と違い、こちらはホストに依らず回る（判定だけを見る）。

@@ -181,12 +181,31 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
   /// （PR #1256 の Codex P2）。サーバーの offset は落とす前の並びに掛かるので、
   /// 返った件数で進めると、次のページが前のページの末尾と重なる。
   /// ⚠ 1 ページが丸ごと落とされた回（全件がブロック / ミュートに当たる）は、
-  /// 本当の終端と見分けられないので、終端として扱う。
+  /// 本当の終端と見分けられない。[_loadMore] が [kSearchEmptyPageProbes] ページ
+  /// 先まで探り、それでも空なら終端として扱う (#1267)。
+  ///
+  /// ⚠⚠ **アカウントとハッシュタグは、1 ページ目に完全一致が足されて返る**
+  /// (#1267)。足されたぶんはサーバーの offset の並びに入っていないので、返った
+  /// 件数のまま進めると、次のページの先頭を 1 件飛ばす。
+  ///
+  /// - アカウント: 完全一致があると「完全一致 1 + その他 19」で返る。完全一致が
+  ///   あったかは結果から確実には分からないので、**1 ページ目は 1 件少なく進める**
+  ///   （無かった回は次のページの先頭が 1 件重なるが、[_loadMore] が id で落とす）
+  /// - ハッシュタグ: 完全一致が検索結果に入っていなければ先頭に足され、21 件で
+  ///   返りうる。**1 ページぶんより多くは進めない**
   void _notePage(SearchKind kind, int fetched, SearchPagingSupport paging) {
-    final isPosts = kind == SearchKind.posts;
+    final previous = _offsets[kind] ?? 0;
     _offsets[kind] =
-        (_offsets[kind] ?? 0) + (isPosts ? paging.searchPageSize : fetched);
-    final atEnd = isPosts ? fetched == 0 : fetched < paging.searchPageSize;
+        previous +
+        searchOffsetAdvance(
+          kind,
+          fetched: fetched,
+          pageSize: paging.searchPageSize,
+          firstPage: previous == 0,
+        );
+    final atEnd = kind == SearchKind.posts
+        ? fetched == 0
+        : fetched < paging.searchPageSize;
     if (atEnd) _exhausted.add(kind);
   }
 
@@ -202,11 +221,30 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     final generation = _searchGeneration;
     setState(() => _moreLoading.add(kind));
     try {
-      final more = await paging.searchMore(
+      var more = await paging.searchMore(
         _serverQuery,
         kind,
         offset: _offsets[kind] ?? 0,
       );
+      // ⚠ 投稿は、1 ページが丸ごと落とされて空で返ることがある（全件がブロック /
+      // ミュートに当たる）。本当の終端と見分けられないので、少し先まで探る
+      // (#1267)。⚠ 上限を置く —— 本当の終端のたびに余分な問い合わせが出るため。
+      for (
+        var probe = 0;
+        kind == SearchKind.posts &&
+            more.posts.isEmpty &&
+            probe < kSearchEmptyPageProbes;
+        probe++
+      ) {
+        if (!mounted || generation != _searchGeneration) return;
+        // 空だったページのぶんを進めてから、次を引く。
+        _offsets[kind] = (_offsets[kind] ?? 0) + paging.searchPageSize;
+        more = await paging.searchMore(
+          _serverQuery,
+          kind,
+          offset: _offsets[kind] ?? 0,
+        );
+      }
       if (!mounted || generation != _searchGeneration) return;
       final base = _results ?? current;
       final userIds = {for (final u in base.users) u.id};
@@ -313,6 +351,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     final submit = IconButton(
       onPressed: _serverLoading ? null : _search,
       icon: const Icon(Icons.search),
+      tooltip: '検索する',
     );
 
     if (widget.embedded) {
@@ -668,3 +707,25 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     );
   }
 }
+
+/// 投稿の検索で、空のページが返ったあとに先を探るページ数 (#1267)。
+///
+/// サーバーは 1 ページぶん取ったあとにブロック / ミュート等に当たる投稿を落として
+/// 返すので、全件が落ちたページは空で返る。本当の終端と見分けられない。
+const int kSearchEmptyPageProbes = 2;
+
+/// 1 ページ読んだあと、次の offset をいくつ進めるか (#1267)。
+///
+/// サーバーの offset は「完全一致を足す前・ブロック等を落とす前」の並びに掛かる
+/// ので、返った件数とは一致しない。理由は `_SearchScreenState._notePage` の注記。
+@visibleForTesting
+int searchOffsetAdvance(
+  SearchKind kind, {
+  required int fetched,
+  required int pageSize,
+  required bool firstPage,
+}) => switch (kind) {
+  SearchKind.posts => pageSize,
+  SearchKind.users => firstPage && fetched > 0 ? fetched - 1 : fetched,
+  SearchKind.hashtags => fetched > pageSize ? pageSize : fetched,
+};

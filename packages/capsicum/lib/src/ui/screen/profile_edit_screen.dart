@@ -12,6 +12,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/platform_providers.dart';
 import '../../service/sentry_op_failure.dart';
+import '../util/compose_text_style.dart';
 import '../widget/bottom_safe_area.dart';
 
 class ProfileEditScreen extends ConsumerStatefulWidget {
@@ -371,6 +372,7 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
                         alignLabelWithHint: true,
                       ),
                       maxLines: 5,
+                      style: composeTextStyle(ref),
                     ),
                     const SizedBox(height: 24),
                     _buildFieldsSection(),
@@ -619,6 +621,7 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
           IconButton(
             onPressed: () => _removeField(index),
             icon: const Icon(Icons.remove_circle_outline),
+            tooltip: 'この項目を削除',
             iconSize: 20,
           ),
         ],

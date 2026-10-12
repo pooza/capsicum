@@ -59,6 +59,7 @@ class ListManagementScreen extends ConsumerWidget {
                   onTap: () => context.push('/lists/members', extra: list),
                   trailing: IconButton(
                     icon: const Icon(Icons.more_horiz),
+                    tooltip: 'リストの操作',
                     onPressed: () => _showActionSheet(context, ref, list),
                   ),
                 );

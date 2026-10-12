@@ -98,6 +98,10 @@ class MisskeyCapabilities extends AdapterCapabilities {
   /// コードポイント。CW は `text` とは別枠の 500 (#1034)。
   @override
   PostLengthRule get postLengthRule => PostLengthRule.codePoints;
+
+  // 指名の宛先は `visibleUserIds` で渡す (#1165)。
+  @override
+  bool get directRecipientsAsIdList => true;
 }
 
 /// 400 の本文が「`excludeTypes` に知らない種別が入っていた」を指しているか
@@ -131,6 +135,8 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     with
         AchievementSupport,
         BookmarkSupport,
+        ThreadMuteSupport,
+        RepostMuteSupport,
         AnnouncementSupport,
         FollowSupport,
         FollowRequestSupport,
@@ -930,6 +936,45 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     return _noteWithFavoriteState(id, fallback: false);
   }
 
+  // ThreadMuteSupport (#1208)
+
+  @override
+  Future<Post> muteThread(String postId) async {
+    try {
+      await client.muteThread(postId);
+    } on DioException catch (e) {
+      // 既にミュート中なら成功と同じに倒す。状態は投稿に載っておらず、押す前に
+      // 引いた値が古いことがある（別の端末でミュートした等）。
+      if (!_hasErrorCode(e, 'ALREADY_MUTING')) rethrow;
+    }
+    return _noteWithThreadMuted(postId, true);
+  }
+
+  @override
+  Future<Post> unmuteThread(String postId) async {
+    await client.unmuteThread(postId);
+    return _noteWithThreadMuted(postId, false);
+  }
+
+  @override
+  Future<bool> isThreadMuted(String postId) => client.isThreadMuted(postId);
+
+  /// Note は状態を持たないので、いま終えた操作の結果を載せて返す。
+  ///
+  /// ⚠ お気に入りの状態も引き直す。返した投稿は TL の行を置き換えるので、
+  /// 素の変換のまま返すと `bookmarked` が false へ戻る（#902 と同じ筋）。
+  Future<Post> _noteWithThreadMuted(String id, bool muted) async {
+    final post = await _noteWithFavoriteState(id, fallback: false);
+    return post.copyWith(threadMuted: muted);
+  }
+
+  bool _hasErrorCode(DioException e, String code) {
+    final data = e.response?.data;
+    if (data is! Map) return false;
+    final error = data['error'];
+    return error is Map && error['code'] == code;
+  }
+
   @override
   Future<List<Post>> getBookmarks({TimelineQuery? query}) async {
     final notes = await client.getFavorites(
@@ -982,7 +1027,25 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       followedBy: r['isFollowed'] as bool? ?? false,
       muting: r['isMuted'] as bool? ?? false,
       blocking: r['isBlocking'] as bool? ?? false,
+      showingReposts: !(r['isRenoteMuted'] as bool? ?? false),
     );
+  }
+
+  // RepostMuteSupport (#1245)
+
+  @override
+  bool get repostMuteRequiresFollow => false;
+
+  @override
+  Future<void> setShowReposts(String userId, {required bool show}) async {
+    try {
+      await (show ? client.unmuteRenotes(userId) : client.muteRenotes(userId));
+    } on DioException catch (e) {
+      // 既にその状態なら成功と同じに倒す（会話のミュートと同じ扱い）。押す前に
+      // 引いた関係が古いことがある（別の端末で切り替えた等）。失敗にすると、
+      // メニューの文面が古いまま残り、押すたびに失敗し続ける。
+      if (!_hasErrorCode(e, show ? 'NOT_MUTING' : 'ALREADY_MUTING')) rethrow;
+    }
   }
 
   @override
@@ -1544,12 +1607,16 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
 
   @override
   Future<List<Post>> getPostsByHashtag(
-    String hashtag, {
+    HashtagQuery condition, {
     TimelineQuery? query,
-    List<String>? all,
   }) async {
+    final tagQuery = condition.orOfAnds;
+    // 含む側の条件が無い。サーバーは空の `query` を受けない。
+    if (tagQuery.isEmpty) return const [];
+    // ⚠ 除外（`condition.none`）はサーバーに受け口が無い。呼び出し側が落とす
+    // （[HashtagSupport.getPostsByHashtag] の注記）。
     final notes = await client.searchByTag(
-      hashtag,
+      tagQuery,
       sinceId: query?.sinceId,
       untilId: query?.maxId,
       limit: query?.limit,

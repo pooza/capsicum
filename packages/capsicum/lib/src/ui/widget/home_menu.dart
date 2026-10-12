@@ -187,6 +187,23 @@ void saveLastTab(WidgetRef ref) {
 /// [announcementsShownAsTab] はお知らせがタブとして可視のときに true で、
 /// その場合ドロワー / メニューからは「お知らせ」項目を出さない（重複回避）。
 /// [onActivate] はドロワー経由のとき `dismiss`（ドロワーを閉じる）を渡す。
+///
+/// [inDeck] は**デッキ画面のドロワー**から呼ぶとき (#1272)。次の項目を出さない:
+///
+/// - 「デッキ」: 自分自身。押すとデッキ画面が 2 枚積まれる。
+/// - 「検索」「通知」「すべての通知」: デッキの AppBar に入口があり、そちらは
+///   カラムとして開く（決定済み事項 7-3）。ここから開くと全画面になり、結果から
+///   開いた先がデッキの外へ出る。
+///
+/// ⚠ メニューバーの「移動」はデッキ中でも [inDeck] を渡さない（決定済み事項 11 の
+/// 差し替えは 3 か所だけで、ここは対象外）。
+///
+/// [columnContext] は、**選ぶとタイムラインになる項目**（リスト・チャンネル・
+/// プロフィールタグ）を開くときに使う `context` (#1272・2026-10-12 pooza)。
+/// デッキのドロワーは [DeckColumnScope] の下の `context` を渡し、選んだ先を
+/// カラムとして開く。null なら [context]（タブ表示・全画面で開く）。
+/// ⚠ ほかの項目には使わない（設定・サーバー情報などは全画面のまま。Play のように
+/// カラムの種別があっても、タイムラインにならないものは対象外）。
 List<HomeNavItem> buildHomeNavItems(
   BuildContext context,
   WidgetRef ref,
@@ -195,39 +212,44 @@ List<HomeNavItem> buildHomeNavItems(
   int unreadAnnouncements,
   bool announcementsShownAsTab, {
   VoidCallback? onActivate,
+  bool inDeck = false,
+  BuildContext? columnContext,
 }) {
   final adapter = ref.read(currentAdapterProvider);
   final hasMulukhiya = ref.read(currentMulukhiyaProvider) != null;
+  final timelineContext = columnContext ?? context;
   void act(VoidCallback action) {
     onActivate?.call();
     action();
   }
 
   return [
-    HomeNavItem(
-      title: '検索',
-      icon: Icons.search,
-      shortcut: const MenuShortcut(LogicalKeyboardKey.keyF),
-      onSelected: () => act(() => context.push('/search')),
-    ),
-    HomeNavItem(
-      title: '通知',
-      icon: Icons.notifications_outlined,
-      onSelected: () => act(() => context.push('/notifications')),
-    ),
-    if (accountState.accounts.length > 1)
+    if (!inDeck) ...[
       HomeNavItem(
-        title: 'すべての通知',
-        icon: Icons.notifications_active_outlined,
-        onSelected: () => act(() => context.push('/notifications/all')),
+        title: '検索',
+        icon: Icons.search,
+        shortcut: const MenuShortcut(LogicalKeyboardKey.keyF),
+        onSelected: () => act(() => context.push('/search')),
       ),
-    // デッキ (#720 / #1092)。⚠ タブ UI とは別画面（`docs/deck-ui-plan.md`
-    // 決定済み事項 8）。
-    HomeNavItem(
-      title: 'デッキ',
-      icon: Icons.view_week_outlined,
-      onSelected: () => act(() => context.push('/deck')),
-    ),
+      HomeNavItem(
+        title: '通知',
+        icon: Icons.notifications_outlined,
+        onSelected: () => act(() => context.push('/notifications')),
+      ),
+      if (accountState.accounts.length > 1)
+        HomeNavItem(
+          title: 'すべての通知',
+          icon: Icons.notifications_active_outlined,
+          onSelected: () => act(() => context.push('/notifications/all')),
+        ),
+      // デッキ (#720 / #1092)。⚠ タブ UI とは別画面（`docs/deck-ui-plan.md`
+      // 決定済み事項 8）。
+      HomeNavItem(
+        title: 'デッキ',
+        icon: Icons.view_week_outlined,
+        onSelected: () => act(() => context.push('/deck')),
+      ),
+    ],
     HomeNavItem(
       title: ref.read(bookmarkLabelProvider),
       icon: Icons.bookmark_outline,
@@ -268,13 +290,13 @@ List<HomeNavItem> buildHomeNavItems(
       HomeNavItem(
         title: 'リスト',
         icon: Icons.list,
-        onSelected: () => act(() => showListChooser(context, ref)),
+        onSelected: () => act(() => showListChooser(timelineContext, ref)),
       ),
     if (adapter is ChannelSupport)
       HomeNavItem(
         title: 'チャンネル',
         icon: Icons.forum,
-        onSelected: () => act(() => showChannelList(context, ref)),
+        onSelected: () => act(() => showChannelList(timelineContext, ref)),
       ),
     if (adapter is ChatSupport && (adapter as ChatSupport).canReadChat)
       HomeNavItem(
@@ -322,7 +344,7 @@ List<HomeNavItem> buildHomeNavItems(
       HomeNavItem(
         title: 'プロフィールタグ',
         icon: Icons.tag,
-        onSelected: () => act(() => showFavoriteTags(context, ref)),
+        onSelected: () => act(() => showFavoriteTags(timelineContext, ref)),
       ),
       HomeNavItem(
         title: 'リンク',
@@ -1179,7 +1201,8 @@ Future<void> showListChooser(BuildContext context, WidgetRef ref) async {
                 dense: true,
                 onTap: () {
                   Navigator.pop(context);
-                  context.push('/list/${list.id}', extra: list.title);
+                  // ⚠ デッキのドロワーから開いたときはカラムになる (#1272)。
+                  openList(context, list.id, list.title);
                 },
               ),
           const Divider(height: 1),

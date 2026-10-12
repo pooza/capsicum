@@ -484,10 +484,15 @@ bool hasLivecureTag(Post post) {
 ///
 /// [fetch] takes the pagination cursor (null for the first page, otherwise the
 /// last fetched post's id) and returns one raw page.
+///
+/// [keep] は、この TL だけが端末側で掛ける絞り込み (#1209・タグ TL の除外)。
+/// ⚠ **[fetch] の中で絞らない。**続きがあるかは絞る前の件数で見るので、中で
+/// 絞ると、除外で薄くなったページを「最後のページ」と読んで打ち切る。
 Future<TimelineState> fetchUntilVisible({
   required int pageSize,
   required bool hideLivecure,
   required Future<List<Post>> Function(String? maxId) fetch,
+  bool Function(Post post)? keep,
 }) async {
   final allVisible = <Post>[];
   String? maxId;
@@ -504,9 +509,10 @@ Future<TimelineState> fetchUntilVisible({
     maxId = posts.last.id;
     hasMore = posts.length >= pageSize;
 
+    final kept = keep == null ? posts : posts.where(keep).toList();
     final visible = hideLivecure
-        ? posts.where((p) => !hasLivecureTag(p)).toList()
-        : posts;
+        ? kept.where((p) => !hasLivecureTag(p)).toList()
+        : kept;
     allVisible.addAll(visible);
 
     if (allVisible.isNotEmpty || !hasMore) break;
@@ -719,6 +725,12 @@ mixin TimelineLiveIngest<Arg>
   /// 無い」の判定に使うため、実際の取得件数と一致させること。
   int get catchUpPageSize;
 
+  /// ライブで届いた投稿（ストリーミング・取りこぼしの補完）を、この TL に載せるか。
+  ///
+  /// 既定は全部載せる。サーバーが絞れない条件を端末側で見る TL が上書きする
+  /// （タグ TL の除外・#1209。Misskey には除外の受け口が無い）。
+  bool acceptsLivePost(Post post) => true;
+
   /// 接続ライフサイクルを notifier フィールドと（データがあれば）state に
   /// 反映する。build() 中に onConnectionState が取りこぼさないための常時記録と
   /// 同じ理由で、まずフィールドへ、次に state があれば更新する。
@@ -774,6 +786,7 @@ mixin TimelineLiveIngest<Arg>
     for (final post in newPosts) {
       if (post.filterAction == FilterAction.hide) continue;
       if (hideLivecure && hasLivecureTag(post)) continue;
+      if (!acceptsLivePost(post)) continue;
       if (existingIds.contains(post.id) || pendingIds.contains(post.id)) {
         continue;
       }
@@ -1085,6 +1098,8 @@ mixin TimelineLiveIngest<Arg>
         // （実況中の取りこぼし報告の根因）。装飾でなく本機能なので最新 state へ
         // マージする。
         if (connState == StreamConnectionState.live) {
+          // 回線は生きている。「回線側」の失敗の続きをここで終わらせる。
+          streamConnectFailureReporter.noteConnected();
           unawaited(_catchUpSinceTop());
         }
         final current = state.valueOrNull;

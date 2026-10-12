@@ -150,11 +150,9 @@ settings: {}
       final target = await prefsWith(<String, Object>{});
       final result = await apply(target, yaml);
 
-      expect(
-        target.getStringList(deckColumnsBackupKey),
-        [column('c1', alice, 'timeline:home')],
-        reason: 'このファイルで足したアカウントのカラムも取り込む',
-      );
+      expect(target.getStringList(deckColumnsBackupKey), [
+        column('c1', alice, 'timeline:home'),
+      ], reason: 'このファイルで足したアカウントのカラムも取り込む');
       expect(result.skipped, isNot(contains(deckColumnsBackupKey)));
     });
 
@@ -203,11 +201,9 @@ settings: {}
       );
       final result = await apply(target, yaml);
 
-      expect(
-        target.getStringList(deckColumnsBackupKey),
-        [column('mine', alice, 'timeline:home')],
-        reason: '「取り込んだら自分のデッキが消えた」にしない',
-      );
+      expect(target.getStringList(deckColumnsBackupKey), [
+        column('mine', alice, 'timeline:home'),
+      ], reason: '「取り込んだら自分のデッキが消えた」にしない');
       expect(result.skipped[deckColumnsBackupKey], isNotNull);
       expect(result.applied, isNot(contains(deckColumnsBackupKey)));
     });

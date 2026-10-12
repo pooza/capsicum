@@ -105,12 +105,18 @@ class MastodonCapabilities extends AdapterCapabilities {
   /// ドメイン部なしへ短縮し、CW も同じ枠に含める (#1034)。
   @override
   PostLengthRule get postLengthRule => PostLengthRule.shortenedGraphemes;
+
+  // 宛先は本文のメンションで決まる。一覧を送る口は無い。
+  @override
+  bool get directRecipientsAsIdList => false;
 }
 
 class MastodonAdapter extends DecentralizedBackendAdapter
     with
         FavoriteSupport,
         BookmarkSupport,
+        ThreadMuteSupport,
+        RepostMuteSupport,
         // 引用の一覧 (#1072)。Misskey には無いので Mastodon adapter だけが持つ。
         QuoteSupport,
         AnnouncementSupport,
@@ -464,7 +470,8 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     TimelineType type, {
     TimelineQuery? query,
   }) async {
-    // DM timeline uses conversation IDs for pagination, not status IDs.
+    // DM の一覧は会話の列だが、カーソル（max_id）は**会話の最後の投稿の id**
+    // (#1266)。会話の id を送ると空が返るので、client が返す nextMaxId を使う。
     if (type == TimelineType.directMessages) {
       final result = await client.getConversations(
         maxId: query?.maxId,
@@ -484,8 +491,8 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       );
       return TimelineResponse(
         posts: converted.results,
-        rawCount: converted.rawCount,
-        rawLastId: result.lastConversationId,
+        rawCount: result.rawCount,
+        rawLastId: result.nextMaxId,
         skippedPosts: converted.skipped,
       );
     }
@@ -896,6 +903,24 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     return status.toCapsicum(host, adminRoleIds: _adminRoleIds);
   }
 
+  // ThreadMuteSupport (#1208)
+
+  @override
+  Future<Post> muteThread(String postId) async {
+    final status = await client.muteConversation(postId);
+    return status.toCapsicum(host, adminRoleIds: _adminRoleIds);
+  }
+
+  @override
+  Future<Post> unmuteThread(String postId) async {
+    final status = await client.unmuteConversation(postId);
+    return status.toCapsicum(host, adminRoleIds: _adminRoleIds);
+  }
+
+  @override
+  Future<bool> isThreadMuted(String postId) async =>
+      (await client.getStatus(postId)).muted ?? false;
+
   // PinSupport
 
   @override
@@ -958,8 +983,18 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       mutingExpiresAt: r['muting_expires_at'] is String
           ? DateTime.tryParse(r['muting_expires_at'] as String)
           : null,
+      showingReposts: r['showing_reblogs'] as bool? ?? true,
     );
   }
+
+  // RepostMuteSupport (#1245)
+
+  @override
+  bool get repostMuteRequiresFollow => true;
+
+  @override
+  Future<void> setShowReposts(String userId, {required bool show}) =>
+      client.followAccount(userId, reblogs: show);
 
   @override
   Future<void> followUser(String id) => client.followAccount(id);
@@ -1255,9 +1290,29 @@ class MastodonAdapter extends DecentralizedBackendAdapter
 
   // NotificationUnreadCountSupport
 
+  /// 未読数の口（`/api/v1/notifications/unread_count`）がこのサーバーに無いと
+  /// 分かったら立てる (#1267)。Mastodon 4.3 未満と、実装していない互換サーバー。
+  ///
+  /// ⚠ **立てないと、バッジの更新のたび（30 秒ごと）に 404 を打ち続ける。**
+  /// 立てっぱなしでよい理由は [_groupingUnsupported] と同じ（アダプタは
+  /// アカウント 1 つ・サーバー 1 台。サーバーが更新されても、次に作り直される
+  /// までは 0 のまま、という保守側に倒れる）。
+  bool _unreadCountUnsupported = false;
+
   @override
-  Future<int> getUnreadNotificationCount() =>
-      client.getNotificationUnreadCount();
+  Future<int> getUnreadNotificationCount() async {
+    if (_unreadCountUnsupported) return 0;
+    try {
+      return await client.getNotificationUnreadCount();
+    } on DioException catch (e) {
+      // ⚠ 「口が無い」と読むのは 404 / 501 だけ。401 / 429 / 5xx は一時的な
+      // 失敗で、ここで立てると未読数が二度と出なくなる。
+      final status = e.response?.statusCode;
+      if (status != 404 && status != 501) rethrow;
+      _unreadCountUnsupported = true;
+      return 0;
+    }
+  }
 
   // SearchSupport
 
@@ -1642,17 +1697,36 @@ class MastodonAdapter extends DecentralizedBackendAdapter
 
   @override
   Future<List<Post>> getPostsByHashtag(
-    String hashtag, {
+    HashtagQuery condition, {
     TimelineQuery? query,
-    List<String>? all,
   }) async {
-    final statuses = await client.getTagTimeline(
-      hashtag,
-      maxId: query?.maxId,
-      sinceId: query?.sinceId,
-      limit: query?.limit,
-      all: all,
-    );
+    final request = condition.tagFeedRequest;
+    // 含む側の条件が無い（パスに置くタグが決まらない）。
+    if (request == null) return const [];
+    // ⚠⚠ **パスに置いたタグがサーバーに無いと、`any[]` を見ずに空が返る**
+    // （`Api::V1::Timelines::TagController` は、パスのタグを引けなければ
+    // そこで空を返す・v2.2 のリリース前レビュー）。「既にあるタグ または
+    // これから使われるタグ」で後者が先頭だと、前者に投稿があっても TL が空に
+    // なる。空だった回は、「いずれか」の残りのタグを順にパスへ回して引き直す。
+    // ⚠ 引き直しは「いずれか」の数まで。本当に空の回（TL の終端）でも、
+    // 余分な問い合わせはその数で止まる。
+    final primaries = condition.any.isEmpty ? [request.primary] : condition.any;
+    var statuses = const <MastodonStatus>[];
+    for (final primary in primaries) {
+      statuses = await client.getTagTimeline(
+        primary,
+        maxId: query?.maxId,
+        sinceId: query?.sinceId,
+        limit: query?.limit,
+        all: request.all,
+        any: [
+          for (final tag in condition.any)
+            if (tag != primary) tag,
+        ],
+        none: condition.none,
+      );
+      if (statuses.isNotEmpty) break;
+    }
     return _safeConvert(
       statuses,
       (s) => s.toCapsicum(host, adminRoleIds: _adminRoleIds),

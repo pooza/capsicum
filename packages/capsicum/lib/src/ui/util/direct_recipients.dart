@@ -45,6 +45,21 @@ List<String> initialDirectRecipientIds({
   return {...ids}.where((id) => id != me?.id).toList();
 }
 
+/// 端末内の下書きを戻すときに、宛先へ足す id (#1264)。並び順は保存したとおり。
+///
+/// 既に宛先に居る人・自分・重複は落とす。⚠ **既に居る人を入れ直さない** ——
+/// 入れ直すと、取れている名前とアイコンを未取得へ戻してしまう。
+List<String> draftRecipientIdsToRestore({
+  required Iterable<String> saved,
+  required Iterable<String> current,
+  required User? me,
+}) {
+  final existing = {...current};
+  return {
+    ...saved,
+  }.where((id) => id != me?.id && !existing.contains(id)).toList();
+}
+
 /// 外せない宛先の id。無ければ null。
 ///
 /// ⚠⚠ **返信先の投稿者は、外しても届く。**Misskey のサーバーは、指名の返信では

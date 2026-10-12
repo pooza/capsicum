@@ -10,7 +10,7 @@ v1.24（[CLAUDE.md](CLAUDE.md#デスクトップ対応) のデスクトップ対
 
 ## Flutter SDK のバージョン固定
 
-**全開発機・CI で同一の Flutter stable 版を使う**（現在 **3.44.6**）。版が揃っていないと `flutter pub get` のたびに `pubspec.lock` が書き換わり（SDK 同梱の `meta` / `test` / `test_api` / `test_core`）、端末間で ping-pong する（[#836](https://github.com/pooza/capsicum/issues/836)）。
+**全開発機・CI で同一の Flutter stable 版を使う**（現在 **3.47.7**）。版が揃っていないと `flutter pub get` のたびに `pubspec.lock` が書き換わり（SDK 同梱の `meta` / `test` / `test_api` / `test_core`）、端末間で ping-pong する（[#836](https://github.com/pooza/capsicum/issues/836)）。
 
 - CI 側の正本は `.github/workflows/` の `flutter-version`（analyze.yml / linux-release.yml / windows-release.yml の 3 箇所。**必ず 3 つ同時に更新する**）
 - 開発機は Flutter SDK の clone で `git checkout <version>` して揃える
@@ -23,7 +23,7 @@ v1.24（[CLAUDE.md](CLAUDE.md#デスクトップ対応) のデスクトップ対
 ```sh
 cd <Flutter SDK の clone>     # 例: /opt/flutter
 git fetch --tags origin
-git checkout <基準版>          # 例: 3.44.6
+git checkout <基準版>          # 例: 3.47.7
 flutter --version              # ここで bootstrap が走る
 
 cd <capsicum>
@@ -44,7 +44,7 @@ dart run melos bootstrap
 4. deprecation の移行を同じコミットに含める
 5. 他の端末は「基準版に追従する」で追いつく
 
-実例は #836（3.41.9 → 3.44.6）のコミット 2 本がそのまま雛形になる。**iOS / macOS のビルド構成に影響する変更（3.44 の SwiftPM 移行など）を含む場合は、製品版昇格前に内部ベータで検証すること。**
+実例は #836（3.41.9 → 3.44.6）のコミット 2 本と、#1200（3.44.6 → 3.47.7）がそのまま雛形になる。**iOS / macOS のビルド構成に影響する変更（3.44 の SwiftPM 移行など）を含む場合は、製品版昇格前に内部ベータで検証すること。**
 
 ## Xcode の版は pin していない（Flutter と違って勝手に動く）
 
@@ -86,35 +86,22 @@ ls -la build/ios/ipa/*.ipa
 | # | 症状 | 層 | 対処 |
 | --- | --- | --- | --- |
 | 1 | `Target Integrity: ... IPHONEOS_DEPLOYMENT_TARGET is set to 9.0, but the range of supported deployment target versions is 15.0 to 27.0.x` | **依存（podspec）** | iOS の `Podfile` の `post_install` で 15.0 未満を底上げ |
-| 2 | `Binary ... does not contain architectures "arm64 x86_64"` | **Flutter ツール（上流バグ）** | `/opt/flutter` へローカル patch（下記） |
+| 2 | `Binary ... does not contain architectures "arm64 x86_64"` | **Flutter ツール（上流バグ）** | 当時は `/opt/flutter` へローカル patch。**3.47.7 へ上げて解消**（下記） |
 | 3 | `The macOS deployment target ... is set to 11.5, but the range of supported deployment target versions is 12.0 to 27.0.x`（**`Runner` 本体・ShareExtension・NSE**） | **アプリ本体** | **最低 macOS を 12.0 へ引き上げ**（製品判断・pooza 承認） |
 
 ⚠ **1 と 3 は同じ形だが深刻度が違う。**1 は依存を宣言済みの値に揃えるだけだが、**3 はサポート対象 OS を切る話**なので製品判断が要る。
 
 ⚠ **`Podfile` の `platform` は podspec が明示した値を上書きしない。**Flutter 標準の `flutter_additional_ios_build_settings` は **12.0 未満しか底上げしない**ので、13.0 を宣言しているもの（`flutter_web_auth_2`）は素通りする。
 
-### `/opt/flutter` にローカル patch がある（flutter/flutter#188461）
+### `/opt/flutter` のローカル patch は外した（2026-10-12・#1200）
 
-⚠⚠ **Xcode 27 の `lipo` は `-verify_arch` に複数アーキテクチャを渡せない**（`lipo: -verify_arch requires exactly one input file` を出して exit 1）。Flutter 3.44.6 は 1 回でまとめて渡すため、**バイナリに両方揃っていても失敗する**。
+Xcode 27 の `lipo` は `-verify_arch` に複数アーキテクチャを渡せず、Flutter 3.44 系は 1 回でまとめて渡していたので、バイナリに両方揃っていても失敗した（flutter/flutter#188461）。2026-09-17 から `/opt/flutter` の `packages/flutter_tools/lib/src/build_system/targets/darwin.dart` にローカル patch を当ててしのいでいた。
 
-```
-packages/flutter_tools/lib/src/build_system/targets/darwin.dart  # thinFramework
-```
+✅ **上流の修正は 3.47.0 以降に入っている**（3.44 系には最後まで入らなかった）。基準版を **3.47.7** へ上げ、patch を外した。patch 無しで `flutter build macos --release` + `xcodebuild archive` と `flutter build ipa --release` が通ることを確かめてある（Xcode 27.0）。
 
-⚠⚠ **エラーメッセージが実態と逆**（`does not contain architectures "arm64 x86_64"` と出るが、`lipo -info` は両方あると出す）。**patch が消えたときの手掛かりはこの文言**。
+⚠ **別の Mac で 3.44 系のまま Xcode 27 を使うと、同じ症状が出る。**手掛かりは `does not contain architectures "arm64 x86_64"` という**実態と逆のエラー文**（`lipo -info` は両方あると出す）。直し方は patch ではなく、[基準版に追従する](#基準版に追従する各端末で普段やる方)こと。
 
-⚠⚠ **patch を当てただけでは効かない。**`flutter_tools` はコンパイル済み snapshot として動き、**`.stamp` が一致していると再生成されない**。必ず落とす:
-
-```sh
-rm -f /opt/flutter/bin/cache/flutter_tools.{stamp,snapshot}
-flutter --version    # ここで Building flutter tool... が走れば再生成された
-```
-
-⚠ **これは紛らわしい失敗**。patch はファイルに残っているので `grep` では確認できてしまい、「当てたのに直らない＝patch が違う」と誤診する。実際には**当てたものが使われていない**。
-
-⚠ **消える経路**: `git checkout`（＝[基準版に追従する](#基準版に追従する各端末で普段やる方)の手順そのもの）/ SDK 入れ直し / 別の Mac には**最初から当たっていない**。
-
-⚠ **上流が修正したら patch を外して正規の版へ戻す。**判断は [flutter-upstream-watch.md](flutter-upstream-watch.md) の監視対象テーブルで追う。
+⚠ **基準版へ追従する前に、`git -C <SDK> status` で手元の変更を確かめる。**patch が残った端末では `git checkout <基準版>` が止まるので、先に `git checkout -- packages/flutter_tools/lib/src/build_system/targets/darwin.dart` で捨てる。
 
 ## Debug ビルドと TestFlight の役割分担
 

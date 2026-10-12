@@ -22,6 +22,33 @@ void main() {
       expect(info.url, isNull);
     });
 
+    test('artworkPath（macOS がミュージックから取った絵）は file:// にする (#1273)', () {
+      final info = nowPlayingFromAppleMusicMetadata({
+        'title': 'Song',
+        'artworkPath': '/tmp/nowplaying_native_abc/nowplaying-artwork.jpg',
+      });
+      expect(
+        info!.artworkUrl,
+        Uri.file('/tmp/nowplaying_native_abc/nowplaying-artwork.jpg'),
+      );
+      expect(info.artworkUrl!.scheme, 'file');
+    });
+
+    test('artworkPath が無い（iOS・絵の無い曲）ならジャケットは null', () {
+      final info = nowPlayingFromAppleMusicMetadata({'title': 'Song'});
+      expect(info!.artworkUrl, isNull);
+    });
+
+    test('⚠ 絶対パスでない artworkPath / 文字列でない値は捨てる', () {
+      for (final value in <Object?>['relative/a.jpg', '', '   ', 42]) {
+        final info = nowPlayingFromAppleMusicMetadata({
+          'title': 'Song',
+          'artworkPath': value,
+        });
+        expect(info!.artworkUrl, isNull, reason: '$value');
+      }
+    });
+
     test('sourceAppName が無ければ Apple Music を既定にする', () {
       final info = nowPlayingFromAppleMusicMetadata({'title': 'Song'});
       expect(info!.sourceAppName, 'Apple Music');

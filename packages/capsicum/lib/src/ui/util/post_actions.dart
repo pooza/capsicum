@@ -118,6 +118,44 @@ class PostActionRunner {
     }
   }
 
+  /// 会話（スレッド）のミュートを掛ける / 外す (#1208)。
+  ///
+  /// - [Post.threadMuted] が分かっている（Mastodon）なら、その逆へ倒す。項目の
+  ///   文面が「ミュート」「解除」を出し分けているので、確認は挟まない
+  /// - 分からない（Misskey・null）なら、**押した時点で状態を引く。**未ミュートなら
+  ///   そのままミュートし、ミュート中なら [confirmUnmute] で確かめてから外す
+  ///   （「ミュート」のつもりで押して解除になるのを防ぐ）
+  ///
+  /// ⚠ シートを開くたびに状態を引かないのは、Misskey では 1 リクエスト増える
+  /// ため（2026-10-12 pooza）。
+  Future<void> toggleThreadMute({
+    required ThreadMuteSupport adapter,
+    required Post post,
+    required Future<bool> Function() confirmUnmute,
+  }) async {
+    final timeline = _timeline;
+    try {
+      final known = post.threadMuted;
+      final muted = known ?? await adapter.isThreadMuted(post.id);
+      final Post updated;
+      final String message;
+      if (muted) {
+        if (known == null && !await confirmUnmute()) return;
+        updated = await adapter.unmuteThread(post.id);
+        message = '会話のミュートを解除しました';
+      } else {
+        updated = await adapter.muteThread(post.id);
+        message = '会話をミュートしました。この会話の通知は届かなくなります';
+      }
+      timeline.updatePost(updated);
+      _notifyPostUpdated(updated);
+      _notifyCompleted();
+      messenger.showSnackBar(SnackBar(content: Text(message)));
+    } catch (e, st) {
+      _report('toggleThreadMute', e, st, phase: ReactionPhase.post);
+    }
+  }
+
   /// リアクションの付与 / 取り消し。API が投稿を返さないので、成功後に
   /// [BackendAdapter.getPostById] で取り直してタイムラインへ反映する。
   ///
@@ -479,4 +517,62 @@ String readReblogLabelOrDefault(WidgetRef ref) {
     // Mastodon 既定。`ReactionSupport` か否かも `ref` 無しでは判定できない。
     return 'ブースト';
   }
+}
+
+/// 会話のミュートの項目に出す文面 (#1208)。
+///
+/// 状態が分からない（Misskey）ときは「…」を付ける —— 押すと状態を引き、
+/// ミュート中なら解除するかを尋ねる（[PostActionRunner.toggleThreadMute]）。
+String threadMuteLabel(Post post) => switch (post.threadMuted) {
+  true => '会話のミュートを解除',
+  false => '会話をミュート',
+  null => '会話をミュート…',
+};
+
+/// 投稿の長押しシートに、会話のミュートを出すか (#1208・2026-10-12 pooza)。
+///
+/// **自分の投稿と、自分宛ての投稿にだけ出す。**API はどの投稿でも受けるが、
+/// 通知が来るのは自分が関わっている会話だけで、全投稿に出すとシートが伸びる。
+/// ⚠ 通知の長押しシートはこれを通さない（通知が来ている時点で関わっている）。
+///
+/// - Mastodon: 宛先のメンション（[Post.mentions]）に自分が居る
+/// - Misskey: 指名の宛先（[Post.visibleUserIds]）に自分が居るか、本文に自分への
+///   メンションがある。⚠ API がメンションをユーザー ID でしか返さず、
+///   [Post.mentions] は空なので、本文から読む。同じユーザー名の別サーバーの
+///   人宛てでも当たるが、項目が 1 つ余分に出るだけで害は無い
+bool threadMuteApplies(Post post, User? me) {
+  if (me == null) return false;
+  if (post.author.id == me.id) return true;
+  if (post.mentions.any((m) => m.id == me.id)) return true;
+  if (post.visibleUserIds.contains(me.id)) return true;
+  final content = post.content;
+  if (post.isHtml || content == null) return false;
+  return RegExp(
+    '(^|[^\\w@])@${RegExp.escape(me.username)}(?![\\w-])',
+    caseSensitive: false,
+  ).hasMatch(content);
+}
+
+/// ミュート中の会話を解除するかを確かめる (#1208)。状態を押した時点で引いた
+/// 回（Misskey）にだけ出す。
+Future<bool> confirmThreadUnmute(BuildContext context) async {
+  if (!context.mounted) return false;
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('会話のミュート'),
+      content: const Text('この会話は既にミュートしています。ミュートを解除しますか？'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(false),
+          child: const Text('キャンセル'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(true),
+          child: const Text('解除'),
+        ),
+      ],
+    ),
+  );
+  return ok ?? false;
 }

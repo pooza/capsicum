@@ -166,7 +166,9 @@ void main() {
   });
 
   group('file（MPRIS がローカルのキャッシュを指す）', () {
-    test('画像ならそのまま使う', () async {
+    test('⚠ 画像なら使う。投稿されるファイル名は、プレイヤーのキャッシュ名にしない (#1267)', () async {
+      // 投稿先のファイル名はパスの末尾で決まる（`XFile` の `name:` は IO では
+      // 使われない）。そのまま渡すと `cover.PNG` やハッシュの名前で投稿される。
       final local = File('${tempDir.path}/cover.PNG')
         ..writeAsBytesSync(const [1, 2, 3]);
 
@@ -175,8 +177,26 @@ void main() {
         tempDir: tempDir,
       );
 
-      expect(file!.path, local.path);
+      expect(file!.name, 'nowplaying-artwork.png');
+      expect(file.path, isNot(local.path));
+      expect(await file.readAsBytes(), [1, 2, 3]);
       expect(file.mimeType, 'image/png');
+      expect(local.existsSync(), isTrue, reason: '元のファイルには触らない');
+    });
+
+    test('既に意図した名前なら、写さずそのまま使う（macOS のネイティブが書いた絵）', () async {
+      final dir = Directory('${tempDir.path}/nowplaying_native_abc')
+        ..createSync();
+      final local = File('${dir.path}/nowplaying-artwork.jpg')
+        ..writeAsBytesSync(const [1, 2, 3]);
+
+      final file = await fetchNowPlayingArtwork(
+        Uri.file(local.path),
+        tempDir: tempDir,
+      );
+
+      expect(file!.path, local.path);
+      expect(file.mimeType, 'image/jpeg');
     });
 
     test('⚠⚠ 画像の拡張子でなければ添付にしない（任意のファイルを投稿に付けない）', () async {

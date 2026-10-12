@@ -80,9 +80,11 @@ export 'src/social/interfaces/push_subscription_support.dart';
 export 'src/social/interfaces/quote_support.dart';
 export 'src/social/interfaces/reaction_support.dart';
 export 'src/social/interfaces/report_support.dart';
+export 'src/social/interfaces/repost_mute_support.dart';
 export 'src/social/interfaces/schedule_support.dart';
 export 'src/social/interfaces/search_support.dart';
 export 'src/social/interfaces/stream_support.dart';
+export 'src/social/interfaces/thread_mute_support.dart';
 export 'src/social/interfaces/timeline_cache_support.dart';
 export 'src/social/interfaces/translation_support.dart';
 // Utilities

@@ -20,6 +20,7 @@ MastodonStatus _$MastodonStatusFromJson(
   favourited: json['favourited'] as bool?,
   reblogged: json['reblogged'] as bool?,
   bookmarked: json['bookmarked'] as bool?,
+  muted: json['muted'] as bool?,
   inReplyToId: json['in_reply_to_id'] as String?,
   reblog: json['reblog'] == null
       ? null
@@ -66,6 +67,7 @@ Map<String, dynamic> _$MastodonStatusToJson(MastodonStatus instance) =>
       'favourited': instance.favourited,
       'reblogged': instance.reblogged,
       'bookmarked': instance.bookmarked,
+      'muted': instance.muted,
       'in_reply_to_id': instance.inReplyToId,
       'reblog': instance.reblog,
       'quote': instance.quote,

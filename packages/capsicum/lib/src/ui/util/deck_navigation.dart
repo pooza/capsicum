@@ -144,6 +144,15 @@ void openHashtag(BuildContext context, String tag) {
   );
 }
 
+/// リストのタイムラインを開く (#1272)。デッキのドロワーから選んだリストを、
+/// 全画面ではなくカラムで開くための口。
+void openList(BuildContext context, String id, String? name) =>
+    openColumnOrPush(
+      context,
+      ListTab(id: id, name: name),
+      push: () => context.push('/list/$id', extra: name),
+    );
+
 /// チャンネルのタイムラインを開く (#1150)。
 void openChannel(BuildContext context, String id, String? name) =>
     openColumnOrPush(

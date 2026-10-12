@@ -156,6 +156,7 @@ class _MediaCatalogScreenState extends ConsumerState<MediaCatalogScreen> {
           IconButton(
             onPressed: _loading ? null : _load,
             icon: const Icon(Icons.search),
+            tooltip: 'この条件で絞り込む',
           ),
         ],
       ),

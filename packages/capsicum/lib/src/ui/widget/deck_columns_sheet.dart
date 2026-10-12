@@ -11,6 +11,7 @@ import '../../provider/list_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../util/deck_tabs.dart';
 import 'emoji_text.dart';
+import 'hashtag_condition_dialog.dart';
 import 'home_menu.dart' show tabLabel;
 import 'user_avatar.dart';
 
@@ -61,6 +62,7 @@ class _DeckColumnsSheetState extends ConsumerState<DeckColumnsSheet> {
     final theme = Theme.of(context);
     final notifier = ref.read(deckColumnsProvider.notifier);
     final columns = ref.watch(deckColumnsProvider);
+    final locked = ref.watch(deckLockedColumnsProvider);
     final accounts = ref.watch(accountManagerProvider).accounts;
     final currentKey = ref.watch(currentAccountKeyProvider);
     final selected = accounts.any((a) => a.key == _selectedAccount)
@@ -89,6 +91,9 @@ class _DeckColumnsSheetState extends ConsumerState<DeckColumnsSheet> {
                   const Spacer(),
                   IconButton(
                     icon: const Icon(Icons.close),
+                    tooltip: MaterialLocalizations.of(
+                      context,
+                    ).closeButtonTooltip,
                     onPressed: () => Navigator.pop(context),
                   ),
                 ],
@@ -148,10 +153,46 @@ class _DeckColumnsSheetState extends ConsumerState<DeckColumnsSheet> {
                               ? 'すべてのアカウント'
                               : '@${column.account.username}@${column.account.host}',
                         ),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.delete_outline),
-                          tooltip: 'カラムを削除',
-                          onPressed: () => notifier.remove(column.id),
+                        // ⚠ **ロック中でもここからは外せる** (#1271)。ロックが
+                        // 止めるのは見出しの × の押し間違いで、ここは意図して
+                        // 開く場所。鍵はロック中の目印としてだけ出す（掛け外しは
+                        // 見出しで行う）。
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (locked.contains(column.id))
+                              const Padding(
+                                padding: EdgeInsets.only(right: 4),
+                                child: Icon(
+                                  Icons.lock,
+                                  size: 18,
+                                  semanticLabel: 'ロック中',
+                                ),
+                              ),
+                            // タグのカラムは条件を直せる (#1209)。⚠ 行を押すのは
+                            // 「そのカラムへ移動」に使っているので、入口は別に置く。
+                            if (column.tab case HashtagTab(:final tag))
+                              IconButton(
+                                icon: const Icon(Icons.tune),
+                                tooltip: 'タグの条件',
+                                onPressed: () async {
+                                  final spec = await showHashtagConditionDialog(
+                                    context,
+                                    tag,
+                                  );
+                                  if (spec == null || spec == tag) return;
+                                  await notifier.replaceTab(
+                                    column.id,
+                                    HashtagTab(spec),
+                                  );
+                                },
+                              ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline),
+                              tooltip: 'カラムを削除',
+                              onPressed: () => notifier.remove(column.id),
+                            ),
+                          ],
                         ),
                       );
                     },

@@ -612,6 +612,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                             Icons.arrow_back,
                             color: Colors.white,
                           ),
+                          tooltip: MaterialLocalizations.of(
+                            context,
+                          ).backButtonTooltip,
                           onPressed: () => Navigator.of(context).pop(),
                         ),
                       ),
@@ -1426,6 +1429,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   List<Widget> _buildRelationshipButtons(BuildContext context) {
     final rel = _relationship!;
     final adapter = ref.read(currentAdapterProvider)! as FollowSupport;
+    final boostLabel = ref.read(reblogLabelProvider);
+    final messenger = ScaffoldMessenger.of(context);
     return [
       FilledButton.icon(
         onPressed: _relationshipLoading
@@ -1479,6 +1484,26 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
               }
             case 'unmute':
               _performAction(() => adapter.unmuteUser(widget.user.id));
+            case 'toggle_reposts':
+              // ブースト / リノートだけを出さない (#1245)。⚠ 相手自身の投稿は
+              // 残るので、TL から相手の投稿を消す処理（ミュート側）は通さない。
+              // 既に載っているブーストは、次に読み直すまで残る。
+              final show = !rel.showingReposts;
+              final ok = await _performAction(
+                () => (adapter as RepostMuteSupport).setShowReposts(
+                  widget.user.id,
+                  show: show,
+                ),
+              );
+              if (ok && mounted) {
+                messenger.showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      show ? '$boostLabelを表示します' : '$boostLabelを表示しないようにしました',
+                    ),
+                  ),
+                );
+              }
             case 'block':
               await _confirmAndBlock(adapter);
             case 'unblock':
@@ -1515,6 +1540,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
               child: Text('期間を指定してミュート'),
             ),
           ],
+          // ブースト / リノートだけを出さない (#1245)。ミュートより軽い道具なので
+          // ミュートの隣に置く。⚠ Mastodon はフォローの属性なので、フォロー中の
+          // 相手にだけ出す（[RepostMuteSupport.repostMuteRequiresFollow]）。
+          if (adapter case final RepostMuteSupport reposts
+              when rel.following || !reposts.repostMuteRequiresFollow)
+            PopupMenuItem(
+              value: 'toggle_reposts',
+              child: Text(
+                rel.showingReposts ? '$boostLabelを表示しない' : '$boostLabelを表示する',
+              ),
+            ),
           if (rel.blocking)
             const PopupMenuItem(value: 'unblock', child: Text('ブロック解除'))
           else

@@ -9,6 +9,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../util/exception_scrub.dart';
 import '../../util/mulukhiya_conflict.dart';
 import '../util/annict_link.dart';
+import '../util/compose_text_style.dart';
 
 /// Annict 視聴記録 (感想・レーティング) を投稿する画面 (#298)。
 ///
@@ -232,6 +233,7 @@ class _AnnictRecordScreenState extends ConsumerState<AnnictRecordScreen> {
                   minLines: null,
                   expands: true,
                   textAlignVertical: TextAlignVertical.top,
+                  style: composeTextStyle(ref),
                   decoration: const InputDecoration(
                     border: OutlineInputBorder(),
                     hintText: '感想を入力 (任意)',

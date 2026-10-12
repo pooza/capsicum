@@ -127,6 +127,12 @@ SharedPreferences は **Android / iOS とも OS のバックアップ対象**で
 
 保存先を移すときは**旧値を移行しない**。移行すると複製された値がそのまま生き残り、直したい事象が消えない。旧キーは掃除だけする。正本は [`device_install_id.dart`](../packages/capsicum/lib/src/service/device_install_id.dart)。
 
+### 設定キーを `preferences_provider.dart` の外に置くと、バックアップの網羅検査から消える
+
+[`settings_backup_coverage_test.dart`](../packages/capsicum/test/settings_backup_coverage_test.dart) は「設定キーが、バックアップに含める / 含めないのどちらかへ必ず分類されている」ことを見ているが、**走査するのは `lib/src/provider/preferences_provider.dart` の 1 ファイルだけ**。新しい設定キーを別のファイルに定義すると、**分類されていなくても緑のまま通る**。
+
+デッキのカラム構成（[#1091](https://github.com/pooza/capsicum/issues/1091)）を足したときに気づいた。**設定キーの定義は `preferences_provider.dart` に置く。**別のファイルに置く理由があるときは、検査の走査対象を同じ変更で広げる。
+
 ### 画像を扱う UI のテストは `tester.runAsync` が要る — 無いと**黙ってハングする**（#947）
 
 `flutter_test` の既定は擬似非同期で、**画像コーデックのような実 I/O を進めない**。そのため `ui.instantiateImageCodec` / `Picture.toImage` / `Image.toByteData` を待つコードは、テスト内で呼ぶと**エラーも出さずに止まる**。「テストが黙ってタイムアウトする」ときは真っ先にここを疑う。

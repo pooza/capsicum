@@ -42,6 +42,7 @@ import '../util/annict_link.dart';
 import '../util/compose_draft_notice.dart';
 import '../util/compose_settings_display.dart';
 import '../util/compose_template_display.dart';
+import '../util/compose_text_style.dart';
 import '../util/direct_recipients.dart';
 import '../util/draft_display.dart';
 import '../util/drive_description_sync.dart';
@@ -443,8 +444,8 @@ class ComposeScreen extends ConsumerStatefulWidget {
   /// そのタグを引き継ぐためのもの。⚠ **カーソルは本文の先頭に置く**（タグを消さずに
   /// 書き始められるように・`docs/deck-ui-plan.md` 決定済み事項 10）。
   ///
-  /// ⚠ **spec（`c%2B%2B` / `a+b`）を渡さない** (#1159)。`hashtagSpecTags` で分解
-  /// してから渡す。タグの区切り・`#` の付け方は [SimplePostBar] の送信と揃える。
+  /// ⚠ **spec（`c%2B%2B` / `a+b`）を渡さない** (#1159)。`HashtagQuery.parse(spec).tagsToPost`
+  /// を渡す。タグの区切り・`#` の付け方は [SimplePostBar] の送信と揃える。
   final List<String> hashtags;
 
   const ComposeScreen({
@@ -595,8 +596,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// 宛先を利用者の id の一覧で渡すサーバーか（Misskey）。
   ///
   /// ⚠ Mastodon は本文のメンションで宛先が決まり、adapter もこの値を読まない。
+  /// ⚠ アダプタの型では見ない (#1267)。答えを知っているのはアダプタの側。
   bool get _usesRecipientList =>
-      ref.read(currentAdapterProvider) is MisskeyAdapter;
+      ref.read(currentAdapterProvider)?.capabilities.directRecipientsAsIdList ??
+      false;
 
   /// 指名で送るときに渡す宛先。指名でなければ空。
   List<String> get _visibleUserIds => directRecipientIdsToSend(
@@ -653,6 +656,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   void _removeRecipient(String id) {
     if (id == _lockedRecipientId) return;
     setState(() => _recipients.remove(id));
+    // 宛先も下書きに入る (#1264)。外したことを保存しないと、次に開いたときに戻る。
+    _scheduleDraftSave();
   }
 
   /// 利用者を検索して宛先に足す。
@@ -669,6 +674,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         _recipients[user.id] = user;
       }
     });
+    _scheduleDraftSave();
   }
 
   Future<void> _loadRedraftReplyTo(String id) async {
@@ -717,14 +723,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         directLabel: postScopeLabel(PostScope.direct, adapter),
       );
     }
-    return unsendableDirectScopeReason(
-      scope: _scope,
-      selectable: selectableScopes(adapter),
-      directLabel: postScopeLabel(PostScope.direct, adapter),
-      // ⚠ redraft で引き継いだ返信も「宛先がある」側 (#1113)。
-      isReply: _isReply,
-      replyTargetIsSelf: _replyTargetIsSelf,
-    );
+    // 宛先を本文のメンションで決めるサーバー（Mastodon）には、「宛先を作れない
+    // 指名」が無い。以前あった別の判定は、どのサーバーでも通らなくなっていた
+    // ので消した (#1267)。
+    return null;
   }
 
   /// 返信先が**自分の投稿だと分かっている**か (#1117-B)。
@@ -1554,6 +1556,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       _chosen
         ..clear()
         ..addAll(before?.chosen ?? const <String>{});
+      // 復元で入った宛先も外す (#1264)。⚠ 復元前から居た人は残す。
+      final keep = {...?before?.recipientIds};
+      _recipients.removeWhere((id, _) => !keep.contains(id));
       _draftRestoredNotice = false;
       _draftSavedAt = null;
     });
@@ -1628,6 +1633,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       // ⚠ **何を自分で選んだか (#1195)。**これが空で本文も無ければ、ストアは
       // 「下書きなし」として消す（開いて閉じただけで残らない）。
       chosen: _chosen,
+      // 指名の宛先 (#1264)。⚠ 公開範囲が指名でなくても持つ（範囲を切り替えても
+      // 画面に残っているので、保存だけ落とすと指名へ戻したときに消える）。
+      recipientIds: [..._recipients.keys],
     );
 
     // 取消の消去と直列化する (Codex P2 / PR #1013)。並行に走ると、消去の
@@ -1775,6 +1783,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       // ⚠ **控えにも印を入れる (#1195)。**取消で戻すときに使う。ここは復元の
       // 直前なので、**たいてい空**（既定が入っているだけ）。
       chosen: {..._chosen},
+      recipientIds: [..._recipients.keys],
     );
 
     if (saved.hasText) {
@@ -1786,6 +1795,15 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     if (saved.cwText.isNotEmpty) {
       _cwController.text = saved.cwText;
     }
+    // ⚠ 宛先を一覧で渡すサーバー（Misskey）だけ。Mastodon では保存もされないが、
+    // 読む側でも見ておく（宛先の行が無いので、入れると見えない宛先になる）。
+    final restoredRecipientIds = _usesRecipientList
+        ? draftRecipientIdsToRestore(
+            saved: saved.recipientIds,
+            current: _recipients.keys,
+            me: ref.read(currentAccountProvider)?.user,
+          )
+        : const <String>[];
     setState(() {
       if (saved!.cwEnabled) _cwEnabled = true;
       // 設定値も戻す (#964)。⚠ **scope が null なら触らない** — 旧スロット由来
@@ -1810,11 +1828,18 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         _chosen.add(ComposeDraftStore.chosenSensitive);
       }
       _localOnly = saved.localOnly;
+      // 指名の宛先も戻す (#1264)。名前とアイコンは下で取りにいく。
+      for (final id in restoredRecipientIds) {
+        _recipients[id] = null;
+      }
       _draftSavedAt = saved.savedAt;
       // 復元したこと自体を伝える (#964)。「復元されたことも伝わっていない」が
       // 「わかりづらい」のもう半分の原因だった。
       _draftRestoredNotice = true;
     });
+    for (final id in restoredRecipientIds) {
+      unawaited(_resolveRecipient(id));
+    }
     // ローカル添付を戻す (#1130)。⚠ **実在を確かめてから**（一時領域が消えて
     // いれば落とす）。ドライブ添付はそもそも保存対象外なので、ここには来ない。
     // ⚠⚠ **待っている間に下書きが消されたら、添付も控えも入れない**（2 回目の
@@ -2662,6 +2687,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                   if (_pollControllers.length > 2)
                     IconButton(
                       icon: const Icon(Icons.close, size: 18),
+                      // ⚠ × は「閉じる」と読める。選択肢を消すボタン (#1197)。
+                      tooltip: 'この選択肢を削除',
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
                       onPressed: _sending ? null : () => _removePollOption(i),
@@ -3009,12 +3036,26 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       // URL を持たない源 (Apple Music / MPRIS / SMTC) は、モロヘイヤ enrich で
       // 共有 URL を任意に補完する (#669)。enrich が無効・未ヒット・失敗でも元の
       // info をそのまま整形するため投稿は成立する（URL なしフォールバック）。
-      info = await _enrichNowPlayingUrl(info);
+      // ⚠ 補完は上積み。呼ばれる側は失敗を null に倒す契約だが、破られても
+      // 本文の挿入まで巻き込まない（元の info のまま進める）。
+      var enriched = info;
+      try {
+        enriched = await _enrichNowPlayingUrl(info);
+      } catch (e) {
+        debugLogException('nowplaying enrich error', e);
+        Sentry.addBreadcrumb(
+          Breadcrumb(
+            category: 'compose.nowplaying',
+            message: 'enrich_failed: ${e.runtimeType}',
+            level: SentryLevel.warning,
+          ),
+        );
+      }
       if (!mounted) return;
-      _appendToBody(formatNowPlayingFallback(info));
+      _appendToBody(formatNowPlayingFallback(enriched));
       // ジャケットを添付する (#1133)。本文を先に入れてから取りに行く（取得を
       // 待っている間も、何が入るかは見えている）。
-      await _attachNowPlayingArtwork(info);
+      await _attachNowPlayingArtwork(enriched);
     } finally {
       if (mounted) setState(() => _insertingNowPlaying = false);
     }
@@ -3126,9 +3167,19 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// 480px 程度で、添付としてそのまま使える大きさ。
   Future<void> _attachNowPlayingArtwork(NowPlayingInfo info) async {
     final uri = info.artworkUrl;
-    if (uri == null || _attachedNowPlayingArtwork.contains(uri)) return;
+    if (uri == null) {
+      _noteNowPlayingArtwork('no_source');
+      return;
+    }
+    if (_attachedNowPlayingArtwork.contains(uri)) {
+      _noteNowPlayingArtwork('already_attached', uri);
+      return;
+    }
     // ⚠ 投票とメディアは同居できない（Mastodon）。自動で足して投稿を失敗させない。
-    if (_pollEnabled) return;
+    if (_pollEnabled) {
+      _noteNowPlayingArtwork('skipped_poll', uri);
+      return;
+    }
     final XFile? file;
     try {
       file = await fetchNowPlayingArtwork(
@@ -3138,23 +3189,61 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     } catch (e) {
       // 契約では null に倒すが、破られても投稿フォームを巻き込まない。
       debugLogException('nowplaying artwork fetch error', e);
+      _noteNowPlayingArtwork('fetch_failed', uri);
       return;
     }
-    if (file == null || !mounted) return;
+    if (file == null) {
+      _noteNowPlayingArtwork('fetch_null', uri);
+      return;
+    }
+    if (!mounted) return;
     // ⚠⚠ **取得を待つ間に変わった条件を見直す**（リリース前レビュー・2026-10-10）。
     // 本文は先に入っているので、取得（最大 15 秒）を待たずに送信できる。
     // 送信が始まったあとに足すと、添付は投稿に載らないうえ、下の下書き保存が
     // 送信の入口で止めた保存を張り直す（#1012 の競合が戻る）。
     // ⚠ 待つ間に投票を有効にした回も足さない（上の入口と同じ理由）。
-    if (_sending || _pollEnabled) return;
+    if (_sending || _pollEnabled) {
+      _noteNowPlayingArtwork(
+        _sending ? 'skipped_sending' : 'skipped_poll',
+        uri,
+      );
+      return;
+    }
     final before = _attachments.length;
     await _addLocalMedia([file]);
-    if (!mounted || _attachments.length == before) return;
+    if (!mounted) return;
+    if (_attachments.length == before) {
+      _noteNowPlayingArtwork('not_added', uri);
+      return;
+    }
     _attachedNowPlayingArtwork.add(uri);
+    _noteNowPlayingArtwork('attached', uri);
     // 読み上げに何も出ない添付にしない。⚠ 利用者が書いた ALT は上書きしない
     // （ここで足した直後の 1 枚にだけ入れる）。
     setState(() => _attachments.last.description = nowPlayingArtworkAlt(info));
     _scheduleDraftSave();
+  }
+
+  /// ジャケットがどの段で付いた / 付かなかったかを残す（v2.2 のリリース前
+  /// レビュー）。
+  ///
+  /// ジャケットは「取れなくても投稿は止めない」ので、失敗はすべて無言で抜ける。
+  /// 記録が無いと、「付かなかった」という報告を受けても、源が絵を持って
+  /// いなかったのか・取得で落ちたのか・添付の段で弾かれたのかを切り分けられない
+  /// （#1273 の動作確認で実際に手間取った）。
+  ///
+  /// ⚠ breadcrumb だけで、イベントにはしない。⚠ **載せるのは理由と、出どころの
+  /// 種別（`file` / `https`）だけ。**パス・URL・曲名は載せない。
+  void _noteNowPlayingArtwork(String outcome, [Uri? uri]) {
+    Sentry.addBreadcrumb(
+      Breadcrumb(
+        category: 'compose.nowplaying',
+        message: uri == null
+            ? 'artwork: $outcome'
+            : 'artwork: $outcome (${uri.scheme})',
+        level: SentryLevel.info,
+      ),
+    );
   }
 
   /// 本文末尾に [snippet] を追記する。直前が改行でなければ改行を 1 つ挟む。
@@ -3590,6 +3679,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                       const Spacer(),
                       IconButton(
                         icon: const Icon(Icons.close),
+                        tooltip: MaterialLocalizations.of(
+                          sheetContext,
+                        ).closeButtonTooltip,
                         onPressed: () => Navigator.pop(sheetContext),
                       ),
                     ],
@@ -5117,8 +5209,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     // 揃えないのが #1035-A3 の形。
     final lengthRule = ref.watch(postLengthRuleProvider);
     // 本文入力に使うフォント (#892)。空 = 既定。誤入力・未インストールは OS の
-    // フォント解決が黙って既定へフォールバックする。
-    final composeFontFamily = ref.watch(composeFontFamilyProvider);
+    // フォント解決が黙って既定へフォールバックする。⚠ スタイルはここで組まず、
+    // 同じ設定を当てるほかの欄と揃える (#1233)。
+    final composeStyle = composeTextStyle(ref);
 
     final scaffold = Scaffold(
       appBar: AppBar(
@@ -5316,9 +5409,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                             enabled: !_sending,
                             // #892: デスクトップで等幅フォント名が設定されていれば
                             // 本文入力に適用（空なら null = 既定フォント）。
-                            style: composeFontFamily.isEmpty
-                                ? null
-                                : TextStyle(fontFamily: composeFontFamily),
+                            style: composeStyle,
                             decoration: const InputDecoration(
                               hintText: '今なにしてる？',
                               border: InputBorder.none,
@@ -5578,12 +5669,6 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                       ),
                     ),
                   ],
-                  // 送れない公開範囲が入っていることを画面に出す (#1043)。
-                  //
-                  // ⚠ **SnackBar にしない。**この状態になるのは返信・redraft・
-                  // 下書き復元・サーバー既定という「開いた瞬間に決まる」経路
-                  // なので、消える通知だと**送信ボタンを押す時点で情報が無い**。
-                  // 送信もブロックするので、理由は出したままにする。
                   // 指名の宛先 (#1165)。⚠ **指名を選んでいるときだけ出す**
                   // （ほかの公開範囲では行を増やさない）。
                   if (_usesRecipientList && _scope == PostScope.direct)
@@ -5601,6 +5686,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                       onAdd: _addRecipients,
                       enabled: !_sending,
                     ),
+                  // 送れない公開範囲が入っていることを画面に出す (#1043)。
+                  //
+                  // ⚠ **SnackBar にしない。**この状態になるのは返信・redraft・
+                  // 下書き復元・サーバー既定という「開いた瞬間に決まる」経路
+                  // なので、消える通知だと**送信ボタンを押す時点で情報が無い**。
+                  // 送信もブロックするので、理由は出したままにする。
                   if (_unsendableScopeReason != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 8),

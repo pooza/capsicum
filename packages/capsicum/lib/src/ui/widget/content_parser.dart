@@ -1094,8 +1094,11 @@ List<_Node> _parseHtml(String html) {
           // ラベルなので、href を捨てずリンクとして維持する (#750: pixiv 等の
           // `[#... 文章 ...](url)` 形式リンクが壊れていた)。
           final isSingleToken = !RegExp(r'\s').hasMatch(label);
-          if (isSingleToken &&
-              (label.startsWith('#') || label.startsWith('@'))) {
+          // ⚠ ここへ来る `#` 始まりは、`#` 1 文字だけのラベルに限られる (#1267)。
+          // `#tag` の形は、上のハッシュタグの置換が先に目印へ変えている。以前は
+          // `startsWith('#')` と書いてあり、ハッシュタグをここで戻しているように
+          // 読めた。
+          if (isSingleToken && (label == '#' || label.startsWith('@'))) {
             return label;
           }
           // ラベルが空 / URL と同一なら裸の URL にして自動リンクに任せる。

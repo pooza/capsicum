@@ -11,9 +11,12 @@ import 'package:test/test.dart';
 /// が前提になる。会話の id は投稿の id とは別物で、取り違えると別の会話を
 /// 既読にしたり消したりする。
 class _Recorder implements HttpClientAdapter {
-  _Recorder(this.conversations);
+  _Recorder(this.conversations, {this.link});
 
   final List<Map<String, dynamic>> conversations;
+
+  /// 一覧の応答に付ける `Link` ヘッダ（#1266）。null なら付けない。
+  final String? link;
   final List<RequestOptions> requests = [];
 
   @override
@@ -30,6 +33,7 @@ class _Recorder implements HttpClientAdapter {
       200,
       headers: {
         Headers.contentTypeHeader: ['application/json'],
+        if (isIndex && link != null) 'link': [link!],
       },
     );
   }
@@ -152,17 +156,105 @@ void main() {
     expect(adapter.conversationOf('s101')?.id, 'c11');
   });
 
-  test('ページングのカーソルは従来どおり最後の会話の id', () async {
-    adapter = await MastodonAdapter.create('example.com');
-    recorder = _Recorder([
-      _conversation('c10', unread: true, lastStatusId: 's100'),
-      _conversation('c9', unread: false),
-    ]);
-    adapter.client.dio.httpClientAdapter = recorder;
+  // #1266: サーバーは max_id を「会話の最後の投稿の id」（last_status_id）と
+  // 比べる。会話の id を送ると空が返って、続きが打ち切られる。
+  group('続き読みのカーソル (#1266)', () {
+    Future<TimelineResponse> fetch(
+      List<Map<String, dynamic>> conversations, {
+      String? link,
+      TimelineQuery? query,
+    }) async {
+      adapter = await MastodonAdapter.create('example.com');
+      recorder = _Recorder(conversations, link: link);
+      adapter.client.dio.httpClientAdapter = recorder;
+      return adapter.getTimeline(TimelineType.directMessages, query: query);
+    }
 
-    final response = await adapter.getTimeline(TimelineType.directMessages);
+    test('Link ヘッダの rel="next" の max_id をカーソルにする', () async {
+      final response = await fetch(
+        [
+          _conversation('c10', unread: true, lastStatusId: 's100'),
+          _conversation('c9', unread: false),
+        ],
+        link:
+            '<https://example.com/api/v1/conversations?limit=20&max_id=90>; '
+            'rel="next", '
+            '<https://example.com/api/v1/conversations?limit=20&min_id=100>; '
+            'rel="prev"',
+      );
 
-    expect(response.posts.map((p) => p.id), ['s100']);
-    expect(response.rawLastId, 'c9');
+      expect(response.posts.map((p) => p.id), ['s100']);
+      // ⚠ 末尾の会話は last_status を持たないが、サーバーの言うカーソルは取れる。
+      expect(response.rawLastId, '90');
+    });
+
+    test('⚠⚠ Link ヘッダが無くても、会話の id はカーソルにしない', () async {
+      final response = await fetch([
+        _conversation('c10', unread: true, lastStatusId: 's100'),
+        _conversation('c9', unread: false, lastStatusId: 's90'),
+      ]);
+
+      expect(response.rawLastId, 's90');
+      expect(response.rawLastId, isNot('c9'));
+    });
+
+    test('Link ヘッダが無く、末尾の会話に last_status が無ければ手前の投稿へ倒す', () async {
+      final response = await fetch([
+        _conversation('c10', unread: true, lastStatusId: 's100'),
+        _conversation('c9', unread: false),
+      ]);
+
+      expect(response.rawLastId, 's100');
+    });
+
+    test('rel="next" が無い Link（最後のページ）は prev の値を拾わない', () async {
+      final response = await fetch(
+        [_conversation('c10', unread: true, lastStatusId: 's100')],
+        link:
+            '<https://example.com/api/v1/conversations?min_id=100>; '
+            'rel="prev"',
+      );
+
+      expect(response.rawLastId, 's100');
+    });
+
+    test('rawCount は last_status の無い会話も数える（満ページの判定に使う）', () async {
+      final response = await fetch([
+        _conversation('c10', unread: true, lastStatusId: 's100'),
+        _conversation('c9', unread: false),
+      ]);
+
+      expect(response.posts, hasLength(1));
+      expect(response.rawCount, 2);
+    });
+
+    test('返したカーソルで 2 ページ目へ進むと、max_id に投稿の id が載る', () async {
+      final first = await fetch(
+        [
+          _conversation('c10', unread: true, lastStatusId: '100'),
+          _conversation('c9', unread: false, lastStatusId: '90'),
+        ],
+        link:
+            '<https://example.com/api/v1/conversations?limit=2&max_id=90>; '
+            'rel="next"',
+      );
+      recorder.requests.clear();
+
+      await adapter.getTimeline(
+        TimelineType.directMessages,
+        query: TimelineQuery(maxId: first.rawLastId, limit: 2),
+      );
+
+      final request = recorder.requests.single;
+      expect(request.path, '/api/v1/conversations');
+      expect(request.queryParameters['max_id'], '90');
+    });
+
+    test('空の応答はカーソルを返さない', () async {
+      final response = await fetch([]);
+
+      expect(response.rawLastId, isNull);
+      expect(response.rawCount, 0);
+    });
   });
 }

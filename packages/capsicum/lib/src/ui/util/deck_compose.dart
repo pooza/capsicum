@@ -61,7 +61,7 @@ bool canComposeFromColumn(TabType tab, DecentralizedBackendAdapter? adapter) {
 /// ⚠⚠ **チャンネルの `channelId` は必須。**落とすとチャンネルの外へ投稿が出る。
 ///
 /// ⚠ **spec をそのままタグとして渡さない** (#1159)。`HashtagTab.tag` は AND 連結と
-/// エスケープを含む内部表現なので、[hashtagSpecTags] で分解してから渡す。
+/// エスケープを含む内部表現なので、`HashtagQuery.parse(spec).tagsToPost` を渡す。
 /// そのまま渡すと `#c%2B%2B` のような実在しないタグで投稿してしまう。
 ///
 /// ⚠ [channels] は**そのカラムのアカウント**のフォロー中チャンネル。読み戻した
@@ -74,7 +74,8 @@ Map<String, dynamic> deckComposeExtra(
   List<Channel> channels = const [],
 }) {
   return switch (column.tab) {
-    HashtagTab(:final tag) => {'hashtags': hashtagSpecTags(tag)},
+    // ⚠ 付けるのは「すべて含む」の全部と「いずれか」の先頭 (#1209)。
+    HashtagTab(:final tag) => {'hashtags': HashtagQuery.parse(tag).tagsToPost},
     ChannelTab(:final id, :final name) => {
       'channelId': id,
       // ⚠ 読み戻したカラムの `name` は null（保存キーが [TabType.toIdentityKey]

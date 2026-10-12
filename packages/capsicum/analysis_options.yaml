@@ -18,6 +18,11 @@ analyzer:
     # 埋めてしまう。CI はビルド前に analyze するため影響しないが、
     # 開発機のノイズを断つために除外する。
     - build/**
+    - android/**
+    - ios/**
+    - windows/**
+    - macos/**
+    - linux/**
 
 linter:
   # The lint rules applied to this project can be customized in the

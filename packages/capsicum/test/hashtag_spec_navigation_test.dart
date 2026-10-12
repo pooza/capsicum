@@ -67,17 +67,16 @@ void main() {
 
   test('AND 指定の spec も往復し、表示ラベルになる', () {
     final spec = hashtagSpecFromTags(['nitiasa', 'precure']);
-    final (primary, all) = parseHashtagSpec(spec);
-    expect(primary, 'nitiasa');
-    expect(all, ['precure']);
+    final query = HashtagQuery.parse(spec);
+    expect(query.all, ['nitiasa', 'precure']);
     expect(hashtagSpecLabel(spec), '#nitiasa + #precure');
   });
 
   test('⚠ `+` を含むタグのラベルは 1 つのタグとして出る', () {
     final spec = hashtagSpecFromTag('c++');
     expect(hashtagSpecLabel(spec), '#c++');
-    final (primary, all) = parseHashtagSpec(spec);
-    expect(primary, 'c++');
-    expect(all, isNull, reason: '⚠ AND 条件として扱わない');
+    final query = HashtagQuery.parse(spec);
+    expect(query.all, ['c++']);
+    expect(query.singleTag, 'c++', reason: '⚠ AND 条件として扱わない');
   });
 }

@@ -1436,6 +1436,23 @@ class _PostTileState extends ConsumerState<PostTile> {
                       '$bookmarkLabelに追加しました',
                     ),
                   ),
+                // 会話のミュート (#1208)。この会話から届く通知だけを止める。
+                // ⚠ 自分の投稿と自分宛ての投稿にだけ出す（[threadMuteApplies]）。
+                if (adapter is ThreadMuteSupport &&
+                    threadMuteApplies(targetPost, currentUser))
+                  item(
+                    leading: Icon(
+                      targetPost.threadMuted == true
+                          ? Icons.notifications_active_outlined
+                          : Icons.notifications_off_outlined,
+                    ),
+                    title: Text(threadMuteLabel(targetPost)),
+                    onSelected: () => _runner(messenger).toggleThreadMute(
+                      adapter: adapter as ThreadMuteSupport,
+                      post: targetPost,
+                      confirmUnmute: () => confirmThreadUnmute(context),
+                    ),
+                  ),
                 if (targetPost.url != null)
                   item(
                     leading: const Icon(Icons.link),
@@ -3949,7 +3966,11 @@ class _RetagSheetState extends State<_RetagSheet> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                IconButton(onPressed: _addTag, icon: const Icon(Icons.add)),
+                IconButton(
+                  onPressed: _addTag,
+                  icon: const Icon(Icons.add),
+                  tooltip: 'タグを追加',
+                ),
               ],
             ),
             if (_suggestions.isNotEmpty)

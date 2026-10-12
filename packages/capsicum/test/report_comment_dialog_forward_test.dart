@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:capsicum/src/ui/widget/report_comment_dialog.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// #1203: 通報ダイアログの「相手のサーバーの管理者にも知らせる」。
@@ -18,17 +19,20 @@ void main() {
   }) async {
     ReportInput? result;
     await tester.pumpWidget(
-      MaterialApp(
-        home: Builder(
-          builder: (context) => TextButton(
-            onPressed: () async {
-              result = await showReportCommentDialog(
-                context,
-                message: '通報しますか？',
-                forwardHost: forwardHost,
-              );
-            },
-            child: const Text('open'),
+      // 理由の欄が投稿フォームのフォント設定を読む (#1233)。
+      ProviderScope(
+        child: MaterialApp(
+          home: Builder(
+            builder: (context) => TextButton(
+              onPressed: () async {
+                result = await showReportCommentDialog(
+                  context,
+                  message: '通報しますか？',
+                  forwardHost: forwardHost,
+                );
+              },
+              child: const Text('open'),
+            ),
           ),
         ),
       ),

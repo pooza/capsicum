@@ -103,14 +103,17 @@ class DesktopNotificationDispatcher {
         '(account=${sentrySafeAccount(account.key)} '
         'adapter=${adapter.runtimeType})',
       );
+      _subscribedAt[account.key] = now();
       _subs[account.key] = (adapter as NotificationStreamSupport)
           .streamNotifications(
             onParseError: _onStreamParseError,
             onStreamError: (e, st) =>
                 _onStreamConnectError(e, st, account.key.host),
             onReconnectExhausted: _onStreamReconnectExhausted,
-            onConnectionEvent: (event) =>
-                _onStreamConnectionEvent(event, account.key.host),
+            onConnectionEvent: (event) {
+              _onStreamConnectionEvent(event, account.key.host);
+              _trackConnection(account.key, event);
+            },
           )
           .listen(
             (n) {
@@ -125,10 +128,119 @@ class DesktopNotificationDispatcher {
     final removed = _subs.keys.where((key) => !live.contains(key)).toList();
     for (final key in removed) {
       _subs.remove(key)?.cancel();
+      _disconnectedAt.remove(key);
+      _subscribedAt.remove(key);
       debugPrint(
         'capsicum: push.desktop: unsubscribed '
         '(account=${sentrySafeAccount(key)})',
       );
+    }
+  }
+
+  /// 拾い直しの起点（アカウントごと・#1261）。つながっている間は持たない。
+  /// ⚠ 切断を**検知した**時刻そのものではない（[_catchUpBaseline]）。
+  final Map<AccountKey, DateTime> _disconnectedAt = {};
+
+  /// 購読を始めた時刻（アカウントごと）。拾い直しの起点の下限に使う。
+  final Map<AccountKey, DateTime> _subscribedAt = {};
+
+  /// 切断を検知した時点から、拾い直しの起点を決める。
+  ///
+  /// ⚠⚠ **検知した時刻をそのまま起点にしない**（v2.2 のリリース前レビュー）。
+  /// Wi-Fi の切り替えのようにエラーが来ないまま切れた回線は、ping の応答が
+  /// 途切れるまで検知できない。実際に切れてから検知するまでの間に届いた通知は、
+  /// 検知した時刻より前なので拾い直しから落ちていた —— #1261 が狙っている
+  /// 短い切断そのものの場面。起点を [kSilentDisconnectAllowance] ぶん手前へ下げる。
+  ///
+  /// - 下げたぶん、切れる前に接続から受けた通知も入ってくるが、出す側の重複の
+  ///   除去で落ちる
+  /// - ⚠ **購読を始めた時刻より前へは下げない。**起動より前に届いた通知を
+  ///   バナーで出さない
+  DateTime _catchUpBaseline(AccountKey key) {
+    final assumed = now().subtract(kSilentDisconnectAllowance);
+    final subscribedAt = _subscribedAt[key];
+    return subscribedAt != null && subscribedAt.isAfter(assumed)
+        ? subscribedAt
+        : assumed;
+  }
+
+  /// 時計の差し替え口（テスト用）。
+  @visibleForTesting
+  DateTime Function() now = DateTime.now;
+
+  /// 切れていた間に届いた通知を、つなぎ直したあとに拾い直す (#1261)。
+  ///
+  /// 接続の節目は [ReconnectingSocket] の語（`connected` / `disconnected`）で
+  /// 届く。⚠ `subscribed` は見ない —— 購読の合図を送らない接続（Mastodon）では
+  /// 出ない。
+  ///
+  /// ⚠ `disconnected` はつなぎ直しに失敗するたびに来るので、**最初の 1 回**の
+  /// 時刻だけを持つ。
+  void _trackConnection(AccountKey key, String event) {
+    if (event == _eventDisconnected) {
+      _disconnectedAt.putIfAbsent(key, () => _catchUpBaseline(key));
+      return;
+    }
+    if (event != _eventConnected) return;
+    // 回線は生きている。「回線側」の失敗の続きをここで終わらせる。
+    streamConnectFailureReporter.noteConnected();
+    final since = _disconnectedAt.remove(key);
+    // 起動して最初の接続。切れていた間が無いので、拾い直すものも無い。
+    if (since == null) return;
+    unawaited(_catchUp(key, since));
+  }
+
+  static const _eventConnected = 'connected';
+  static const _eventDisconnected = 'disconnected';
+
+  /// 拾い直しで見る件数。上限（[kMissedNotificationMaxCount]）より多めに引き、
+  /// 窓の外のものを落としてから絞る。
+  static const _catchUpFetchLimit = 10;
+
+  Future<void> _catchUp(AccountKey key, DateTime disconnectedAt) async {
+    final account = _ref
+        .read(accountManagerProvider)
+        .accounts
+        .where((a) => a.key == key)
+        .firstOrNull;
+    final adapter = account?.adapter;
+    if (account == null || adapter is! NotificationSupport) return;
+    final List<Notification> fetched;
+    try {
+      fetched = (await (adapter as NotificationSupport).getNotifications(
+        query: const TimelineQuery(limit: _catchUpFetchLimit),
+      )).notifications;
+    } catch (e) {
+      // 拾い直しは上積み。つなぎ直した直後は回線が不安定なこともあり、失敗して
+      // も通知の一覧には載っているので、ここでは記録だけにする。
+      Sentry.addBreadcrumb(
+        Breadcrumb(
+          category: 'push.desktop.catchup',
+          level: SentryLevel.warning,
+          message: e.runtimeType.toString(),
+        ),
+      );
+      return;
+    }
+    // ⚠ 引いている間にログアウトされていたら出さない。
+    if (!_subs.containsKey(key)) return;
+    final missed = selectMissedNotifications(
+      fetched,
+      disconnectedAt: disconnectedAt,
+      now: now(),
+    );
+    Sentry.addBreadcrumb(
+      Breadcrumb(
+        category: 'push.desktop.catchup',
+        level: SentryLevel.info,
+        message: 'emit',
+        data: {'fetched': fetched.length, 'missed': missed.length},
+      ),
+    );
+    for (final n in missed) {
+      // ⚠ 重複は [_emit] が落とす（つなぎ直した直後に接続からも同じ通知が
+      // 流れてくることがある・ネイティブのプッシュが先に出していることもある）。
+      await _emit(account, n);
     }
   }
 
@@ -411,3 +523,46 @@ final desktopNotificationDispatcherProvider =
       dispatcher.start();
       return dispatcher;
     });
+
+/// つなぎ直したあとに OS 通知として出す、切れていた間の通知の上限 (#1261)。
+///
+/// 狙いは Wi-Fi の切り替えのような**短い切断**の間に届いた通知を見落とさない
+/// こと。⚠⚠ **上限なしで全部出すことはしない**（2026-10-10 pooza）。スリープ
+/// 明けに数時間ぶんのバナーがまとめて出る形になる。超えたぶんは出さず、アプリ内の
+/// 通知一覧に任せる。
+const int kMissedNotificationMaxCount = 3;
+
+/// 拾い直す時間の幅。これより前に届いたものは、切れていた間のものでも出さない。
+const Duration kMissedNotificationWindow = Duration(minutes: 10);
+
+/// 無音で切れた回線を検知するまでに掛かりうる長さ。通知用の接続の ping 間隔
+/// （60 秒）の 2 回ぶん。
+const Duration kSilentDisconnectAllowance = Duration(minutes: 2);
+
+/// 端末とサーバーの時計のずれを吸う幅。切れた時刻の少し前から拾う。
+/// ⚠ 広げたぶん、切れる直前に接続から受けた通知も入ってくるが、そちらは出す側の
+/// 重複の除去で落ちる。
+const Duration _clockSkewAllowance = Duration(seconds: 5);
+
+/// [fetched]（直近の通知）のうち、切れていた間に届いたものを古い順で返す (#1261)。
+///
+/// - [disconnectedAt] より後（時計のずれぶんは手前から）に届いたもの
+/// - ただし [now] から [kMissedNotificationWindow] より前のものは出さない
+/// - 多ければ**新しいほうから** [kMissedNotificationMaxCount] 件
+///
+/// ⚠ **基準は id ではなく時刻。**「切れる前に最後に受けた通知の id」を基準に
+/// すると、起動してからまだ 1 件も受けていない接続では基準が無く、拾い直せない。
+List<Notification> selectMissedNotifications(
+  List<Notification> fetched, {
+  required DateTime disconnectedAt,
+  required DateTime now,
+}) {
+  final byDisconnect = disconnectedAt.subtract(_clockSkewAllowance);
+  final byWindow = now.subtract(kMissedNotificationWindow);
+  final from = byDisconnect.isAfter(byWindow) ? byDisconnect : byWindow;
+  final missed = fetched.where((n) => n.createdAt.isAfter(from)).toList()
+    ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+  return missed.length <= kMissedNotificationMaxCount
+      ? missed
+      : missed.sublist(missed.length - kMissedNotificationMaxCount);
+}

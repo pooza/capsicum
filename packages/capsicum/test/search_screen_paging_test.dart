@@ -153,6 +153,91 @@ void main() {
     expect(find.text('#tag17'), findsOneWidget);
   });
 
+  testWidgets('⚠⚠ ハッシュタグの 1 ページ目が 21 件でも、次の offset は 20 (#1267)', (
+    tester,
+  ) async {
+    // 完全一致が検索結果に入っていないと、サーバーが先頭に足して 21 件で返す。
+    // 足されたぶんは offset の並びに入っていないので、21 で送ると 1 件飛ばす。
+    final adapter = _PagingAdapter(
+      first: ['exact', ..._tags(0, 20)],
+      more: [_tags(20, 3)],
+    );
+    await search(tester, adapter);
+
+    await tapMore(tester);
+
+    expect(adapter.moreCalls.single.offset, 20);
+  });
+
+  group('次の offset の進め方 (#1267)', () {
+    test('投稿は、返った件数に関わらず 1 ページぶん進める', () {
+      for (final fetched in [0, 7, 20]) {
+        expect(
+          searchOffsetAdvance(
+            SearchKind.posts,
+            fetched: fetched,
+            pageSize: 20,
+            firstPage: true,
+          ),
+          20,
+        );
+      }
+    });
+
+    test('⚠⚠ アカウントの 1 ページ目は 1 件少なく進める（完全一致 1 + その他 19 で返るため）', () {
+      expect(
+        searchOffsetAdvance(
+          SearchKind.users,
+          fetched: 20,
+          pageSize: 20,
+          firstPage: true,
+        ),
+        19,
+        reason: '20 で進めると、その他の 20 件目を飛ばす',
+      );
+      expect(
+        searchOffsetAdvance(
+          SearchKind.users,
+          fetched: 20,
+          pageSize: 20,
+          firstPage: false,
+        ),
+        20,
+        reason: '2 ページ目以降には完全一致は足されない',
+      );
+      expect(
+        searchOffsetAdvance(
+          SearchKind.users,
+          fetched: 0,
+          pageSize: 20,
+          firstPage: true,
+        ),
+        0,
+      );
+    });
+
+    test('ハッシュタグは 1 ページぶんより多くは進めない', () {
+      expect(
+        searchOffsetAdvance(
+          SearchKind.hashtags,
+          fetched: 21,
+          pageSize: 20,
+          firstPage: true,
+        ),
+        20,
+      );
+      expect(
+        searchOffsetAdvance(
+          SearchKind.hashtags,
+          fetched: 12,
+          pageSize: 20,
+          firstPage: true,
+        ),
+        12,
+      );
+    });
+  });
+
   testWidgets('⚠ 続きの読み込みに失敗しても、口は残る（押し直せる）', (tester) async {
     final adapter = _PagingAdapter(first: _tags(0, 20), more: [_tags(20, 5)])
       ..failMore = true;

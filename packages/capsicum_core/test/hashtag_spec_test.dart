@@ -69,19 +69,19 @@ void main() {
     test('⚠⚠ HashtagTab.single はタグ名をエスケープして保持する', () {
       final tab = HashtagTab.single('c++');
       expect(tab.tag, 'c%2B%2B');
-      expect(tab.tags, ['c++']);
+      expect(tab.query.all, ['c++']);
       expect(tab.toKey(), 'hashtag:c%2B%2B');
     });
 
     test('保存形式から読み戻すと同じタブになる', () {
       final tab = HashtagTab.single('c++');
       expect(TabType.fromKey(tab.toKey()), tab);
-      expect((TabType.fromKey(tab.toKey())! as HashtagTab).tags, ['c++']);
+      expect((TabType.fromKey(tab.toKey())! as HashtagTab).query.all, ['c++']);
     });
 
     test('AND 指定のタブは複数のタグを返す', () {
       const tab = HashtagTab('delmulin+capsicum');
-      expect(tab.tags, ['delmulin', 'capsicum']);
+      expect(tab.query.all, ['delmulin', 'capsicum']);
     });
   });
 }

@@ -167,6 +167,7 @@ extension CapsicumMastodonStatusExtension on MastodonStatus {
       favourited: favourited ?? false,
       reblogged: reblogged ?? false,
       bookmarked: bookmarked ?? false,
+      threadMuted: muted,
       sensitive: sensitive ?? false,
       inReplyToId: inReplyToId,
       reblog: reblog?.toCapsicum(localHost, adminRoleIds: adminRoleIds),

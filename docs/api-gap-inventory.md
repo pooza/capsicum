@@ -214,7 +214,7 @@ grep -rhoE "\['[a-zA-Z_][a-zA-Z0-9_]*'\]" packages/capsicum_backends/lib/src/mis
 
 | | 内容 | 行き先 |
 | --- | --- | --- |
-| **12-1 ★** | 添付のプレースホルダ情報（`blurhash` / 縦横比）を**両 SNS とも 1 つも読んでいない** → 読み込み時にタイムラインが伸び縮みする | [#1186](https://github.com/pooza/capsicum/issues/1186) |
+| **12-1 ★** | 添付のプレースホルダ情報（`blurhash` / 縦横比）を**両 SNS とも 1 つも読んでいない** → ~~読み込み時にタイムラインが伸び縮みする~~ ⚠ **伸び縮みは起きていなかった**（投稿タイルは #718 以降ずっと固定枠・2026-10-12 に着手して判明）。残る効用は読み込み中の枠に色を敷けることだけ。⚠⚠ **「読んでいない」から症状を推定するときは、表示側を確かめる** | [#1186](https://github.com/pooza/capsicum/issues/1186)（主題を書き換えて v2.4 へ） |
 | **12-2 ★** | 通知の**種別固有フィールド**（`role` / `exportedEntity` / `noteDraft` ほか 6 種）が未読で、[#1177](https://github.com/pooza/capsicum/issues/1177) の種別名だけが出ていた | [#1187](https://github.com/pooza/capsicum/issues/1187)。✅ **2026-10-01 に出荷済み** |
 | **12-3** | `drive-file` の `md5` / `size` / `folder` | 小粒・未起票（画面を触る回に） |
 | **12-5** | chat 系 23 経路は層②③ とも**取りこぼし 0 件**。① で `chat/messages/search` だけ未呼び出し | [#1188](https://github.com/pooza/capsicum/issues/1188) |
@@ -246,8 +246,8 @@ grep -rhoE "\['[a-zA-Z_][a-zA-Z0-9_]*'\]" packages/capsicum_backends/lib/src/mis
 | **13-4 ★** | 未読数を `notifications/unread_count` に訊かずクライアント側で数えている（**両 SNS 対称**）。⚠ **層① の取りこぼしで、層② の目で見たから出た** | [#1207](https://github.com/pooza/capsicum/issues/1207) `enhancement`・✅ v2.1 で実装（アカウント切替のバッジ）。⚠ **「クライアント側で数えている」は起票時の誤読で、実際は v1.19 から常に 0 だった**（数えていなかった） |
 | **13-5 ★** | Misskey だけ既読をサーバーへ返しておらず（`MarkerSupport` が `MastodonAdapter` にしか mixin されていない）、**WebUI の未読が永久に消えない**。⚠ [#1045](https://github.com/pooza/capsicum/issues/1045) の裏返し | [#1205](https://github.com/pooza/capsicum/issues/1205) `bug`・✅ v2.1 で実装（**一覧の先頭が見えたとき**に `mark-all-as-read`。⚠⚠ **取得では触らない**のは #1045 のまま ＝ 「取得では触らない・見たら返す」・2026-10-09 pooza） |
 | **13-6 ★** | DM（会話）の `unread` を読まず既読も返さず、削除もできない | [#1206](https://github.com/pooza/capsicum/issues/1206)（✅ v2.1 で実装・DM を開いたら既読 / 投稿メニューから会話を削除。画面は投稿の列のまま） `bug` |
-| **13-7 ★** | スレッド（会話）のミュートが**両 SNS に経路があるのに無い** | [#1208](https://github.com/pooza/capsicum/issues/1208) `enhancement` |
-| **13-8 ★** | タグ TL の OR（`any[]`）・除外（`none[]`）とリモートのみの連合 TL（`remote`）が使えない。⚠ **タグセットは実況の中心道具** | [#1209](https://github.com/pooza/capsicum/issues/1209) `enhancement` |
+| **13-7 ★** | スレッド（会話）のミュートが**両 SNS に経路があるのに無い** | [#1208](https://github.com/pooza/capsicum/issues/1208) `enhancement`（2026-10-12 に実装。状態は Mastodon が Status の `muted`、Misskey が `notes/state` の `isMutedThread`） |
+| **13-8 ★** | タグ TL の OR（`any[]`）・除外（`none[]`）とリモートのみの連合 TL（`remote`）が使えない。⚠ ~~タグセットは実況の中心道具~~ **実況で見られているのはデフォルトハッシュタグの TL とホームで、ここは実況の道具ではない**（2026-10-12 pooza） | [#1209](https://github.com/pooza/capsicum/issues/1209)（OR・除外は 2026-10-12 に実装。⚠ 着手時に **Misskey の AND 指定が過去分では AND になっていなかった**のを見つけて直した ―― `search-by-tag` へ先頭のタグしか送っていなかった）/ 複数タグのライブ更新は [#1277](https://github.com/pooza/capsicum/issues/1277)・`remote` は [#1278](https://github.com/pooza/capsicum/issues/1278) |
 | **13-9 ★** | `update_credentials` の書く側が無く、既定の公開範囲・アイコンの ALT などを capsicum から変えられない。⚠ [#1185](https://github.com/pooza/capsicum/issues/1185) / [#1194](https://github.com/pooza/capsicum/issues/1194) の裏返し | [#1210](https://github.com/pooza/capsicum/issues/1210) `enhancement` |
 | **13-10** | 「作成はできるが変えられない」4 件（予約投稿の時刻 / 引用の撤回 / 引用ポリシー / リストの返信方針・排他） | [#1077](https://github.com/pooza/capsicum/issues/1077) 側で [#1211](https://github.com/pooza/capsicum/issues/1211) / [#1212](https://github.com/pooza/capsicum/issues/1212) / [#1213](https://github.com/pooza/capsicum/issues/1213) |
 | **13-11** | 小粒 10 件（`Idempotency-Key` / `allowed_mentions` / メディアの `focus` / 通知の個別削除 ほか） | 未起票（必要になった画面を触る回に） |

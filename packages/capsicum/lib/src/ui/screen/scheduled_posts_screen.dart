@@ -409,7 +409,11 @@ class _TagEditorSheetState extends State<_TagEditorSheet> {
                 ),
               ),
               const SizedBox(width: 8),
-              IconButton(icon: const Icon(Icons.add), onPressed: _addTag),
+              IconButton(
+                icon: const Icon(Icons.add),
+                tooltip: 'タグを追加',
+                onPressed: _addTag,
+              ),
             ],
           ),
           const SizedBox(height: 16),

@@ -93,6 +93,7 @@ class _DrivePickerScreenState extends ConsumerState<DrivePickerScreen> {
           backgroundColor: theme.colorScheme.inversePrimary,
           leading: IconButton(
             icon: Icon(_folderStack.isEmpty ? Icons.close : Icons.arrow_back),
+            tooltip: _folderStack.isEmpty ? '選択をやめる' : '親フォルダへ戻る',
             onPressed: _goBack,
           ),
           actions: [

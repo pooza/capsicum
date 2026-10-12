@@ -9,6 +9,7 @@ import '../../model/account.dart';
 import '../../model/account_key.dart';
 import '../../model/deck_column.dart';
 import '../../provider/account_manager_provider.dart';
+import '../../provider/announcement_provider.dart';
 import '../../provider/channel_provider.dart';
 import '../../provider/deck_provider.dart';
 import '../../provider/preferences_provider.dart';
@@ -22,6 +23,7 @@ import '../widget/deck_column_focus.dart';
 import '../widget/deck_column_strip.dart';
 import '../widget/deck_column_view.dart';
 import '../widget/deck_columns_sheet.dart';
+import '../widget/home_drawer.dart';
 import '../widget/livecure_filter_button.dart';
 import '../widget/simple_post_bar.dart';
 import '../widget/user_avatar.dart';
@@ -331,6 +333,34 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
     null,
   );
 
+  /// ドロワーの項目がカラムを開くときの足場 (#1272)。常に載っている題に付ける。
+  ///
+  /// ⚠ ドロワーの中身の `context` は使えない（ドロワーを閉じると捨てられるので、
+  /// 一覧を取って選ばせている間に無くなる）。
+  final _drawerColumnAnchor = GlobalKey();
+
+  /// [child] を、ドロワーからカラムを開くための [DeckColumnScope] で包む (#1272)。
+  ///
+  /// - 開く位置は**フォーカス中のカラムの右隣**（カラムから開いたときと同じ）
+  /// - ⚠⚠ **アカウントは現在のアカウントに固定する。**ドロワーの項目は現在の
+  ///   アカウントのもの（一覧もそのアダプタで引いている）なので、フォーカス中の
+  ///   カラムのアカウントで開くと、別のサーバーの id を引くことになる
+  /// - フォーカスが無い（列が空）ときは包まない。全画面で開く
+  Widget _withDrawerColumnScope(
+    DeckColumn? focused,
+    AccountKey? currentKey,
+    Widget child,
+  ) {
+    if (focused == null || currentKey == null) return child;
+    return DeckColumnScope(
+      column: focused,
+      onOpen: (from, tab, seed, {account}) =>
+          _openColumn(from, tab, seed, account: currentKey),
+      onClose: (_) {},
+      child: child,
+    );
+  }
+
   /// 中身の画面が「閉じる」とき（コレクションを削除した等）にカラムを外す (#1150)。
   void _closeColumn(DeckColumn column) =>
       ref.read(deckColumnsProvider.notifier).remove(column.id);
@@ -466,8 +496,6 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
     return carryProviderScope(_containerFor(account), bar);
   }
 
-  /// [content] の下に [postBar] を置く。バーが無いときは下端の inset を
-  /// [BottomSafeArea] で吸う（#1037 / #1062・上の `body` の注記）。
   /// 中身の下に、カラムへ飛ぶ帯 (#1241) と簡易投稿バーを並べる。
   ///
   /// ⚠ 下端の inset は**いちばん下に来るもの**が吸う。簡易投稿バーは自分で
@@ -543,22 +571,76 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
     // ⚠ **設定 (#574) に従う**（2026-09-19 pooza 判断）。既定の OFF では
     // トラックパッド 2 本指スワイプの既存挙動をそのまま維持する。
     final mouseDragEnabled = ref.watch(mouseDragScrollProvider);
+    final unreadAnnouncements = ref.watch(unreadAnnouncementCountProvider);
     final scaffold = Scaffold(
+      // タブ表示と同じドロワー (#1272・2026-10-11 pooza)。メニューバーの無い端末
+      // では、ブックマーク・リスト・予約投稿などへデッキから届かなかった。
+      //
+      // ⚠ **常駐はさせない**（決定済み事項 7-1 / 8）。禁じているのは広い幅で
+      // 出しっぱなしになるドロワーで、押したときだけ重なるものは当たらない。
+      // ⚠ アカウントの切り替えは持ち込まない（`inDeck`・決定済み事項 8 / 11）。
+      // ⚠ 項目は**現在のアカウント**のもので、フォーカス中のカラムのアカウント
+      // には合わせない（決定済み事項 15・#1272）。タイムラインになるもの
+      // （リスト・チャンネル・プロフィールタグ）はカラムで開き、ほかは全画面。
+      drawer: buildHomeDrawer(
+        context,
+        ref,
+        ref.watch(currentAccountProvider),
+        ref.watch(accountManagerProvider),
+        unreadAnnouncements,
+        inDeck: true,
+        // 選ぶとタイムラインになる項目（リスト・チャンネル・プロフィールタグ）は
+        // カラムで開く（2026-10-12 pooza）。下の題に置いた目印の `context` を
+        // 渡す —— そこは [DeckColumnScope] の下なので、既存の `open*` が
+        // フォーカス中のカラムの右隣へ足す。
+        columnContext: () => _drawerColumnAnchor.currentContext,
+      ),
+      // ⚠⚠ **左端からのスワイプでは開かない。**狭幅のデッキは横スワイプで
+      // カラムを移るので、左端で競合する。ボタンからだけ開く。
+      drawerEnableOpenDragGesture: false,
+      // タブ表示と同じく、開くたびにサーバーのメタデータを取り直す
+      // （版の表示 #774・モロヘイヤのフラグ #775。TTL 内は no-op）。
+      onDrawerChanged: (isOpened) {
+        if (isOpened) {
+          ref
+              .read(accountManagerProvider.notifier)
+              .refreshCurrentServerMetadata();
+        }
+      },
       appBar: AppBar(
         // ⚠ 戻る（←）は出さない (#1153・2026-09-22 pooza)。タブ UI へ戻るのは
         // 右端の「タブ表示に切り替え」に一本化した（AppBar の切り替えと役割が
         // 重なるため）。
         automaticallyImplyLeading: false,
+        // 左端は空いていたので、タブ表示と同じハンバーガーを置く (#1272)。
+        // 右側のアイコンは 6 つのまま（#1242 の「歯車を足す」は変えない）。
+        // ⚠ 幅に依らず出す（デッキは常駐ドロワーを持たないので、広い幅でも
+        // 入口はここだけ）。
+        leading: Builder(
+          builder: (context) => IconButton(
+            icon: Badge(
+              isLabelVisible: unreadAnnouncements > 0,
+              child: const Icon(Icons.menu),
+            ),
+            tooltip: MaterialLocalizations.of(context).openAppDrawerTooltip,
+            onPressed: () => Scaffold.of(context).openDrawer(),
+          ),
+        ),
         // ⚠ **題は置かない (#1242・2026-10-06 pooza)。**デッキ画面であることは
         // 見れば分かるので、自己紹介のような題で幅を使わない。
         //
         // ⚠ **見えない題は置く。**`AppBar` は `title` を画面名として読み上げに
         // 渡すので、題を外すとデッキへ入ったときに何も読まれなくなる。見た目を
         // 変えずに画面名だけ渡す（`namesRoute`）。
-        title: Semantics(
-          namesRoute: true,
-          label: 'デッキ',
-          child: const SizedBox.shrink(),
+        title: _withDrawerColumnScope(
+          focusedColumn,
+          currentKey,
+          Semantics(
+            key: _drawerColumnAnchor,
+            namesRoute: true,
+            label: 'デッキ',
+            child: const SizedBox.shrink(),
+          ),
         ),
         actions: [
           // ⚠ アイコンが増えたので、タブ UI と同じコンパクト枠に詰める (#1173)。

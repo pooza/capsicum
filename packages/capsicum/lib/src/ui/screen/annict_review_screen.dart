@@ -9,6 +9,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../util/exception_scrub.dart';
 import '../../util/mulukhiya_conflict.dart';
 import '../util/annict_link.dart';
+import '../util/compose_text_style.dart';
 
 /// Annict の作品全体感想 (review) を投稿する画面 (#592)。
 ///
@@ -201,6 +202,8 @@ class _AnnictReviewScreenState extends ConsumerState<AnnictReviewScreen> {
                 maxLines: null,
                 minLines: 6,
                 textAlignVertical: TextAlignVertical.top,
+                // 投稿フォームのフォント設定を、感想の欄にも当てる (#1233)。
+                style: composeTextStyle(ref),
                 decoration: const InputDecoration(
                   border: OutlineInputBorder(),
                   hintText: '感想を入力 (必須)',

@@ -903,6 +903,8 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
               : (_folderStack.isEmpty
                     ? IconButton(
                         icon: const Icon(Icons.close),
+                        // ⚠ ルートでは × だが、することは「戻る」(#1197)。
+                        tooltip: 'ドライブを閉じる',
                         onPressed: _goBack,
                       )
                     : DragTarget<List<Attachment>>(
@@ -916,6 +918,7 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
                                 ? theme.colorScheme.primary
                                 : null,
                           ),
+                          tooltip: '親フォルダへ戻る',
                           onPressed: _goBack,
                         ),
                       )),

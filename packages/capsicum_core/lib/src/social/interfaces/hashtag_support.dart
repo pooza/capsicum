@@ -1,3 +1,4 @@
+import '../../model/hashtag_spec.dart';
 import '../../model/post.dart';
 import '../../model/timeline_query.dart';
 
@@ -5,10 +6,16 @@ abstract mixin class HashtagSupport {
   Future<bool> isFollowingHashtag(String hashtag);
   Future<void> followHashtag(String hashtag);
   Future<void> unfollowHashtag(String hashtag);
+
+  /// [condition] に合う投稿を返す (#1209)。
+  ///
+  /// ⚠⚠ **除外（[HashtagQuery.none]）は、サーバーが受けられる SNS だけが絞る。**
+  /// Mastodon は `none[]` で絞るが、Misskey には受け口が無いので絞らずに返る。
+  /// **呼び出し側が [HashtagQuery.excludes] で落とす**（ストリーミングで届くぶんも
+  /// 同じ場所で落とせるので、アダプタの中で絞らない）。
   Future<List<Post>> getPostsByHashtag(
-    String hashtag, {
+    HashtagQuery condition, {
     TimelineQuery? query,
-    List<String>? all,
   });
 
   /// フォロー中のハッシュタグ一覧 (#1070)。返すのは `#` を含まないタグ名。

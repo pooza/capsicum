@@ -41,7 +41,8 @@ String nowPlayingArtworkAlt(NowPlayingInfo info) {
 /// - `http` / `https`: 取得して [tempDir] へ書き出す（モロヘイヤの
 ///   `artwork_url`・MPRIS の `mpris:artUrl`）
 /// - `file`: その場所の画像をそのまま使う（MPRIS がローカルのキャッシュを
-///   指すことがある）
+///   指すことがある。macOS はミュージックアプリから取った絵をネイティブが
+///   一時ファイルへ書き出す・#1273）
 ///
 /// ⚠ **失敗はすべて null に倒す。**ジャケットは上積みで、取れなくても本文だけの
 /// ナウプレとして投稿は成立する。
@@ -57,7 +58,7 @@ Future<XFile?> fetchNowPlayingArtwork(
   try {
     return switch (uri.scheme) {
       'http' || 'https' => await _download(uri, tempDir, dio ?? _defaultDio()),
-      'file' => await _local(uri),
+      'file' => await _local(uri, tempDir),
       _ => null,
     };
   } catch (e) {
@@ -149,10 +150,10 @@ Future<XFile?> _download(Uri uri, Directory tempDir, Dio dio) async {
   // 親ディレクトリを作らないため明示的に作成する。
   await out.create(recursive: true);
   await out.writeAsBytes(bytes, flush: true);
-  return XFile(path, mimeType: mime, name: name);
+  return XFile(path, mimeType: mime);
 }
 
-Future<XFile?> _local(Uri uri) async {
+Future<XFile?> _local(Uri uri, Directory tempDir) async {
   final path = uri.toFilePath();
   final dot = path.lastIndexOf('.');
   final extension = dot < 0 ? '' : path.substring(dot + 1).toLowerCase();
@@ -168,5 +169,14 @@ Future<XFile?> _local(Uri uri) async {
   if (!await file.exists()) return null;
   final size = await file.length();
   if (size == 0 || size > kNowPlayingArtworkMaxBytes) return null;
-  return XFile(path, mimeType: mime, name: 'nowplaying-artwork.$extension');
+  // ⚠ **投稿されるファイル名は、パスの末尾で決まる**（`XFile` の `name:` は IO
+  // では使われない・#1267）。そのまま渡すと、プレイヤーのキャッシュの名前
+  // （ハッシュ等）が投稿先のファイル名になる。意図した名前の場所へ写す。
+  final name = 'nowplaying-artwork.$extension';
+  if (path.endsWith('/$name')) return XFile(path, mimeType: mime);
+  final copied =
+      '${tempDir.path}/nowplaying_${DateTime.now().microsecondsSinceEpoch}/$name';
+  await File(copied).create(recursive: true);
+  await file.copy(copied);
+  return XFile(copied, mimeType: mime);
 }

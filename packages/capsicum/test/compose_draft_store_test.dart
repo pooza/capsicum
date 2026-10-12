@@ -106,6 +106,113 @@ void main() {
     });
   });
 
+  // #1264: 指名（Misskey の `specified`）の宛先。以前は端末内の下書きに入って
+  // おらず、開き直すと本文と公開範囲だけ戻って宛先が空になっていた。
+  group('指名の宛先 (#1264)', () {
+    test('宛先の id を足した順のまま読み戻す', () async {
+      await ComposeDraftStore().save(
+        const ComposeDraft(
+          text: '本文',
+          scope: PostScope.direct,
+          recipientIds: ['u3', 'u1', 'u2'],
+        ),
+        now: fixedNow,
+      );
+
+      final restored = await ComposeDraftStore().restore();
+      expect(restored!.recipientIds, ['u3', 'u1', 'u2']);
+    });
+
+    test('⚠ 本文が無くても、宛先があれば残す', () async {
+      const draft = ComposeDraft(text: '', recipientIds: ['u1']);
+      expect(draft.isEmpty, isFalse);
+
+      await ComposeDraftStore().save(draft, now: fixedNow);
+
+      final restored = await ComposeDraftStore().restore();
+      expect(restored, isNotNull);
+      expect(restored!.recipientIds, ['u1']);
+    });
+
+    test('⚠⚠ 宛先を全部外して保存すると、前に保存した宛先は戻らない', () async {
+      final store = ComposeDraftStore();
+      await store.save(
+        const ComposeDraft(text: '本文', recipientIds: ['u1', 'u2']),
+        now: fixedNow,
+      );
+
+      await store.save(const ComposeDraft(text: '本文'), now: fixedNow);
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.containsKey(ComposeDraftStore.recipientsKey), isFalse);
+      expect((await ComposeDraftStore().restore())!.recipientIds, isEmpty);
+    });
+
+    test('clear は宛先も消す（次の下書きに前の宛先が混ざらない）', () async {
+      final store = ComposeDraftStore();
+      await store.save(
+        const ComposeDraft(text: '本文', recipientIds: ['u1']),
+        now: fixedNow,
+      );
+      await store.clear();
+
+      final next = ComposeDraftStore();
+      await next.save(const ComposeDraft(text: '次の本文'), now: fixedNow);
+
+      expect((await next.restore())!.recipientIds, isEmpty);
+    });
+
+    test('宛先のキーが無い旧スロットは、宛先なしとして読める', () async {
+      SharedPreferences.setMockInitialValues({
+        ComposeDraftStore.textKey: '前の版が書いた本文',
+      });
+
+      final restored = await ComposeDraftStore().restore();
+      expect(restored!.text, '前の版が書いた本文');
+      expect(restored.recipientIds, isEmpty);
+    });
+
+    test('アカウント別のスロットに分かれる', () async {
+      await ComposeDraftStore(accountKey: 'a@example.com').save(
+        const ComposeDraft(text: 'A', recipientIds: ['u1']),
+        now: fixedNow,
+      );
+      await ComposeDraftStore(
+        accountKey: 'b@example.com',
+      ).save(const ComposeDraft(text: 'B'), now: fixedNow);
+
+      expect(
+        (await ComposeDraftStore(
+          accountKey: 'a@example.com',
+        ).restore())!.recipientIds,
+        ['u1'],
+      );
+      expect(
+        (await ComposeDraftStore(
+          accountKey: 'b@example.com',
+        ).restore())!.recipientIds,
+        isEmpty,
+      );
+    });
+
+    test('アカウントの掃除は宛先も消す', () async {
+      await ComposeDraftStore(accountKey: 'a@example.com').save(
+        const ComposeDraft(text: 'A', recipientIds: ['u1']),
+        now: fixedNow,
+      );
+
+      await ComposeDraftStore.clearForAccount('a@example.com');
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(
+        prefs.getKeys().where(
+          (k) => k.startsWith(ComposeDraftStore.recipientsKey),
+        ),
+        isEmpty,
+      );
+    });
+  });
+
   group('ローカル添付の記述 (#1130)', () {
     const attachment = ComposeDraftAttachment(
       path: '/tmp/baked.png',

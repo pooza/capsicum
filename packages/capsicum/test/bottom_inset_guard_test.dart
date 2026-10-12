@@ -252,19 +252,21 @@ void main() {
     // ドロワーは上端のヘッダーが背景を全面に伸ばしたまま内側で
     // `SafeArea(bottom: false)` を持つ作りなので、下端も「包む」ではなく
     // 「`padding` で足す」に揃えてある。だからここは専用の検査にしている。
+    // ⚠ ドロワーの組み立ては `home_drawer.dart` へ移した (#1272・デッキ画面
+    // からも同じものを開く)。
     final source = File(
-      'lib/src/ui/screen/home_screen.dart',
+      'lib/src/ui/widget/home_drawer.dart',
     ).readAsStringSync();
 
-    final start = source.indexOf('Widget _buildDrawer(');
+    final start = source.indexOf('Widget buildHomeDrawer(');
     expect(
       start,
       isNonNegative,
-      reason: '_buildDrawer が見つからない。名前が変わったならこの検査のアンカーも直す',
+      reason: 'buildHomeDrawer が見つからない。名前が変わったならこの検査のアンカーも直す',
     );
-    // 次のメソッド定義までを走査対象にする（ファイル末尾まで見ると、
+    // 次のトップレベルの定義までを走査対象にする（ファイル末尾まで見ると、
     // 無関係な ListView の padding を巻き込む）。
-    final end = source.indexOf('\n  Widget _', start + 1);
+    final end = source.indexOf('\n}\n', start + 1);
     final drawer = end < 0
         ? source.substring(start)
         : source.substring(start, end);

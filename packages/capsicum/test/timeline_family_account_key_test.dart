@@ -48,10 +48,9 @@ class _Adapter extends Mock
 
   @override
   Future<List<Post>> getPostsByHashtag(
-    String hashtag, {
+    HashtagQuery hashtag, {
     TimelineQuery? query,
-    List<String>? all,
-  }) async => _page('tag:$hashtag', query);
+  }) async => _page('tag:${hashtag.toSpec()}', query);
 
   @override
   Future<List<Post>> getListTimeline(

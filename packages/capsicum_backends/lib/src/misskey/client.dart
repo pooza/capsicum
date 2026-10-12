@@ -294,6 +294,23 @@ class MisskeyClient {
     );
   }
 
+  /// POST /api/renote-mute/create — この相手のリノートを TL に出さない (#1245)。
+  /// フォローしていない相手にも掛けられる。
+  Future<void> muteRenotes(String userId) async {
+    await dio.post(
+      '/api/renote-mute/create',
+      data: createBody({'userId': userId}),
+    );
+  }
+
+  /// POST /api/renote-mute/delete (#1245)
+  Future<void> unmuteRenotes(String userId) async {
+    await dio.post(
+      '/api/renote-mute/delete',
+      data: createBody({'userId': userId}),
+    );
+  }
+
   /// POST /api/following/delete
   Future<void> unfollowUser(String userId) async {
     await dio.post(
@@ -786,6 +803,39 @@ class MisskeyClient {
     return false;
   }
 
+  /// POST /api/notes/state — スレッドをミュートしているか (#1208)。
+  ///
+  /// Note 自体はこの状態を持たないので、ここで引く（[isNoteFavorited] と同じ
+  /// エンドポイントの別のフィールド）。
+  Future<bool> isThreadMuted(String noteId) async {
+    final response = await dio.post(
+      '/api/notes/state',
+      data: createBody({'noteId': noteId}),
+    );
+    final data = response.data;
+    if (data is Map) return data['isMutedThread'] == true;
+    return false;
+  }
+
+  /// POST /api/notes/thread-muting/create (#1208)
+  ///
+  /// [noteId] はスレッドのどのノートでもよい（サーバーが `threadId ?? id` で
+  /// 引く）。⚠ 流量制限は 1 時間に 10 回。
+  Future<void> muteThread(String noteId) async {
+    await dio.post(
+      '/api/notes/thread-muting/create',
+      data: createBody({'noteId': noteId}),
+    );
+  }
+
+  /// POST /api/notes/thread-muting/delete (#1208)
+  Future<void> unmuteThread(String noteId) async {
+    await dio.post(
+      '/api/notes/thread-muting/delete',
+      data: createBody({'noteId': noteId}),
+    );
+  }
+
   /// POST /api/notes/favorites/create
   Future<void> favoriteNote(String noteId) async {
     await dio.post(
@@ -1026,8 +1076,16 @@ class MisskeyClient {
   }
 
   /// POST /api/notes/search-by-tag
+  ///
+  /// [query] は**外側が OR・内側が AND** の 2 次元配列（`[["a","b"],["c"]]` ＝
+  /// 「a かつ b」または「c」）。ストリーミングの `hashtag` チャンネルの `q` と
+  /// 同じ形 (#1209)。
+  ///
+  /// ⚠⚠ **以前は `tag`（タグ 1 つ）だけを送っていた。**AND 指定のタブでも先頭の
+  /// タグしか渡らず、過去分は AND になっていなかった（ストリーミングで届くぶん
+  /// だけが AND だった）。
   Future<List<MisskeyNote>> searchByTag(
-    String tag, {
+    List<List<String>> query, {
     String? sinceId,
     String? untilId,
     int? limit,
@@ -1035,7 +1093,7 @@ class MisskeyClient {
     final response = await dio.post(
       '/api/notes/search-by-tag',
       data: createBody({
-        'tag': tag,
+        'query': query,
         'sinceId': ?sinceId,
         'untilId': ?untilId,
         'limit': ?limit,

@@ -2,30 +2,46 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../model/account_key.dart';
+import '../ui/widget/content_parser.dart';
 import 'account_manager_provider.dart';
 import 'preferences_provider.dart';
 import 'timeline_provider.dart';
-
-/// spec（"tag" または "tag+and1+and2"）を、代表タグと AND 条件へ分ける。
-///
-/// ⚠ **割り方の正本は [hashtagSpecTags]**（capsicum_core・#1159）。`+` を含む
-/// タグ（Misskey の `#c++` 等）はエスケープされているので、ここで素の
-/// `split('+')` をしないこと。
-(String, List<String>?) parseHashtagSpec(String spec) {
-  final tags = hashtagSpecTags(spec);
-  if (tags.isEmpty) return ('', null);
-  final all = tags.length > 1 ? tags.sublist(1) : null;
-  return (tags.first, all);
-}
 
 /// タグの入力欄に出す、AND 指定の案内 (#1238)。
 ///
 /// ⚠ タブの追加とデッキのカラムの追加に同じ欄があるので、文面を 2 か所に書かない。
 const kHashtagAndHelperText = '+ でつなぐと AND（例: nitiasa+precure）';
 
-/// spec の表示ラベル（`#a + #b`）。
-String hashtagSpecLabel(String spec) =>
-    hashtagSpecTags(spec).map((t) => '#$t').join(' + ');
+/// spec の表示ラベル (#1209)。
+///
+/// | 条件 | ラベル |
+/// | --- | --- |
+/// | a かつ b | `#a + #b` |
+/// | a または b | `#a / #b` |
+/// | a かつ（b または c）・d は除く | `#a + (#b / #c) − #d` |
+///
+/// ⚠ 割り方の正本は [HashtagQuery.parse]（capsicum_core・#1159）。
+String hashtagSpecLabel(String spec) {
+  final query = HashtagQuery.parse(spec);
+  String tags(List<String> list, String separator) =>
+      list.map((t) => '#$t').join(separator);
+  final any = tags(query.any, ' / ');
+  return [
+    [
+      if (query.all.isNotEmpty) tags(query.all, ' + '),
+      if (query.any.isNotEmpty) query.all.isEmpty ? any : '($any)',
+    ].join(' + '),
+    for (final tag in query.none) '− #$tag',
+  ].join(' ');
+}
+
+/// [post] が、タグ TL の条件 [query] の除外に当たるか (#1209)。
+///
+/// ⚠ **サーバーが除外を受けられない SNS（Misskey）のための、端末側の絞り込み。**
+/// Mastodon はサーバーが `none[]` で落として返すので、ここでは何も落ちない。
+/// ⚠ ブースト / リノートは中身の投稿のタグで見る（外側はタグを持たない）。
+bool postExcludedByHashtagQuery(Post post, HashtagQuery query) =>
+    query.none.isNotEmpty && query.excludes(postHashtags(post.reblog ?? post));
 
 /// ハッシュタグ TL の family キー (#1088)。
 ///
@@ -69,18 +85,28 @@ class HashtagTimelineNotifier
       arg.account,
     );
     if (adapter == null || adapter is! HashtagSupport) return null;
-    final (primary, all) = parseHashtagSpec(arg.spec);
-    final posts = await (adapter as HashtagSupport).getPostsByHashtag(
-      primary,
+    final raw = await (adapter as HashtagSupport).getPostsByHashtag(
+      _query,
       query: TimelineQuery(maxId: maxId, limit: _pageSize),
-      all: all,
     );
+    // ⚠ 続きがあるかは絞る前の件数で見る（除外で薄くなったページを最後の
+    // ページと読まない・#1209）。
     return (
-      posts: posts,
-      rawCount: posts.length,
-      rawLastId: posts.lastOrNull?.id,
+      posts: raw.where(_keeps).toList(),
+      rawCount: raw.length,
+      rawLastId: raw.lastOrNull?.id,
     );
   }
+
+  /// この TL の条件 (#1209)。
+  HashtagQuery get _query => HashtagQuery.parse(arg.spec);
+
+  /// 除外のタグを持つ投稿を落とす (#1209)。サーバーが除外を受けられない
+  /// Misskey のための絞り込みで、Mastodon では何も落ちない。
+  bool _keeps(Post post) => !postExcludedByHashtagQuery(post, _query);
+
+  @override
+  bool acceptsLivePost(Post post) => _keeps(post);
 
   /// 自分の投稿をこのハッシュタグ TL の先頭へ楽観的に挿入する (#887)。
   ///
@@ -103,6 +129,7 @@ class HashtagTimelineNotifier
 
   @override
   Future<TimelineState> build(HashtagTimelineKey key) async {
+    _olderCursor = null;
     // 前のタグ / アカウントの新着を、このカラムへ漏らさない (#1098)。
     final liveGeneration = resetLiveIngestState();
     // 🔴 `Account` 全体ではなく、解決したアダプタだけを見る（本線の
@@ -121,16 +148,16 @@ class HashtagTimelineNotifier
       listenLiveStreamToggle(streamAdapter);
     }
 
-    final (primary, all) = parseHashtagSpec(key.spec);
+    final condition = HashtagQuery.parse(key.spec);
     final hideLivecure = ref.watch(hideLivecureProvider);
     final result = await fetchUntilVisible(
       pageSize: _pageSize,
       hideLivecure: hideLivecure,
       fetch: (maxId) => (adapter as HashtagSupport).getPostsByHashtag(
-        primary,
+        condition,
         query: TimelineQuery(maxId: maxId, limit: _pageSize),
-        all: all,
       ),
+      keep: (post) => !postExcludedByHashtagQuery(post, condition),
     );
     seedLiveIngestAnchor(result.posts);
     if (adapter is StreamSupport) {
@@ -144,6 +171,18 @@ class HashtagTimelineNotifier
       streamConnectionState: streamConnectionState,
     );
   }
+
+  /// 続き読みが空振りしたとき、続けて先を引く上限（ページ数）。
+  static const _maxEmptyOlderPages = 5;
+
+  /// 続き読みの、**絞る前の**末尾の id（次に引く起点）。
+  ///
+  /// ⚠⚠ **表示中の最後の投稿を起点にしない。**除外（Misskey は端末側で絞る・
+  /// #1209）や実況フィルタで 1 ページぶんが丸ごと落ちると、表示中の最後は
+  /// 動かないので、同じページを引き直し続けて先へ進めなくなる（v2.2 の
+  /// リリース前レビュー）。初回取得と取りこぼしの補いは、もとから生の末尾で
+  /// 進んでいる。
+  String? _olderCursor;
 
   Future<void> loadMore() async {
     final current = state.valueOrNull;
@@ -162,28 +201,37 @@ class HashtagTimelineNotifier
           return;
         }
 
-        final (primary, all) = parseHashtagSpec(arg.spec);
-        final base = state.valueOrNull ?? current;
-        final lastId = base.posts.last.id;
         final hideLivecure = ref.read(hideLivecureProvider);
-        final raw = await (adapter as HashtagSupport).getPostsByHashtag(
-          primary,
-          query: TimelineQuery(maxId: lastId, limit: _pageSize),
-          all: all,
-        );
-        final older = hideLivecure
-            ? raw.where((p) => !hasLivecureTag(p)).toList()
-            : raw;
+        var cursor =
+            _olderCursor ?? (state.valueOrNull ?? current).posts.lastOrNull?.id;
+        final older = <Post>[];
+        var hasMore = true;
+        // ⚠ 絞った結果が空のページは、上限まで続けて先を引く。空のまま返すと、
+        // 画面には何も足されないので、続きを読む合図が二度と来ない。
+        for (var page = 0; page < _maxEmptyOlderPages; page++) {
+          final raw = await (adapter as HashtagSupport).getPostsByHashtag(
+            _query,
+            query: TimelineQuery(maxId: cursor, limit: _pageSize),
+          );
+          if (raw.isNotEmpty) cursor = raw.last.id;
+          older.addAll(
+            raw.where(_keeps).where((p) => !hideLivecure || !hasLivecureTag(p)),
+          );
+          hasMore = raw.length >= _pageSize;
+          if (older.isNotEmpty || !hasMore) break;
+        }
+        _olderCursor = cursor;
 
         // 既にリストにある投稿は落とす (#909)。各行は id をキーにしているので、
         // ページ境界の重複をそのまま足すと Duplicate keys で描画ごと落ちる。
+        final base = state.valueOrNull ?? current;
         final knownIds = {for (final p in base.posts) p.id};
         final appended = older.where((p) => knownIds.add(p.id)).toList();
         state = AsyncData(
           base.copyWith(
             posts: [...base.posts, ...appended],
             isLoadingMore: false,
-            hasMore: raw.length >= _pageSize,
+            hasMore: hasMore,
             loadMoreError: null,
           ),
         );
