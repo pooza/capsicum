@@ -304,7 +304,7 @@ extension CapsicumMisskeyAnnouncementExtension on MisskeyAnnouncement {
 
 extension CapsicumMisskeyListExtension on MisskeyList {
   PostList toCapsicum() {
-    return PostList(id: id, title: name);
+    return PostList(id: id, title: name, isPublic: isPublic);
   }
 }
 
@@ -545,6 +545,20 @@ ScheduledPost? misskeyScheduledPostFromMap(Map<String, dynamic> json) {
     mediaIds:
         (json['fileIds'] as List?)?.map((id) => id as String).toList() ?? [],
   );
+}
+
+/// `users/relation` の応答から、フォロー中の相手の返信を TL に流しているかを
+/// 読む (#1211)。
+///
+/// 応答の `following` は、フォローしていればフォローの記録そのもの、していな
+/// ければ null。⚠ **`isFollowing`（真偽）とは別のキー。**
+/// ⚠ **読めないときは null を返す**（＝画面は項目を出さない）。false に倒すと、
+/// 押すと逆向きに倒れる項目になる。
+bool? misskeyFollowWithReplies(Map<String, dynamic> relation) {
+  final following = relation['following'];
+  if (following is! Map) return null;
+  final withReplies = following['withReplies'];
+  return withReplies is bool ? withReplies : null;
 }
 
 /// `NoteDraft` の投票を、`notes/drafts/update` へ送り直す形にする (#1212)。

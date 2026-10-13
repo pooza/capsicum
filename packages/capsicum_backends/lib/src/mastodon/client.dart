@@ -1358,6 +1358,22 @@ class MastodonClient {
     return MastodonList.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// PUT /api/v1/lists/:id — リストの設定だけを変える (#1211)。
+  ///
+  /// ⚠ **渡した項目だけを送る。**`title` は送らない（上流は
+  /// `params.permit(:title, :replies_policy, :exclusive)` の部分更新）。
+  Future<MastodonList> updateListSettings(
+    String id, {
+    String? repliesPolicy,
+    bool? exclusive,
+  }) async {
+    final response = await dio.put(
+      '/api/v1/lists/$id',
+      data: {'replies_policy': ?repliesPolicy, 'exclusive': ?exclusive},
+    );
+    return MastodonList.fromJson(response.data as Map<String, dynamic>);
+  }
+
   /// DELETE /api/v1/lists/:id
   Future<void> deleteList(String id) async {
     await dio.delete('/api/v1/lists/$id');

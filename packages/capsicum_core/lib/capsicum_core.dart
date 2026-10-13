@@ -59,6 +59,7 @@ export 'src/social/interfaces/drive_support.dart';
 export 'src/social/interfaces/favorite_support.dart';
 export 'src/social/interfaces/featured_tag_support.dart';
 export 'src/social/interfaces/flash_support.dart';
+export 'src/social/interfaces/follow_replies_support.dart';
 export 'src/social/interfaces/follow_request_support.dart';
 export 'src/social/interfaces/follow_support.dart';
 export 'src/social/interfaces/gallery_support.dart';

@@ -294,6 +294,20 @@ class MisskeyClient {
     );
   }
 
+  /// POST /api/following/update — フォロー中の相手の返信を TL に流すか (#1211)。
+  ///
+  /// ⚠ `notify`（投稿の通知）も同じ口が受けるが、送らない（送らなかった項目は
+  /// 変わらない）。
+  Future<void> updateFollowing(
+    String userId, {
+    required bool withReplies,
+  }) async {
+    await dio.post(
+      '/api/following/update',
+      data: createBody({'userId': userId, 'withReplies': withReplies}),
+    );
+  }
+
   /// POST /api/renote-mute/create — この相手のリノートを TL に出さない (#1245)。
   /// フォローしていない相手にも掛けられる。
   Future<void> muteRenotes(String userId) async {
@@ -1545,6 +1559,20 @@ class MisskeyClient {
     final response = await dio.post(
       '/api/users/lists/update',
       data: createBody({'listId': listId, 'name': name}),
+    );
+    return MisskeyList.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// POST /api/users/lists/update — リストの公開 / 非公開だけを変える (#1211)。
+  ///
+  /// ⚠ `name` は送らない（必須は `listId` だけで、送らなかった項目は変わらない）。
+  Future<MisskeyList> updateListVisibility(
+    String listId, {
+    required bool isPublic,
+  }) async {
+    final response = await dio.post(
+      '/api/users/lists/update',
+      data: createBody({'listId': listId, 'isPublic': isPublic}),
     );
     return MisskeyList.fromJson(response.data as Map<String, dynamic>);
   }

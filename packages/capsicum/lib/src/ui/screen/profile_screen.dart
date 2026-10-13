@@ -1504,6 +1504,27 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                   ),
                 );
               }
+            case 'toggle_replies':
+              // フォロー中の相手の返信を TL に流すか (#1211)。Misskey の
+              // フォローごとの設定。
+              final show = !(rel.showingReplies ?? false);
+              final ok = await _performAction(
+                () => (adapter as FollowRepliesSupport).setShowReplies(
+                  widget.user.id,
+                  show: show,
+                ),
+              );
+              if (ok && mounted) {
+                messenger.showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      show
+                          ? 'この人の返信をタイムラインに表示します'
+                          : 'この人の返信をタイムラインに表示しないようにしました',
+                    ),
+                  ),
+                );
+              }
             case 'block':
               await _confirmAndBlock(adapter);
             case 'unblock':
@@ -1549,6 +1570,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
               value: 'toggle_reposts',
               child: Text(
                 rel.showingReposts ? '$boostLabelを表示しない' : '$boostLabelを表示する',
+              ),
+            ),
+          // フォロー中の相手の返信を TL に流すか (#1211)。⚠ いまの値が読めた
+          // とき（＝フォロー中）にだけ出す。読めないまま出すと、押すと逆向きに
+          // 倒れる項目になる。
+          if (adapter is FollowRepliesSupport &&
+              rel.following &&
+              rel.showingReplies != null)
+            PopupMenuItem(
+              value: 'toggle_replies',
+              child: Text(
+                rel.showingReplies! ? '返信をタイムラインに表示しない' : '返信をタイムラインに表示する',
               ),
             ),
           if (rel.blocking)

@@ -643,7 +643,12 @@ Map<String, String> _extractHtmlCustomEmojis(String html) {
 
 extension CapsicumMastodonListExtension on MastodonList {
   PostList toCapsicum() {
-    return PostList(id: id, title: title);
+    return PostList(
+      id: id,
+      title: title,
+      repliesPolicy: ListRepliesPolicy.fromApi(repliesPolicy),
+      exclusive: exclusive,
+    );
   }
 }
 

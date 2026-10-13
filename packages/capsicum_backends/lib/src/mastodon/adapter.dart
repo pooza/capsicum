@@ -1627,6 +1627,22 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     return list.toCapsicum();
   }
 
+  /// ⚠ [isPublic] は Mastodon に無い項目なので送らない。
+  @override
+  Future<PostList> updateListSettings(
+    String id, {
+    ListRepliesPolicy? repliesPolicy,
+    bool? exclusive,
+    bool? isPublic,
+  }) async {
+    final list = await client.updateListSettings(
+      id,
+      repliesPolicy: repliesPolicy?.apiValue,
+      exclusive: exclusive,
+    );
+    return list.toCapsicum();
+  }
+
   @override
   Future<void> deleteList(String id) async {
     await client.deleteList(id);

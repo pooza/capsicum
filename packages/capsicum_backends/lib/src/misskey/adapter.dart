@@ -137,6 +137,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         BookmarkSupport,
         ThreadMuteSupport,
         RepostMuteSupport,
+        FollowRepliesSupport,
         AnnouncementSupport,
         FollowSupport,
         FollowRequestSupport,
@@ -1055,8 +1056,15 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       muting: r['isMuted'] as bool? ?? false,
       blocking: r['isBlocking'] as bool? ?? false,
       showingReposts: !(r['isRenoteMuted'] as bool? ?? false),
+      showingReplies: misskeyFollowWithReplies(r),
     );
   }
+
+  // FollowRepliesSupport (#1211)
+
+  @override
+  Future<void> setShowReplies(String userId, {required bool show}) =>
+      client.updateFollowing(userId, withReplies: show);
 
   // RepostMuteSupport (#1245)
 
@@ -1573,6 +1581,22 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   @override
   Future<PostList> updateList(String id, String title) async {
     final list = await client.updateList(id, title);
+    return list.toCapsicum();
+  }
+
+  /// ⚠ [repliesPolicy] / [exclusive] は Misskey に無い項目なので送らない。
+  /// [isPublic] が null なら、変えるものが無いので送らない（空の更新は送らない）。
+  @override
+  Future<PostList> updateListSettings(
+    String id, {
+    ListRepliesPolicy? repliesPolicy,
+    bool? exclusive,
+    bool? isPublic,
+  }) async {
+    if (isPublic == null) {
+      return MisskeyList.fromJson(await client.showList(id)).toCapsicum();
+    }
+    final list = await client.updateListVisibility(id, isPublic: isPublic);
     return list.toCapsicum();
   }
 
