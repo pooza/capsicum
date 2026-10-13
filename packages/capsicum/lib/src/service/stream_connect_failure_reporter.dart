@@ -60,6 +60,9 @@ class StreamConnectFailureBatch {
 ///   送らない時間はホストごと** (#1267)。以前は送らない時間もアプリ全体で 1 つ
 ///   だったので、ホスト A が長く落ちている間にホスト B が落ちても、B の失敗が
 ///   件数にもホストの集合にも入らなかった
+/// - ⚠ **「回線側」と読んだ回だけは、送らない時間を全ホストに掛ける** (#1283)。
+///   長い圏外では再接続の時機がホストごとにずれるので、ホストごとのままだと
+///   ホストの数だけ warning が出る
 /// - 「回線側」と読んだあと [networkDownCarryOver] のうちに来た次のまとめは、
 ///   1 ホストだけでも続きとして「回線側」に読む (#1267)
 /// - ⚠⚠ **どこかの接続が成立したら、続きはそこで終わる**（[noteConnected]）。
@@ -102,6 +105,17 @@ class StreamConnectFailureReporter {
   /// 最後に「回線側」として送った時刻。
   DateTime? _lastNetworkDownAt;
 
+  /// 「回線側」として送った時刻で、**全ホストのぶんを送らない時間**の起点
+  /// (#1283)。[_lastNetworkDownAt] と同じ時刻が入るが、役割が違う（あちらは
+  /// 続きとして読む長さ・こちらは送らない長さ）ので分けて持つ。
+  ///
+  /// 送らない時間をホストごとにした (#1267) 結果、長い圏外では再接続の時機が
+  /// ホストごとにずれ、ホストの数だけ「続き」の warning が出ていた。回線側の
+  /// 事象は全ホストに共通なので、その回だけは全体に掛ける。
+  /// ⚠ **1 ホストだけの回には掛けない** —— 掛けると、A が落ちている間の B の
+  /// 失敗をまた落とす（#1267 で直した穴へ戻る）。
+  DateTime? _networkDownSentAt;
+
   String? _category;
   Object? _error;
   StackTrace? _stackTrace;
@@ -119,8 +133,15 @@ class StreamConnectFailureReporter {
     StackTrace? stackTrace,
     String? host,
   }) {
+    final now = _now();
+    // 「回線側」と読んだあとは、どのホストのぶんも送らない (#1283)。
+    final networkDownSentAt = _networkDownSentAt;
+    if (networkDownSentAt != null &&
+        now.difference(networkDownSentAt) < quiet) {
+      return;
+    }
     final lastSentAt = _lastSentAt[host];
-    if (lastSentAt != null && _now().difference(lastSentAt) < quiet) return;
+    if (lastSentAt != null && now.difference(lastSentAt) < quiet) return;
     _count++;
     if (host != null) {
       _hosts.add(host);
@@ -139,7 +160,13 @@ class StreamConnectFailureReporter {
   /// 「回線側」の続きをここで終わらせる。以後に来る 1 ホストだけの失敗は、
   /// サーバー側の障害の合図として error に戻る。⚠ 呼ぶ側はホストを問わない ——
   /// 1 本でも通れば回線側の事象ではない。
-  void noteConnected() => _lastNetworkDownAt = null;
+  ///
+  /// ⚠ 全ホストのぶんを送らない時間もここで終える (#1283)。回線が戻ったあとに
+  /// 特定のサーバーだけ落ちたのを、圏外の続きとして黙らせない。
+  void noteConnected() {
+    _lastNetworkDownAt = null;
+    _networkDownSentAt = null;
+  }
 
   void _flush() {
     _timer = null;
@@ -165,7 +192,10 @@ class StreamConnectFailureReporter {
     if (_hostless) _lastSentAt[null] = now;
     // 古い記録を残さない（接続先は増減する）。
     _lastSentAt.removeWhere((_, at) => now.difference(at) >= quiet);
-    if (batch.looksLikeNetworkDown) _lastNetworkDownAt = now;
+    if (batch.looksLikeNetworkDown) {
+      _lastNetworkDownAt = now;
+      _networkDownSentAt = now;
+    }
     _category = null;
     _error = null;
     _stackTrace = null;
@@ -182,6 +212,7 @@ class StreamConnectFailureReporter {
     _timer = null;
     _lastSentAt.clear();
     _lastNetworkDownAt = null;
+    _networkDownSentAt = null;
     _category = null;
     _error = null;
     _stackTrace = null;
