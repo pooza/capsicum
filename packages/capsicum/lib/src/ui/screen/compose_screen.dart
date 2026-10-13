@@ -3168,7 +3168,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   Future<void> _attachNowPlayingArtwork(NowPlayingInfo info) async {
     final uri = info.artworkUrl;
     if (uri == null) {
-      _noteNowPlayingArtwork('no_source');
+      // ネイティブが理由を返した回は、それも残す (#1283)。「源が絵を持って
+      // いない」と「絵はあったが書き出せなかった」を分けられる。
+      _noteNowPlayingArtwork(nowPlayingArtworkNoSourceOutcome(info));
       return;
     }
     if (_attachedNowPlayingArtwork.contains(uri)) {

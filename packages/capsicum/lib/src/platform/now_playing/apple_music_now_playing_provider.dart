@@ -104,10 +104,27 @@ NowPlayingInfo? nowPlayingFromAppleMusicMetadata(Map<String, Object?> data) {
     // 添付の経路（`fetchNowPlayingArtwork`）にそのまま乗る。
     // ⚠ iOS はまだ返さない（#1275）ので、キーが無ければ null。
     artworkUrl: _artworkFileUri(data['artworkPath']),
+    artworkSkipReason: _artworkSkipReason(data['artworkSkipped']),
     // Apple Music は文字情報源（URL 源は Spotify provider が担う）。
     url: null,
   );
 }
+
+/// ネイティブがジャケットを書き出さなかった理由として受け取る値 (#1283)。
+/// macOS の `NowPlayingPlugin.swift` が返す値と揃える。
+const kNowPlayingArtworkSkipReasons = {
+  'no_artwork',
+  'unsupported_format',
+  'too_large',
+  'write_failed',
+};
+
+/// ⚠ **知っている値だけを通す。**この値はそのまま Sentry の breadcrumb に載る
+/// ので、ネイティブが返した任意の文字列を素通しにしない。
+String? _artworkSkipReason(Object? value) =>
+    value is String && kNowPlayingArtworkSkipReasons.contains(value)
+    ? value
+    : null;
 
 /// ネイティブが返した絶対パスを `file://` にする。相対パスや空は捨てる
 /// （行き先の分からないファイルを添付の候補にしない）。

@@ -30,6 +30,12 @@ class NowPlayingInfo {
   /// からの整形パスへ回す（design §URL を持つ源と持たない源）。
   final Uri? url;
 
+  /// 源がアートワークを渡さなかった理由（分かるときだけ・#1283）。
+  ///
+  /// 「付かない」という報告を切り分けるための診断用で、表示にも判定にも
+  /// 使わない。⚠ 同じ曲かどうかに関係しないので、`==` / `hashCode` には入れない。
+  final String? artworkSkipReason;
+
   const NowPlayingInfo({
     required this.sourceAppName,
     this.title,
@@ -37,6 +43,7 @@ class NowPlayingInfo {
     this.album,
     this.artworkUrl,
     this.url,
+    this.artworkSkipReason,
   });
 
   /// フィールドを差し替えたコピーを返す。モロヘイヤ enrich (#669) が URL を
@@ -56,6 +63,7 @@ class NowPlayingInfo {
     album: album ?? this.album,
     artworkUrl: artworkUrl ?? this.artworkUrl,
     url: url ?? this.url,
+    artworkSkipReason: artworkSkipReason,
   );
 
   @override

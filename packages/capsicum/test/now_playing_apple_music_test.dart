@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:capsicum/src/platform/now_playing/apple_music_now_playing_provider.dart';
 import 'package:capsicum/src/platform/now_playing/now_playing_provider.dart';
 import 'package:flutter/services.dart';
@@ -47,6 +49,47 @@ void main() {
         });
         expect(info!.artworkUrl, isNull, reason: '$value');
       }
+    });
+
+    // #1283: ネイティブがジャケットを書き出さなかった理由。
+    test('書き出さなかった理由（artworkSkipped）を読む', () {
+      for (final reason in kNowPlayingArtworkSkipReasons) {
+        final info = nowPlayingFromAppleMusicMetadata({
+          'title': 'Song',
+          'artworkSkipped': reason,
+        });
+        expect(info!.artworkSkipReason, reason);
+        expect(info.artworkUrl, isNull);
+      }
+    });
+
+    test('⚠ 知らない値・文字列でない値は捨てる（breadcrumb に素通ししない）', () {
+      for (final value in <Object?>['/Users/someone/secret', '', 42, null]) {
+        final info = nowPlayingFromAppleMusicMetadata({
+          'title': 'Song',
+          'artworkSkipped': value,
+        });
+        expect(info!.artworkSkipReason, isNull, reason: '$value');
+      }
+    });
+
+    // ⚠ Swift が返す値と Dart の受け口がずれると、理由は黙って捨てられる
+    // （上のテストは Dart 側しか見ていない）。ソースを突き合わせる。
+    test('⚠⚠ macOS のネイティブが返す理由は、すべて Dart が受け取る値', () {
+      final swift = File(
+        'macos/Runner/NowPlayingPlugin.swift',
+      ).readAsStringSync();
+      final returned = {
+        ...RegExp(
+          r'\.skipped\("([a-z_]+)"\)',
+        ).allMatches(swift).map((m) => m.group(1)!),
+        ...RegExp(
+          r'map\["artworkSkipped"\] = "([a-z_]+)"',
+        ).allMatches(swift).map((m) => m.group(1)!),
+      };
+
+      expect(returned, isNotEmpty, reason: '走査が空振りしていない');
+      expect(returned, kNowPlayingArtworkSkipReasons);
     });
 
     test('sourceAppName が無ければ Apple Music を既定にする', () {

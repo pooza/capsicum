@@ -15,6 +15,17 @@ import '../util/exception_scrub.dart';
 /// ジャケットではない何かと見て捨てる。⚠ 縮小はしない（決定事項 3）。
 const int kNowPlayingArtworkMaxBytes = 10 * 1024 * 1024;
 
+/// 源がアートワークを渡さなかった回に、breadcrumb へ残す文面 (#1283)。
+///
+/// 源が理由を返さなければ `no_source`（従来どおり）。返した回は
+/// `no_source: too_large` の形で添える —— ネイティブ側の「絵が無い / 形式が
+/// 違う / 大きすぎる / 書けなかった」が、どれも「源が絵を持っていない」に
+/// 見えるのを防ぐ。
+String nowPlayingArtworkNoSourceOutcome(NowPlayingInfo info) {
+  final reason = info.artworkSkipReason;
+  return reason == null ? 'no_source' : 'no_source: $reason';
+}
+
 /// 画像として受け取る MIME と、付ける拡張子。
 const Map<String, String> _extensionByMime = {
   'image/jpeg': 'jpg',
