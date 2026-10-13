@@ -24,10 +24,7 @@ class TimelineOlderPrompt extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text(
-            '絞り込みで多くの投稿が除外されています',
-            textAlign: TextAlign.center,
-          ),
+          const Text('絞り込みで多くの投稿が除外されています', textAlign: TextAlign.center),
           const SizedBox(height: 16),
           if (isLoading)
             const CircularProgressIndicator()
