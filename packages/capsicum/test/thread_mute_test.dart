@@ -224,6 +224,55 @@ void main() {
       expect(adapter.calls, ['state', 'state', 'unmute']);
     });
 
+    // #1283: 状態を引いている間に、押したタイルが破棄された回。
+    testWidgets('⚠ Misskey: 確かめられなかったら解除せず、既にミュートしていると知らせる', (tester) async {
+      final (r, updated) = await runner(tester);
+      final adapter = _Adapter(muted: true);
+
+      await r.toggleThreadMute(
+        adapter: adapter,
+        post: _post(),
+        confirmUnmute: () async => null,
+      );
+      await tester.pump();
+
+      expect(adapter.calls, ['state'], reason: '解除しない側に倒す');
+      expect(adapter.muted, isTrue);
+      expect(updated, isEmpty);
+      expect(find.text('この会話は既にミュートしています'), findsOneWidget);
+    });
+
+    testWidgets('Misskey: キャンセルした回は、何も出さない', (tester) async {
+      final (r, _) = await runner(tester);
+      final adapter = _Adapter(muted: true);
+
+      await r.toggleThreadMute(
+        adapter: adapter,
+        post: _post(),
+        confirmUnmute: () async => false,
+      );
+      await tester.pump();
+
+      expect(find.byType(SnackBar), findsNothing);
+    });
+
+    testWidgets('⚠ 破棄されたタイルからは確かめられない（null を返す）', (tester) async {
+      late BuildContext captured;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) {
+              captured = context;
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+
+      expect(await confirmThreadUnmute(captured), isNull);
+    });
+
     testWidgets('⚠ 状態が引けなかったら、ミュートも解除もしない', (tester) async {
       final (r, updated) = await runner(tester);
       final adapter = _Adapter(failState: true);

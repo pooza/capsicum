@@ -126,12 +126,17 @@ class PostActionRunner {
   ///   そのままミュートし、ミュート中なら [confirmUnmute] で確かめてから外す
   ///   （「ミュート」のつもりで押して解除になるのを防ぐ）
   ///
+  /// [confirmUnmute] は、**確かめられなかったら null** を返す（押したタイルが
+  /// 状態を引いている間に破棄された回）。⚠ そのときは解除しない側に倒すが、
+  /// **黙って終わらせない** —— 何も出さないと、利用者には「ミュートした」のか
+  /// 「何も起きなかった」のかが分からない (#1283)。
+  ///
   /// ⚠ シートを開くたびに状態を引かないのは、Misskey では 1 リクエスト増える
   /// ため（2026-10-12 pooza）。
   Future<void> toggleThreadMute({
     required ThreadMuteSupport adapter,
     required Post post,
-    required Future<bool> Function() confirmUnmute,
+    required Future<bool?> Function() confirmUnmute,
   }) async {
     final timeline = _timeline;
     try {
@@ -140,7 +145,16 @@ class PostActionRunner {
       final Post updated;
       final String message;
       if (muted) {
-        if (known == null && !await confirmUnmute()) return;
+        if (known == null) {
+          final answer = await confirmUnmute();
+          if (answer == null) {
+            messenger.showSnackBar(
+              const SnackBar(content: Text('この会話は既にミュートしています')),
+            );
+            return;
+          }
+          if (!answer) return;
+        }
         updated = await adapter.unmuteThread(post.id);
         message = '会話のミュートを解除しました';
       } else {
@@ -555,8 +569,12 @@ bool threadMuteApplies(Post post, User? me) {
 
 /// ミュート中の会話を解除するかを確かめる (#1208)。状態を押した時点で引いた
 /// 回（Misskey）にだけ出す。
-Future<bool> confirmThreadUnmute(BuildContext context) async {
-  if (!context.mounted) return false;
+///
+/// ⚠ **確かめられなかったら null**（状態を引いている間にタイルが破棄された回）。
+/// 「キャンセル」（false）と分けるのは、呼び出し側が「既にミュートしています」
+/// と知らせるため (#1283)。ダイアログを枠の外で閉じたのはキャンセルと同じ。
+Future<bool?> confirmThreadUnmute(BuildContext context) async {
+  if (!context.mounted) return null;
   final ok = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
