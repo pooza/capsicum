@@ -20,8 +20,12 @@
 /// | `%` | `%25` |
 ///
 /// ⚠ **既存の保存値はそのまま読める。**エスケープを導入する前の spec に `%25` /
-/// `%2B` が入っていることは無い（そう書けた入口が無い）ので、[hashtagSpecTags] に
-/// かけても今までと同じタグへ分解される。**移行の読み替えは不要。**
+/// `%2B` が入っていることは無い（そう書けた入口が無い）ので、[HashtagQuery.parse]
+/// にかけても今までと同じタグへ分解される。**移行の読み替えは不要。**
+///
+/// ⚠ **spec を割る入口は [HashtagQuery.parse] だけ。**以前は含む側のタグを平らに
+/// 返す `hashtagSpecTags` があったが、「すべて含む」と「いずれか」を混ぜて返す
+/// ので、条件が要る場面で使うと誤る。呼び出しが無くなったので消した (#1283)。
 ///
 /// ⚠ 唯一の穴は、**文字列として `%2B` を含むタグ**（`#a%2Bb`）を後から
 /// エスケープ無しで保存していた場合。⚠ **その入口は無い**（新しく作る spec は必ず
@@ -59,15 +63,6 @@ String hashtagSpecFromTags(Iterable<String> tags) =>
 /// 配列・本文中のタップ・フィーチャータグ等）は必ずここを通す。`+` を含むタグを
 /// 素のまま spec にすると AND 指定として割れる。
 String hashtagSpecFromTag(String tag) => hashtagSpecFromTags([tag]);
-
-/// spec に出てくる、**含む側**のタグ（すべて含む + いずれかを含む）。
-///
-/// ⚠ **条件の中身が要るときは [HashtagQuery.parse] を使う。**ここは「どのタグが
-/// 関わっているか」だけを返し、AND か OR かの別と、除外のタグは落ちる (#1209)。
-List<String> hashtagSpecTags(String spec) {
-  final query = HashtagQuery.parse(spec);
-  return [...query.all, ...query.any];
-}
 
 /// ハッシュタグ TL の条件 (#1209)。
 ///

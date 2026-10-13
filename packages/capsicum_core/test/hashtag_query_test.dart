@@ -209,8 +209,4 @@ void main() {
     expect(HashtagQuery.parse('a+b').tagsToPost, ['a', 'b']);
     expect(HashtagQuery.parse('x?a+b!z').tagsToPost, ['x', 'a']);
   });
-
-  test('hashtagSpecTags は含む側のタグだけを返す', () {
-    expect(hashtagSpecTags('x?a+b!z'), ['x', 'a', 'b']);
-  });
 }

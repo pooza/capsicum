@@ -11,6 +11,10 @@ import 'package:go_router/go_router.dart';
 /// 割れる**。⚠ だから `openHashtag` は **spec をもう一度エスケープして**押し込む。
 /// ここではその前提（デコードされること）と、往復が成立することの両方を実測で
 /// 固定する。
+
+/// spec の「すべて含む」のタグ。ここで扱う spec は AND 指定だけ。
+List<String> tagsOf(String spec) => HashtagQuery.parse(spec).all;
+
 void main() {
   /// `/hashtag/:tag` へ [location] で入ったとき、画面が受け取る値。
   Future<String> tagParamFor(WidgetTester tester, String location) async {
@@ -49,7 +53,7 @@ void main() {
     );
 
     expect(received, spec);
-    expect(hashtagSpecTags(received), [
+    expect(tagsOf(received), [
       'c++',
     ], reason: '⚠⚠ 画面が組み立てる HashtagTab が元のタグ 1 つを指す');
   });
@@ -61,7 +65,7 @@ void main() {
         tester,
         '/hashtag/${Uri.encodeComponent(spec)}',
       );
-      expect(hashtagSpecTags(received), [tag]);
+      expect(tagsOf(received), [tag]);
     }
   });
 

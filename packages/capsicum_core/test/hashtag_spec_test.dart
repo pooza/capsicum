@@ -6,11 +6,15 @@ import 'package:test/test.dart';
 /// ⚠⚠ **Misskey のハッシュタグは `+` を含みうる。**`#c++` はダイスキーに実在する
 /// （2026-09-19 実測）。capsicum は AND 指定を `+` 連結の 1 本の文字列で表して
 /// いるので、エスケープしないと `c` と空タグへ割れて別物になる。
+
+/// spec の「すべて含む」のタグ。ここで扱う spec は AND 指定だけ。
+List<String> tagsOf(String spec) => HashtagQuery.parse(spec).all;
+
 void main() {
   group('spec の組み立てと分解', () {
     test('単独のタグはそのまま', () {
       expect(hashtagSpecFromTag('precure_fun'), 'precure_fun');
-      expect(hashtagSpecTags('precure_fun'), ['precure_fun']);
+      expect(tagsOf('precure_fun'), ['precure_fun']);
     });
 
     test('AND 指定は `+` で連結する', () {
@@ -18,50 +22,48 @@ void main() {
         hashtagSpecFromTags(['delmulin', 'capsicum']),
         'delmulin+capsicum',
       );
-      expect(hashtagSpecTags('delmulin+capsicum'), ['delmulin', 'capsicum']);
+      expect(tagsOf('delmulin+capsicum'), ['delmulin', 'capsicum']);
     });
 
     test('⚠⚠ `+` を含むタグはエスケープされ、1 つのタグとして読み戻せる', () {
       final spec = hashtagSpecFromTag('c++');
       expect(spec, 'c%2B%2B', reason: '区切りの `+` と区別できる形にする');
-      expect(hashtagSpecTags(spec), [
-        'c++',
-      ], reason: '⚠ ここが割れると、そのタグの TL にならない');
+      expect(tagsOf(spec), ['c++'], reason: '⚠ ここが割れると、そのタグの TL にならない');
     });
 
     test('`+` を含むタグを AND 条件に混ぜても割れない', () {
       final spec = hashtagSpecFromTags(['c++', 'programming']);
-      expect(hashtagSpecTags(spec), ['c++', 'programming']);
+      expect(tagsOf(spec), ['c++', 'programming']);
     });
 
     test('`%` もエスケープして読み戻せる（`%2B` と衝突させない）', () {
       final spec = hashtagSpecFromTag('100%');
       expect(spec, '100%25');
-      expect(hashtagSpecTags(spec), ['100%']);
+      expect(tagsOf(spec), ['100%']);
 
       // ⚠ `%2B` という文字列を含むタグも、エスケープを通れば区別できる。
       final tricky = hashtagSpecFromTag('a%2Bb');
-      expect(hashtagSpecTags(tricky), ['a%2Bb']);
+      expect(tagsOf(tricky), ['a%2Bb']);
     });
 
     test('空のタグは落とす（`+` だけ・連続した `+`）', () {
-      expect(hashtagSpecTags('a++b'), ['a', 'b']);
-      expect(hashtagSpecTags('+'), isEmpty);
+      expect(tagsOf('a++b'), ['a', 'b']);
+      expect(tagsOf('+'), isEmpty);
       expect(hashtagSpecFromTags(['a', '', 'b']), 'a+b');
     });
   });
 
   group('⚠ 既存の保存値（エスケープ導入前）がそのまま読める', () {
     test('単独のタグ', () {
-      expect(hashtagSpecTags('precure_fun'), ['precure_fun']);
+      expect(tagsOf('precure_fun'), ['precure_fun']);
     });
 
     test('AND 指定', () {
-      expect(hashtagSpecTags('nitiasa+precure'), ['nitiasa', 'precure']);
+      expect(tagsOf('nitiasa+precure'), ['nitiasa', 'precure']);
     });
 
     test('⚠ 素の `%` を含む保存値も壊れない（`%25` 以外は触らない）', () {
-      expect(hashtagSpecTags('100%off'), ['100%off']);
+      expect(tagsOf('100%off'), ['100%off']);
     });
   });
 
