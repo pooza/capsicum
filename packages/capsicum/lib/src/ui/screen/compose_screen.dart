@@ -5308,7 +5308,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : Icon(_scheduledAt != null ? Icons.schedule_send : Icons.send),
-            tooltip: _scheduledAt != null ? '予約投稿' : null,
+            tooltip: _scheduledAt != null ? '予約投稿' : '投稿',
           ),
         ],
       ),

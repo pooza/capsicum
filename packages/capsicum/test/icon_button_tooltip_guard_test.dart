@@ -33,7 +33,10 @@ List<({int line, String? icon})> findTooltiplessIconButtons(String source) {
     final close = _matchingClose(masked, open);
     if (close < 0) continue;
     final args = masked.substring(open + 1, close);
-    if (_hasTopLevelArgument(args, 'tooltip')) continue;
+    // ⚠ `tooltip: 条件 ? null : '…'` は「持っている」に数えない (#1283)。null の
+    // 側ではツールチップが出ないので、外側の `Tooltip` が受けている必要がある。
+    final tooltip = _topLevelArgumentValue(args, 'tooltip');
+    if (tooltip != null && !_canBeNull(tooltip)) continue;
     if (_enclosingCalls(masked, m.start, 3).contains('Tooltip')) continue;
     found.add((
       line: '\n'.allMatches(masked.substring(0, m.start)).length + 1,
@@ -53,19 +56,41 @@ int _matchingClose(String s, int open) {
   return -1;
 }
 
-/// 引数リスト [args] の**いちばん外側**に `name:` があるか。入れ子の中（子の
-/// ウィジェットの `tooltip:`）は数えない。
-bool _hasTopLevelArgument(String args, String name) {
+/// 引数リスト [args] の**いちばん外側**にある `name:` の値（次の外側のカンマ
+/// まで）。無ければ null。入れ子の中（子のウィジェットの `tooltip:`）は数えない。
+String? _topLevelArgumentValue(String args, String name) {
   var depth = 0;
   final pattern = RegExp('(?<![\\w.])$name\\s*:');
   for (var i = 0; i < args.length; i++) {
     final c = args[i];
     if (c == '(' || c == '[' || c == '{') depth++;
     if (c == ')' || c == ']' || c == '}') depth--;
-    if (depth == 0 && pattern.matchAsPrefix(args, i) != null) return true;
+    if (depth != 0) continue;
+    final m = pattern.matchAsPrefix(args, i);
+    if (m == null) continue;
+    var inner = 0;
+    var end = m.end;
+    for (; end < args.length; end++) {
+      final d = args[end];
+      if (d == '(' || d == '[' || d == '{') inner++;
+      if (d == ')' || d == ']' || d == '}') inner--;
+      if (inner == 0 && d == ',') break;
+    }
+    return args.substring(m.end, end).trim();
   }
-  return false;
+  return null;
 }
+
+/// 引数の値 [value] が null になりうる書き方か。
+///
+/// 見るのは `null` そのものと、三項演算子の枝が `null` の形（`c ? null : 'x'` /
+/// `c ? 'x' : null`）。⚠ 条件の側の `x == null ? 'a' : 'b'` は当てない（どちらの
+/// 枝も文字列）。⚠ 変数経由（`tooltip: label` で `label` が nullable）は、型が
+/// 見えないので見ていない。
+bool _canBeNull(String value) =>
+    value == 'null' ||
+    RegExp(r'\?\s*null\s*:').hasMatch(value) ||
+    RegExp(r':\s*null$').hasMatch(value);
 
 /// [index] を囲んでいる呼び出しの名前を、内側から [levels] 個まで返す。
 List<String> _enclosingCalls(String s, int index, int levels) {
@@ -95,6 +120,14 @@ const _exempt = <String, ({int count, String reason})>{
     reason:
         '検索欄の suffixIcon に出る消去ボタン。入力の消去は定型で、この画面は絵文字の'
         'セルごとに Tooltip を持っているので、重ねると読みづらくなるだけ',
+  ),
+  'notification_bell_button.dart#notifications_outlined': (
+    count: 1,
+    reason:
+        '複数アカウントのときは tooltip を null にして、外側の Tooltip が受ける'
+        '（長押しメニューと両立させるため・#1196）。IconButton を変数に受けて'
+        'から巻いているので、囲みの走査では見えない。単体の検査は'
+        ' notification_bell_button_test.dart にある',
   ),
 };
 
@@ -200,6 +233,56 @@ void main() {
         '''),
         isEmpty,
       );
+    });
+
+    // #1283: null になりうる tooltip は「持っている」に数えない。
+    test('⚠⚠ tooltip が null になりうる書き方は当たる', () {
+      for (final value in [
+        'null',
+        "busy ? null : '送信'",
+        "busy ? '送信' : null",
+        "busy\n              ? null\n              : '送信'",
+      ]) {
+        expect(
+          findTooltiplessIconButtons(
+            'IconButton(icon: Icon(Icons.send), tooltip: $value, onPressed: f);',
+          ),
+          hasLength(1),
+          reason: value,
+        );
+      }
+    });
+
+    test('⚠ null の側を外側の Tooltip が受けていれば当たらない', () {
+      expect(
+        findTooltiplessIconButtons('''
+          Tooltip(
+            message: '通知',
+            child: IconButton(
+              icon: Icon(Icons.notifications),
+              tooltip: hasLongPress ? null : '通知',
+              onPressed: () {},
+            ),
+          );
+        '''),
+        isEmpty,
+      );
+    });
+
+    test('⚠ 条件の側の null は当てない（どちらの枝も文字列）', () {
+      for (final value in [
+        "label == null ? '追加' : '変更'",
+        "label ?? '追加'",
+        "isOn ? '解除' : '設定'",
+      ]) {
+        expect(
+          findTooltiplessIconButtons(
+            'IconButton(icon: Icon(Icons.add), tooltip: $value, onPressed: f);',
+          ),
+          isEmpty,
+          reason: value,
+        );
+      }
     });
 
     test('⚠ 文字列の中に tooltip: と書いてあっても、持っていることにしない', () {
