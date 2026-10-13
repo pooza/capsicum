@@ -1129,6 +1129,32 @@ class MastodonClient {
     return (statuses: statuses, nextMaxId: _parseLinkNextMaxId(response));
   }
 
+  /// POST /api/v1/statuses/:id/quotes/:quoting_status_id/revoke (#1213)
+  ///
+  /// 自分の投稿（[id]）への引用（[quotingStatusId]）を撤回する。戻り値は
+  /// 引用した側の投稿（`quote.state` が `revoked` になる）。
+  Future<MastodonStatus> revokeQuote(String id, String quotingStatusId) async {
+    final response = await dio.post(
+      '/api/v1/statuses/$id/quotes/$quotingStatusId/revoke',
+    );
+    return MastodonStatus.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// PUT /api/v1/statuses/:id/interaction_policy (#1213)
+  ///
+  /// 投稿したあとに引用の許可を変える。⚠ 送るのは `quote_approval_policy` だけ
+  /// （本文や公開範囲には触らない。投稿の編集とは別の口）。
+  Future<MastodonStatus> updateInteractionPolicy(
+    String id, {
+    required String quoteApprovalPolicy,
+  }) async {
+    final response = await dio.put(
+      '/api/v1/statuses/$id/interaction_policy',
+      data: {'quote_approval_policy': quoteApprovalPolicy},
+    );
+    return MastodonStatus.fromJson(response.data as Map<String, dynamic>);
+  }
+
   /// GET /api/v1/bookmarks
   Future<List<MastodonStatus>> getBookmarks({
     String? maxId,

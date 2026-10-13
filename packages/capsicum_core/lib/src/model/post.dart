@@ -4,7 +4,16 @@ import 'post_scope.dart';
 import 'preview_card.dart';
 import 'user.dart';
 
-enum QuoteState { pending, accepted, rejected, deleted, unauthorized }
+enum QuoteState {
+  pending,
+  accepted,
+  rejected,
+
+  /// 引用された側が、あとから引用を外した (#1213)。
+  revoked,
+  deleted,
+  unauthorized,
+}
 
 /// 投稿ごとのリアクション受付条件（Misskey の `reactionAcceptance`）。#1044
 ///

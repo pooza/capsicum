@@ -21,6 +21,7 @@ import '../../service/tco_resolver.dart';
 import '../../service/url_preview_cache.dart';
 import '../../util/exception_scrub.dart';
 import '../../util/user_acct.dart';
+import '../util/compose_settings_display.dart';
 import '../util/deck_navigation.dart';
 import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
@@ -28,6 +29,7 @@ import '../util/post_action_error.dart';
 import '../util/post_actions.dart';
 import '../util/post_scope_display.dart';
 import '../util/provider_scope_carrier.dart';
+import '../util/quote_actions.dart';
 import '../util/reaction_acceptance.dart';
 import '../util/relative_time.dart';
 import '../util/visible_timeline.dart';
@@ -1534,8 +1536,50 @@ class _PostTileState extends ConsumerState<PostTile> {
                     },
                   ),
                 ],
+                // 自分の投稿への引用を撤回する (#1213)。引用された側の自衛の
+                // 道具なので、通報の並びに置く。
+                if (adapter is QuoteSupport &&
+                    canRevokeQuote(targetPost, currentUser))
+                  item(
+                    leading: const Icon(Icons.link_off),
+                    title: const Text('この引用を撤回'),
+                    onSelected: () async {
+                      if (!await confirmRevokeQuote(context)) return;
+                      await _runAction(
+                        messenger,
+                        () => (adapter as QuoteSupport).revokeQuote(
+                          quotedPostId: targetPost.quote!.id,
+                          quotingPostId: targetPost.id,
+                        ),
+                        '引用を撤回しました',
+                      );
+                    },
+                  ),
                 if (isOwn) ...[
                   const Divider(),
+                  // 投稿したあとに引用の許可を変える (#1213)。
+                  if (adapter is QuoteSupport &&
+                      canChangeQuoteApproval(targetPost, currentUser))
+                    item(
+                      leading: const Icon(Icons.format_quote),
+                      title: Text(
+                        '引用の許可を変更'
+                        '（${quoteApprovalLabels[targetPost.quoteApprovalPolicy]}）',
+                      ),
+                      onSelected: () async {
+                        final policy = await pickQuoteApprovalPolicy(
+                          context,
+                          current: targetPost.quoteApprovalPolicy!,
+                        );
+                        if (policy == null) return;
+                        await _runAction(
+                          messenger,
+                          () => (adapter as QuoteSupport)
+                              .setQuoteApprovalPolicy(targetPost.id, policy),
+                          '引用の許可を「${quoteApprovalLabels[policy]}」に変更しました',
+                        );
+                      },
+                    ),
                   if (hasMulukhiya) ...[
                     if (canRetag)
                       item(
@@ -3436,6 +3480,7 @@ class _QuoteStateCard extends StatelessWidget {
     final (icon, label) = switch (state) {
       QuoteState.pending => (Icons.hourglass_empty, '引用元の承認待ちです'),
       QuoteState.rejected => (Icons.block, '引用が拒否されました'),
+      QuoteState.revoked => (Icons.link_off, '引用が撤回されました'),
       QuoteState.deleted => (Icons.delete_outline, '引用元の投稿が削除されました'),
       QuoteState.unauthorized => (Icons.lock_outline, '引用元を表示する権限がありません'),
       QuoteState.accepted => (Icons.format_quote, ''),

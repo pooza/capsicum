@@ -80,11 +80,21 @@ const int _compactLabelMaxLength = 5;
 /// 超えたときに残す文字数（残り 1 文字は `…` が使う）。
 const int _compactLabelKeepLength = 4;
 
+/// 引用の許可の選択肢と、その表示名。キーは Mastodon の
+/// `quote_approval_policy` の語彙。
+///
+/// 投稿画面の引用許可と、投稿後に許可を変えるダイアログ (#1213) が共有する。
+const quoteApprovalLabels = {
+  'public': '誰でも',
+  'followers': 'フォロワーのみ',
+  'nobody': '許可しない',
+};
+
 /// 狭い幅で出す引用許可の値 (#1167・2026-09-29 pooza 決定)。
 ///
 /// ⚠ 公開範囲とは詰め方が違う（あちらは機械的な省略、ここは**値の短縮**）。
 /// 引用許可は選択肢が 3 つで固定され、「のみ」を落としても意味が変わらないため。
-/// ⚠ **キーは `_quoteApprovalLabels` と 1 対 1**。片方だけ足すと詰めた側が欠ける。
+/// ⚠ **キーは [quoteApprovalLabels] と 1 対 1**。片方だけ足すと詰めた側が欠ける。
 const composeQuoteApprovalShortLabels = {
   'public': '誰でも',
   'followers': 'フォロワー',

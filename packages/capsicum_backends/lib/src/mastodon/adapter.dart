@@ -875,6 +875,24 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   }
 
   @override
+  Future<Post> revokeQuote({
+    required String quotedPostId,
+    required String quotingPostId,
+  }) async {
+    final status = await client.revokeQuote(quotedPostId, quotingPostId);
+    return status.toCapsicum(host, adminRoleIds: _adminRoleIds);
+  }
+
+  @override
+  Future<Post> setQuoteApprovalPolicy(String postId, String policy) async {
+    final status = await client.updateInteractionPolicy(
+      postId,
+      quoteApprovalPolicy: policy,
+    );
+    return status.toCapsicum(host, adminRoleIds: _adminRoleIds);
+  }
+
+  @override
   Future<({List<Post> posts, String? nextCursor})> getQuotesOf(
     String postId, {
     TimelineQuery? query,

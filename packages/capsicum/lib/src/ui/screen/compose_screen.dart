@@ -876,11 +876,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   bool _pollMultiple = false;
   int _pollExpiresIn = 86400; // 1 day in seconds
 
-  static const _quoteApprovalLabels = {
-    'public': '誰でも',
-    'followers': 'フォロワーのみ',
-    'nobody': '許可しない',
-  };
+  static const _quoteApprovalLabels = quoteApprovalLabels;
 
   static const _quoteApprovalIcons = {
     'public': Icons.public,

@@ -252,6 +252,7 @@ bool _isQuotable(Map<String, dynamic>? quoteApproval) {
     'pending' => QuoteState.pending,
     'accepted' => QuoteState.accepted,
     'rejected' => QuoteState.rejected,
+    'revoked' => QuoteState.revoked,
     'deleted' => QuoteState.deleted,
     'unauthorized' => QuoteState.unauthorized,
     _ => null,

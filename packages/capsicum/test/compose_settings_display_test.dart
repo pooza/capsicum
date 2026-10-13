@@ -133,23 +133,34 @@ void main() {
       masked = maskComments(file.readAsStringSync());
     });
 
+    // ⚠ 本体の表は、#1213 で投稿画面の private な定数から共有の
+    // [quoteApprovalLabels] へ出した（投稿後に許可を変えるダイアログと共有する
+    // ため）。以前は投稿画面のソースを走査してキーを拾っていたが、実体の定数に
+    // なったので直接比べる。
     test('本体のキーを全部持っている', () {
       // ⚠⚠ **片方だけ足すと、詰めた側でその値が欠ける。**`?? entry.value` で
       // フルラベルへ落ちるので**画面は壊れず、ただ 1 段に収まらなくなるだけ** ——
       // 目視では気づけない壊れ方なので機械で見る。
-      final keys = _quoteApprovalKeys(masked);
       expect(
         composeQuoteApprovalShortLabels.keys.toSet(),
-        containsAll(keys),
-        reason: '⚠ `_quoteApprovalLabels` に足したキーを短縮側にも足すこと',
+        containsAll(quoteApprovalLabels.keys),
+        reason: '⚠ `quoteApprovalLabels` に足したキーを短縮側にも足すこと',
       );
     });
 
     test('短縮側に余計なキーが無い（消えたキーが残り続けない）', () {
       expect(
         composeQuoteApprovalShortLabels.keys.toSet(),
-        _quoteApprovalKeys(masked),
+        quoteApprovalLabels.keys.toSet(),
       );
+    });
+
+    test('本体は、API の語彙の 3 つを持っている', () {
+      expect(quoteApprovalLabels.keys.toSet(), {
+        'public',
+        'followers',
+        'nobody',
+      }, reason: '⚠ 増えたなら、短縮側と、選ばせる側の画面も見直す');
     });
 
     test('短縮はフルラベル以下の長さ（詰める意味がある）', () {
@@ -162,61 +173,50 @@ void main() {
       }
     });
 
-    // ⚠ ここから下は「検査が動いていること」そのものの検査。
-    test('走査が空振りしていない（既知のキーが拾えている）', () {
-      final keys = _quoteApprovalKeys(masked);
-      expect(keys, containsAll(<String>['public', 'followers', 'nobody']));
-      expect(keys, hasLength(3), reason: '⚠ 増えたならこの数も上げる');
-    });
-
-    test('⚠⚠ キーを 1 つ足すと検出できる（歯の確認）', () {
-      const marker = "    'nobody': '許可しない',";
-      expect(masked, contains(marker), reason: '差し込み先が実在する');
-      final hole = masked.replaceFirst(
-        marker,
-        "$marker\n    'mutuals': '相互フォローのみ',",
-      );
-      final keys = _quoteApprovalKeys(hole);
-      expect(keys, contains('mutuals'));
+    // ⚠ 上の比較は、投稿画面が共有の表を使っていることが前提。画面が自前の
+    // 表を持ち直すと、上は緑のまま、画面の表と短縮の表がずれうる（集約の再発は
+    // 「壊れること」ではなく「使わなくなること」として現れる）。
+    test('⚠⚠ 投稿画面は共有の表を使っている（自前の表へ戻っていない）', () {
+      expect(redefinesQuoteApprovalLabels(masked), isFalse);
       expect(
-        composeQuoteApprovalShortLabels.keys.toSet(),
-        isNot(containsAll(keys)),
-        reason: '⚠⚠ ここが通ってしまうなら、検査は何も見ていない',
+        masked,
+        contains('_quoteApprovalLabels = quoteApprovalLabels'),
+        reason: '投稿画面が共有の表を参照していない',
       );
     });
 
     test('⚠ 判定に合成ソースを食わせる', () {
+      // 当たる形: 画面が自前の表を持っている（#1213 より前の形）。
       expect(
-        _quoteApprovalKeys("""
+        redefinesQuoteApprovalLabels("""
   static const _quoteApprovalLabels = {
-    'a': 'あ',
-    'b': 'い',
+    'public': '誰でも',
   };
 """),
-        {'a', 'b'},
+        isTrue,
       );
-      // 別の定数を巻き込まない。
+      // 当てない形: 共有の表を指しているだけ / 別の定数。
       expect(
-        _quoteApprovalKeys("""
+        redefinesQuoteApprovalLabels(
+          'static const _quoteApprovalLabels = quoteApprovalLabels;',
+        ),
+        isFalse,
+      );
+      expect(
+        redefinesQuoteApprovalLabels("""
   static const _languageOptions = {
     'ja': '日本語',
   };
 """),
-        isEmpty,
+        isFalse,
       );
     });
   });
 }
 
-/// `_quoteApprovalLabels` のキー。
-Set<String> _quoteApprovalKeys(String masked) {
-  final head = masked.indexOf('_quoteApprovalLabels = {');
-  if (head < 0) return const {};
-  final end = masked.indexOf('};', head);
-  if (end < 0) return const {};
-  final body = masked.substring(head, end);
-  return RegExp(r"'(\w+)':").allMatches(body).map((m) => m.group(1)!).toSet();
-}
+/// `…QuoteApprovalLabels` という名前の表を、その場で定義し直しているか。
+bool redefinesQuoteApprovalLabels(String masked) =>
+    RegExp(r'[qQ]uoteApprovalLabels\s*=\s*(?:const\s*)?\{').hasMatch(masked);
 
 /// `postScopeLabel` が Misskey 側の表を引くための最小の器。
 ///
