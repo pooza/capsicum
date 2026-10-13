@@ -162,3 +162,42 @@ String maskStrings(String source) {
   }
   return out.toString();
 }
+
+/// [open]（`(` の位置）に対応する `)` の位置。見つからなければ -1。
+///
+/// ⚠ コメントと文字列を潰した（[maskComments] / [maskStrings]）ソースに使う。
+/// 潰していないと、文字列の中の括弧で対応がずれる。
+int matchingCloseParen(String s, int open) {
+  var depth = 0;
+  for (var i = open; i < s.length; i++) {
+    final c = s[i];
+    if (c == '(') depth++;
+    if (c == ')' && --depth == 0) return i;
+  }
+  return -1;
+}
+
+/// 引数リスト [args] の**いちばん外側**にある `name:` の値（次の外側のカンマ
+/// まで）。無ければ null。入れ子の中（子のウィジェットの同名の引数）は数えない。
+String? topLevelArgumentValue(String args, String name) {
+  var depth = 0;
+  final pattern = RegExp('(?<![\\w.])$name\\s*:');
+  for (var i = 0; i < args.length; i++) {
+    final c = args[i];
+    if (c == '(' || c == '[' || c == '{') depth++;
+    if (c == ')' || c == ']' || c == '}') depth--;
+    if (depth != 0) continue;
+    final m = pattern.matchAsPrefix(args, i);
+    if (m == null) continue;
+    var inner = 0;
+    var end = m.end;
+    for (; end < args.length; end++) {
+      final d = args[end];
+      if (d == '(' || d == '[' || d == '{') inner++;
+      if (d == ')' || d == ']' || d == '}') inner--;
+      if (inner == 0 && d == ',') break;
+    }
+    return args.substring(m.end, end).trim();
+  }
+  return null;
+}

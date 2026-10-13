@@ -30,12 +30,12 @@ List<({int line, String? icon})> findTooltiplessIconButtons(String source) {
     r'\bIconButton(?:\.(?:filled|filledTonal|outlined))?\(',
   ).allMatches(masked)) {
     final open = m.end - 1;
-    final close = _matchingClose(masked, open);
+    final close = matchingCloseParen(masked, open);
     if (close < 0) continue;
     final args = masked.substring(open + 1, close);
     // ⚠ `tooltip: 条件 ? null : '…'` は「持っている」に数えない (#1283)。null の
     // 側ではツールチップが出ないので、外側の `Tooltip` が受けている必要がある。
-    final tooltip = _topLevelArgumentValue(args, 'tooltip');
+    final tooltip = topLevelArgumentValue(args, 'tooltip');
     if (tooltip != null && !_canBeNull(tooltip)) continue;
     if (_enclosingCalls(masked, m.start, 3).contains('Tooltip')) continue;
     found.add((
@@ -44,41 +44,6 @@ List<({int line, String? icon})> findTooltiplessIconButtons(String source) {
     ));
   }
   return found;
-}
-
-int _matchingClose(String s, int open) {
-  var depth = 0;
-  for (var i = open; i < s.length; i++) {
-    final c = s[i];
-    if (c == '(') depth++;
-    if (c == ')' && --depth == 0) return i;
-  }
-  return -1;
-}
-
-/// 引数リスト [args] の**いちばん外側**にある `name:` の値（次の外側のカンマ
-/// まで）。無ければ null。入れ子の中（子のウィジェットの `tooltip:`）は数えない。
-String? _topLevelArgumentValue(String args, String name) {
-  var depth = 0;
-  final pattern = RegExp('(?<![\\w.])$name\\s*:');
-  for (var i = 0; i < args.length; i++) {
-    final c = args[i];
-    if (c == '(' || c == '[' || c == '{') depth++;
-    if (c == ')' || c == ']' || c == '}') depth--;
-    if (depth != 0) continue;
-    final m = pattern.matchAsPrefix(args, i);
-    if (m == null) continue;
-    var inner = 0;
-    var end = m.end;
-    for (; end < args.length; end++) {
-      final d = args[end];
-      if (d == '(' || d == '[' || d == '{') inner++;
-      if (d == ')' || d == ']' || d == '}') inner--;
-      if (inner == 0 && d == ',') break;
-    }
-    return args.substring(m.end, end).trim();
-  }
-  return null;
 }
 
 /// 引数の値 [value] が null になりうる書き方か。
