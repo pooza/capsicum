@@ -192,7 +192,10 @@ void main() {
         ],
       );
       addTearDown(container.dispose);
-      container.read(desktopNotificationDispatcherProvider).now = () => clock;
+      container.read(desktopNotificationDispatcherProvider)
+        ..now = (() => clock)
+        // 取り直しまでの待ちは、テストでは置かない。
+        ..catchUpRetryDelay = Duration.zero;
       (container.read(accountManagerProvider.notifier) as _TestAccountNotifier)
           .setAccounts([
             Account(
@@ -323,6 +326,91 @@ void main() {
       await _settle();
 
       expect(subsystem.shown, isEmpty);
+    });
+
+    // #1283: 起点は `connected` で消してから取りに行くので、取得に失敗すると
+    // その切断の窓がまるごと捨てられていた。
+    group('取得に失敗した回', () {
+      /// 最初の [failures] 回だけ落ちる。
+      void failFirst(int failures) {
+        var calls = 0;
+        when(
+          () => adapter.getNotifications(
+            query: any(named: 'query'),
+            filter: any(named: 'filter'),
+          ),
+        ).thenAnswer((_) async {
+          fetches++;
+          if (calls++ < failures) throw Exception('offline');
+          return NotificationResponse(
+            notifications: fetched,
+            rawCount: fetched.length,
+          );
+        });
+      }
+
+      Future<void> settleRetry() async {
+        for (var i = 0; i < 5; i++) {
+          await _settle();
+        }
+      }
+
+      test('⚠⚠ 1 回だけ取り直し、通ればその窓の通知が出る', () async {
+        failFirst(1);
+        connectionEvent('connected');
+        connectionEvent('disconnected');
+        fetched = [_mention('m1', _t0.add(const Duration(seconds: 20)))];
+        clock = _t0.add(const Duration(seconds: 40));
+
+        connectionEvent('connected');
+        await settleRetry();
+
+        expect(fetches, 2);
+        expect(subsystem.shown, hasLength(1));
+      });
+
+      test('⚠⚠ 取り直しも落ちたら、次のつなぎ直しでその窓も拾う（窓を捨てない）', () async {
+        failFirst(2);
+        connectionEvent('connected');
+        connectionEvent('disconnected');
+        fetched = [_mention('m1', _t0.add(const Duration(seconds: 20)))];
+        clock = _t0.add(const Duration(seconds: 40));
+        connectionEvent('connected');
+        await settleRetry();
+        expect(fetches, 2, reason: '取り直しは 1 回だけ');
+        expect(subsystem.shown, isEmpty);
+
+        // 5 分後にもう一度切れて、つなぎ直す。m1 は 2 回目の切断より前に届いて
+        // いるが、1 回目の窓を拾えていないので、ここで出る。
+        clock = _t0.add(const Duration(minutes: 5));
+        connectionEvent('disconnected');
+        clock = _t0.add(const Duration(minutes: 5, seconds: 10));
+        connectionEvent('connected');
+        await settleRetry();
+
+        expect(fetches, 3);
+        expect(subsystem.shown, hasLength(1));
+        expect(subsystem.shown.single, contains('"notificationId":"m1"'));
+      });
+
+      test('⚠ 拾えたあとは起点を持ち越さない（次の切断は、その切断の窓だけを見る）', () async {
+        failFirst(1);
+        connectionEvent('connected');
+        connectionEvent('disconnected');
+        clock = _t0.add(const Duration(seconds: 40));
+        connectionEvent('connected');
+        await settleRetry();
+
+        // 5 分後の切断。1 回目の窓（12:00:20）の通知は、もう対象ではない。
+        clock = _t0.add(const Duration(minutes: 5));
+        connectionEvent('disconnected');
+        fetched = [_mention('old', _t0.add(const Duration(seconds: 20)))];
+        clock = _t0.add(const Duration(minutes: 5, seconds: 10));
+        connectionEvent('connected');
+        await settleRetry();
+
+        expect(subsystem.shown, isEmpty);
+      });
     });
   });
 }

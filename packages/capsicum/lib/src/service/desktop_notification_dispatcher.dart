@@ -193,6 +193,27 @@ class DesktopNotificationDispatcher {
   static const _eventConnected = 'connected';
   static const _eventDisconnected = 'disconnected';
 
+  /// 拾い直しの取得に失敗したとき、取り直すまでの待ち (#1283)。
+  @visibleForTesting
+  Duration catchUpRetryDelay = const Duration(seconds: 5);
+
+  /// 拾い直せなかった窓の起点を戻す (#1283)。
+  ///
+  /// ⚠ **つながっている間も起点を持つことになる**（[_disconnectedAt] の「つながって
+  /// いる間は持たない」の例外）。次に切れたときは `putIfAbsent` がこの古い起点を
+  /// 残すので、次のつなぎ直しで両方の窓をまとめて拾える。
+  /// ⚠ 待っている間にまた切れて新しい起点が入っていたら、古いほうへ寄せる。
+  /// ⚠ 窓が古くなりすぎても、出す側（[selectMissedNotifications]）が直近
+  /// [kMissedNotificationWindow] より前を落とす。
+  void _restoreCatchUpBaseline(AccountKey key, DateTime since) {
+    if (!_subs.containsKey(key)) return;
+    _disconnectedAt.update(
+      key,
+      (current) => current.isBefore(since) ? current : since,
+      ifAbsent: () => since,
+    );
+  }
+
   /// 拾い直しで見る件数。上限（[kMissedNotificationMaxCount]）より多めに引き、
   /// 窓の外のものを落としてから絞る。
   static const _catchUpFetchLimit = 10;
@@ -205,21 +226,37 @@ class DesktopNotificationDispatcher {
         .firstOrNull;
     final adapter = account?.adapter;
     if (account == null || adapter is! NotificationSupport) return;
-    final List<Notification> fetched;
-    try {
-      fetched = (await (adapter as NotificationSupport).getNotifications(
-        query: const TimelineQuery(limit: _catchUpFetchLimit),
-      )).notifications;
-    } catch (e) {
-      // 拾い直しは上積み。つなぎ直した直後は回線が不安定なこともあり、失敗して
-      // も通知の一覧には載っているので、ここでは記録だけにする。
-      Sentry.addBreadcrumb(
-        Breadcrumb(
-          category: 'push.desktop.catchup',
-          level: SentryLevel.warning,
-          message: e.runtimeType.toString(),
-        ),
-      );
+    List<Notification>? fetched;
+    // ⚠ つなぎ直した直後は回線が不安定で、ここが落ちやすい。起点は `connected`
+    // で消してあるので、何もしないとこの切断の窓がまるごと捨てられる (#1283)。
+    // 少し待って 1 回だけ取り直し、それでも駄目なら起点を戻す。
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        fetched = (await (adapter as NotificationSupport).getNotifications(
+          query: const TimelineQuery(limit: _catchUpFetchLimit),
+        )).notifications;
+        break;
+      } catch (e) {
+        Sentry.addBreadcrumb(
+          Breadcrumb(
+            category: 'push.desktop.catchup',
+            level: SentryLevel.warning,
+            message: e.runtimeType.toString(),
+            data: {'attempt': attempt + 1},
+          ),
+        );
+        if (attempt > 0) break;
+        await Future<void>.delayed(catchUpRetryDelay);
+        // 待っている間にログアウトされた。
+        if (!_subs.containsKey(key)) return;
+        // 待っている間にまた切れた。次のつなぎ直しが拾うので、ここでは引かない。
+        if (_disconnectedAt.containsKey(key)) break;
+      }
+    }
+    if (fetched == null) {
+      // 拾い直しは上積みで、通知の一覧には載っている。ここでは出さずに、次に
+      // つなぎ直したときにこの窓も一緒に拾えるよう、起点を戻しておく。
+      _restoreCatchUpBaseline(key, disconnectedAt);
       return;
     }
     // ⚠ 引いている間にログアウトされていたら出さない。
