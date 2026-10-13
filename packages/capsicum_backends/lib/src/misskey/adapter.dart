@@ -393,6 +393,33 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     await client.deleteNoteDraft(id);
   }
 
+  @override
+  Future<void> rescheduleScheduledPost(String id, DateTime scheduledAt) =>
+      updateScheduledNote(id: id, scheduledAt: scheduledAt);
+
+  /// 予約投稿の本文か時刻を変える (#1212)。[text] が null なら本文は変えない。
+  ///
+  /// ⚠⚠ **`client.updateScheduledNote` を画面から直に呼ばない。**投票つきの
+  /// 予約投稿は、投票を送り直さないと期限が消える（上流の挙動）。ここで
+  /// いまの下書きを引いて投票を添える。⚠ **引くのに失敗した回は更新しない**
+  /// （例外をそのまま返す）—— 投票の有無が分からないまま送ると、期限を消す側に
+  /// 倒れる。一覧に見つからなかった回は投票なしで送り、サーバーの判定に任せる。
+  Future<void> updateScheduledNote({
+    required String id,
+    String? text,
+    required DateTime scheduledAt,
+  }) async {
+    final draft = (await client.getScheduledNotesRaw())
+        .where((d) => d['id'] == id)
+        .firstOrNull;
+    await client.updateScheduledNote(
+      draftId: id,
+      text: text,
+      scheduledAt: scheduledAt,
+      poll: draft == null ? null : misskeyDraftPollParams(draft),
+    );
+  }
+
   // DraftSupport (#174)
 
   @override

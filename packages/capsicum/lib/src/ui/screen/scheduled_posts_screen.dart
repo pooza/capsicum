@@ -8,6 +8,7 @@ import '../../provider/server_config_provider.dart';
 import '../../util/exception_scrub.dart';
 import '../../util/upstream_error_message.dart';
 import '../util/op_error.dart';
+import '../util/schedule_picker.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/retry_error_view.dart';
 
@@ -42,6 +43,7 @@ class ScheduledPostsScreen extends ConsumerWidget {
                 return _ScheduledPostTile(
                   post: post,
                   onEditTags: () => _showTagEditor(context, ref, post),
+                  onReschedule: () => _reschedule(context, ref, post),
                   onCancel: () => _confirmCancel(context, ref, post),
                 );
               },
@@ -102,6 +104,46 @@ class ScheduledPostsScreen extends ConsumerWidget {
     }
   }
 
+  /// 予約の時刻を変える (#1212)。
+  ///
+  /// ⚠ モロヘイヤの有無に関係なく使える（Mastodon の標準 API で通る唯一の編集）。
+  Future<void> _reschedule(
+    BuildContext context,
+    WidgetRef ref,
+    ScheduledPost post,
+  ) async {
+    // ⚠ ピッカーを開く前に確定させる。閉じたあとに `ref` を読むと、その間に
+    // 画面が破棄されていた回に落ちる（[_showTagEditor] と同じ理由）。
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! ScheduleSupport) return;
+    final reblogLabel = ref.read(reblogLabelProvider);
+    final messenger = ScaffoldMessenger.of(context);
+
+    final scheduledAt = await pickScheduleDateTime(
+      context,
+      initial: post.scheduledAt.toLocal(),
+    );
+    if (scheduledAt == null) return;
+
+    try {
+      await (adapter as ScheduleSupport).rescheduleScheduledPost(
+        post.id,
+        scheduledAt,
+      );
+      ref.invalidate(_scheduledPostsProvider);
+      messenger.showSnackBar(const SnackBar(content: Text('予約の時刻を変更しました')));
+    } catch (e) {
+      debugLogException('Scheduled post reschedule error', e);
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            upstreamFailureText('時刻の変更に失敗しました', e, reblogLabel: reblogLabel),
+          ),
+        ),
+      );
+    }
+  }
+
   void _showTagEditor(BuildContext context, WidgetRef ref, ScheduledPost post) {
     final adapter = ref.read(currentAdapterProvider);
     final account = ref.read(currentAccountProvider);
@@ -151,8 +193,10 @@ class ScheduledPostsScreen extends ConsumerWidget {
             } else if (canEditViaMisskey) {
               final misskeyAdapter = adapter as MisskeyAdapter;
               final newText = _replaceTagsInText(post.content ?? '', tags);
-              await misskeyAdapter.client.updateScheduledNote(
-                draftId: post.id,
+              // ⚠ client を直に呼ばない。投票つきの予約投稿は、投票を送り直さ
+              // ないと期限が消える (#1212)。
+              await misskeyAdapter.updateScheduledNote(
+                id: post.id,
                 text: newText,
                 scheduledAt: post.scheduledAt,
               );
@@ -249,11 +293,13 @@ class ScheduledPostsScreen extends ConsumerWidget {
 class _ScheduledPostTile extends StatelessWidget {
   final ScheduledPost post;
   final VoidCallback onEditTags;
+  final VoidCallback onReschedule;
   final VoidCallback onCancel;
 
   const _ScheduledPostTile({
     required this.post,
     required this.onEditTags,
+    required this.onReschedule,
     required this.onCancel,
   });
 
@@ -280,6 +326,11 @@ class _ScheduledPostTile extends StatelessWidget {
             icon: const Icon(Icons.tag),
             tooltip: 'タグ編集',
             onPressed: onEditTags,
+          ),
+          IconButton(
+            icon: const Icon(Icons.edit_calendar_outlined),
+            tooltip: '時刻を変更',
+            onPressed: onReschedule,
           ),
           IconButton(
             icon: const Icon(Icons.cancel_outlined),

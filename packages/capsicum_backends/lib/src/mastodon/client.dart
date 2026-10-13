@@ -599,6 +599,21 @@ class MastodonClient {
     return (posts: posts, nextMaxId: _parseLinkNextMaxId(response));
   }
 
+  /// PUT /api/v1/scheduled_statuses/:id — 予約の時刻を変える (#1212)。
+  ///
+  /// ⚠ **標準 API で予約投稿に対してできる唯一の編集。**上流は
+  /// `params.permit(:scheduled_at)` で、本文やタグは受けない。
+  /// ⚠ 5 分後より手前の時刻は 422 になる。
+  Future<void> updateScheduledStatusTime(
+    String id,
+    DateTime scheduledAt,
+  ) async {
+    await dio.put(
+      '/api/v1/scheduled_statuses/$id',
+      data: {'scheduled_at': scheduledAt.toUtc().toIso8601String()},
+    );
+  }
+
   /// DELETE /api/v1/scheduled_statuses/:id
   Future<void> deleteScheduledStatus(String id) async {
     await dio.delete('/api/v1/scheduled_statuses/$id');

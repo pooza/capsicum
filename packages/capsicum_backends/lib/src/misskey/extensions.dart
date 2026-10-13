@@ -547,6 +547,33 @@ ScheduledPost? misskeyScheduledPostFromMap(Map<String, dynamic> json) {
   );
 }
 
+/// `NoteDraft` の投票を、`notes/drafts/update` へ送り直す形にする (#1212)。
+/// 投票が無ければ null。
+///
+/// ⚠⚠ **`expiresAt` は形が往復で違う。**返ってくるのは ISO 文字列、送るのは
+/// epoch ミリ秒の int。そのまま送り返すと型で弾かれる。
+/// ⚠ `choices` が無い / 空の投票は送らない（`poll.choices` は必須で、空のまま
+/// 送ると投票の中身を消す）。
+Map<String, dynamic>? misskeyDraftPollParams(Map<String, dynamic> draft) {
+  final poll = draft['poll'];
+  if (poll is! Map) return null;
+  final choices = (poll['choices'] as List?)?.whereType<String>().toList();
+  if (choices == null || choices.isEmpty) return null;
+  final expiresAt = poll['expiresAt'];
+  final expiresAtMs = switch (expiresAt) {
+    final int ms => ms,
+    final String iso => DateTime.tryParse(iso)?.millisecondsSinceEpoch,
+    _ => null,
+  };
+  final expiredAfter = poll['expiredAfter'];
+  return {
+    'choices': choices,
+    'multiple': poll['multiple'] == true,
+    'expiresAt': ?expiresAtMs,
+    if (expiredAfter is int) 'expiredAfter': expiredAfter,
+  };
+}
+
 /// `ChatRoomInvitation` レスポンス → capsicum [ChatRoomInvitation]。
 /// 必須フィールド (`id` / `createdAt` / `roomId` / `userId`) 欠落時は `null` (#626)。
 ChatRoomInvitation? misskeyChatRoomInvitationFromMap(

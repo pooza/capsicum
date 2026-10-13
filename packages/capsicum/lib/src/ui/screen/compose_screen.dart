@@ -55,6 +55,7 @@ import '../util/provider_scope_carrier.dart';
 import '../util/redraft_carry_over.dart';
 import '../util/relative_time.dart';
 import '../util/reply_mentions.dart';
+import '../util/schedule_picker.dart';
 import '../util/shortcode_warning_controller.dart';
 import '../util/text_length_counter.dart';
 import '../util/visible_timeline.dart';
@@ -3788,43 +3789,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   bool get _effectiveSensitive => _cwEnabled || _sensitiveEnabled;
 
   Future<void> _pickScheduleDate() async {
-    final now = DateTime.now();
-    final date = await showDatePicker(
-      context: context,
-      initialDate: _scheduledAt ?? now.add(const Duration(hours: 1)),
-      firstDate: now,
-      lastDate: now.add(const Duration(days: 365)),
-      helpText: '予約投稿の日付',
-      confirmText: '次へ（時刻を選択）',
+    // ⚠ 選ばせ方と下限は、予約投稿一覧の「時刻を変更」と共有する (#1212)。
+    final scheduled = await pickScheduleDateTime(
+      context,
+      initial: _scheduledAt,
     );
-    if (date == null || !mounted) return;
-
-    final time = await showTimePicker(
-      context: context,
-      initialTime: _scheduledAt != null
-          ? TimeOfDay.fromDateTime(_scheduledAt!)
-          : TimeOfDay.fromDateTime(now.add(const Duration(hours: 1))),
-      helpText: '予約投稿の時刻',
-    );
-    if (time == null || !mounted) return;
-
-    final scheduled = DateTime(
-      date.year,
-      date.month,
-      date.day,
-      time.hour,
-      time.minute,
-    );
-    // Mastodon requires at least 5 minutes in the future.
-    final minTime = DateTime.now().add(const Duration(minutes: 5));
-    if (scheduled.isBefore(minTime)) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('5分以上先の日時を指定してください')));
-      }
-      return;
-    }
+    if (scheduled == null || !mounted) return;
     setState(() => _scheduledAt = scheduled);
   }
 

@@ -433,6 +433,11 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   }
 
   @override
+  Future<void> rescheduleScheduledPost(String id, DateTime scheduledAt) async {
+    await client.updateScheduledStatusTime(id, scheduledAt);
+  }
+
+  @override
   Future<void> deletePost(String id) async {
     await client.deleteStatus(id);
   }
