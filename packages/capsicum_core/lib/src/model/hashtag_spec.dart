@@ -180,6 +180,42 @@ class HashtagQuery {
     return none.any((t) => lower.contains(t.toLowerCase()));
   }
 
+  /// [tags]（投稿のタグ）が、`all[]` で送ったタグのどれかを欠いているか (#1283)。
+  ///
+  /// **サーバーが返した一覧を、端末側で確かめ直すためのもの。**Mastodon の
+  /// `timelines/tag/:hashtag` は、`all[]` のうちサーバーに実在しないタグを黙って
+  /// 落とす（上流の `TagFeed#tags_for` は実在するタグの id だけを返す）。
+  /// 「a かつ 誰も使っていないタグ」は AND が外れ、`#a` の全件が返ってくる。
+  ///
+  /// ⚠⚠ **[matches] をそのまま当てない。**サーバーはタグを正規化して比べる
+  /// （全角英数 → 半角・アクセントを外す など）ので、端末側の素朴な比較は、
+  /// 正規化で形が変わるタグを「欠いている」と読み違える。読み違えると、合って
+  /// いる投稿が全部落ちて TL が空になる —— 直そうとしている不具合より悪い。
+  /// → **正規化で形が変わらないと言えるタグだけを確かめる**（[_comparesReliably]）。
+  /// それ以外のタグは、従来どおりサーバーの結果を信じる。
+  ///
+  /// ⚠⚠ **確かめるのは `all[]` で送るタグだけ**（[tagFeedRequest] の `all`）。
+  /// パスに載せる 1 つ目のタグは見ない —— 実在しなければサーバーは空を返すので、
+  /// 黙って外れることが無い。＝ **タグ 1 つだけの TL（プリセットのデフォルト
+  /// ハッシュタグを含む）は、ここで 1 件も落ちない。**
+  bool lacksRequired(Iterable<String> tags) {
+    final sent = tagFeedRequest?.all ?? const <String>[];
+    if (sent.isEmpty) return false;
+    final lower = {for (final t in tags) t.toLowerCase()};
+    return sent.any(
+      (t) => _comparesReliably(t) && !lower.contains(t.toLowerCase()),
+    );
+  }
+
+  /// サーバーの正規化（NFKC・アクセントの除去）で形が変わらないと言えるタグか。
+  ///
+  /// 半角の英数字とアンダースコア、ひらがな・全角カタカナ、漢字だけで出来て
+  /// いるもの。⚠ 全角英数・半角カナ・アクセント付きの文字は正規化で変わるので、
+  /// 1 文字でも含めば false。
+  static bool _comparesReliably(String tag) => _reliableTag.hasMatch(tag);
+
+  static final _reliableTag = RegExp(r'^[A-Za-z0-9_ぁ-ゖァ-ヺー一-鿿]+$');
+
   /// [tags]（投稿のタグ）がこの条件に合うか。大小は区別しない（両 SNS とも
   /// 区別しない）。
   bool matches(Iterable<String> tags) {

@@ -43,6 +43,22 @@ String hashtagSpecLabel(String spec) {
 bool postExcludedByHashtagQuery(Post post, HashtagQuery query) =>
     query.none.isNotEmpty && query.excludes(postHashtags(post.reblog ?? post));
 
+/// [post] を、タグ TL の条件 [query] の一覧に残すか (#1209 / #1283)。
+///
+/// サーバーが返した一覧への、端末側の確かめ直し。落とすのは 2 つ:
+///
+/// - 除外のタグを持つ投稿（[postExcludedByHashtagQuery]・Misskey のため）
+/// - 「すべて含む」のタグを欠く投稿（Mastodon は、サーバーに実在しないタグを
+///   `all[]` から黙って落として AND を外す。[HashtagQuery.lacksRequired]）
+///
+/// ⚠ ブースト / リノートは中身の投稿のタグで見る（外側はタグを持たない）。
+bool postKeptByHashtagQuery(Post post, HashtagQuery query) {
+  if (postExcludedByHashtagQuery(post, query)) return false;
+  // ⚠ タグ 1 つだけの TL は確かめない（[HashtagQuery.lacksRequired]）。
+  if (query.singleTag != null) return true;
+  return !query.lacksRequired(postHashtags(post.reblog ?? post));
+}
+
 /// ハッシュタグ TL の family キー (#1088)。
 ///
 /// [spec] は "tag" または "tag+and1+and2"（"+" は AND 指定・Mastodon の `all[]`）。
@@ -101,9 +117,8 @@ class HashtagTimelineNotifier
   /// この TL の条件 (#1209)。
   HashtagQuery get _query => HashtagQuery.parse(arg.spec);
 
-  /// 除外のタグを持つ投稿を落とす (#1209)。サーバーが除外を受けられない
-  /// Misskey のための絞り込みで、Mastodon では何も落ちない。
-  bool _keeps(Post post) => !postExcludedByHashtagQuery(post, _query);
+  /// サーバーが返した投稿を、条件で確かめ直す (#1209 / #1283)。
+  bool _keeps(Post post) => postKeptByHashtagQuery(post, _query);
 
   @override
   bool acceptsLivePost(Post post) => _keeps(post);
@@ -157,7 +172,7 @@ class HashtagTimelineNotifier
         condition,
         query: TimelineQuery(maxId: maxId, limit: _pageSize),
       ),
-      keep: (post) => !postExcludedByHashtagQuery(post, condition),
+      keep: (post) => postKeptByHashtagQuery(post, condition),
       // ⚠ 上限まで引いて 1 件も残らなかった回も、進めたぶんを続き読みへ渡す
       // (#1283)。渡さないと [loadMore] が先頭から引き直し、その先へ進めない。
       onRawCursor: (rawLastId) => _olderCursor = rawLastId,

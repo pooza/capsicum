@@ -134,6 +134,77 @@ void main() {
     });
   });
 
+  // #1283: Mastodon は `all[]` のうちサーバーに実在しないタグを黙って落とすので、
+  // 返ってきた一覧を端末側で確かめ直す。
+  group('「すべて含む」を欠く投稿の検出（サーバーの結果の確かめ直し）', () {
+    test('⚠⚠ 「すべて含む」のタグを 1 つでも欠けば、欠いている', () {
+      final query = HashtagQuery.parse('precure+nitiasa');
+      expect(query.lacksRequired(['precure']), isTrue);
+      expect(query.lacksRequired(['precure', 'nitiasa']), isFalse);
+      expect(query.lacksRequired(['PreCure', 'NITIASA', 'x']), isFalse);
+    });
+
+    test('ひらがな・カタカナ・漢字のタグも確かめる', () {
+      final query = HashtagQuery.parse('プリキュア+実況');
+      expect(query.lacksRequired(['プリキュア']), isTrue);
+      expect(query.lacksRequired(['プリキュア', '実況']), isFalse);
+      expect(HashtagQuery.parse('a+ひらがな').lacksRequired(['a']), isTrue);
+      expect(HashtagQuery.parse('a+スーパー').lacksRequired(['a']), isTrue);
+    });
+
+    // サーバーはタグを正規化して比べる。端末側の素朴な比較で「欠いている」と
+    // 読み違えると、合っている投稿が全部落ちて TL が空になる。
+    test('⚠⚠ 正規化で形が変わりうるタグは確かめない（サーバーの結果を信じる）', () {
+      // 全角英数（NFKC で半角になる）。サーバーの tags は `abc` で返る。
+      expect(HashtagQuery.parse('a+ＡＢＣ').lacksRequired(['a', 'abc']), isFalse);
+      // 半角カナ（NFKC で全角になる）。
+      expect(
+        HashtagQuery.parse('a+ﾌﾟﾘｷｭｱ').lacksRequired(['a', 'プリキュア']),
+        isFalse,
+      );
+      // アクセント付き（サーバーは外して比べる）。
+      expect(
+        HashtagQuery.parse('a+café').lacksRequired(['a', 'cafe']),
+        isFalse,
+      );
+      // ⚠ 確かめないタグが混ざっていても、確かめられるタグは見る。
+      expect(
+        HashtagQuery.parse('a+b+café').lacksRequired(['a', 'cafe']),
+        isTrue,
+      );
+    });
+
+    // ⚠⚠ いちばん大事な固定。タグ 1 つの TL（プリセットのデフォルトハッシュタグ）
+    // は、投稿のタグがどう見えていても 1 件も落とさない。
+    test('⚠⚠ タグ 1 つだけの TL では、何も欠いていない', () {
+      expect(
+        HashtagQuery.parse('precure_fun').lacksRequired(const []),
+        isFalse,
+      );
+      expect(HashtagQuery.parse('a!z').lacksRequired(const []), isFalse);
+    });
+
+    // パスに載せる 1 つ目のタグは、実在しなければサーバーが空を返す（黙って
+    // 外れない）ので確かめない。
+    test('パスに載せる 1 つ目のタグは確かめない', () {
+      expect(HashtagQuery.parse('a+b').lacksRequired(['b']), isFalse);
+      // 「いずれか」があるときは、その先頭がパスに載り、「すべて含む」は
+      // 全部 all[] で送る。
+      expect(HashtagQuery.parse('x?a+b').lacksRequired(['a']), isTrue);
+    });
+
+    test('「いずれか」と除外は、ここでは見ない', () {
+      final query = HashtagQuery.parse('x?a+b!z');
+      expect(query.lacksRequired(['x']), isFalse, reason: 'いずれかは欠いていてよい');
+      expect(query.lacksRequired(['x', 'z']), isFalse, reason: '除外は別に見る');
+      expect(query.lacksRequired(['a']), isTrue);
+    });
+
+    test('「すべて含む」が空なら、何も欠いていない', () {
+      expect(HashtagQuery.parse('?a+b').lacksRequired(const []), isFalse);
+    });
+  });
+
   test('この TL から投稿するときに付けるタグは、「すべて含む」の全部と「いずれか」の先頭', () {
     expect(HashtagQuery.parse('a+b').tagsToPost, ['a', 'b']);
     expect(HashtagQuery.parse('x?a+b!z').tagsToPost, ['x', 'a']);
