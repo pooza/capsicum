@@ -41,6 +41,7 @@ import '../widget/scroll_jump_buttons.dart';
 import '../widget/server_badge.dart';
 import '../widget/simple_post_bar.dart';
 import '../widget/tab_management_sheet.dart';
+import '../widget/timeline_older_prompt.dart';
 import '../widget/user_avatar.dart';
 import 'announcement_screen.dart';
 import 'channel_timeline_screen.dart';
@@ -1115,31 +1116,60 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                       }
                     }
                   },
-                  child: ScrollablePositionedList.separated(
-                    itemScrollController: _itemScrollController,
-                    itemPositionsListener: _itemPositionsListener,
-                    itemCount: _noteListItemCount(
-                      tlState.posts.length + (tlState.isLoadingMore ? 1 : 0),
-                    ),
-                    separatorBuilder: (_, _) => const Divider(height: 1),
-                    itemBuilder: (context, index) {
-                      if (index >= tlState.posts.length) {
-                        return const Padding(
-                          padding: EdgeInsets.all(16),
-                          child: Center(child: CircularProgressIndicator()),
-                        );
-                      }
-                      final post = tlState.posts[index];
-                      // 投稿 id をキーにして State を投稿に固定する (#909)。
-                      // 無いと streaming の先頭挿入で State が位置ごとズレて
-                      // 再利用され、削除中の行の状態が別の投稿へ移る。
-                      return PostTile(
-                        key: ValueKey(post.id),
-                        post: post,
-                        selected: keyboardSelectedIndex == index,
-                      );
-                    },
-                  ),
+                  // ⚠ タグ TL が空のまま続きを持つときは、手で先を引ける入口を
+                  // 出す (#1283)。空の一覧はスクロールできないので、
+                  // [_onPositionsChanged] の続き読みが二度と呼ばれない。
+                  // ⚠ タグ TL に限る —— 続き読みを生のカーソルで進めるのは
+                  // タグ TL だけで、ほかは空の一覧から先頭を引き直すだけになる。
+                  child:
+                      hashtagKey != null &&
+                          tlState.posts.isEmpty &&
+                          tlState.hasMore
+                      ? ListView(
+                          children: [
+                            const SizedBox(height: 120),
+                            Center(
+                              child: TimelineOlderPrompt(
+                                isLoading: tlState.isLoadingMore,
+                                onLoadOlder: () => ref
+                                    .read(
+                                      hashtagTimelineProvider(
+                                        hashtagKey,
+                                      ).notifier,
+                                    )
+                                    .loadMore(),
+                              ),
+                            ),
+                          ],
+                        )
+                      : ScrollablePositionedList.separated(
+                          itemScrollController: _itemScrollController,
+                          itemPositionsListener: _itemPositionsListener,
+                          itemCount: _noteListItemCount(
+                            tlState.posts.length +
+                                (tlState.isLoadingMore ? 1 : 0),
+                          ),
+                          separatorBuilder: (_, _) => const Divider(height: 1),
+                          itemBuilder: (context, index) {
+                            if (index >= tlState.posts.length) {
+                              return const Padding(
+                                padding: EdgeInsets.all(16),
+                                child: Center(
+                                  child: CircularProgressIndicator(),
+                                ),
+                              );
+                            }
+                            final post = tlState.posts[index];
+                            // 投稿 id をキーにして State を投稿に固定する (#909)。
+                            // 無いと streaming の先頭挿入で State が位置ごとズレて
+                            // 再利用され、削除中の行の状態が別の投稿へ移る。
+                            return PostTile(
+                              key: ValueKey(post.id),
+                              post: post,
+                              selected: keyboardSelectedIndex == index,
+                            );
+                          },
+                        ),
                 );
               },
               loading: () {

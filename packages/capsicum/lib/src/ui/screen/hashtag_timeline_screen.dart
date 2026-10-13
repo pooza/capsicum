@@ -9,6 +9,7 @@ import '../util/scroll_thresholds.dart';
 import '../widget/post_tile.dart';
 import '../widget/retry_error_view.dart';
 import '../widget/simple_post_bar.dart';
+import '../widget/timeline_older_prompt.dart';
 
 class HashtagTimelineScreen extends ConsumerStatefulWidget {
   final String hashtag;
@@ -164,7 +165,17 @@ class _HashtagTimelineScreenState extends ConsumerState<HashtagTimelineScreen> {
           Expanded(
             child: timeline.when(
               data: (state) => state.posts.isEmpty
-                  ? const Center(child: Text('投稿がありません'))
+                  // ⚠ 続きがあるのに空のときは、手で先を引ける入口を出す (#1283)。
+                  ? Center(
+                      child: state.hasMore
+                          ? TimelineOlderPrompt(
+                              isLoading: state.isLoadingMore,
+                              onLoadOlder: () => ref
+                                  .read(hashtagTimelineProvider(key).notifier)
+                                  .loadMore(),
+                            )
+                          : const Text('投稿がありません'),
+                    )
                   : RefreshIndicator(
                       onRefresh: () =>
                           ref.refresh(hashtagTimelineProvider(key).future),

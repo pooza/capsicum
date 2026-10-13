@@ -137,5 +137,52 @@ void main() {
         reason: '上限到達 + 全件フィルタ除外なので #624 のフラグが立つ',
       );
     });
+
+    /// #1283: 上限で打ち切った回も、進めた生のカーソルを呼び出し側へ渡す。
+    test('⚠ 上限で打ち切って空でも、絞る前の末尾の id を渡す', () async {
+      var calls = 0;
+      final cursors = <String?>[];
+      await fetchUntilVisible(
+        pageSize: 2,
+        hideLivecure: true,
+        fetch: (maxId) async {
+          calls++;
+          return [
+            _post('a$calls', livecure: true),
+            _post('b$calls', livecure: true),
+          ];
+        },
+        onRawCursor: cursors.add,
+      );
+
+      expect(cursors, ['b$kMaxVisibilityPageFetches']);
+    });
+
+    test('見える投稿があった回は、そのページの絞る前の末尾を渡す', () async {
+      final cursors = <String?>[];
+      await fetchUntilVisible(
+        pageSize: 2,
+        hideLivecure: true,
+        fetch: (maxId) async => [
+          _post('a', livecure: false),
+          _post('b', livecure: true),
+        ],
+        onRawCursor: cursors.add,
+      );
+
+      expect(cursors, ['b'], reason: '表示中の最後（a）ではなく、生の末尾（b）');
+    });
+
+    test('1 件も返らなかった回は null を渡す', () async {
+      final cursors = <String?>[];
+      await fetchUntilVisible(
+        pageSize: 2,
+        hideLivecure: false,
+        fetch: (maxId) async => const [],
+        onRawCursor: cursors.add,
+      );
+
+      expect(cursors, [null]);
+    });
   });
 }

@@ -158,6 +158,9 @@ class HashtagTimelineNotifier
         query: TimelineQuery(maxId: maxId, limit: _pageSize),
       ),
       keep: (post) => !postExcludedByHashtagQuery(post, condition),
+      // ⚠ 上限まで引いて 1 件も残らなかった回も、進めたぶんを続き読みへ渡す
+      // (#1283)。渡さないと [loadMore] が先頭から引き直し、その先へ進めない。
+      onRawCursor: (rawLastId) => _olderCursor = rawLastId,
     );
     seedLiveIngestAnchor(result.posts);
     if (adapter is StreamSupport) {

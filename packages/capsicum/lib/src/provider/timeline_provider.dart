@@ -488,11 +488,17 @@ bool hasLivecureTag(Post post) {
 /// [keep] は、この TL だけが端末側で掛ける絞り込み (#1209・タグ TL の除外)。
 /// ⚠ **[fetch] の中で絞らない。**続きがあるかは絞る前の件数で見るので、中で
 /// 絞ると、除外で薄くなったページを「最後のページ」と読んで打ち切る。
+///
+/// [onRawCursor] は、**絞る前の**末尾の id を受け取る (#1283)。続き読みを
+/// 生のカーソルで進める TL が、最初の読み込みで進んだぶんを引き継ぐためのもの。
+/// ⚠ これが無いと、上限まで引いて 1 件も残らなかった回に進めたカーソルが
+/// 捨てられ、続き読みが先頭から引き直す（＝その先へ永久に進めない）。
 Future<TimelineState> fetchUntilVisible({
   required int pageSize,
   required bool hideLivecure,
   required Future<List<Post>> Function(String? maxId) fetch,
   bool Function(Post post)? keep,
+  void Function(String? rawLastId)? onRawCursor,
 }) async {
   final allVisible = <Post>[];
   String? maxId;
@@ -528,6 +534,7 @@ Future<TimelineState> fetchUntilVisible({
     );
   }
 
+  onRawCursor?.call(maxId);
   return TimelineState(
     posts: allVisible,
     hasMore: hasMore,
