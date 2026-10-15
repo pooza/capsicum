@@ -188,8 +188,10 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   // aggregate 不可、#438)。表示中のルームに対して都度購読 / 切断する。
   final Map<String, MisskeyChatRoomStreaming> _chatRoomStreamings = {};
   final MisskeyClient client;
-  List<List<String>> _mutedWords = [];
-  List<List<String>> _hardMutedWords = [];
+
+  /// 要素は `List<String>`（キーワードの AND）か `String`（正規表現）。#1288
+  List<Object> _mutedWords = [];
+  List<Object> _hardMutedWords = [];
   final Set<String> _adminRoleIds = {};
   User? _myUser;
   // _canWriteChat は user.canChat (chatAvailability == 'available') と一致。
@@ -615,8 +617,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     var matchedSoft = false;
     for (final target in targets) {
       if (myId != null && target.author.id == myId) continue;
-      final text = '${target.content ?? ''} ${target.spoilerText ?? ''}'
-          .toLowerCase();
+      final text = '${target.content ?? ''} ${target.spoilerText ?? ''}';
       if (text.trim().isEmpty) continue;
       if (_matchesMuteWords(text, _hardMutedWords)) {
         matchedHard = true;
@@ -640,27 +641,60 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     return post;
   }
 
-  static bool _matchesMuteWords(String text, List<List<String>> muteWords) {
-    for (final group in muteWords) {
-      if (group.isEmpty) continue;
-      // Single-element group starting with "/" is a regex pattern.
-      if (group.length == 1 &&
-          group[0].startsWith('/') &&
-          group[0].endsWith('/')) {
-        final pattern = group[0].substring(1, group[0].length - 1);
-        try {
-          if (RegExp(pattern, caseSensitive: false).hasMatch(text)) return true;
-        } catch (_) {
-          // Invalid regex — skip.
-        }
+  /// 本家の `check-word-mute.ts` に倣う（#1288）。
+  ///
+  /// - **`String` の要素は正規表現**（`/pattern/flags`）。⚠ フラグを効かせ、
+  ///   **小文字化していない本文**に当てる —— 以前は全文を小文字化してから
+  ///   `caseSensitive: false` で当てていたので、`i` の無い正規表現も大文字小文字を
+  ///   区別しなかった。
+  /// - **`List<String>` の要素はキーワードの AND**。空のキーワードは捨てる（本家と
+  ///   同じ。捨てないと `['']` が全投稿に当たる）。⚠ 配列の中の `/…/` は正規表現に
+  ///   しない（本家も素の文字列として比べる）。
+  /// - ⚠ キーワードは大文字小文字を区別しない（capsicum の従来どおり。本家は区別する）。
+  static bool _matchesMuteWords(String text, List<Object> muteWords) {
+    final lower = text.toLowerCase();
+    for (final filter in muteWords) {
+      if (filter is String) {
+        final regex = _compileMuteRegex(filter);
+        if (regex != null && regex.hasMatch(text)) return true;
         continue;
       }
-      // Multi-element group: all words must match (AND condition).
-      final allMatch = group.every((word) => text.contains(word.toLowerCase()));
-      if (allMatch) return true;
+      if (filter is! List<String>) continue;
+      final keywords = filter.where((word) => word.isNotEmpty).toList();
+      if (keywords.isEmpty) continue;
+      if (keywords.every((word) => lower.contains(word.toLowerCase()))) {
+        return true;
+      }
     }
     return false;
   }
+
+  static final Map<String, RegExp?> _muteRegexCache = {};
+
+  /// `/pattern/flags` を Dart の `RegExp` にする。形が崩れている・知らないフラグ・
+  /// コンパイルできない、のいずれも null（その行は当たらない扱い・本家と同じ）。
+  ///
+  /// JS のフラグのうち `g` / `y` / `d` は 1 回の判定に影響しないので読み捨てる。
+  static RegExp? _compileMuteRegex(String filter) =>
+      _muteRegexCache.putIfAbsent(filter, () {
+        final parts = RegExp(r'^/(.+)/(.*)$', dotAll: true).firstMatch(filter);
+        if (parts == null) return null;
+        final flags = parts.group(2)!;
+        if (flags.split('').any((flag) => !'gimsuyvd'.contains(flag))) {
+          return null;
+        }
+        try {
+          return RegExp(
+            parts.group(1)!,
+            caseSensitive: !flags.contains('i'),
+            multiLine: flags.contains('m'),
+            dotAll: flags.contains('s'),
+            unicode: flags.contains('u') || flags.contains('v'),
+          );
+        } on FormatException {
+          return null;
+        }
+      });
 
   @override
   Future<Post> getPostById(String id) async {

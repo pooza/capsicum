@@ -31,13 +31,19 @@ void main() {
   /// ⚠ **`getMyself` を通してからタイムラインを引く。**ミュート語と「自分が誰か」は
   /// どちらも `/api/i` で入るので、そこを省くと判定そのものが走らない。
   Future<MisskeyAdapter> adapterWith({
-    required List<List<String>> mutedWords,
+    required List<Object> mutedWords,
     required List<Map<String, dynamic>> notes,
+    List<Object> hardMutedWords = const [],
     String myId = 'me',
   }) async {
     final adapter = await MisskeyAdapter.create('misskey.example');
     adapter.client.dio.httpClientAdapter = _StubAdapter({
-      '/api/i': {'id': myId, 'username': 'pooza', 'mutedWords': mutedWords},
+      '/api/i': {
+        'id': myId,
+        'username': 'pooza',
+        'mutedWords': mutedWords,
+        'hardMutedWords': hardMutedWords,
+      },
       '/api/notes/timeline': notes,
     });
     await adapter.getMyself();
@@ -239,6 +245,110 @@ void main() {
       posts.firstWhere((p) => p.id == 'n2').filterAction,
       FilterAction.warn,
     );
+  });
+
+  // #1288: 正規表現の行は配列に入らない素の文字列で返る（`(string[] | string)[]`）。
+  group('正規表現のミュート (#1288)', () {
+    // ⚠⚠ 本題。以前は `e as List<dynamic>` で決め打ちしていたので、ここで
+    // `/api/i` の parse ごと落ちていた（getMyself が TypeError を投げる）。
+    test('⚠⚠ 正規表現の行があっても /api/i を読めて、正規表現で当たる', () async {
+      final adapter = await adapterWith(
+        mutedWords: [
+          ['アバン'],
+          '/ダイの.+冒険/',
+        ],
+        notes: [note({})],
+      );
+
+      expect(
+        (await timelineOf(adapter)).single.filterAction,
+        FilterAction.warn,
+      );
+    });
+
+    test('hardMutedWords の正規表現は hide になる', () async {
+      final adapter = await adapterWith(
+        mutedWords: [],
+        hardMutedWords: ['/大冒険/'],
+        notes: [note({})],
+      );
+
+      expect(
+        (await timelineOf(adapter)).single.filterAction,
+        FilterAction.hide,
+      );
+    });
+
+    test('⚠ i フラグがあれば大文字小文字を区別しない', () async {
+      final adapter = await adapterWith(
+        mutedWords: ['/DAI/i'],
+        notes: [
+          note({'text': 'dai no daibouken'}),
+        ],
+      );
+
+      expect(
+        (await timelineOf(adapter)).single.filterAction,
+        FilterAction.warn,
+      );
+    });
+
+    // ⚠ 以前は本文を小文字化して caseSensitive: false で当てていたので、
+    // フラグの無い正規表現も区別しなかった。本家はフラグどおり。
+    test('⚠ フラグが無ければ大文字小文字を区別する（本家と同じ）', () async {
+      final adapter = await adapterWith(
+        mutedWords: ['/DAI/'],
+        notes: [
+          note({'text': 'dai no daibouken'}),
+        ],
+      );
+
+      expect((await timelineOf(adapter)).single.filterAction, isNull);
+    });
+
+    test('⚠ 配列の中の /…/ は正規表現にしない（素の文字列として比べる・本家と同じ）', () async {
+      final adapter = await adapterWith(
+        mutedWords: [
+          ['/ダイ.+/'],
+        ],
+        notes: [note({})],
+      );
+
+      expect((await timelineOf(adapter)).single.filterAction, isNull);
+    });
+
+    test('⚠ 壊れた正規表現・知らないフラグの行は当たらず、ほかの行は効く', () async {
+      final adapter = await adapterWith(
+        mutedWords: ['/(/', '/ダイ/z', 'ダイ', '/名作/'],
+        notes: [note({})],
+      );
+
+      expect(
+        (await timelineOf(adapter)).single.filterAction,
+        FilterAction.warn,
+      );
+    });
+
+    test('⚠ 壊れた行だけなら何も当たらない', () async {
+      final adapter = await adapterWith(
+        mutedWords: ['/(/', '/ダイ/z', 'ダイ'],
+        notes: [note({})],
+      );
+
+      expect((await timelineOf(adapter)).single.filterAction, isNull);
+    });
+  });
+
+  // ⚠ 本家は空のキーワードを捨てる。捨てないと `''` が全投稿に当たる。
+  test('⚠ 空のキーワードだけのグループは当たらない', () async {
+    final adapter = await adapterWith(
+      mutedWords: [
+        [''],
+      ],
+      notes: [note({})],
+    );
+
+    expect((await timelineOf(adapter)).single.filterAction, isNull);
   });
 }
 
