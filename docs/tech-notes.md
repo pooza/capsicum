@@ -255,6 +255,12 @@ Android では**非同期の未捕捉 Dart エラーでプロセスは落ちな�
 
 同じ取り違えは #89（「無限スクロールが数回で停止する」を WebSocket の未ハンドル例外 125 回から追った回）でも起きている。**「TL が更新されない」系の報告は、サーバー側を疑う前に Sentry の未捕捉 async エラーと突き合わせる。**
 
+### debug ビルドでは `reportOpFailure` の中身がどこにも出ない
+
+debug の `flutter run` は `--dart-define=SENTRY_DSN` を渡さないので、`reportOpFailure` は **Sentry にも標準出力にも何も出さない**。画面には「取得に失敗しました」としか出ず、flutter run のログも空になる。
+
+失敗の中身が要るときは、該当する `catch (e, st)` に**一時的な `print`**（`// ignore: avoid_print` を付ける・コミットしない）を入れ、ログをファイルに残す形で flutter run を起動し直して拾う。⚠ **推測で追うより早い** —— 2026-09-28 に「すべての通知」が Mastodon だけ全滅した件（`most_recent_notification_id` が数値で来る）は、この方法で 1 回で特定できた。
+
 ## デスクトップ（drag & drop / ネイティブ連携）
 
 ### drag-out の重い処理（ダウンロード等）は `dragItemProvider` ではなく virtual file provider に置く

@@ -174,7 +174,7 @@ Adapter が対応する機能を宣言するためのインターフェース。
 | ListSupport | `getLists()`, `createList()`, `deleteList()` |
 | HashtagSupport | `followHashtag()`, `unfollowHashtag()`, `getPostsByHashtag()` |
 
-後のフェーズで追加予定: StreamSupport、ExploreSupport、MuteSupport、ReportSupport。
+上の表は基本の 10 本だけ。ストリーミング・通報・ミュート（ワード / スレッド / リポスト）・フィルター・予約投稿など、その後に足した mixin は `packages/capsicum_core/lib/src/social/interfaces/` が正本。
 
 **既存 mixin に abstract メンバーを足すのは破壊的変更**。その mixin を mix する外部アダプタは実装を強制される。リポジトリ内の実装が 1 つしかないうちは無害に見えるが（v1.53 で `ChannelSupport.repeatPostToChannel` を追加したときが実例）、機能追加のたびに必須メンバーを増やす形にすると mixin が「対応を宣言するインターフェース」ではなくなる。既定実装（`UnsupportedError` を投げる）を持たせるか、[AdapterCapabilities](#adaptercapabilities) 側の能力プローブで出し分けるかを先に検討する。
 

@@ -1,5 +1,7 @@
 # フィルタ（キーワードミュート）の管理 UI 設計書（#1047）
 
+✅ **v2.3.0 で実装済み**（#1289 / #1047 / #1290）。⚠ **決定済み事項はいまも効く**（コードのコメントが節番号で参照している）ので archive へは移さない。未来形の記述は書いた当時の計画として読む。
+
 [#1047](https://github.com/pooza/capsicum/issues/1047) を Issue へ分解できる状態にするための設計書。[large-item-workflow.md「大玉の進め方」](large-item-workflow.md) の 4 に従い、`## 決定済み事項` と `## 未決事項` を分ける。
 
 - 作成日: **2026-10-15**（v2.3 の主役。枠の正本は [GitHub Milestone v2.3](https://github.com/pooza/capsicum/milestone/89)）
