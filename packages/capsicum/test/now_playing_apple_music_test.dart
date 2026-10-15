@@ -229,4 +229,127 @@ void main() {
       });
     },
   );
+
+  // #1276: macOS の Spotify のデスクトップアプリ。AppleScript はアートワークを
+  // https の URL、共有を `spotify:track:<id>` で返す（2026-10-15 実測）。
+  group('Spotify のデスクトップアプリ (#1276)', () {
+    test('アートワークの URL・共有 URL・出どころを読む', () {
+      final info = nowPlayingFromAppleMusicMetadata({
+        'sourceAppName': 'Spotify',
+        'title': 'わんだふるぷりきゅあ！evolution!!',
+        'artist': '吉武千颯',
+        'artworkUrl': 'https://i.scdn.co/image/ab67616d0000b273b99b',
+        'shareUri': 'spotify:track:4djHqqL4yQbXxDfPjMBWku',
+      });
+      expect(info!.sourceAppName, 'Spotify');
+      expect(
+        info.artworkUrl,
+        Uri.parse('https://i.scdn.co/image/ab67616d0000b273b99b'),
+      );
+      expect(
+        info.url,
+        Uri.parse('https://open.spotify.com/track/4djHqqL4yQbXxDfPjMBWku'),
+        reason: 'spotify: の URI のままでは本文の URL 行に使えない',
+      );
+    });
+
+    test('⚠ https でないアートワークの URL は捨てる', () {
+      for (final value in [
+        'http://i.scdn.co/image/x',
+        'file:///etc/passwd',
+        'not a url',
+        42,
+      ]) {
+        final info = nowPlayingFromAppleMusicMetadata({
+          'title': 'Song',
+          'artworkUrl': value,
+        });
+        expect(info!.artworkUrl, isNull, reason: '$value');
+      }
+    });
+
+    test('⚠ 書き出したファイル（ミュージック）があれば、そちらを採る', () {
+      final info = nowPlayingFromAppleMusicMetadata({
+        'title': 'Song',
+        'artworkPath': '/tmp/nowplaying_native_abc/nowplaying-artwork.jpg',
+        'artworkUrl': 'https://i.scdn.co/image/x',
+      });
+      expect(info!.artworkUrl!.scheme, 'file');
+    });
+
+    test('spotifyShareUrl は曲の URI だけを通す', () {
+      expect(
+        spotifyShareUrl('spotify:track:abc123'),
+        Uri.parse('https://open.spotify.com/track/abc123'),
+      );
+      expect(spotifyShareUrl('spotify:episode:abc123'), isNull);
+      expect(spotifyShareUrl('spotify:track:abc/../x'), isNull);
+      expect(spotifyShareUrl('https://open.spotify.com/track/abc'), isNull);
+      expect(spotifyShareUrl(null), isNull);
+    });
+
+    group('プロバイダ', () {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      const channel = MethodChannel('capsicum/now_playing');
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      tearDown(() => messenger.setMockMethodCallHandler(channel, null));
+
+      test('⚠ 設定の優先サービスをネイティブへ渡す（両方が同じ状態のときの選び方）', () async {
+        final received = <Object?>[];
+        messenger.setMockMethodCallHandler(channel, (call) async {
+          received.add(call.arguments);
+          return {'title': 'Song'};
+        });
+        await AppleMusicNowPlayingProvider(
+          preferSpotify: () => true,
+        ).currentlyPlaying();
+        await const AppleMusicNowPlayingProvider().currentlyPlaying();
+        expect(received, [
+          {'prefer': 'spotify'},
+          {'prefer': 'appleMusic'},
+        ]);
+      });
+
+      test('Spotify の許可の失敗は、アプリ名つきで投げる', () async {
+        messenger.setMockMethodCallHandler(
+          channel,
+          (call) async => {
+            '__nowPlayingError': 'automation_pending',
+            '__app': 'spotify',
+          },
+        );
+        expect(
+          () => const AppleMusicNowPlayingProvider().currentlyPlaying(),
+          throwsA(
+            isA<NowPlayingPermissionException>().having(
+              (e) => e.appName,
+              'appName',
+              'Spotify',
+            ),
+          ),
+        );
+      });
+
+      test('ミュージックの許可の失敗は、アプリ名を持たない（従来の文面）', () async {
+        messenger.setMockMethodCallHandler(
+          channel,
+          (call) async => {
+            '__nowPlayingError': 'automation_denied',
+            '__app': 'music',
+          },
+        );
+        expect(
+          () => const AppleMusicNowPlayingProvider().currentlyPlaying(),
+          throwsA(
+            isA<NowPlayingPermissionException>().having(
+              (e) => e.appName,
+              'appName',
+              isNull,
+            ),
+          ),
+        );
+      });
+    });
+  });
 }

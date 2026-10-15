@@ -87,7 +87,7 @@ https://github.com/pooza/capsicum/releases
 
 #### macOS の Apple Events (temporary-exception) 審査ノート（[#668](https://github.com/pooza/capsicum/issues/668)、v1.37〜）
 
-macOS のナウプレ挿入は、ミュージック.app（`com.apple.Music`）の**現在再生中の曲（タイトル/アーティスト/アルバム）を AppleScript で読み取る**ため、Release.entitlements に `com.apple.security.temporary-exception.apple-events` = `["com.apple.Music"]` を持つ。これは MAS 審査で必ず見られる entitlement なので、**App Review Information の Notes に下記英文を貼る**（macOS バージョン提出時）。
+macOS のナウプレ挿入は、ミュージック.app（`com.apple.Music`）と Spotify のデスクトップアプリ（`com.spotify.client`・v2.3〜・[#1276](https://github.com/pooza/capsicum/issues/1276)）の**現在再生中の曲（タイトル/アーティスト/アルバム）を AppleScript で読み取る**ため、Release.entitlements に `com.apple.security.temporary-exception.apple-events` = `["com.apple.Music", "com.spotify.client"]` を持つ。これは MAS 審査で必ず見られる entitlement なので、**App Review Information の Notes に下記英文を貼る**（macOS バージョン提出時）。
 
 **なぜ temporary-exception が必要か**（capsicum での実証経緯）: modern の `com.apple.security.automation.apple-events`（boolean）だけだと、App Sandbox 下でミュージックへの Apple Events が記述子（bundleId / PID）・スレッドを問わず **procNotFound (-600)** で弾かれ、対象アプリを解決すらできない（build 109-116 の内部ベータ実機 Sentry で確定）。特定アプリ宛てを明示する temporary-exception を併用して初めて addressable になり、TCC「オートメーション」許可プロンプトが出て読み取りが成立した（build 117 で動作確認）。
 
@@ -97,17 +97,23 @@ macOS のナウプレ挿入は、ミュージック.app（`com.apple.Music`）�
 On macOS, capsicum's compose screen has an optional "Insert Now Playing"
 button. When the user taps it, the app reads the *currently playing track's
 title / artist / album and its album artwork* from the Music app
-(com.apple.Music) via Apple Events, so the user can mention what they are
+(com.apple.Music) and, if it is running, the Spotify desktop app
+(com.spotify.client) via Apple Events, so the user can mention what they are
 listening to in a post, with the artwork attached as an image. It is
-read-only — the app never controls playback. The Apple Event is sent only on
-that explicit user action, and NSAppleEventsUsageDescription explains the
-purpose; the first use shows the standard Automation consent prompt.
+read-only — the app never controls playback, and it never launches either
+app (Spotify is queried only when it is already running). The Apple Event is
+sent only on that explicit user action, and NSAppleEventsUsageDescription
+explains the purpose; the first use shows the standard Automation consent
+prompt for each app.
 
 We declare com.apple.security.temporary-exception.apple-events limited to
-com.apple.Music because the modern com.apple.security.automation.apple-events
-entitlement alone returns procNotFound (-600) when resolving the Music app
-inside the App Sandbox, so the feature cannot work without it.
+com.apple.Music and com.spotify.client because the modern
+com.apple.security.automation.apple-events entitlement alone returns
+procNotFound (-600) when resolving the target app inside the App Sandbox, so
+the feature cannot work without it.
 ```
+
+⚠⚠ **v2.3 から Spotify も読む**（[#1276](https://github.com/pooza/capsicum/issues/1276)）ので、上の文面に Spotify を足してある。**v2.3 の macOS の提出で、App Store Connect のメモのこの段落を差し替える**（下の注意のとおり、欄ごとではなくこの段落だけ）。
 
 ⚠ **v2.2 からジャケット画像も読む**（[#1273](https://github.com/pooza/capsicum/issues/1273)）ので、上の文面に `and its album artwork` を足してある。2026-10-12 の v2.2.0 の提出で、App Store Connect のメモをこの文面に差し替えた。⚠⚠ **読むものを増やしたら、メモも同じ提出で直す**（メモと実際の動きが食い違うと差し戻しの理由になる）。
 

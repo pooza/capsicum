@@ -1,9 +1,11 @@
+import AppKit
 import CryptoKit
 import FlutterMacOS
 import Foundation
 
-/// ミュージック.app（Apple Music）の「現在再生中の曲」を AppleScript 経由で取得し、
-/// Dart 側 AppleMusicNowPlayingProvider (#668) に返すプラグイン。
+/// ミュージック.app（Apple Music）と Spotify のデスクトップアプリの「現在再生中の
+/// 曲」を AppleScript 経由で取得し、Dart 側 AppleMusicNowPlayingProvider (#668) に
+/// 返すプラグイン。Spotify は #1276 で足した。
 ///
 /// チャンネル名 `capsicum/now_playing` / メソッド `getNowPlaying` は iOS / Windows
 /// SMTC (#484) と揃える（OS ネイティブ pull の共通入口）。
@@ -19,13 +21,17 @@ import Foundation
 ///   executeAndReturnError の errorNumber（-1744/-1743）に表面化する。許可未決の
 ///   初回送信はプロンプトを誘発し、応答後の再押下で取得できる（automation_pending
 ///   を compose が「許可して再試行」の案内に変換する）。
+/// - ⚠ 許可はアプリごと。Spotify にはミュージックとは別の確認が出る (#1276)。
 ///
 /// 失敗種別は `__nowPlayingError`（automation_denied / automation_pending / no_track /
-/// script_error + __code）で返す。実曲は title/artist を持つマップ。ジャケットが
-/// 取れた回は、書き出した一時ファイルのパスを `artworkPath` に添える (#1273)。
-/// 書き出さなかった回は、理由を `artworkSkipped` に添える (#1283)。値は
-/// `no_artwork` / `unsupported_format` / `too_large` / `write_failed` のどれか
-/// （Dart 側の `kNowPlayingArtworkSkipReasons` と揃える）。
+/// script_error + __code）で返す。許可の失敗は、どのアプリのものかを `__app`
+/// （`music` / `spotify`）に添える。実曲は title/artist を持つマップで、
+/// `sourceAppName` に出どころを入れる。ジャケットは、ミュージックは書き出した
+/// 一時ファイルのパスを `artworkPath` に (#1273)、Spotify は画像の URL を
+/// `artworkUrl` に添える (#1276)。書き出さなかった回は、理由を `artworkSkipped` に
+/// 添える (#1283)。値は `no_artwork` / `unsupported_format` / `too_large` /
+/// `write_failed` のどれか（Dart 側の `kNowPlayingArtworkSkipReasons` と揃える）。
+/// Spotify の共有 URI（`spotify:track:<id>`）は `shareUri` に添える。
 final class NowPlayingPlugin {
   static func register(with registrar: FlutterPluginRegistrar) {
     let channel = FlutterMethodChannel(
@@ -35,29 +41,89 @@ final class NowPlayingPlugin {
     channel.setMethodCallHandler { call, result in
       switch call.method {
       case "getNowPlaying":
+        // 両方が同じ状態（どちらも再生中 / どちらも一時停止中）のときにどちらを
+        // 採るか。Dart 側が設定（ナウプレの優先サービス）から渡す (#1276)。
+        let prefer = (call.arguments as? [String: Any])?["prefer"] as? String
         // メインスレッドで実行（名前指定の対象解決が sandbox 下でメイン必須）。
-        result(currentItemMap())
+        result(currentItemMap(preferSpotify: prefer == "spotify"))
       default:
         result(FlutterMethodNotImplemented)
       }
     }
   }
 
-  /// ミュージック.app の現在の曲を title / artist / albumTitle のマップにする。
-  /// `application "Music" is running` を tell の外で判定し、未起動のミュージックを
-  /// 副作用で起動しない。**try で包まない**ことで TCC 拒否/応答待ちを表面化させる。
+  /// ミュージックと Spotify の両方に問い合わせ、採る 1 曲を返す (#1276)。
+  ///
+  /// 選び方（2026-10-15 pooza）:
+  /// - 再生中のほうを採る。どちらも同じ状態（両方再生中・両方一時停止中）なら、
+  ///   設定の優先サービス（[preferSpotify]）で決める
+  /// - どちらも曲を返さなければ、許可の失敗（応答待ち・拒否）を優先して返す。
+  ///   ⚠ 片方が許可の失敗でも、もう片方が曲を返せばそちらを採る（許可していない
+  ///   アプリのために、使っているアプリのナウプレを止めない）
+  private static func currentItemMap(preferSpotify: Bool) -> [String: Any]? {
+    let music = queryMusic()
+    let spotify = querySpotify()
+    let results = [music, spotify].compactMap { $0 }
+    let tracks = results.filter { $0["__state"] != nil }
+    if tracks.isEmpty {
+      let failures = results
+      for kind in ["automation_pending", "automation_denied", "script_error"] {
+        if let failure = failures.first(where: {
+          $0["__nowPlayingError"] as? String == kind
+        }) {
+          return failure
+        }
+      }
+      return ["__nowPlayingError": "no_track"]
+    }
+    func rank(_ map: [String: Any]) -> Int {
+      (map["__state"] as? String) == "playing" ? 2 : 1
+    }
+    let preferred = preferSpotify ? spotify : music
+    var chosen = tracks.max(by: { rank($0) < rank($1) })!
+    if let preferred, preferred["__state"] != nil, rank(preferred) == rank(chosen) {
+      chosen = preferred
+    }
+    chosen.removeValue(forKey: "__state")
+    return chosen
+  }
+
+  /// [source] を実行し、失敗なら `__nowPlayingError` のマップを返す。
+  private static func run(_ source: String, app: String) -> (NSAppleEventDescriptor?, [String: Any]?) {
+    var errorInfo: NSDictionary?
+    guard
+      let descriptor = NSAppleScript(source: source)?
+        .executeAndReturnError(&errorInfo)
+    else {
+      // 実行失敗。-1743=TCC 拒否 / -1744=許可応答待ち は許可案内へ、それ以外
+      // （-1728「現在トラックなし」等）は観測用に code を添えて返す。
+      let code = (errorInfo?[NSAppleScript.errorNumber] as? Int) ?? 0
+      let kind: String
+      switch code {
+      case -1743: kind = "automation_denied"
+      case -1744: kind = "automation_pending"
+      default: kind = "script_error"
+      }
+      return (nil, ["__nowPlayingError": kind, "__code": code, "__app": app])
+    }
+    return (descriptor, nil)
+  }
+
+  /// ミュージック.app の現在の曲。`application "Music" is running` を tell の外で
+  /// 判定し、未起動のミュージックを副作用で起動しない。**try で包まない**ことで
+  /// TCC 拒否/応答待ちを表面化させる。曲が無ければ nil。
   ///
   /// ジャケット（アートワーク）も一緒に取る (#1273)。`raw data of artwork 1` は
   /// ストリーミングの曲（`shared track`）でも画像のバイト列を返す（2026-10-12 実測・
   /// 600x600 の JPEG）。⚠ **こちらだけは try で包む** —— アートワークの無い曲は
   /// ここでエラーになるが、曲名までは取れているので文字情報を巻き込まない。
   /// TCC の拒否 / 応答待ちは手前の `player state` で先に表面化する。
-  private static func currentItemMap() -> [String: Any]? {
+  private static func queryMusic() -> [String: Any]? {
     let source = """
       if application "Music" is running then
         tell application "Music"
           if player state is stopped then return {}
-          set trackInfo to {name of current track, artist of current track, album of current track}
+          set trackInfo to {(player state) as text, name of current track, artist of current track, album of current track}
           try
             set end of trackInfo to raw data of artwork 1 of current track
           end try
@@ -67,46 +133,18 @@ final class NowPlayingPlugin {
         return {}
       end if
       """
-    var errorInfo: NSDictionary?
-    guard
-      let descriptor = NSAppleScript(source: source)?
-        .executeAndReturnError(&errorInfo)
-    else {
-      // 実行失敗。-1743=TCC 拒否 / -1744=許可応答待ち は許可案内へ、それ以外
-      // （-1728「現在トラックなし」等）は観測用に code を添えて返す。
-      let code = (errorInfo?[NSAppleScript.errorNumber] as? Int) ?? 0
-      switch code {
-      case -1743:
-        return ["__nowPlayingError": "automation_denied", "__code": code]
-      case -1744:
-        return ["__nowPlayingError": "automation_pending", "__code": code]
-      default:
-        return ["__nowPlayingError": "script_error", "__code": code]
-      }
-    }
-    // 空 {} は 0 要素（未起動 / 停止中）。曲があれば {name, artist, album} の 3 要素。
-    let items = descriptor.numberOfItems
-    guard items >= 3 else {
-      return ["__nowPlayingError": "no_track"]
-    }
-    var map: [String: Any] = [:]
-    // NSAppleEventDescriptor のリストは 1 始まり。
-    if let title = descriptor.atIndex(1)?.stringValue, !title.isEmpty {
-      map["title"] = title
-    }
-    if let artist = descriptor.atIndex(2)?.stringValue, !artist.isEmpty {
-      map["artist"] = artist
-    }
-    if let album = descriptor.atIndex(3)?.stringValue, !album.isEmpty {
-      map["albumTitle"] = album
-    }
-    if map["title"] == nil && map["artist"] == nil {
-      return ["__nowPlayingError": "no_track"]
-    }
+    let (result, failure) = run(source, app: "music")
+    guard let descriptor = result else { return failure }
+    // 空 {} は 0 要素（未起動 / 停止中）。曲があれば {状態, name, artist, album} の 4 要素。
+    guard descriptor.numberOfItems >= 4,
+      var map = trackMap(descriptor, sourceAppName: "Apple Music")
+    else { return nil }
     // ⚠ 書き出さなかった理由も返す (#1283)。返さないと Dart 側の breadcrumb は
     // どれも「源が絵を持っていない」に見え、「付かない」という報告を切り分け
     // られない。
-    guard items >= 4, let data = descriptor.atIndex(4)?.data, !data.isEmpty else {
+    guard descriptor.numberOfItems >= 5, let data = descriptor.atIndex(5)?.data,
+      !data.isEmpty
+    else {
       map["artworkSkipped"] = "no_artwork"
       return map
     }
@@ -116,6 +154,76 @@ final class NowPlayingPlugin {
     case .skipped(let reason):
       map["artworkSkipped"] = reason
     }
+    return map
+  }
+
+  private static let spotifyBundleId = "com.spotify.client"
+
+  /// Spotify のデスクトップアプリの現在の曲 (#1276)。曲が無ければ nil。
+  ///
+  /// ⚠⚠ **起動しているかをスクリプトの外（`NSRunningApplication`）で見てから、
+  /// スクリプトを組み立てる。**`tell application "Spotify"` を含むスクリプトは、
+  /// Spotify が入っていない Mac でコンパイルすると「Spotify はどこですか」の
+  /// アプリ選択のダイアログを出しうる。起動していれば入っている。
+  ///
+  /// アートワークは**画像の URL**（`https://i.scdn.co/image/…`）、共有は
+  /// **`spotify:track:<id>`** の形で返る（2026-10-15 実測・Spotify 1.2）。どちらも
+  /// try で包む（古い版で項目が無くても、曲名までは返す）。
+  private static func querySpotify() -> [String: Any]? {
+    guard
+      !NSRunningApplication.runningApplications(withBundleIdentifier: spotifyBundleId)
+        .isEmpty
+    else { return nil }
+    let source = """
+      tell application "Spotify"
+        if player state is stopped then return {}
+        set trackRef to current track
+        set trackInfo to {(player state) as text, name of trackRef, artist of trackRef, album of trackRef}
+        try
+          set end of trackInfo to artwork url of trackRef
+        on error
+          set end of trackInfo to ""
+        end try
+        try
+          set end of trackInfo to spotify url of trackRef
+        end try
+        return trackInfo
+      end tell
+      """
+    let (result, failure) = run(source, app: "spotify")
+    guard let descriptor = result else { return failure }
+    guard descriptor.numberOfItems >= 4,
+      var map = trackMap(descriptor, sourceAppName: "Spotify")
+    else { return nil }
+    if let artwork = descriptor.atIndex(5)?.stringValue, !artwork.isEmpty {
+      map["artworkUrl"] = artwork
+    } else {
+      map["artworkSkipped"] = "no_artwork"
+    }
+    if let share = descriptor.atIndex(6)?.stringValue, !share.isEmpty {
+      map["shareUri"] = share
+    }
+    return map
+  }
+
+  /// `{状態, name, artist, album, …}` の先頭 4 つを読む。曲名もアーティストも
+  /// 無ければ nil。状態は `__state`（`playing` / `paused`）に入れる。
+  private static func trackMap(
+    _ descriptor: NSAppleEventDescriptor, sourceAppName: String
+  ) -> [String: Any]? {
+    var map: [String: Any] = ["sourceAppName": sourceAppName]
+    // NSAppleEventDescriptor のリストは 1 始まり。
+    map["__state"] = descriptor.atIndex(1)?.stringValue == "playing" ? "playing" : "paused"
+    if let title = descriptor.atIndex(2)?.stringValue, !title.isEmpty {
+      map["title"] = title
+    }
+    if let artist = descriptor.atIndex(3)?.stringValue, !artist.isEmpty {
+      map["artist"] = artist
+    }
+    if let album = descriptor.atIndex(4)?.stringValue, !album.isEmpty {
+      map["albumTitle"] = album
+    }
+    if map["title"] == nil && map["artist"] == nil { return nil }
     return map
   }
 

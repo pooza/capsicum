@@ -2977,12 +2977,15 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         // 「オートメーション」で拒否 / 応答待ち #668）。「曲なし」と誤誘導せず、
         // 解消手順を案内する。denied は設定変更が要るので Sentry にも残す。
         final pending = e.reason == 'automation_pending';
+        // どのアプリの許可かで名前を変える（Spotify はミュージックとは別に
+        // 確認が出る・#1276）。
+        final app = e.appName ?? 'ミュージック';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
               pending
-                  ? 'ミュージックへのアクセスを許可するか確認したうえで、もう一度お試しください。'
-                  : 'ミュージックへのアクセスが許可されていません。システム設定 ＞ プライバシーとセキュリティ ＞ オートメーション で capsicum にミュージックの操作を許可してください。',
+                  ? '$appへのアクセスを許可するか確認したうえで、もう一度お試しください。'
+                  : '$appへのアクセスが許可されていません。システム設定 ＞ プライバシーとセキュリティ ＞ オートメーション で capsicum に$appの操作を許可してください。',
             ),
           ),
         );
@@ -2991,7 +2994,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
             'nowplaying: music automation denied',
             level: SentryLevel.warning,
             withScope: (scope) {
-              scope.setTag('nowplaying.source', 'apple_music');
+              scope.setTag(
+                'nowplaying.source',
+                e.appName == 'Spotify' ? 'spotify_app' : 'apple_music',
+              );
               scope.setTag('nowplaying.error', e.reason);
               scope.fingerprint = ['nowplaying', 'automation_denied'];
             },

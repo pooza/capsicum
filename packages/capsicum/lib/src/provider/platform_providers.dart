@@ -10,6 +10,7 @@ import '../platform/now_playing/now_playing_resolver.dart';
 import '../platform/now_playing/spotify_now_playing_provider.dart';
 import '../service/notification_init.dart';
 import 'account_manager_provider.dart';
+import 'preferences_provider.dart';
 
 /// プラットフォーム抽象層 (`lib/src/platform/`) の Riverpod 入口。
 /// UI 層はこの provider 経由で実装を受け取り、`Platform.isXxx` を
@@ -53,6 +54,13 @@ final nowPlayingResolverProvider = Provider<NowPlayingResolver>((ref) {
         mulukhiya: mulukhiya,
         accessToken: account.userSecret.accessToken,
       ),
-    createNativeNowPlayingProvider(),
+    // macOS でミュージックと Spotify が同じ状態のとき、設定の「ナウプレの優先
+    // サービス」で決める (#1276)。取得のたびに読む（watch にしない —— 設定を
+    // 変えるたびに resolver ごと作り直す必要は無い）。
+    createNativeNowPlayingProvider(
+      preferSpotify: () =>
+          ref.read(nowPlayingUrlProviderProvider) ==
+          NowPlayingUrlProvider.spotify,
+    ),
   ]);
 }, dependencies: [currentAccountProvider]);

@@ -36,7 +36,11 @@ class NowPlayingPermissionException implements Exception {
   /// `'automation_pending'`（許可ダイアログ応答待ち -1744）。
   final String reason;
 
-  const NowPlayingPermissionException(this.reason);
+  /// 許可が要るアプリの表示名（macOS の `Spotify` など・#1276）。null は
+  /// ミュージック（従来どおり）。
+  final String? appName;
+
+  const NowPlayingPermissionException(this.reason, {this.appName});
 
   @override
   String toString() => 'NowPlayingPermissionException($reason)';

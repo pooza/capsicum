@@ -16,9 +16,13 @@ import 'smtc_now_playing_provider.dart';
 /// - Linux  : MPRIS（`dbus` パッケージ）— #466、実装済み
 /// - Windows: SMTC（C++/WinRT メソッドチャンネル）— #484、実装済み
 /// - iOS    : Apple Music（MPMusicPlayerController メソッドチャンネル）— #668、実装済み
-/// - macOS  : Apple Music（ミュージック.app を AppleScript で照会）— #668、実装済み
+/// - macOS  : Apple Music（ミュージック.app を AppleScript で照会）— #668、実装済み。
+///   Spotify のデスクトップアプリも同じ口で照会する（#1276）。両方が同じ状態の
+///   ときにどちらを採るかを [preferSpotify] で渡す
 /// - Android: OS ネイティブ pull なし → no-op
-NowPlayingProvider createNativeNowPlayingProvider() {
+NowPlayingProvider createNativeNowPlayingProvider({
+  bool Function()? preferSpotify,
+}) {
   if (Platform.isLinux) {
     return const MprisNowPlayingProvider();
   }
@@ -26,7 +30,7 @@ NowPlayingProvider createNativeNowPlayingProvider() {
     return const SmtcNowPlayingProvider();
   }
   if (Platform.isIOS || Platform.isMacOS) {
-    return const AppleMusicNowPlayingProvider();
+    return AppleMusicNowPlayingProvider(preferSpotify: preferSpotify);
   }
   return const NoopNowPlayingProvider();
 }
