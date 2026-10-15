@@ -26,6 +26,7 @@ void main() {
       var calls = 0;
 
       final state = await fetchUntilVisible(
+        filterContext: FilterContext.home,
         pageSize: 2,
         hideLivecure: true,
         fetch: (maxId) async => pages[calls++],
@@ -39,6 +40,7 @@ void main() {
     test('可視投稿が見つかった時点で過剰なページ取得をしない', () async {
       var calls = 0;
       final state = await fetchUntilVisible(
+        filterContext: FilterContext.home,
         pageSize: 2,
         hideLivecure: true,
         fetch: (maxId) async {
@@ -57,6 +59,7 @@ void main() {
     test('全件 #実況 で枯渇しても無限ループせず空+hasMore=false で終わる', () async {
       var calls = 0;
       final state = await fetchUntilVisible(
+        filterContext: FilterContext.home,
         pageSize: 2,
         hideLivecure: true,
         fetch: (maxId) async {
@@ -76,6 +79,7 @@ void main() {
     test('hideLivecure=false なら1ページ目をそのまま返す', () async {
       var calls = 0;
       final state = await fetchUntilVisible(
+        filterContext: FilterContext.home,
         pageSize: 2,
         hideLivecure: false,
         fetch: (maxId) async {
@@ -94,6 +98,7 @@ void main() {
       var calls = 0;
 
       await fetchUntilVisible(
+        filterContext: FilterContext.home,
         pageSize: 2,
         hideLivecure: true,
         fetch: (maxId) async {
@@ -113,6 +118,7 @@ void main() {
     test('満杯ページが続いても上限ページ数で打ち切る', () async {
       var calls = 0;
       final state = await fetchUntilVisible(
+        filterContext: FilterContext.home,
         pageSize: 2,
         hideLivecure: true,
         fetch: (maxId) async {
@@ -143,6 +149,7 @@ void main() {
       var calls = 0;
       final cursors = <String?>[];
       await fetchUntilVisible(
+        filterContext: FilterContext.home,
         pageSize: 2,
         hideLivecure: true,
         fetch: (maxId) async {
@@ -161,6 +168,7 @@ void main() {
     test('見える投稿があった回は、そのページの絞る前の末尾を渡す', () async {
       final cursors = <String?>[];
       await fetchUntilVisible(
+        filterContext: FilterContext.home,
         pageSize: 2,
         hideLivecure: true,
         fetch: (maxId) async => [
@@ -176,6 +184,7 @@ void main() {
     test('1 件も返らなかった回は null を渡す', () async {
       final cursors = <String?>[];
       await fetchUntilVisible(
+        filterContext: FilterContext.home,
         pageSize: 2,
         hideLivecure: false,
         fetch: (maxId) async => const [],

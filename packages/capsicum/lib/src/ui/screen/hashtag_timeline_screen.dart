@@ -6,6 +6,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/hashtag_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../util/scroll_thresholds.dart';
+import '../widget/filter_scope.dart';
 import '../widget/post_tile.dart';
 import '../widget/retry_error_view.dart';
 import '../widget/simple_post_bar.dart';
@@ -139,7 +140,12 @@ class _HashtagTimelineScreenState extends ConsumerState<HashtagTimelineScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => FilterScope(
+    filterContext: FilterContext.public,
+    child: Builder(builder: _buildFiltered),
+  );
+
+  Widget _buildFiltered(BuildContext context) {
     final HashtagTimelineKey key = (
       account: ref.watch(currentAccountKeyProvider),
       spec: widget.hashtag,

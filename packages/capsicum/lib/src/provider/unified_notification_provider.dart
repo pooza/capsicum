@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../model/account.dart';
 import '../service/sentry_op_failure.dart';
 import '../util/conversion_skip_report.dart';
+import '../util/notification_filter.dart';
 import 'account_manager_provider.dart';
 import 'is_cat_provider.dart';
 import 'preferences_provider.dart';
@@ -162,7 +163,7 @@ class UnifiedNotificationNotifier
       // ⚠ **待ち上限は enricher の中で掛かる (#1083-C)。**ここに `.timeout` を
       // 書き足さないこと。
       final notifications = await enricher.enrichNotifications(
-        response.notifications,
+        dropFilteredNotifications(response.notifications),
       );
       return _FetchResult(account: account, notifications: notifications);
     } catch (e, st) {

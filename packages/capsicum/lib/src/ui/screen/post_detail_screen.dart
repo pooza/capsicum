@@ -17,6 +17,7 @@ import '../util/post_actions.dart';
 import '../util/provider_scope_carrier.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/desktop_menu_model.dart';
+import '../widget/filter_scope.dart';
 import '../widget/post_tile.dart';
 import '../widget/retry_error_view.dart';
 import '../widget/screen_menu.dart';
@@ -222,7 +223,13 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen>
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => FilterScope(
+    filterContext: FilterContext.thread,
+    weakenHide: true,
+    child: Builder(builder: _buildFiltered),
+  );
+
+  Widget _buildFiltered(BuildContext context) {
     final threadFuture = ref.watch(_threadProvider(post.id));
     // 長いスレッドでのみジャンプ導線を出す（1 件だけならスクロール不要）。
     final showJump = (threadFuture.asData?.value.length ?? 0) > 1;

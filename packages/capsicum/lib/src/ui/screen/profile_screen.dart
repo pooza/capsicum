@@ -30,6 +30,7 @@ import '../widget/content_parser.dart';
 import '../widget/emoji_text.dart';
 import '../widget/featured_tags_editor_sheet.dart';
 import '../widget/featured_tags_section.dart';
+import '../widget/filter_scope.dart';
 import '../widget/page_card.dart';
 import '../widget/post_tile.dart';
 import '../widget/report_comment_dialog.dart';
@@ -587,7 +588,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   bool get _excludeMediaReplies => _user.showMediaReplies == false;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => FilterScope(
+    filterContext: FilterContext.account,
+    child: Builder(builder: _buildFiltered),
+  );
+
+  Widget _buildFiltered(BuildContext context) {
     final user = _user;
     final colorScheme = Theme.of(context).colorScheme;
 

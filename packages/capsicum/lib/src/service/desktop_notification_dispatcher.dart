@@ -17,6 +17,7 @@ import '../ui/util/moderation_notification_text.dart';
 import '../ui/util/notification_type_display.dart';
 import '../ui/widget/content_parser.dart';
 import '../util/exception_scrub.dart';
+import '../util/notification_filter.dart';
 import '../util/sentry_tag_hash.dart';
 import 'bounded_key_set.dart';
 import 'delivered_push_cleaner.dart';
@@ -321,6 +322,16 @@ class DesktopNotificationDispatcher {
     }
     final dedupKey = '${account.key.toStorageKey()}|${n.id}';
     if (!_emittedKeys.add(dedupKey)) return; // 既出
+    // 通知の適用先でフィルターに当たったものは、OS 通知を出さない (#1289)。
+    // ⚠ hide だけでなく warn も出さない —— Mastodon Web のデスクトップ通知と同じ
+    // 線（畳むべき本文を、畳めないバナーに出さない）。一覧には warn のまま載る。
+    if (notificationFilterVerdict(n) != null) {
+      debugPrint(
+        'capsicum: push.desktop: skip (filtered) '
+        'account=${sentrySafeAccount(account.key)} id=${n.id}',
+      );
+      return;
+    }
     // 後着の APNs banner を黙殺できるよう native 側の既出集合へ伝える
     // (#674。macOS 以外では no-op)。show より先に投げ、APNs との競争窓を
     // 最小化する。

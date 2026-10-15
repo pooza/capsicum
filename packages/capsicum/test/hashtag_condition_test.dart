@@ -73,6 +73,7 @@ void main() {
       };
       final asked = <String?>[];
       final state = await fetchUntilVisible(
+        filterContext: FilterContext.home,
         pageSize: 2,
         hideLivecure: false,
         fetch: (maxId) async {
@@ -133,6 +134,7 @@ void main() {
         ],
       };
       final state = await fetchUntilVisible(
+        filterContext: FilterContext.home,
         pageSize: 2,
         hideLivecure: false,
         fetch: (maxId) async => pages[maxId] ?? const [],

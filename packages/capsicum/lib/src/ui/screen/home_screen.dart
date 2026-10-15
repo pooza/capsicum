@@ -31,6 +31,7 @@ import '../util/offline_account_display.dart';
 import '../util/stream_connection_display.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/emoji_text.dart';
+import '../widget/filter_scope.dart';
 import '../widget/home_drawer.dart';
 import '../widget/home_menu.dart';
 import '../widget/livecure_filter_button.dart';
@@ -941,12 +942,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onHorizontalDragEnd: _onSwipe,
-      child: _buildTabContent(
+      // タイムライン系のタブはフィルターの適用先で包む (#1289)。
+      child: FilterScope.wrapTab(
         currentTab,
-        selectedList,
-        selectedType,
-        selectedHashtag,
-        timeline,
+        _buildTabContent(
+          currentTab,
+          selectedList,
+          selectedType,
+          selectedHashtag,
+          timeline,
+        ),
       ),
     );
   }

@@ -76,6 +76,10 @@ class HashtagTimelineNotifier
         TimelineLiveIngest<HashtagTimelineKey> {
   static const _pageSize = 20;
 
+  /// ハッシュタグ TL は `public`（Mastodon Web と同じ・#1289）。
+  @override
+  FilterContext get filterContext => FilterContext.public;
+
   @override
   String get liveStreamKey =>
       timelineContextKey(arg.account, HashtagTab(arg.spec))!;
@@ -132,7 +136,7 @@ class HashtagTimelineNotifier
   void insertOwnPost(Post post) {
     final current = state.valueOrNull;
     if (current == null) return;
-    if (post.filterAction == FilterAction.hide) return;
+    if (post.isHiddenIn(filterContext)) return;
     if (ref.read(hideLivecureProvider) && hasLivecureTag(post)) return;
     if (current.posts.any((p) => p.id == post.id)) return;
     // ライブ購読 (#1098) が入ったので、未表示バッファに居るぶんも重複になる。
@@ -166,6 +170,7 @@ class HashtagTimelineNotifier
     final condition = HashtagQuery.parse(key.spec);
     final hideLivecure = ref.watch(hideLivecureProvider);
     final result = await fetchUntilVisible(
+      filterContext: filterContext,
       pageSize: _pageSize,
       hideLivecure: hideLivecure,
       fetch: (maxId) => (adapter as HashtagSupport).getPostsByHashtag(
@@ -233,7 +238,10 @@ class HashtagTimelineNotifier
           );
           if (raw.isNotEmpty) cursor = raw.last.id;
           older.addAll(
-            raw.where(_keeps).where((p) => !hideLivecure || !hasLivecureTag(p)),
+            raw
+                .where(_keeps)
+                .where((p) => !p.isHiddenIn(filterContext))
+                .where((p) => !hideLivecure || !hasLivecureTag(p)),
           );
           hasMore = raw.length >= _pageSize;
           if (older.isNotEmpty || !hasMore) break;

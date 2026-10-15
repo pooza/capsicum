@@ -31,6 +31,7 @@ import '../util/deck_tabs.dart';
 import '../util/scroll_thresholds.dart';
 import '../util/stream_connection_display.dart';
 import 'emoji_text.dart';
+import 'filter_scope.dart';
 import 'home_menu.dart' show tabLabel;
 import 'notification_filter_button.dart';
 import 'post_tile.dart';
@@ -60,7 +61,8 @@ class DeckColumnView extends ConsumerWidget {
         children: [
           _DeckColumnHeader(column: column),
           const Divider(height: 1),
-          Expanded(child: _body(ref)),
+          // タイムライン系のカラムはフィルターの適用先で包む (#1289)。
+          Expanded(child: FilterScope.wrapTab(column.tab, _body(ref))),
         ],
       ),
     );

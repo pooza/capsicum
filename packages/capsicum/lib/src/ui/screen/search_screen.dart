@@ -13,6 +13,7 @@ import '../util/deck_navigation.dart';
 import '../util/fediverse_link.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/emoji_text.dart';
+import '../widget/filter_scope.dart';
 import '../widget/post_tile.dart';
 import '../widget/user_avatar.dart';
 
@@ -334,7 +335,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => FilterScope(
+    filterContext: FilterContext.public,
+    weakenHide: true,
+    child: Builder(builder: _buildFiltered),
+  );
+
+  Widget _buildFiltered(BuildContext context) {
     final field = TextField(
       controller: _controller,
       // ⚠⚠ **カラムでは autofocus しない** (#1173)。検索カラムは列に永続化される

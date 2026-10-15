@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../service/background_notification_service.dart';
 import '../util/conversion_skip_report.dart';
+import '../util/notification_filter.dart';
 import 'account_manager_provider.dart';
 import 'is_cat_provider.dart';
 import 'preferences_provider.dart';
@@ -134,10 +135,13 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
     // それぞれ `.timeout` を書いており、超過がどこでも計装されていなかった。
     final notifications = await ref
         .read(isCatEnricherProvider)
-        .enrichNotifications(response.notifications);
+        .enrichNotifications(dropFilteredNotifications(response.notifications));
     // Update last-seen ID so background polling skips already-seen items.
-    if (notifications.isNotEmpty) {
-      _updateLastSeen(notifications.first.id);
+    // ⚠ 起点はフィルターで落とす前の先頭で取る (#1289)。落とした後の先頭だと、
+    // 伏せた通知がバックグラウンドの巡回で「未読の新着」に見える。
+    final newestRaw = response.notifications.firstOrNull;
+    if (newestRaw != null) {
+      _updateLastSeen(newestRaw.id);
     }
 
     return NotificationState(
@@ -213,7 +217,9 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
         // 追加読み込みも同じ扱い (#1080)。ここで止まるとスクロールが刺さる。
         final older = await ref
             .read(isCatEnricherProvider)
-            .enrichNotifications(response.notifications);
+            .enrichNotifications(
+              dropFilteredNotifications(response.notifications),
+            );
 
         // ⚠⚠ **カーソルが進まなかったら打ち切る** (#1048)。グループ化した経路の
         // `hasMore` は「ページが空でなければ続きがありうる」なので、サーバーが

@@ -1,4 +1,5 @@
 import 'attachment.dart';
+import 'filter_match.dart';
 import 'poll.dart';
 import 'post_scope.dart';
 import 'preview_card.dart';
@@ -77,8 +78,10 @@ class Post {
   final String? emojiHost;
   final PreviewCard? card;
   final Poll? poll;
-  final FilterAction? filterAction;
-  final String? filterTitle;
+
+  /// 投稿に一致したフィルター (#1289)。⚠ **どの画面で効くかは読む側が決める**
+  /// （[filterVerdictFor]）。Mastodon は適用先つき、Misskey のワードミュートは全画面。
+  final List<FilterMatch> filterMatches;
   final bool pinned;
   final String? channelId;
   final String? channelName;
@@ -165,8 +168,7 @@ class Post {
     this.emojiHost,
     this.card,
     this.poll,
-    this.filterAction,
-    this.filterTitle,
+    this.filterMatches = const [],
     this.pinned = false,
     this.channelId,
     this.channelName,
@@ -182,6 +184,17 @@ class Post {
     this.tags = const [],
   });
 
+  /// [context] の画面でこの投稿にかかるフィルター (#1289)。当たらなければ null。
+  /// 解決の規則は [resolveFilterMatches]。
+  FilterVerdict? filterVerdictFor(
+    FilterContext? context, {
+    bool weakenHide = false,
+  }) => resolveFilterMatches(filterMatches, context, weakenHide: weakenHide);
+
+  /// [context] の一覧からこの投稿を落とすか (#1289)。
+  bool isHiddenIn(FilterContext context) =>
+      filterVerdictFor(context)?.action == FilterAction.hide;
+
   /// 派生オブジェクトを生成する。enrich パイプライン（IsCatEnricher 等）の
   /// author / reblog 差し替え、添付説明（ALT）編集後の attachments 差し替え等で
   /// 使用。フィールド追加時の取りこぼし防止のため、新フィールドの追加はここに
@@ -194,8 +207,7 @@ class Post {
     List<Attachment>? attachments,
     bool? bookmarked,
     bool? threadMuted,
-    FilterAction? filterAction,
-    String? filterTitle,
+    List<FilterMatch>? filterMatches,
   }) => Post(
     id: id,
     postedAt: postedAt,
@@ -228,8 +240,7 @@ class Post {
     // ⚠ ワードミュートの判定結果を後から載せる (#1117-B)。⚠⚠ **これが無いと
     // Misskey adapter が `Post(...)` を手で組み直すしかなく、**quote / poll /
     // channel / localOnly / language 等を軒並み捨てていた**（再編集で消える）。
-    filterAction: filterAction ?? this.filterAction,
-    filterTitle: filterTitle ?? this.filterTitle,
+    filterMatches: filterMatches ?? this.filterMatches,
     pinned: pinned,
     channelId: channelId,
     channelName: channelName,
@@ -256,5 +267,3 @@ class PostMention {
 
   const PostMention({required this.id, required this.acct});
 }
-
-enum FilterAction { hide, warn }

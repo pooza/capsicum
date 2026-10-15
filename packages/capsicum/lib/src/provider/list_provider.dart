@@ -29,6 +29,10 @@ class ListTimelineNotifier
         TimelineLiveIngest<ListTimelineKey> {
   static const _pageSize = 20;
 
+  /// リストは `home`（Mastodon Web と同じ・#1289）。
+  @override
+  FilterContext get filterContext => FilterContext.home;
+
   @override
   String get liveStreamKey =>
       timelineContextKey(arg.account, ListTab(id: arg.id))!;
@@ -83,6 +87,7 @@ class ListTimelineNotifier
 
     final hideLivecure = ref.watch(hideLivecureProvider);
     final result = await fetchUntilVisible(
+      filterContext: filterContext,
       pageSize: _pageSize,
       hideLivecure: hideLivecure,
       fetch: (maxId) => (adapter as ListSupport).getListTimeline(
@@ -127,9 +132,10 @@ class ListTimelineNotifier
           arg.id,
           query: TimelineQuery(maxId: lastId, limit: _pageSize),
         );
+        final unhidden = raw.where((p) => !p.isHiddenIn(filterContext));
         final older = hideLivecure
-            ? raw.where((p) => !hasLivecureTag(p)).toList()
-            : raw;
+            ? unhidden.where((p) => !hasLivecureTag(p)).toList()
+            : unhidden.toList();
 
         // 既にリストにある投稿は落とす (#909)。各行は id をキーにしているので、
         // ページ境界の重複をそのまま足すと Duplicate keys で描画ごと落ちる。

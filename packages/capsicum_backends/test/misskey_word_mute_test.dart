@@ -73,8 +73,8 @@ void main() {
 
     final post = (await timelineOf(adapter)).single;
 
-    expect(post.filterAction, FilterAction.warn);
-    expect(post.filterTitle, 'ワードミュート');
+    expect(post.filterVerdictFor(null)?.action, FilterAction.warn);
+    expect(post.filterVerdictFor(null)?.title, 'ワードミュート');
   });
 
   test('⚠ 引用の中身にミュート語があっても当たる', () async {
@@ -91,7 +91,10 @@ void main() {
       ],
     );
 
-    expect((await timelineOf(adapter)).single.filterAction, FilterAction.warn);
+    expect(
+      (await timelineOf(adapter)).single.filterVerdictFor(null)?.action,
+      FilterAction.warn,
+    );
   });
 
   test('⚠ 中身にも語が無ければ当たらない（何でも当てていないことの固定）', () async {
@@ -109,7 +112,7 @@ void main() {
     );
 
     expect(
-      (await timelineOf(adapter)).single.filterAction,
+      (await timelineOf(adapter)).single.filterVerdictFor(null)?.action,
       isNot(FilterAction.warn),
     );
   });
@@ -134,7 +137,7 @@ void main() {
     );
 
     expect(
-      (await timelineOf(adapter)).single.filterAction,
+      (await timelineOf(adapter)).single.filterVerdictFor(null)?.action,
       isNot(FilterAction.warn),
     );
   });
@@ -149,8 +152,8 @@ void main() {
 
     final post = (await timelineOf(adapter)).single;
 
-    expect(post.filterAction, FilterAction.warn);
-    expect(post.filterTitle, 'ワードミュート');
+    expect(post.filterVerdictFor(null)?.action, FilterAction.warn);
+    expect(post.filterVerdictFor(null)?.title, 'ワードミュート');
   });
 
   // ⚠⚠ ここが本題。組み直しをやめないと軒並み落ちる。
@@ -179,7 +182,7 @@ void main() {
 
     final post = (await timelineOf(adapter)).single;
 
-    expect(post.filterAction, FilterAction.warn);
+    expect(post.filterVerdictFor(null)?.action, FilterAction.warn);
     expect(post.localOnly, isTrue, reason: '「ローカルのみ」が落ちると再編集で公開されうる');
     expect(post.channelId, 'ch1');
     expect(post.channelName, '実況');
@@ -205,8 +208,8 @@ void main() {
 
     final post = (await timelineOf(adapter)).single;
 
-    expect(post.filterAction, isNull);
-    expect(post.filterTitle, isNull);
+    expect(post.filterVerdictFor(null)?.action, isNull);
+    expect(post.filterVerdictFor(null)?.title, isNull);
   });
 
   test('ミュート語に当たらなければ何も載らない', () async {
@@ -217,13 +220,19 @@ void main() {
       notes: [note({})],
     );
 
-    expect((await timelineOf(adapter)).single.filterAction, isNull);
+    expect(
+      (await timelineOf(adapter)).single.filterVerdictFor(null)?.action,
+      isNull,
+    );
   });
 
   test('ミュート語が無ければ素通し', () async {
     final adapter = await adapterWith(mutedWords: [], notes: [note({})]);
 
-    expect((await timelineOf(adapter)).single.filterAction, isNull);
+    expect(
+      (await timelineOf(adapter)).single.filterVerdictFor(null)?.action,
+      isNull,
+    );
   });
 
   // ⚠ AND 条件（配列の中の全語を含む）。本家と同じ扱い。
@@ -240,9 +249,12 @@ void main() {
 
     final posts = await timelineOf(adapter);
 
-    expect(posts.firstWhere((p) => p.id == 'n1').filterAction, isNull);
     expect(
-      posts.firstWhere((p) => p.id == 'n2').filterAction,
+      posts.firstWhere((p) => p.id == 'n1').filterVerdictFor(null)?.action,
+      isNull,
+    );
+    expect(
+      posts.firstWhere((p) => p.id == 'n2').filterVerdictFor(null)?.action,
       FilterAction.warn,
     );
   });
@@ -261,7 +273,7 @@ void main() {
       );
 
       expect(
-        (await timelineOf(adapter)).single.filterAction,
+        (await timelineOf(adapter)).single.filterVerdictFor(null)?.action,
         FilterAction.warn,
       );
     });
@@ -274,7 +286,7 @@ void main() {
       );
 
       expect(
-        (await timelineOf(adapter)).single.filterAction,
+        (await timelineOf(adapter)).single.filterVerdictFor(null)?.action,
         FilterAction.hide,
       );
     });
@@ -288,7 +300,7 @@ void main() {
       );
 
       expect(
-        (await timelineOf(adapter)).single.filterAction,
+        (await timelineOf(adapter)).single.filterVerdictFor(null)?.action,
         FilterAction.warn,
       );
     });
@@ -303,7 +315,10 @@ void main() {
         ],
       );
 
-      expect((await timelineOf(adapter)).single.filterAction, isNull);
+      expect(
+        (await timelineOf(adapter)).single.filterVerdictFor(null)?.action,
+        isNull,
+      );
     });
 
     test('⚠ 配列の中の /…/ は正規表現にしない（素の文字列として比べる・本家と同じ）', () async {
@@ -314,7 +329,10 @@ void main() {
         notes: [note({})],
       );
 
-      expect((await timelineOf(adapter)).single.filterAction, isNull);
+      expect(
+        (await timelineOf(adapter)).single.filterVerdictFor(null)?.action,
+        isNull,
+      );
     });
 
     test('⚠ 壊れた正規表現・知らないフラグの行は当たらず、ほかの行は効く', () async {
@@ -324,7 +342,7 @@ void main() {
       );
 
       expect(
-        (await timelineOf(adapter)).single.filterAction,
+        (await timelineOf(adapter)).single.filterVerdictFor(null)?.action,
         FilterAction.warn,
       );
     });
@@ -335,7 +353,10 @@ void main() {
         notes: [note({})],
       );
 
-      expect((await timelineOf(adapter)).single.filterAction, isNull);
+      expect(
+        (await timelineOf(adapter)).single.filterVerdictFor(null)?.action,
+        isNull,
+      );
     });
   });
 
@@ -348,7 +369,10 @@ void main() {
       notes: [note({})],
     );
 
-    expect((await timelineOf(adapter)).single.filterAction, isNull);
+    expect(
+      (await timelineOf(adapter)).single.filterVerdictFor(null)?.action,
+      isNull,
+    );
   });
 }
 

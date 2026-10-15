@@ -626,16 +626,19 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       if (_matchesMuteWords(text, _mutedWords)) matchedSoft = true;
     }
 
+    // Misskey に適用先の概念は無いので「全画面」（contexts: null）で載せる (#1289)。
     if (matchedHard) {
       return post.copyWith(
-        filterAction: FilterAction.hide,
-        filterTitle: 'ワードミュート',
+        filterMatches: const [
+          FilterMatch(action: FilterAction.hide, title: 'ワードミュート'),
+        ],
       );
     }
     if (matchedSoft) {
       return post.copyWith(
-        filterAction: FilterAction.warn,
-        filterTitle: 'ワードミュート',
+        filterMatches: const [
+          FilterMatch(action: FilterAction.warn, title: 'ワードミュート'),
+        ],
       );
     }
     return post;

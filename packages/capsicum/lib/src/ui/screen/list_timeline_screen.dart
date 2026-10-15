@@ -1,3 +1,4 @@
+import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -5,6 +6,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/list_provider.dart';
 import '../util/scroll_thresholds.dart';
 import '../widget/bottom_safe_area.dart';
+import '../widget/filter_scope.dart';
 import '../widget/post_tile.dart';
 import '../widget/retry_error_view.dart';
 
@@ -64,7 +66,12 @@ class _ListTimelineScreenState extends ConsumerState<ListTimelineScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => FilterScope(
+    filterContext: FilterContext.home,
+    child: Builder(builder: _buildFiltered),
+  );
+
+  Widget _buildFiltered(BuildContext context) {
     final ListTimelineKey key = (
       account: ref.watch(currentAccountKeyProvider),
       id: widget.listId,

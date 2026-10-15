@@ -149,6 +149,18 @@ String? timelineContextKey(AccountKey? accountKey, TabType tab) =>
 ///
 /// 各種別のエンドポイント対応は Mastodon / Misskey アダプタの `getTimeline`
 /// 参照（local=public?local / local-timeline、federated=public / global）。
+/// タイムラインの種別 → フィルターの適用先 (#1289)。
+///
+/// Mastodon Web（`utils/filters.ts`）と同じ: ホームは `home`、それ以外の公開系と
+/// DM は `public`（Web の `direct` カラムも既定の `public` に落ちる）。
+FilterContext filterContextForTimeline(TimelineType type) => switch (type) {
+  TimelineType.home => FilterContext.home,
+  TimelineType.local ||
+  TimelineType.social ||
+  TimelineType.federated ||
+  TimelineType.directMessages => FilterContext.public,
+};
+
 bool ownPostAppearsInTimeline(TimelineType type, Post post) {
   switch (type) {
     case TimelineType.home:
@@ -493,9 +505,14 @@ bool hasLivecureTag(Post post) {
 /// 生のカーソルで進める TL が、最初の読み込みで進んだぶんを引き継ぐためのもの。
 /// ⚠ これが無いと、上限まで引いて 1 件も残らなかった回に進めたカーソルが
 /// 捨てられ、続き読みが先頭から引き直す（＝その先へ永久に進めない）。
+///
+/// [filterContext] はこの TL のフィルターの適用先 (#1289)。hide はこれに当たる
+/// ものだけ落とす。⚠ 必須にしてある —— 以前はリスト・ハッシュタグ・チャンネルの
+/// 初回取得で hide を落としていなかった（ライブ取り込みだけが落としていた）。
 Future<TimelineState> fetchUntilVisible({
   required int pageSize,
   required bool hideLivecure,
+  required FilterContext filterContext,
   required Future<List<Post>> Function(String? maxId) fetch,
   bool Function(Post post)? keep,
   void Function(String? rawLastId)? onRawCursor,
@@ -515,7 +532,11 @@ Future<TimelineState> fetchUntilVisible({
     maxId = posts.last.id;
     hasMore = posts.length >= pageSize;
 
-    final kept = keep == null ? posts : posts.where(keep).toList();
+    final kept = [
+      for (final post in posts)
+        if ((keep == null || keep(post)) && !post.isHiddenIn(filterContext))
+          post,
+    ];
     final visible = hideLivecure
         ? kept.where((p) => !hasLivecureTag(p)).toList()
         : kept;
@@ -646,6 +667,12 @@ mixin TimelineLiveIngest<Arg>
     on
         AutoDisposeFamilyAsyncNotifier<TimelineState, Arg>,
         TimelineListMutations<Arg> {
+  /// この一覧のフィルターの適用先 (#1289)。hide はこの適用先のものだけ落とす。
+  ///
+  /// ⚠⚠ **以前は適用先を見ずに落としていた**ので、「通知だけ」のフィルターが
+  /// ホームでも効いていた。対応表は `docs/filter-management-plan.md` 決定済み事項 2。
+  FilterContext get filterContext;
+
   /// スクロール中に届いた未表示の新着 (#296)。「新着 N 件」を開くまで一覧へは
   /// 出さない。⚠ **本線以外からも触られる**: 削除 / ブロック (#887) は
   /// [_dropPending] で刈り、楽観挿入 (#717 / #814) は重複判定にここを見る。
@@ -791,7 +818,7 @@ mixin TimelineLiveIngest<Arg>
     final accepted = <Post>[];
     final acceptedIds = <String>{};
     for (final post in newPosts) {
-      if (post.filterAction == FilterAction.hide) continue;
+      if (post.isHiddenIn(filterContext)) continue;
       if (hideLivecure && hasLivecureTag(post)) continue;
       if (!acceptsLivePost(post)) continue;
       if (existingIds.contains(post.id) || pendingIds.contains(post.id)) {
@@ -1217,6 +1244,9 @@ class TimelineNotifier
     with TimelineListMutations<TimelineKey>, TimelineLiveIngest<TimelineKey> {
   static const _pageSize = 20;
 
+  @override
+  FilterContext get filterContext => filterContextForTimeline(arg.type);
+
   /// ホーム TL の初回描画を 1 プロセス 1 回だけ計測するためのフラグ (#716)。
   /// AutoDispose で Notifier は作り直されるため static に持つ。
   static bool _homeFirstPaintReported = false;
@@ -1465,7 +1495,7 @@ class TimelineNotifier
       // 単にキャッシュを書かない。
       for (var i = 0; i < response.posts.length; i++) {
         final post = response.posts[i];
-        if (post.filterAction == FilterAction.hide) continue;
+        if (post.isHiddenIn(filterContext)) continue;
         if (hideLivecure && _hasLivecureTag(post)) continue;
         allVisible.add(post);
         if (i < response.rawJson.length) allRaw.add(response.rawJson[i]);
@@ -1749,7 +1779,7 @@ class TimelineNotifier
           .decodeCachedPosts(raw)
           // 保存時と設定が変わっていることがあるので、フィルタは読み出し側でも
           // かけ直す（直後に届く REST の結果でどのみち正される）。
-          .where((p) => p.filterAction != FilterAction.hide)
+          .where((p) => !p.isHiddenIn(filterContext))
           .where((p) => !hideLivecure || !_hasLivecureTag(p))
           .toList();
     } catch (e) {
@@ -1983,7 +2013,7 @@ class TimelineNotifier
     if (current == null) return;
     // 表示中の TL 種別にこの投稿が実際に載るか（種別 × 公開範囲）で弾く (#814)。
     if (!ownPostAppearsInTimeline(arg.type, post)) return;
-    if (post.filterAction == FilterAction.hide) return;
+    if (post.isHiddenIn(filterContext)) return;
     final hideLivecure = ref.read(hideLivecureProvider);
     if (hideLivecure && _hasLivecureTag(post)) return;
     // 既に載っているなら何もしない。「削除してタグづけ」は Misskey では
@@ -2127,7 +2157,7 @@ class TimelineNotifier
 
           final hideLivecure = ref.read(hideLivecureProvider);
           final visibleOlder = response.posts
-              .where((p) => p.filterAction != FilterAction.hide)
+              .where((p) => !p.isHiddenIn(filterContext))
               .where((p) => !hideLivecure || !_hasLivecureTag(p))
               .toList();
           allVisible.addAll(visibleOlder);

@@ -37,6 +37,7 @@ import 'content_parser.dart';
 import 'cross_account_boost.dart';
 import 'emoji_action_sheet.dart';
 import 'emoji_text.dart';
+import 'filter_scope.dart';
 import 'home_menu.dart' show pickFollowedChannel;
 import 'inline_custom_emoji.dart';
 import 'post_touch_action_row.dart';
@@ -450,7 +451,16 @@ class _PostTileState extends ConsumerState<PostTile> {
     }
 
     final displayPost = post.reblog ?? post;
-    final isFilteredWarn = displayPost.filterAction == FilterAction.warn;
+    // フィルターは画面の適用先で解決する (#1289)。⚠ hide がここまで届いたとき
+    // （一覧の側で落としていない画面）は、全文を出さずに warn と同じく畳む。
+    final filterScope = FilterScope.maybeOf(context);
+    final filterVerdict = displayPost.filterVerdictFor(
+      filterScope?.filterContext,
+      weakenHide: filterScope?.weakenHide ?? false,
+    );
+    final isFilteredWarn =
+        filterVerdict != null && filterVerdict.action != FilterAction.blur;
+    final isFilteredBlur = filterVerdict?.action == FilterAction.blur;
     final hideInstanceTicker = ref.watch(hideInstanceTickerProvider);
 
     // Show a compact placeholder for warn-filtered posts until expanded.
@@ -469,7 +479,7 @@ class _PostTileState extends ConsumerState<PostTile> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'フィルタ: ${displayPost.filterTitle ?? "非表示"}',
+                  'フィルター: ${filterVerdict.title ?? "非表示"}',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),
@@ -982,7 +992,8 @@ class _PostTileState extends ConsumerState<PostTile> {
                           padding: const EdgeInsets.only(top: 8),
                           child: _AttachmentThumbnails(
                             attachments: displayPost.attachments,
-                            sensitive: displayPost.sensitive,
+                            // 「メディアをぼかす」フィルター (#1289) は閲覧注意と同じぼかし。
+                            sensitive: displayPost.sensitive || isFilteredBlur,
                             postAuthorId: displayPost.author.id,
                             postId: displayPost.id,
                             onAttachmentsUpdated: (updated) {

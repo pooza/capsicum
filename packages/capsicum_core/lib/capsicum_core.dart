@@ -18,6 +18,7 @@ export 'src/model/compose_template.dart';
 export 'src/model/draft.dart';
 export 'src/model/drive_folder.dart';
 export 'src/model/featured_tag.dart';
+export 'src/model/filter_match.dart';
 export 'src/model/flash.dart';
 export 'src/model/gallery_post.dart';
 export 'src/model/hashtag_spec.dart';

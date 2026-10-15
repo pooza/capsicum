@@ -1,3 +1,4 @@
+import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -6,6 +7,7 @@ import '../../provider/server_config_provider.dart';
 import '../util/op_error.dart';
 import '../util/scroll_thresholds.dart';
 import '../widget/bottom_safe_area.dart';
+import '../widget/filter_scope.dart';
 import '../widget/post_tile.dart';
 import '../widget/retry_error_view.dart';
 
@@ -51,7 +53,13 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => FilterScope(
+    filterContext: FilterContext.home,
+    weakenHide: true,
+    child: Builder(builder: _buildFiltered),
+  );
+
+  Widget _buildFiltered(BuildContext context) {
     final favorites = ref.watch(favoriteProvider);
     // ⚠ **文言を直書きしない (#1083-F)。**用語の正本は provider 側
     // （#1027-C2）。現状の表示は直書きと一致するが、`FavoriteSupport` と

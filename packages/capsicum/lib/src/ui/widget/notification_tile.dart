@@ -11,6 +11,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../service/tco_resolver.dart';
+import '../../util/notification_filter.dart';
 import '../util/deck_navigation.dart';
 import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
@@ -169,6 +170,12 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
     final theme = Theme.of(context);
     final (icon, label) = _iconAndLabel;
     final content = notification.post?.content;
+    // 通知の適用先でフィルターに当たった本文は畳む (#1289)。hide は一覧の側で
+    // 落としてあるので、ここに来るのは warn（と、メディアだけの blur）。
+    // 開くと詳細画面で「表示する」から読める。
+    final filterVerdict = notificationFilterVerdict(notification);
+    final contentFiltered =
+        filterVerdict != null && filterVerdict.action != FilterAction.blur;
     // 関係の切断・モデレーション警告 (#1084)。post も user も持たないので、
     // 何が起きたかを本文として組み立てて出す。
     final localHost = ref.watch(currentAccountProvider)?.key.host;
@@ -236,7 +243,25 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _buildHeader(context, label),
-                  if (content != null) ...[
+                  if (content != null && contentFiltered) ...[
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.filter_alt_outlined,
+                          size: 16,
+                          color: theme.textTheme.bodySmall?.color,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'フィルター: ${filterVerdict.title ?? "非表示"}',
+                            style: theme.textTheme.bodySmall,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ] else if (content != null) ...[
                     const SizedBox(height: 4),
                     Text.rich(
                       _renderContent(
