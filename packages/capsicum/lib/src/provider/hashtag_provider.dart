@@ -73,7 +73,8 @@ class HashtagTimelineNotifier
     extends AutoDisposeFamilyAsyncNotifier<TimelineState, HashtagTimelineKey>
     with
         TimelineListMutations<HashtagTimelineKey>,
-        TimelineLiveIngest<HashtagTimelineKey> {
+        TimelineLiveIngest<HashtagTimelineKey>,
+        OlderCursorPaging<HashtagTimelineKey> {
   static const _pageSize = 20;
 
   /// ハッシュタグ TL は `public`（Mastodon Web と同じ・#1289）。
@@ -148,7 +149,8 @@ class HashtagTimelineNotifier
 
   @override
   Future<TimelineState> build(HashtagTimelineKey key) async {
-    _olderCursor = null;
+    // 前の一覧の続き読みの起点を捨て、古い続き読みに書かせない (#1292)。
+    final onRawCursor = resetOlderCursor();
     // 前のタグ / アカウントの新着を、このカラムへ漏らさない (#1098)。
     final liveGeneration = resetLiveIngestState();
     // 🔴 `Account` 全体ではなく、解決したアダプタだけを見る（本線の
@@ -180,7 +182,7 @@ class HashtagTimelineNotifier
       keep: (post) => postKeptByHashtagQuery(post, condition),
       // ⚠ 上限まで引いて 1 件も残らなかった回も、進めたぶんを続き読みへ渡す
       // (#1283)。渡さないと [loadMore] が先頭から引き直し、その先へ進めない。
-      onRawCursor: (rawLastId) => _olderCursor = rawLastId,
+      onRawCursor: onRawCursor,
     );
     seedLiveIngestAnchor(result.posts);
     if (adapter is StreamSupport) {
@@ -195,88 +197,24 @@ class HashtagTimelineNotifier
     );
   }
 
-  /// 続き読みの、**絞る前の**末尾の id（次に引く起点）。
-  ///
-  /// ⚠⚠ **表示中の最後の投稿を起点にしない。**除外（Misskey は端末側で絞る・
-  /// #1209）や実況フィルタで 1 ページぶんが丸ごと落ちると、表示中の最後は
-  /// 動かないので、同じページを引き直し続けて先へ進めなくなる（v2.2 の
-  /// リリース前レビュー）。初回取得と取りこぼしの補いは、もとから生の末尾で
-  /// 進んでいる。
-  String? _olderCursor;
-
+  /// 続きを読む。起点（絞る前の末尾）・空振りの続け方・世代のガードは
+  /// [OlderCursorPaging]（v2.2 のリリース前レビュー・#1209 / #1292）。
+  /// 「含まない」の除外（Misskey は端末側で絞る）は [_keeps] で掛ける。
   Future<void> loadMore() async {
-    final current = state.valueOrNull;
-    if (current == null || current.isLoadingMore || !current.hasMore) return;
-
-    state = AsyncData(current.copyWith(isLoadingMore: true));
-
-    for (var attempt = 0; attempt <= loadMoreMaxRetries; attempt++) {
-      try {
-        final adapter = adapterForTimelineKey(
-          ref.read(currentAccountProvider),
-          arg.account,
-        );
-        if (adapter == null || adapter is! HashtagSupport) {
-          state = AsyncData(current.copyWith(isLoadingMore: false));
-          return;
-        }
-
-        final hideLivecure = ref.read(hideLivecureProvider);
-        var cursor =
-            _olderCursor ?? (state.valueOrNull ?? current).posts.lastOrNull?.id;
-        final older = <Post>[];
-        var hasMore = true;
-        // ⚠ 絞った結果が空のページは、上限まで続けて先を引く。空のまま返すと、
-        // 画面には何も足されないので、続きを読む合図が二度と来ない。
-        for (var page = 0; page < kMaxEmptyOlderPages; page++) {
-          final raw = await (adapter as HashtagSupport).getPostsByHashtag(
-            _query,
-            query: TimelineQuery(maxId: cursor, limit: _pageSize),
-          );
-          if (raw.isNotEmpty) cursor = raw.last.id;
-          older.addAll(
-            raw
-                .where(_keeps)
-                .where((p) => !p.isHiddenIn(filterContext))
-                .where((p) => !hideLivecure || !hasLivecureTag(p)),
-          );
-          hasMore = raw.length >= _pageSize;
-          if (older.isNotEmpty || !hasMore) break;
-        }
-        _olderCursor = cursor;
-
-        // 既にリストにある投稿は落とす (#909)。各行は id をキーにしているので、
-        // ページ境界の重複をそのまま足すと Duplicate keys で描画ごと落ちる。
-        final base = state.valueOrNull ?? current;
-        final knownIds = {for (final p in base.posts) p.id};
-        final appended = older.where((p) => knownIds.add(p.id)).toList();
-        state = AsyncData(
-          base.copyWith(
-            posts: [...base.posts, ...appended],
-            isLoadingMore: false,
-            hasMore: hasMore,
-            loadMoreError: null,
-            // 上限（[kMaxEmptyOlderPages]）まで引いても見える投稿が出なかった。
-            // 末尾に「さらに古い投稿を探す」を出す (#1292)。
-            pageCapHit: older.isEmpty && hasMore,
-          ),
-        );
-        return;
-      } catch (e) {
-        if (attempt < loadMoreMaxRetries) {
-          await Future<void>.delayed(loadMoreRetryDelay);
-          continue;
-        }
-        // 最終失敗時は loadMoreError を立て、トリガー側の再試行抑止を効かせる
-        // (#678、TimelineState / list_provider と同型の番兵パターン)。
-        state = AsyncData(
-          (state.valueOrNull ?? current).copyWith(
-            isLoadingMore: false,
-            loadMoreError: e,
-          ),
-        );
-      }
-    }
+    final adapter = adapterForTimelineKey(
+      ref.read(currentAccountProvider),
+      arg.account,
+    );
+    if (adapter == null || adapter is! HashtagSupport) return;
+    await loadOlderPages(
+      site: 'hashtag.loadMore',
+      pageSize: _pageSize,
+      fetch: (maxId) => (adapter as HashtagSupport).getPostsByHashtag(
+        _query,
+        query: TimelineQuery(maxId: maxId, limit: _pageSize),
+      ),
+      keep: _keeps,
+    );
   }
 }
 

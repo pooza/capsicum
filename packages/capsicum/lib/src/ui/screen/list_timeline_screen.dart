@@ -9,6 +9,7 @@ import '../widget/bottom_safe_area.dart';
 import '../widget/filter_scope.dart';
 import '../widget/post_tile.dart';
 import '../widget/retry_error_view.dart';
+import '../widget/timeline_older_prompt.dart';
 
 /// リストのタイムラインを独立画面で表示する（#805）。ドロワーの「リスト」
 /// クイックチューザから選んだリストへ push される。antenna_notes_screen と同型。
@@ -86,17 +87,39 @@ class _ListTimelineScreenState extends ConsumerState<ListTimelineScreen> {
       body: BottomSafeArea(
         child: timeline.when(
           data: (state) => state.posts.isEmpty
-              ? const Center(child: Text('投稿がありません'))
+              // ⚠ 続きがあるのに空のときは、手で先を引ける入口を出す
+              // (#1283 / #1292)。空の一覧はスクロールできない。
+              ? Center(
+                  child: state.hasMore
+                      ? TimelineOlderPrompt(
+                          isLoading: state.isLoadingMore,
+                          onLoadOlder: () => ref
+                              .read(listTimelineProvider(key).notifier)
+                              .loadMore(),
+                        )
+                      : const Text('投稿がありません'),
+                )
               : RefreshIndicator(
                   onRefresh: () =>
                       ref.refresh(listTimelineProvider(key).future),
                   child: ListView.separated(
                     controller: _scrollController,
                     itemCount:
-                        state.posts.length + (state.isLoadingMore ? 1 : 0),
+                        state.posts.length +
+                        (state.isLoadingMore || olderStalled(state) ? 1 : 0),
                     separatorBuilder: (_, _) => const Divider(height: 1),
                     itemBuilder: (context, index) {
                       if (index >= state.posts.length) {
+                        // 上限まで引いても見える投稿が出なかったときの入口
+                        // (#1292)。理由は `timeline_older_prompt.dart`。
+                        if (!state.isLoadingMore) {
+                          return TimelineOlderPrompt(
+                            isLoading: false,
+                            onLoadOlder: () => ref
+                                .read(listTimelineProvider(key).notifier)
+                                .loadMore(),
+                          );
+                        }
                         return const Padding(
                           padding: EdgeInsets.all(16),
                           child: Center(child: CircularProgressIndicator()),

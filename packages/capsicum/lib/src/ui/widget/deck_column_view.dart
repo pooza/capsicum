@@ -95,7 +95,6 @@ class DeckColumnView extends ConsumerWidget {
         return _DeckTimelineBody(
           columnId: column.id,
           timeline: p,
-          canLoadOlderWhenEmpty: true,
           loadMore: (ref) => ref.read(p.notifier).loadMore(),
           refresh: (ref) => ref.refresh(p.future),
           // ライブ購読が載ったので、本線 TL と同じくスクロール中は未表示バッファ
@@ -599,15 +598,7 @@ class _DeckTimelineBody extends ConsumerStatefulWidget {
     required this.refresh,
     this.setNearTop,
     this.flushPending,
-    this.canLoadOlderWhenEmpty = false,
   });
-
-  /// 空のまま続きがあるとき、手で先を引く入口を出すか (#1283)。
-  ///
-  /// ⚠ **続き読みを生のカーソルで進める TL（タグ TL）だけ true にする。**表示中の
-  /// 最後の投稿を起点にする TL で出すと、空の一覧からは先頭を引き直すだけの
-  /// 「押しても進まないボタン」になる。
-  final bool canLoadOlderWhenEmpty;
 
   /// このカラムの [DeckColumn.id]。メニューの「タイムラインを更新」/ `Ctrl+R` が
   /// フォーカス中のカラムを引くための鍵 (#1157 / #1170)。
@@ -721,7 +712,9 @@ class _DeckTimelineBodyState extends ConsumerState<_DeckTimelineBody> {
                 controller: _scrollController,
                 children: [
                   const SizedBox(height: 120),
-                  if (widget.canLoadOlderWhenEmpty && state.hasMore)
+                  // 空のまま続きがあるときは、手で先を引く入口を出す (#1283)。
+                  // どの TL も続き読みは消す前の末尾から進む (#1292)。
+                  if (state.hasMore)
                     Center(
                       child: TimelineOlderPrompt(
                         isLoading: state.isLoadingMore,

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:capsicum/src/model/account.dart';
 import 'package:capsicum/src/model/account_key.dart';
 import 'package:capsicum/src/provider/account_manager_provider.dart';
@@ -31,6 +33,9 @@ class _PagedAdapter extends Mock
   final List<Post> all;
   final List<String?> requestedMaxIds = [];
 
+  /// 立っている間、続き読み（`maxId` あり）の取得をここで待たせる。
+  Completer<void>? gate;
+
   @override
   AdapterCapabilities get capabilities => _FakeCapabilities();
 
@@ -47,6 +52,8 @@ class _PagedAdapter extends Mock
     TimelineQuery? query,
   }) async {
     final page = _page(query);
+    final g = gate;
+    if (g != null && query?.maxId != null) await g.future;
     return TimelineResponse(
       posts: page,
       rawCount: page.length,
@@ -58,7 +65,12 @@ class _PagedAdapter extends Mock
   Future<List<Post>> getListTimeline(
     String listId, {
     TimelineQuery? query,
-  }) async => _page(query);
+  }) async {
+    final page = _page(query);
+    final g = gate;
+    if (g != null && query?.maxId != null) await g.future;
+    return page;
+  }
 }
 
 const _meKey = AccountKey(
@@ -180,5 +192,70 @@ void main() {
     final afterTwo = container.read(p).requireValue;
     expect(afterTwo.posts.length, 40);
     expect(afterTwo.posts.last.id, '0001');
+  });
+
+  test('⚠⚠ リスト: 続き読みの途中で読み直したら、古い続き読みは一覧も起点も書き換えない', () async {
+    final all = [for (var n = 80; n >= 1; n--) _post(n, livecure: false)];
+    final adapter = _PagedAdapter(all);
+    final container = await _container(adapter);
+    final p = listTimelineProvider((account: _meKey, id: 'l1'));
+    container.listen(p, (_, _) {}, fireImmediately: true);
+    await container.read(p.future);
+
+    // 続き読みを、取得の途中で止めておく。
+    final gate = Completer<void>();
+    adapter.gate = gate;
+    final pending = container.read(p.notifier).loadMore();
+    await Future<void>.delayed(Duration.zero);
+
+    // その間に読み直す（引っ張って更新・アカウント切り替えと同じ形）。
+    adapter.gate = null;
+    container.invalidate(p);
+    final rebuilt = await container.read(p.future);
+    expect(rebuilt.posts.length, 20);
+
+    gate.complete();
+    await pending;
+    final after = container.read(p).requireValue;
+    expect(after.posts.length, 20, reason: '古い続き読みのページを足さない');
+
+    // ⚠⚠ 次の続き読みは、読み直した一覧の末尾から進む。
+    adapter.requestedMaxIds.clear();
+    await container.read(p.notifier).loadMore();
+    expect(adapter.requestedMaxIds.first, '0061');
+    expect(container.read(p).requireValue.posts.length, 40);
+  });
+
+  test('⚠⚠ ホーム: 続き読みの途中で読み直したら、古い続き読みは一覧も起点も書き換えない', () async {
+    final all = [for (var n = 80; n >= 1; n--) _post(n, livecure: false)];
+    final adapter = _PagedAdapter(all);
+    final container = await _container(adapter);
+    const key = (account: _meKey, type: TimelineType.home);
+    final p = timelineProvider(key);
+    container.listen(p, (_, _) {}, fireImmediately: true);
+    await container.read(p.future);
+
+    final gate = Completer<void>();
+    adapter.gate = gate;
+    final pending = container.read(p.notifier).loadMore();
+    await Future<void>.delayed(Duration.zero);
+
+    adapter.gate = null;
+    container.invalidate(p);
+    final rebuilt = await container.read(p.future);
+    expect(rebuilt.posts.length, 20);
+
+    gate.complete();
+    await pending;
+    expect(
+      container.read(p).requireValue.posts.length,
+      20,
+      reason: '古い続き読みのページを足さない',
+    );
+
+    adapter.requestedMaxIds.clear();
+    await container.read(p.notifier).loadMore();
+    expect(adapter.requestedMaxIds.first, '0061');
+    expect(container.read(p).requireValue.posts.length, 40);
   });
 }

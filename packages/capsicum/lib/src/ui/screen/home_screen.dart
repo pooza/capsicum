@@ -691,7 +691,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('フィルタで多くの投稿が除外されています。条件を見直すと表示されるかもしれません'),
+              content: Text('絞り込みで多くの投稿が除外されています。条件を見直すと表示されるかもしれません'),
               duration: Duration(seconds: 5),
             ),
           );
@@ -1126,28 +1126,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                       }
                     }
                   },
-                  // ⚠ タグ TL が空のまま続きを持つときは、手で先を引ける入口を
+                  // ⚠ TL が空のまま続きを持つときは、手で先を引ける入口を
                   // 出す (#1283)。空の一覧はスクロールできないので、
                   // [_onPositionsChanged] の続き読みが二度と呼ばれない。
-                  // ⚠ タグ TL に限る —— 続き読みを生のカーソルで進めるのは
-                  // タグ TL だけで、ほかは空の一覧から先頭を引き直すだけになる。
-                  child:
-                      hashtagKey != null &&
-                          tlState.posts.isEmpty &&
-                          tlState.hasMore
+                  // ⚠ どの TL でも出してよい —— 続き読みは生のカーソル（消す
+                  // 前の末尾）で進むので、空の一覧からでも先へ進む (#1292)。
+                  child: tlState.posts.isEmpty && tlState.hasMore
                       ? ListView(
                           children: [
                             const SizedBox(height: 120),
                             Center(
                               child: TimelineOlderPrompt(
                                 isLoading: tlState.isLoadingMore,
-                                onLoadOlder: () => ref
-                                    .read(
-                                      hashtagTimelineProvider(
-                                        hashtagKey,
-                                      ).notifier,
-                                    )
-                                    .loadMore(),
+                                onLoadOlder: _loadMoreSelected,
                               ),
                             ),
                           ],
