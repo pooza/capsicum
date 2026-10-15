@@ -38,6 +38,7 @@ dart run melos bootstrap
 
 ### 基準版を上げる（年に数回・1 端末で代表して）
 
+0. ⚠ **先に [#1280](https://github.com/pooza/capsicum/issues/1280) を見る。**Android の Gradle 8.14 / AGP 8.11.1 は、Flutter 3.47.7 がエラーにする下限とちょうど同じ版。新しい Flutter が下限を上げていると Android のビルドが止まる。Gradle 9 へ上げられないのは super_drag_and_drop の cargokit が `Project.exec()` を使っているためで、上流の安定版を待っている（2026-10-15 pooza）
 1. SDK を新版に切り替える（上と同じ手順）
 2. **CI 3 ファイルの `flutter-version` と `pubspec.lock` を同一コミットで更新する**（`analyze.yml` / `linux-release.yml` / `windows-release.yml`。1 つでも漏らすと CI 内で版が割れる）
 3. `flutter analyze` / 全パッケージのテスト / 各 OS のビルドを通す
