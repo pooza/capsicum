@@ -3,7 +3,7 @@ import 'package:capsicum/src/model/account_key.dart';
 import 'package:capsicum/src/provider/marker_provider.dart';
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
-import 'package:flutter/widgets.dart';
+import 'package:flutter/widgets.dart' hide Notification;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
@@ -15,15 +15,54 @@ class _MastodonLike extends Mock
     implements DecentralizedBackendAdapter, MarkerSupport {
   final saved = <String>[];
 
+  /// サーバーが持っている既読位置。
+  String? serverMarker;
+
+  @override
+  Future<MarkerSet> getMarkers() async => MarkerSet(
+    notifications: serverMarker == null
+        ? null
+        : Marker(
+            lastReadId: serverMarker!,
+            version: 1,
+            updatedAt: DateTime.utc(2026, 10, 16),
+          ),
+  );
+
   @override
   Future<void> saveNotificationMarker(String lastReadId) async {
     saved.add(lastReadId);
+    serverMarker = lastReadId;
   }
 }
 
 class _MisskeyLike extends Mock
-    implements DecentralizedBackendAdapter, NotificationReadSupport {
+    implements
+        DecentralizedBackendAdapter,
+        NotificationSupport,
+        NotificationReadSupport {
+  _MisskeyLike({this.latestId});
+
   var markedAll = 0;
+
+  /// サーバーの一番新しい通知。
+  String? latestId;
+
+  @override
+  Future<NotificationResponse> getNotifications({
+    TimelineQuery? query,
+    NotificationQuery? filter,
+  }) async => NotificationResponse(
+    notifications: [
+      if (latestId != null)
+        Notification(
+          id: latestId!,
+          type: NotificationType.mention,
+          createdAt: DateTime.utc(2026, 10, 16),
+        ),
+    ],
+    rawCount: latestId == null ? 0 : 1,
+  );
 
   @override
   Future<void> markAllNotificationsRead() async => markedAll++;
@@ -60,7 +99,7 @@ void main() {
   });
 
   testWidgets('Misskey: 一番新しい通知が 5 秒見えたら、全既読を返す', (tester) async {
-    final adapter = _MisskeyLike();
+    final adapter = _MisskeyLike(latestId: 'n9');
     final saver = UnifiedNotificationReadSaver(isAppVisible: () => true);
     addTearDown(saver.dispose);
 
@@ -71,13 +110,13 @@ void main() {
   });
 
   testWidgets('⚠⚠ 5 秒たつ前に画面から外れたら返さない（見ていない通知を既読にしない）', (tester) async {
-    final adapter = _MisskeyLike();
+    final adapter = _MisskeyLike(latestId: 'n9');
     final saver = UnifiedNotificationReadSaver(isAppVisible: () => true);
     addTearDown(saver.dispose);
     final account = _account('a', adapter);
 
     saver.seen(account, 'n9');
-    saver.unseen(account);
+    saver.unseen(account, 'n9');
     await pumpPast5s(tester);
 
     expect(adapter.markedAll, 0);
@@ -104,7 +143,7 @@ void main() {
 
     saver.seen(accountA, '120');
     saver.seen(accountB, '80');
-    saver.unseen(accountA);
+    saver.unseen(accountA, '120');
     await pumpPast5s(tester);
 
     expect(a.saved, isEmpty);
@@ -125,5 +164,53 @@ void main() {
     await pumpPast5s(tester);
 
     expect(adapter.saved, ['120', '121']);
+  });
+
+  testWidgets('⚠⚠ Mastodon: サーバーの既読位置がこれより新しければ戻さない', (tester) async {
+    final adapter = _MastodonLike()..serverMarker = '150';
+    final saver = UnifiedNotificationReadSaver(isAppVisible: () => true);
+    addTearDown(saver.dispose);
+
+    saver.seen(_account('a', adapter), '120');
+    await pumpPast5s(tester);
+
+    expect(adapter.saved, isEmpty, reason: '通知タブで先まで読んだ位置を、古い位置へ戻さない');
+  });
+
+  testWidgets('⚠⚠ Misskey: 開いたあとに新着が届いていたら全既読を返さない', (tester) async {
+    final adapter = _MisskeyLike(latestId: 'n10');
+    final saver = UnifiedNotificationReadSaver(isAppVisible: () => true);
+    addTearDown(saver.dispose);
+
+    saver.seen(_account('a', adapter), 'n9');
+    await pumpPast5s(tester);
+
+    expect(adapter.markedAll, 0, reason: 'まだ見ていない n10 を巻き込まない');
+  });
+
+  testWidgets('⚠ 取り直しで先頭が替わったら、新しい通知で予約し直す', (tester) async {
+    final adapter = _MastodonLike();
+    final saver = UnifiedNotificationReadSaver(isAppVisible: () => true);
+    addTearDown(saver.dispose);
+    final account = _account('a', adapter);
+
+    saver.seen(account, '120');
+    saver.seen(account, '130');
+    await pumpPast5s(tester);
+
+    expect(adapter.saved, ['130']);
+  });
+
+  testWidgets('⚠ 古い行の「外れた」は、新しい行の予約を取り消さない', (tester) async {
+    final adapter = _MastodonLike();
+    final saver = UnifiedNotificationReadSaver(isAppVisible: () => true);
+    addTearDown(saver.dispose);
+    final account = _account('a', adapter);
+
+    saver.seen(account, '130');
+    saver.unseen(account, '120');
+    await pumpPast5s(tester);
+
+    expect(adapter.saved, ['130']);
   });
 }

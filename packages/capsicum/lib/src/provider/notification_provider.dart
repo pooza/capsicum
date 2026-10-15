@@ -58,11 +58,19 @@ class NotificationState {
   /// don't stall pagination by re-fetching the same page (#777).
   final String? lastRawId;
 
+  /// 絞り込みで落とす前の、一番新しい通知 (#1291 のリリース前レビュー)。
+  ///
+  /// ⚠ 一覧の先頭が見えているときの既読位置はこちらで返す。先頭の通知を
+  /// フィルターで伏せていると、見えている先頭はその 1 つ下になり、伏せた
+  /// 通知が未読のまま残ってバッジが 0 にならない。
+  final String? rawNewestId;
+
   const NotificationState({
     this.notifications = const [],
     this.isLoadingMore = false,
     this.hasMore = true,
     this.lastRawId,
+    this.rawNewestId,
   });
 
   NotificationState copyWith({
@@ -75,6 +83,7 @@ class NotificationState {
     isLoadingMore: isLoadingMore ?? this.isLoadingMore,
     hasMore: hasMore ?? this.hasMore,
     lastRawId: lastRawId ?? this.lastRawId,
+    rawNewestId: rawNewestId,
   );
 }
 
@@ -147,6 +156,7 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
     return NotificationState(
       notifications: notifications,
       lastRawId: response.rawLastId,
+      rawNewestId: newestRaw?.id,
       // Judge "more pages" on the raw server count, not the post-skip list
       // length: skipping a malformed notification must not drop a full page
       // (19 < 20) and stall pagination (#777).

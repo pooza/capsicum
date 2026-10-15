@@ -31,11 +31,17 @@ class UnifiedNotificationState {
   /// 対象アカウント総数（取得状況「M 件中 N 件」の分母）。
   final int totalAccounts;
 
+  /// アカウント（保存用のキー）ごとの、絞り込みで落とす前の一番新しい通知
+  /// (#1291 のリリース前レビュー)。既読はこの通知まで返す —— 先頭をフィルターで
+  /// 伏せていると、見えている先頭はその下になり、伏せた通知が未読で残る。
+  final Map<String, String> rawNewestIds;
+
   const UnifiedNotificationState({
     this.items = const [],
     this.failedAccounts = const [],
     this.pendingAccounts = const [],
     this.totalAccounts = 0,
+    this.rawNewestIds = const {},
   });
 
   /// 全アカウントの取得が完了したか（成功・失敗を問わず settle 済み）。
@@ -80,6 +86,7 @@ class UnifiedNotificationNotifier
 
     final items = <UnifiedNotification>[];
     final failed = <Account>[];
+    final rawNewestIds = <String, String>{};
     final pending = List<Account>.of(supported);
     // 失敗の報告は、全員が返ってからまとめて行う (#1246)。⚠ 返ってきた順に
     // 1 件ずつ送ると、回線が切れた 1 回でアカウントの数だけ error が飛ぶ。
@@ -100,6 +107,9 @@ class UnifiedNotificationNotifier
             stackTrace: result.stackTrace ?? StackTrace.empty,
           ));
         } else {
+          if (result.rawNewestId case final id?) {
+            rawNewestIds[result.account.key.toStorageKey()] = id;
+          }
           for (final n in result.notifications) {
             items.add(
               UnifiedNotification(account: result.account, notification: n),
@@ -118,6 +128,7 @@ class UnifiedNotificationNotifier
             failedAccounts: List.of(failed),
             pendingAccounts: List.of(pending),
             totalAccounts: supported.length,
+            rawNewestIds: Map.of(rawNewestIds),
           ),
         );
         if (pending.isEmpty) {
@@ -165,7 +176,11 @@ class UnifiedNotificationNotifier
       final notifications = await enricher.enrichNotifications(
         dropFilteredNotifications(response.notifications),
       );
-      return _FetchResult(account: account, notifications: notifications);
+      return _FetchResult(
+        account: account,
+        notifications: notifications,
+        rawNewestId: response.notifications.firstOrNull?.id,
+      );
     } catch (e, st) {
       // 失敗は上部バナーでユーザーには見えるが、サーバー側で「どの host が・
       // どんな例外で・どの頻度で」落ちているかの可視性が無かった（#862 でこの
@@ -186,12 +201,14 @@ class _FetchResult {
   final List<Notification> notifications;
   final Object? error;
   final StackTrace? stackTrace;
+  final String? rawNewestId;
 
   const _FetchResult({
     required this.account,
     required this.notifications,
     this.error,
     this.stackTrace,
+    this.rawNewestId,
   });
 }
 

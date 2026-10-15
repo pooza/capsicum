@@ -98,6 +98,11 @@ class UnifiedNotificationScreen extends ConsumerWidget {
                 postLabel: postLabel,
               );
               if (!newestIndexes.contains(index)) return tile;
+              // ⚠ 返すのは絞り込みで落とす前の一番新しい通知（伏せた通知を
+              // 未読で残さない・#1291 のリリース前レビュー）。
+              final readId =
+                  data.rawNewestIds[item.account.key.toStorageKey()] ??
+                  item.notification.id;
               return VisibilityDetector(
                 key: ValueKey(
                   'unified-read-${item.account.key.toStorageKey()}'
@@ -105,9 +110,9 @@ class UnifiedNotificationScreen extends ConsumerWidget {
                 ),
                 onVisibilityChanged: (info) {
                   if (info.visibleFraction >= 0.5) {
-                    readSaver.seen(item.account, item.notification.id);
+                    readSaver.seen(item.account, readId);
                   } else {
-                    readSaver.unseen(item.account);
+                    readSaver.unseen(item.account, readId);
                   }
                 },
                 child: tile,

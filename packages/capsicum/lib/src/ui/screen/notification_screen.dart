@@ -112,9 +112,12 @@ class _NotificationViewState extends ConsumerState<NotificationView>
           .map((p) => p.index)
           .reduce((a, b) => a < b ? a : b);
       if (minIndex < state.notifications.length) {
-        ref
-            .read(notificationMarkerSaverProvider)
-            .save(state.notifications[minIndex].id);
+        // ⚠ 先頭が見えているときは、絞り込みで伏せた分も含めた一番新しい通知
+        // まで既読にする（伏せた通知が未読のまま残る・#1291 のレビュー）。
+        final id = minIndex == 0
+            ? state.rawNewestId ?? state.notifications.first.id
+            : state.notifications[minIndex].id;
+        ref.read(notificationMarkerSaverProvider).save(id);
       }
     } else if (adapter is NotificationReadSupport &&
         state.notifications.isNotEmpty) {

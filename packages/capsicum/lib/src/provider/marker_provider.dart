@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../model/account.dart';
 import '../util/exception_scrub.dart';
 import 'account_manager_provider.dart';
+import 'preferences_provider.dart';
 
 /// Fetches markers from the server (Mastodon only).
 final markersProvider = FutureProvider.autoDispose<MarkerSet?>((ref) async {
@@ -285,74 +286,117 @@ final notificationMarkerSaverProvider =
 /// - 通知タブと同じく 5 秒待ってから返す。その間に行が画面から外れたら、または
 ///   アプリが裏へ回っていたら返さない
 ///
+/// ⚠⚠ **返す直前にサーバーの状態を確かめる**（#1291 のリリース前レビュー）。
+/// 「すべての通知」は開いたときの 1 ページを出したままで、新着が入らない。
+/// - Mastodon: サーバーの既読位置がこれより新しければ返さない（通知タブで先まで
+///   読んだあとに、古い位置へ戻すとバッジの未読が増える）
+/// - Misskey: 全既読は位置を持たないので、**サーバーの一番新しい通知がこの行と
+///   同じとき**だけ返す。開いたあとに届いた、まだ見ていない通知を巻き込まない
+///
 /// ⚠⚠ 以前は「すべての通知」で見ても既読が返らず、2.1（#1207）でバッジに
 /// サーバーの未読数を出すようになってから、ほかのアカウントのバッジを 0 に
 /// する手段が「切り替えて通知タブを見る」しか無かった。
 class UnifiedNotificationReadSaver {
-  UnifiedNotificationReadSaver({bool Function()? isAppVisible})
-    : _isAppVisible =
-          isAppVisible ?? NotificationReadSaver._defaultIsAppVisible;
+  UnifiedNotificationReadSaver({
+    bool Function()? isAppVisible,
+    NotificationQuery Function()? query,
+  }) : _isAppVisible =
+           isAppVisible ?? NotificationReadSaver._defaultIsAppVisible,
+       _query = query ?? (() => const NotificationQuery());
 
   final bool Function() _isAppVisible;
 
+  /// 一覧を引いたときと同じ絞り込み（Misskey の突き合わせに使う）。
+  final NotificationQuery Function() _query;
+
   /// アカウント（保存用のキー）ごとの、返すのを待っている予約。
-  final _timers = <String, Timer>{};
+  final _pending = <String, ({String id, Timer timer})>{};
 
   /// アカウントごとの、最後に返した通知。⚠ 同じ通知では返し直さない。
   final _sent = <String, String>{};
 
   /// [account] の一番新しい通知 [newestId] の行が見えた。
+  ///
+  /// ⚠ 予約中に別の通知で呼ばれたら（取り直して先頭が替わった）、予約し直す。
   void seen(Account account, String newestId) {
     final key = account.key.toStorageKey();
-    if (_sent[key] == newestId || _timers.containsKey(key)) return;
+    if (_sent[key] == newestId || _pending[key]?.id == newestId) return;
     if (!_isAppVisible()) return;
     final adapter = account.adapter;
     if (adapter is! MarkerSupport && adapter is! NotificationReadSupport) {
       return;
     }
-    _timers[key] = Timer(const Duration(seconds: 5), () {
-      _timers.remove(key);
-      if (!_isAppVisible()) return;
-      _send(adapter, key, newestId);
-    });
+    _pending.remove(key)?.timer.cancel();
+    // ⚠ 絞り込みは見えた時点で確定させる（送る頃には画面が破棄されていることがある）。
+    final query = _query();
+    _pending[key] = (
+      id: newestId,
+      timer: Timer(const Duration(seconds: 5), () {
+        _pending.remove(key);
+        if (!_isAppVisible()) return;
+        _send(adapter, key, newestId, query);
+      }),
+    );
   }
 
-  /// [account] の一番新しい通知の行が画面から外れた。まだ返していなければやめる。
-  void unseen(Account account) {
-    _timers.remove(account.key.toStorageKey())?.cancel();
+  /// [account] の通知 [newestId] の行が画面から外れた。まだ返していなければやめる。
+  ///
+  /// ⚠ **予約が同じ通知のときだけ取り消す。**取り直しで行が入れ替わると、
+  /// 古い行の「外れた」が新しい行の「見えた」より後に届くことがある。
+  void unseen(Account account, String newestId) {
+    final key = account.key.toStorageKey();
+    if (_pending[key]?.id != newestId) return;
+    _pending.remove(key)?.timer.cancel();
   }
 
-  void _send(Object adapter, String key, String newestId) {
-    final Future<void> sent;
-    if (adapter is MarkerSupport) {
-      sent = adapter.saveNotificationMarker(newestId);
-    } else if (adapter is NotificationReadSupport) {
-      sent = adapter.markAllNotificationsRead();
-    } else {
-      return;
+  Future<void> _send(
+    Object adapter,
+    String key,
+    String newestId,
+    NotificationQuery query,
+  ) async {
+    try {
+      if (adapter is MarkerSupport) {
+        final server = (await adapter.getMarkers()).notifications?.lastReadId;
+        if (server == null || isNewerNotificationId(newestId, than: server)) {
+          await adapter.saveNotificationMarker(newestId);
+        }
+      } else if (adapter is NotificationReadSupport &&
+          adapter is NotificationSupport) {
+        final latest = await (adapter as NotificationSupport).getNotifications(
+          query: const TimelineQuery(limit: 1),
+          filter: query,
+        );
+        final latestId = latest.notifications.firstOrNull?.id;
+        if (latestId != null && latestId != newestId) return;
+        await adapter.markAllNotificationsRead();
+      } else {
+        return;
+      }
+      _sent[key] = newestId;
+    } catch (e) {
+      // ⚠ `_sent` を進めない。次に見えたときに送り直す。
+      debugLogException('Failed to mark unified notifications as read', e);
     }
-    sent
-        .then<void>((_) {
-          _sent[key] = newestId;
-        })
-        .catchError((Object e) {
-          // ⚠ `_sent` を進めない。次に見えたときに送り直す。
-          debugLogException('Failed to mark unified notifications as read', e);
-        });
   }
 
   /// ⚠ 予約は捨てる（5 秒見えていなかったものは返さない）。
   void dispose() {
-    for (final timer in _timers.values) {
-      timer.cancel();
+    for (final pending in _pending.values) {
+      pending.timer.cancel();
     }
-    _timers.clear();
+    _pending.clear();
   }
 }
 
 final unifiedNotificationReadSaverProvider =
     Provider.autoDispose<UnifiedNotificationReadSaver>((ref) {
-      final saver = UnifiedNotificationReadSaver();
+      final saver = UnifiedNotificationReadSaver(
+        query: () => NotificationQuery(
+          excludeTypes: ref.read(notificationExcludedTypesProvider),
+          grouped: ref.read(notificationGroupingProvider),
+        ),
+      );
       ref.onDispose(saver.dispose);
       return saver;
     });
