@@ -1647,6 +1647,8 @@ class MisskeyClient {
     List<Map<String, String>>? fields,
     bool? isLocked,
     bool? isExplorable,
+    List<Object>? mutedWords,
+    List<Object>? hardMutedWords,
   }) async {
     final params = <String, dynamic>{
       'avatarId': ?avatarId,
@@ -1655,6 +1657,10 @@ class MisskeyClient {
       // null は「変更しない」でキーを送らない (#865)。
       'isLocked': ?isLocked,
       'isExplorable': ?isExplorable,
+      // ワードミュート (#1290)。⚠ **全置換**（差分ではない）。要素は
+      // `List<String>`（キーワードの AND）か `String`（正規表現）。
+      'mutedWords': ?mutedWords,
+      'hardMutedWords': ?hardMutedWords,
     };
     // Misskey rejects "" but accepts explicit null to clear a field.
     // null parameter = "not changing" (omit key), empty string = "clear" (send null value).

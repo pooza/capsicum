@@ -172,7 +172,8 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         PagesSupport,
         TimelineCacheSupport,
         MulukhiyaRepostSupport,
-        ChatSupport {
+        ChatSupport,
+        WordMuteSupport {
   /// 本線 TL の購読。キーごとに 1 本ずつソケットを張る (#1089)。
   ///
   /// ⚠ 以前は単数で持っており、2 本目の購読が 1 本目を黙って止めていた（B-1）。
@@ -264,6 +265,25 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     UserSecret userSecret,
   ) {
     client.setAccessToken(userSecret.accessToken);
+  }
+
+  // WordMuteSupport (#1290)
+
+  @override
+  Future<({List<Object> soft, List<Object> hard})> getWordMutes() async {
+    final user = await client.getI();
+    _mutedWords = user.mutedWords ?? [];
+    _hardMutedWords = user.hardMutedWords ?? [];
+    return (soft: _mutedWords, hard: _hardMutedWords);
+  }
+
+  /// ⚠ **応答の `MeDetailed` で保持語を更新する。**しないと、次の TTL（#1185）で
+  /// `getMyself` が走るまで古い語で判定し続ける。
+  @override
+  Future<void> setWordMutes({List<Object>? soft, List<Object>? hard}) async {
+    final user = await client.updateI(mutedWords: soft, hardMutedWords: hard);
+    _mutedWords = user.mutedWords ?? [];
+    _hardMutedWords = user.hardMutedWords ?? [];
   }
 
   @override
@@ -653,9 +673,11 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   /// - **`List<String>` の要素はキーワードの AND**。空のキーワードは捨てる（本家と
   ///   同じ。捨てないと `['']` が全投稿に当たる）。⚠ 配列の中の `/…/` は正規表現に
   ///   しない（本家も素の文字列として比べる）。
-  /// - ⚠ キーワードは大文字小文字を区別しない（capsicum の従来どおり。本家は区別する）。
+  /// - ⚠ **キーワードは大文字小文字を区別する**（本家と同じ・#1290 で揃えた・
+  ///   2026-10-15 pooza 判断）。以前の capsicum は区別しなかったので、管理 UI を
+  ///   付けると「Web で効かない語が capsicum では効く」差が見えるようになっていた。
+  ///   ⚠ 既存の利用者には「いままで伏せていた投稿が出る」変化
   static bool _matchesMuteWords(String text, List<Object> muteWords) {
-    final lower = text.toLowerCase();
     for (final filter in muteWords) {
       if (filter is String) {
         final regex = _compileMuteRegex(filter);
@@ -665,7 +687,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       if (filter is! List<String>) continue;
       final keywords = filter.where((word) => word.isNotEmpty).toList();
       if (keywords.isEmpty) continue;
-      if (keywords.every((word) => lower.contains(word.toLowerCase()))) {
+      if (keywords.every(text.contains)) {
         return true;
       }
     }

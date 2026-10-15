@@ -20,6 +20,7 @@
 /// | 通報の理由（`report_comment_dialog.dart`） | 当てる |
 /// | メディアの説明の編集（`media_viewer_screen.dart`） | 当てる |
 /// | 画像に重ねる文字（`image_overlay_screen.dart`） | 当てない |
+/// | Misskey のワードミュート（`word_mute_screen.dart`・#1290） | 当てない（語句と正規表現の並びで、文章ではない） |
 /// | 1 行の欄（表示名・検索・CW など） | 当てない |
 ///
 /// 画像に重ねる文字は文章ではなく、画像の上に描く素材。描かれる書体は別に

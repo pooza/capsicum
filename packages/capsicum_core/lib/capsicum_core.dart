@@ -90,5 +90,6 @@ export 'src/social/interfaces/stream_support.dart';
 export 'src/social/interfaces/thread_mute_support.dart';
 export 'src/social/interfaces/timeline_cache_support.dart';
 export 'src/social/interfaces/translation_support.dart';
+export 'src/social/interfaces/word_mute_support.dart';
 // Utilities
 export 'src/util/nyaize.dart';

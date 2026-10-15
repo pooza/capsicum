@@ -66,6 +66,14 @@ class SettingsScreen extends ConsumerWidget {
                 subtitle: const Text('キーワードで投稿を伏せる'),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => context.push('/settings/filters'),
+              )
+            else if (ref.watch(currentAdapterProvider) is WordMuteSupport)
+              ListTile(
+                leading: const Icon(Icons.filter_alt_outlined),
+                title: const Text('ワードミュート'),
+                subtitle: const Text('キーワードで投稿を伏せる'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => context.push('/settings/word-mutes'),
               ),
             // フォロー中のハッシュタグ (#1070)。⚠ **#1039 と同じ「付けられる
             // のに外す導線が塞がる」形**なので隣に置く。Misskey では一覧が

@@ -73,6 +73,7 @@ import 'ui/screen/splash_screen.dart';
 import 'ui/screen/templates_manage_screen.dart';
 import 'ui/screen/unified_notification_screen.dart';
 import 'ui/screen/user_list_screen.dart';
+import 'ui/screen/word_mute_screen.dart';
 import 'ui/util/provider_scope_carrier.dart';
 import 'ui/widget/desktop_menu_bar.dart';
 
@@ -335,6 +336,11 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/settings/filters',
             builder: (context, state) => const FilterListScreen(),
+          ),
+          // Misskey のワードミュート (#1290)。入口はフィルターと同じ行。
+          GoRoute(
+            path: '/settings/word-mutes',
+            builder: (context, state) => const WordMuteScreen(),
           ),
           GoRoute(
             path: '/settings/filters/edit',

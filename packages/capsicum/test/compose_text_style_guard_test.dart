@@ -25,6 +25,12 @@ const _unstyledMultiline = <String, ({int count, String reason})>{
     count: 1,
     reason: '絵文字の取り込みで、コピーした設定を貼り付ける欄。文章を書く欄ではない',
   ),
+  'lib/src/ui/screen/word_mute_screen.dart': (
+    count: 1,
+    reason:
+        'Misskey のワードミュート（#1290）。1 行 1 条件の語句と正規表現の並びで、'
+        '文章を書く欄ではない（ソフト / ハードの 2 段で 1 つの部品を使い回す）',
+  ),
 };
 
 void main() {
