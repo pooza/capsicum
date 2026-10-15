@@ -275,12 +275,6 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
     _reveal(columnId);
   }
 
-  /// フォーカス中のカラムのアカウントで新規投稿を開く（⌘N / Ctrl+N・#1170）。
-  ///
-  /// ⚠⚠ **メニューから直接 `/compose` を push してはいけない。**メニューバーは
-  /// ShellRoute に常駐していてルートのスコープで動くので、**別アカウントのカラムを
-  /// 見ながら ⌘N を打つと現在のアカウントから投稿される**（#1149 と同じ穴）。
-  /// ここでカラムのコンテナを載せてから開く。
   /// ドロワーを開く。⚠⚠ **開く前に、現在のアカウントをフォーカス中のカラムの
   /// アカウントへ切り替える**（#1286・2026-10-15 pooza 決定・決定済み事項 15 を
   /// 改めた）。
@@ -325,6 +319,12 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
     });
   }
 
+  /// フォーカス中のカラムのアカウントで新規投稿を開く（⌘N / Ctrl+N・#1170）。
+  ///
+  /// ⚠⚠ **メニューから直接 `/compose` を push してはいけない。**メニューバーは
+  /// ShellRoute に常駐していてルートのスコープで動くので、**別アカウントのカラムを
+  /// 見ながら ⌘N を打つと現在のアカウントから投稿される**（#1149 と同じ穴）。
+  /// ここでカラムのコンテナを載せてから開く。
   void _openComposeForFocused() {
     final id = ref.read(deckFocusProvider).columnId;
     final column = ref

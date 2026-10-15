@@ -78,14 +78,19 @@ class AppleMusicNowPlayingProvider implements NowPlayingProvider {
       // temporary-exception.apple-events(com.apple.Music) で済み（build 117 で動作確認）、
       // 診断用の __automationStatus / __scriptItems タグは不要になったため落とした。
       if (errorKind == 'script_error') {
+        // ⚠ どちらのアプリのスクリプトかで分ける（Spotify の失敗がミュージックの
+        // 群に混ざらないように・#1276 のリリース前レビュー）。
+        final source = raw['__app'] == 'spotify' ? 'spotify' : 'apple_music';
         Sentry.captureMessage(
-          'nowplaying: apple music script error',
+          source == 'spotify'
+              ? 'nowplaying: spotify script error'
+              : 'nowplaying: apple music script error',
           level: SentryLevel.warning,
           withScope: (scope) {
-            scope.setTag('nowplaying.source', 'apple_music');
+            scope.setTag('nowplaying.source', source);
             final code = raw!['__code'];
             if (code != null) scope.setTag('nowplaying.code', '$code');
-            scope.fingerprint = ['nowplaying', 'apple_music_script_error'];
+            scope.fingerprint = ['nowplaying', '${source}_script_error'];
           },
         );
       }
@@ -146,7 +151,7 @@ Uri? _httpsUri(Object? value) {
 }
 
 /// ネイティブがジャケットを書き出さなかった理由として受け取る値 (#1283)。
-/// macOS の `NowPlayingPlugin.swift` が返す値と揃える。
+/// iOS / macOS の `NowPlayingPlugin.swift` が返す値と揃える（どちらも返す）。
 const kNowPlayingArtworkSkipReasons = {
   'no_artwork',
   'unsupported_format',
