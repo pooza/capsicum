@@ -66,8 +66,9 @@ class NotificationState {
   final String? rawNewestId;
 
   /// 伏せた通知だけのページが上限まで続き、何も足せなかったが、まだ続きがある
+  /// （[TimelineState.pageCapHit] と同じ意味）
   /// （PR #1285 の Codex P1）。画面は手で先を引ける入口を出す。
-  final bool olderStalled;
+  final bool pageCapHit;
 
   const NotificationState({
     this.notifications = const [],
@@ -75,7 +76,7 @@ class NotificationState {
     this.hasMore = true,
     this.lastRawId,
     this.rawNewestId,
-    this.olderStalled = false,
+    this.pageCapHit = false,
   });
 
   NotificationState copyWith({
@@ -83,14 +84,14 @@ class NotificationState {
     bool? isLoadingMore,
     bool? hasMore,
     String? lastRawId,
-    bool? olderStalled,
+    bool? pageCapHit,
   }) => NotificationState(
     notifications: notifications ?? this.notifications,
     isLoadingMore: isLoadingMore ?? this.isLoadingMore,
     hasMore: hasMore ?? this.hasMore,
     lastRawId: lastRawId ?? this.lastRawId,
     rawNewestId: rawNewestId,
-    olderStalled: olderStalled ?? this.olderStalled,
+    pageCapHit: pageCapHit ?? this.pageCapHit,
   );
 }
 
@@ -165,7 +166,7 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
       lastRawId: page.lastRawId,
       rawNewestId: newestRaw,
       hasMore: page.hasMore,
-      olderStalled: page.capHit,
+      pageCapHit: page.capHit,
     );
   }
 
@@ -174,7 +175,7 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
   /// ⚠⚠ 通知に hide を掛けるようになって（#1289）、1 ページ丸ごと落ちることが
   /// ある。何も足されないと一覧の長さが変わらず、続き読みの合図（末尾が近い）が
   /// 来ない。先頭のページなら空表示になり、先へ進む手段が無くなる。
-  /// ⚠ 上限まで空なら [NotificationState.olderStalled] を立て、画面で手で先を
+  /// ⚠ 上限まで空なら [NotificationState.pageCapHit] を立て、画面で手で先を
   /// 引ける入口を出す（`timeline_older_prompt.dart` と同じ考え方）。
   ///
   /// [maxId] が null なら先頭から。カーソルは生の末尾で進める (#777)。
@@ -237,7 +238,7 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
       if (visible.isNotEmpty ||
           !hasMore ||
           next == null ||
-          pages >= _maxEmptyPages) {
+          pages >= kMaxEmptyOlderPages) {
         break;
       }
     }
@@ -250,10 +251,6 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
       capHit: visible.isEmpty && hasMore,
     );
   }
-
-  /// 伏せた通知だけのページを続けて読む上限（[_fetchVisible]）。TL の続き読み
-  /// （`kMaxEmptyOlderPages`）と同じ。
-  static const _maxEmptyPages = 5;
 
   /// Persist the newest notification ID for background polling.
   Future<void> _updateLastSeen(String newestId) async {
@@ -325,7 +322,7 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
             isLoadingMore: false,
             lastRawId: page.lastRawId,
             hasMore: page.hasMore,
-            olderStalled: page.capHit,
+            pageCapHit: page.capHit,
           ),
         );
         return;

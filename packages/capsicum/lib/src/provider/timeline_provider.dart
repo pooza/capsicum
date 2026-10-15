@@ -189,7 +189,8 @@ const int kMaxEmptyOlderPages = 5;
 
 /// ページ取得上限に達したことを Sentry breadcrumb に残す (#601 2 回目レビュー追従)。
 /// 「全件フィルタで空一覧になる」ユーザー報告を後から切り分けるための観測ライン。
-/// 同じ category を全 3 経路 (build / fetchUntilVisible / loadMore) で共有する。
+/// 同じ category を本線（build / fetchUntilVisible / loadMore）と、[OlderCursorPaging] の
+/// 続き読み（`hashtag.loadMore` / `list.loadMore` / `channel.loadMore`・#1292）で共有する。
 void _recordPageCapHit({
   required String site,
   required int visibleCollected,

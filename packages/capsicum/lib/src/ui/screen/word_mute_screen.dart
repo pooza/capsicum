@@ -111,7 +111,8 @@ class _WordMuteScreenState extends ConsumerState<WordMuteScreen> {
     } catch (e, st) {
       // ⚠ 入力が原因の既知のエラーは送らない（理由は SnackBar に出す・#1047 の
       // リリース前レビュー）。
-      if (_saveFailureReason(e) == null) {
+      final reason = _saveFailureReason(e);
+      if (reason == null) {
         reportOpFailure(
           tagKey: 'word_mute.op',
           operation: 'save',
@@ -123,7 +124,7 @@ class _WordMuteScreenState extends ConsumerState<WordMuteScreen> {
       if (!mounted) return;
       setState(() => _saving = false);
       messenger.showSnackBar(
-        SnackBar(content: Text(_saveFailureReason(e) ?? 'ワードミュートの保存に失敗しました')),
+        SnackBar(content: Text(reason ?? 'ワードミュートの保存に失敗しました')),
       );
     }
   }

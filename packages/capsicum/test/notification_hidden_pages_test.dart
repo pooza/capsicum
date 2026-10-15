@@ -99,7 +99,7 @@ void main() {
     final state = await container.read(notificationProvider.future);
     expect(state.notifications.length, 20);
     expect(state.notifications.first.id, '1020');
-    expect(state.olderStalled, isFalse);
+    expect(state.pageCapHit, isFalse);
     expect(state.rawNewestId, '1060', reason: '既読は伏せた通知まで返す');
   });
 
@@ -113,13 +113,13 @@ void main() {
     final first = await container.read(notificationProvider.future);
     expect(first.notifications, isEmpty);
     expect(first.hasMore, isTrue);
-    expect(first.olderStalled, isTrue);
+    expect(first.pageCapHit, isTrue);
 
     await container.read(notificationProvider.notifier).loadMore();
     final after = container.read(notificationProvider).requireValue;
     expect(after.notifications.length, 20);
     expect(after.notifications.first.id, '1020');
-    expect(after.olderStalled, isFalse);
+    expect(after.pageCapHit, isFalse);
     expect(
       adapter.requestedMaxIds.toSet().length,
       adapter.requestedMaxIds.length,

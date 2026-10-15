@@ -41,7 +41,11 @@ class _MisskeyLike extends Mock
         DecentralizedBackendAdapter,
         NotificationSupport,
         NotificationReadSupport {
-  _MisskeyLike({this.latestId});
+  _MisskeyLike({this.latestId, this.latestIdWhenSingle});
+
+  /// 1 件だけ引いたときの先頭（グループ化で、束ねる相手がいないときの id）。
+  /// null なら [latestId] と同じ。
+  final String? latestIdWhenSingle;
 
   var markedAll = 0;
 
@@ -56,7 +60,9 @@ class _MisskeyLike extends Mock
     notifications: [
       if (latestId != null)
         Notification(
-          id: latestId!,
+          id: query?.limit == 1 && latestIdWhenSingle != null
+              ? latestIdWhenSingle!
+              : latestId!,
           type: NotificationType.mention,
           createdAt: DateTime.utc(2026, 10, 16),
         ),
@@ -212,5 +218,18 @@ void main() {
     await pumpPast5s(tester);
 
     expect(adapter.saved, ['130']);
+  });
+
+  testWidgets('⚠⚠ Misskey のグループ化: 一覧と同じ件数で確かめ、新着が無ければ全既読を返す', (tester) async {
+    // 束ねたグループの id は、グループで一番古い通知の id（n9）。1 件だけ
+    // 引くと束ねる相手がいないので、一番新しい通知（n10）がそのまま返る。
+    final adapter = _MisskeyLike(latestId: 'n9', latestIdWhenSingle: 'n10');
+    final saver = UnifiedNotificationReadSaver(isAppVisible: () => true);
+    addTearDown(saver.dispose);
+
+    saver.seen(_account('a', adapter), 'n9');
+    await pumpPast5s(tester);
+
+    expect(adapter.markedAll, 1);
   });
 }

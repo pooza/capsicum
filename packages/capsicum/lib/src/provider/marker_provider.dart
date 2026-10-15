@@ -8,6 +8,7 @@ import '../model/account.dart';
 import '../util/exception_scrub.dart';
 import 'account_manager_provider.dart';
 import 'preferences_provider.dart';
+import 'unified_notification_provider.dart';
 
 /// Fetches markers from the server (Mastodon only).
 final markersProvider = FutureProvider.autoDispose<MarkerSet?>((ref) async {
@@ -363,8 +364,12 @@ class UnifiedNotificationReadSaver {
         }
       } else if (adapter is NotificationReadSupport &&
           adapter is NotificationSupport) {
+        // ⚠⚠ 一覧と同じ件数で引いて、先頭を比べる（2 回目のレビュー）。Misskey の
+        // グループ化した取得は、束ねたグループの id がグループで一番古い通知の
+        // id になる。1 件だけ引くと束ねる相手がいないので、新着が無くても
+        // 一致しなかった（既定のグループ化 ON で、全既読がほぼ返らない）。
         final latest = await (adapter as NotificationSupport).getNotifications(
-          query: const TimelineQuery(limit: 1),
+          query: const TimelineQuery(limit: kUnifiedNotificationPageSize),
           filter: query,
         );
         final latestId = latest.notifications.firstOrNull?.id;

@@ -161,8 +161,8 @@ class _NotificationViewState extends ConsumerState<NotificationView>
   }
 
   /// 伏せた通知だけのページが上限まで続き、まだ続きがある（PR #1285 の Codex P1）。
-  static bool _stalled(NotificationState state) =>
-      state.olderStalled && state.hasMore && !state.isLoadingMore;
+  static bool _showOlderPrompt(NotificationState state) =>
+      state.pageCapHit && state.hasMore && !state.isLoadingMore;
 
   Widget _olderPrompt(NotificationState state) => TimelineOlderPrompt(
     isLoading: state.isLoadingMore,
@@ -214,7 +214,7 @@ class _NotificationViewState extends ConsumerState<NotificationView>
               itemPositionsListener: _itemPositionsListener,
               itemCount:
                   state.notifications.length +
-                  (state.isLoadingMore || _stalled(state) ? 1 : 0),
+                  (state.isLoadingMore || _showOlderPrompt(state) ? 1 : 0),
               separatorBuilder: (_, _) => const Divider(height: 1),
               itemBuilder: (context, index) {
                 if (index >= state.notifications.length) {

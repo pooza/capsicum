@@ -9,6 +9,13 @@ import 'account_manager_provider.dart';
 import 'is_cat_provider.dart';
 import 'preferences_provider.dart';
 
+/// 「すべての通知」が 1 アカウントから引く件数。
+///
+/// ⚠ 既読を返す前の確かめ（[UnifiedNotificationReadSaver]）も同じ件数で引く。
+/// Misskey のグループ化した取得は「この件数を引いてから束ねる」ので、件数が
+/// 違うと先頭のグループの id が変わり、一致しなくなる。
+const kUnifiedNotificationPageSize = 20;
+
 /// A notification paired with the account it belongs to.
 class UnifiedNotification {
   final Account account;
@@ -57,8 +64,6 @@ class UnifiedNotificationState {
 /// owning account and open the existing single-account views.
 class UnifiedNotificationNotifier
     extends AutoDisposeAsyncNotifier<UnifiedNotificationState> {
-  static const _pageSize = 20;
-
   @override
   Future<UnifiedNotificationState> build() async {
     // 絞り込みとグループ化 (#1042 / #1048)。⚠ **watch する** — 設定を変えたら
@@ -156,7 +161,7 @@ class UnifiedNotificationNotifier
     try {
       final response = await (account.adapter as NotificationSupport)
           .getNotifications(
-            query: const TimelineQuery(limit: _pageSize),
+            query: const TimelineQuery(limit: kUnifiedNotificationPageSize),
             filter: filter,
           );
       reportSkippedNotifications(
