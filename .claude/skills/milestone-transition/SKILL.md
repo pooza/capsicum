@@ -14,6 +14,7 @@ disable-model-invocation: true
 
 - 直近マイルストーンの残 Issue が 0、かつ全 5 プラットフォーム（Android / iOS / macOS / Windows / Linux）で公開完了を確認したとき。
 - 判定は [sync-procedure](../sync-procedure/SKILL.md) の同期結果を流用してよい（リリースタグ・Play/ASC API・GitHub Release）。公開未完了なら着手準備は早いので、この手順には入らない。
+- ⚠ **macOS だけが審査で遅れているときは、pooza の「今回だけ例外」の指示で先に移行してよい**（2026-10-15 pooza）。条件は書き換えず、その都度の指示で例外にする（初例は 2026-10-13 の v2.2 → v2.3）。⚠ **Claude から「待たずに移行」を勧めない。**同期の報告で「macOS 以外は公開済み・macOS は審査中（何日目）」と事実を書くまでにとどめる。
 
 ## 手順
 
