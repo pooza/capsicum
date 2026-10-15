@@ -194,6 +194,7 @@ class ListManagementScreen extends ConsumerWidget {
 
     final change = await showListSettingsDialog(context, list);
     if (change == null) return;
+    Object? error;
     try {
       await (adapter as ListSupport).updateListSettings(
         list.id,
@@ -201,14 +202,21 @@ class ListManagementScreen extends ConsumerWidget {
         exclusive: change.exclusive,
         isPublic: change.isPublic,
       );
+    } catch (e) {
+      debugLogException('List settings update error', e);
+      error = e;
+    }
+    // ⚠ 通信の間に画面を離れていたら、`ref` も SnackBar も触らない（PR #1285 の
+    // Codex P2）。破棄済みの `ref` で投げ、成功した変更が失敗の表示に落ちる。
+    if (!context.mounted) return;
+    if (error == null) {
       ref.invalidate(listsProvider);
       messenger.showSnackBar(
         SnackBar(content: Text('リスト「${list.title}」の設定を変更しました')),
       );
-    } catch (e) {
-      debugLogException('List settings update error', e);
+    } else {
       messenger.showSnackBar(
-        SnackBar(content: Text('設定の変更に失敗しました\n${summarizeOpError(e)}')),
+        SnackBar(content: Text('設定の変更に失敗しました\n${summarizeOpError(error)}')),
       );
     }
   }

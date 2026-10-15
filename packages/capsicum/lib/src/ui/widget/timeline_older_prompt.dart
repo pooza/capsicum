@@ -26,12 +26,18 @@ class TimelineOlderPrompt extends StatelessWidget {
     super.key,
     required this.isLoading,
     required this.onLoadOlder,
+    this.message = '絞り込みで多くの投稿が除外されています',
+    this.actionLabel = 'さらに古い投稿を探す',
   });
 
   /// 続きを取得している最中か。
   final bool isLoading;
 
   final VoidCallback onLoadOlder;
+
+  /// 入口の説明と、ボタンの文言（通知の一覧では「通知」と言い換える）。
+  final String message;
+  final String actionLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -40,14 +46,14 @@ class TimelineOlderPrompt extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text('絞り込みで多くの投稿が除外されています', textAlign: TextAlign.center),
+          Text(message, textAlign: TextAlign.center),
           const SizedBox(height: 16),
           if (isLoading)
             const CircularProgressIndicator()
           else
             FilledButton.tonal(
               onPressed: onLoadOlder,
-              child: const Text('さらに古い投稿を探す'),
+              child: Text(actionLabel),
             ),
         ],
       ),

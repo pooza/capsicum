@@ -125,19 +125,31 @@ class ScheduledPostsScreen extends ConsumerWidget {
     );
     if (scheduledAt == null) return;
 
+    Object? error;
     try {
       await (adapter as ScheduleSupport).rescheduleScheduledPost(
         post.id,
         scheduledAt,
       );
-      ref.invalidate(_scheduledPostsProvider);
-      messenger.showSnackBar(const SnackBar(content: Text('予約の時刻を変更しました')));
     } catch (e) {
       debugLogException('Scheduled post reschedule error', e);
+      error = e;
+    }
+    // ⚠ 通信の間に画面を離れていたら、`ref` も SnackBar も触らない（PR #1285 の
+    // Codex P2）。破棄済みの `ref` で投げ、成功した変更が失敗の表示に落ちる。
+    if (!context.mounted) return;
+    if (error == null) {
+      ref.invalidate(_scheduledPostsProvider);
+      messenger.showSnackBar(const SnackBar(content: Text('予約の時刻を変更しました')));
+    } else {
       messenger.showSnackBar(
         SnackBar(
           content: Text(
-            upstreamFailureText('時刻の変更に失敗しました', e, reblogLabel: reblogLabel),
+            upstreamFailureText(
+              '時刻の変更に失敗しました',
+              error,
+              reblogLabel: reblogLabel,
+            ),
           ),
         ),
       );
