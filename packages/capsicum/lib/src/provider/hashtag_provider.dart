@@ -195,9 +195,6 @@ class HashtagTimelineNotifier
     );
   }
 
-  /// 続き読みが空振りしたとき、続けて先を引く上限（ページ数）。
-  static const _maxEmptyOlderPages = 5;
-
   /// 続き読みの、**絞る前の**末尾の id（次に引く起点）。
   ///
   /// ⚠⚠ **表示中の最後の投稿を起点にしない。**除外（Misskey は端末側で絞る・
@@ -231,7 +228,7 @@ class HashtagTimelineNotifier
         var hasMore = true;
         // ⚠ 絞った結果が空のページは、上限まで続けて先を引く。空のまま返すと、
         // 画面には何も足されないので、続きを読む合図が二度と来ない。
-        for (var page = 0; page < _maxEmptyOlderPages; page++) {
+        for (var page = 0; page < kMaxEmptyOlderPages; page++) {
           final raw = await (adapter as HashtagSupport).getPostsByHashtag(
             _query,
             query: TimelineQuery(maxId: cursor, limit: _pageSize),
@@ -259,6 +256,9 @@ class HashtagTimelineNotifier
             isLoadingMore: false,
             hasMore: hasMore,
             loadMoreError: null,
+            // 上限（[kMaxEmptyOlderPages]）まで引いても見える投稿が出なかった。
+            // 末尾に「さらに古い投稿を探す」を出す (#1292)。
+            pageCapHit: older.isEmpty && hasMore,
           ),
         );
         return;

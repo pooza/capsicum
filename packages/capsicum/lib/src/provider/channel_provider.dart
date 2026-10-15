@@ -78,6 +78,7 @@ class ChannelTimelineNotifier
     }
 
     final hideLivecure = ref.watch(hideLivecureProvider);
+    _olderCursor = null;
     final result = await fetchUntilVisible(
       filterContext: filterContext,
       pageSize: _pageSize,
@@ -86,6 +87,8 @@ class ChannelTimelineNotifier
         key.id,
         query: TimelineQuery(maxId: maxId, limit: _pageSize),
       ),
+      // ⚠ 最初の読み込みで進めたぶんを、続き読みへ渡す (#1292)。
+      onRawCursor: (rawLastId) => _olderCursor = rawLastId,
     );
     seedLiveIngestAnchor(result.posts);
     if (adapter is StreamSupport) {
@@ -99,6 +102,9 @@ class ChannelTimelineNotifier
       streamConnectionState: streamConnectionState,
     );
   }
+
+  /// 続き読みの、**消す前の**末尾の id（次に引く起点・#1292）。リストと同じ。
+  String? _olderCursor;
 
   Future<void> loadMore() async {
     final current = state.valueOrNull;
@@ -117,28 +123,41 @@ class ChannelTimelineNotifier
           return;
         }
 
-        final base = state.valueOrNull ?? current;
-        final lastId = base.posts.last.id;
         final hideLivecure = ref.read(hideLivecureProvider);
-        final raw = await (adapter as ChannelSupport).getChannelTimeline(
-          arg.id,
-          query: TimelineQuery(maxId: lastId, limit: _pageSize),
-        );
-        final unhidden = raw.where((p) => !p.isHiddenIn(filterContext));
-        final older = hideLivecure
-            ? unhidden.where((p) => !hasLivecureTag(p)).toList()
-            : unhidden.toList();
+        var cursor =
+            _olderCursor ?? (state.valueOrNull ?? current).posts.lastOrNull?.id;
+        final older = <Post>[];
+        var hasMore = true;
+        // ⚠ 絞った結果が空のページは、上限まで続けて先を引く (#1292)。
+        for (var page = 0; page < kMaxEmptyOlderPages; page++) {
+          final raw = await (adapter as ChannelSupport).getChannelTimeline(
+            arg.id,
+            query: TimelineQuery(maxId: cursor, limit: _pageSize),
+          );
+          if (raw.isNotEmpty) cursor = raw.last.id;
+          older.addAll(
+            raw
+                .where((p) => !p.isHiddenIn(filterContext))
+                .where((p) => !hideLivecure || !hasLivecureTag(p)),
+          );
+          hasMore = raw.length >= _pageSize;
+          if (older.isNotEmpty || !hasMore) break;
+        }
+        _olderCursor = cursor;
 
         // 既にリストにある投稿は落とす (#909)。各行は id をキーにしているので、
         // ページ境界の重複をそのまま足すと Duplicate keys で描画ごと落ちる。
+        final base = state.valueOrNull ?? current;
         final knownIds = {for (final p in base.posts) p.id};
         final appended = older.where((p) => knownIds.add(p.id)).toList();
         state = AsyncData(
           base.copyWith(
             posts: [...base.posts, ...appended],
             isLoadingMore: false,
-            hasMore: raw.length >= _pageSize,
+            hasMore: hasMore,
             loadMoreError: null,
+            // 上限まで引いても見える投稿が出なかった (#1292)。
+            pageCapHit: older.isEmpty && hasMore,
           ),
         );
         return;

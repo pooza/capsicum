@@ -734,10 +734,20 @@ class _DeckTimelineBodyState extends ConsumerState<_DeckTimelineBody> {
               )
             : ListView.separated(
                 controller: _scrollController,
-                itemCount: state.posts.length + (state.isLoadingMore ? 1 : 0),
+                itemCount:
+                    state.posts.length +
+                    (state.isLoadingMore || olderStalled(state) ? 1 : 0),
                 separatorBuilder: (_, _) => const Divider(height: 1),
                 itemBuilder: (context, index) {
                   if (index >= state.posts.length) {
+                    // 上限まで引いても見える投稿が出なかったときは、手で先を
+                    // 引ける入口を出す (#1292)。
+                    if (!state.isLoadingMore) {
+                      return TimelineOlderPrompt(
+                        isLoading: false,
+                        onLoadOlder: () => widget.loadMore(ref),
+                      );
+                    }
                     return const Padding(
                       padding: EdgeInsets.all(16),
                       child: Center(child: CircularProgressIndicator()),

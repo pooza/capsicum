@@ -180,6 +180,13 @@ bool ownPostAppearsInTimeline(TimelineType type, Post post) {
 /// までページ取得が連発しレートリミットに達しうるため上限で打ち切る。
 const int kMaxVisibilityPageFetches = 10;
 
+/// ハッシュタグ・リスト・チャンネルの続き読みで、絞った結果が空のページが
+/// 続いたときに、続けて先を引く上限（ページ数・#1292）。
+///
+/// ⚠ 上限に達しても起点（消す前の末尾）は進めてあるので、次の続き読みは先から
+/// 引く。末尾の「さらに古い投稿を探す」（`pageCapHit`）から手で続けられる。
+const int kMaxEmptyOlderPages = 5;
+
 /// ページ取得上限に達したことを Sentry breadcrumb に残す (#601 2 回目レビュー追従)。
 /// 「全件フィルタで空一覧になる」ユーザー報告を後から切り分けるための観測ライン。
 /// 同じ category を全 3 経路 (build / fetchUntilVisible / loadMore) で共有する。
@@ -1251,6 +1258,15 @@ class TimelineNotifier
   /// AutoDispose で Notifier は作り直されるため static に持つ。
   static bool _homeFirstPaintReported = false;
 
+  /// 続き読みの、**消す前の**末尾の id（次に引く起点・#1292）。
+  ///
+  /// ⚠⚠ **表示中の最後の投稿を起点にしない。**実況フィルタやフィルターの
+  /// 「完全に隠す」で引いたページが丸ごと落ちると、表示中の最後は動かないので、
+  /// 同じページを引き直し続けて先へ進めなくなる（放送中のホームで、
+  /// [kMaxVisibilityPageFetches] ページぶん実況が続いて実際に止まった）。
+  /// ハッシュタグ TL の `_olderCursor` と同じ形。null なら表示中の最後から引く。
+  String? _olderCursor;
+
   /// provider が破棄済みか (#890)。キャッシュ先出しの裏で走る初回取得が、
   /// 破棄後に state を触らないようにするための番兵。build() のたびに false へ
   /// 戻す（`ref.onDispose` は破棄だけでなく **再計算のたび**にも呼ばれるため、
@@ -1358,6 +1374,8 @@ class TimelineNotifier
     // leak into the new one via flushPending().
     resetLiveIngestState();
     _disposed = false;
+    // 前の文脈の続き読みの起点を持ち越さない (#1292)。
+    _olderCursor = null;
     // 前の文脈の窓の記録を持ち越さない (#921)。
     _resetSnapshotWindow(awaiting: false);
     _backgroundInitialLoad = null;
@@ -1524,6 +1542,10 @@ class TimelineNotifier
         streamConnectionState: _streamConnectionState,
       );
     }
+
+    // 続き読みは、消す前の末尾から続ける (#1292)。⚠ 古い世代の結果で書かない
+    // （直前の `_isStale` で落としてある）。
+    _olderCursor = maxId;
 
     // Start streaming if supported and enabled. ユーザーがライブ更新を OFF に
     // している場合 (#854) は WebSocket を張らず、インジケータを disabled にする。
@@ -2080,6 +2102,8 @@ class TimelineNotifier
     }
 
     state = AsyncData(current.copyWith(isLoadingMore: true));
+    // 続き読みの起点を進めてよいかを見るための世代 (#1292)。
+    final generation = _buildGeneration;
 
     // 起動キャッシュの先出し中（窓が開いている間）は、cached-last を起点に古い
     // ページを取ると fresh の全置換で捨てられる／ギャップが残る (#942)。権威ページ
@@ -2119,7 +2143,8 @@ class TimelineNotifier
         // Re-read state to get the latest posts (streaming may have added
         // new ones while we were waiting for a retry delay).
         final base = state.valueOrNull ?? current;
-        String? maxId = base.posts.lastOrNull?.id;
+        // ⚠⚠ 起点は消す前の末尾 (#1292・[_olderCursor])。
+        String? maxId = _olderCursor ?? base.posts.lastOrNull?.id;
         final allVisible = <Post>[];
         bool hasMore = true;
         // build() / fetchUntilVisible と同じ #601 ガード。全件 livecure な
@@ -2177,6 +2202,11 @@ class TimelineNotifier
             hasMore: true,
           );
         }
+
+        // 次の続き読みは、ここまで引いた消す前の末尾から (#1292)。⚠ 待っている
+        // 間に build() がやり直された（引っ張って更新・文脈の切替）なら書かない
+        // —— 新しい一覧の起点を、古い一覧の末尾で上書きしてしまう。
+        if (generation == _buildGeneration) _olderCursor = maxId;
 
         final enrichedMore = await _isCatEnricher.enrichPosts(allVisible);
         // Re-read state to preserve posts added by streaming during await.

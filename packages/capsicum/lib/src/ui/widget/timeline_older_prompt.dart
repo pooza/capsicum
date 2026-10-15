@@ -1,5 +1,21 @@
 import 'package:flutter/material.dart';
 
+import '../../provider/timeline_provider.dart';
+
+/// 一覧の末尾に「さらに古い投稿を探す」を出すか (#1292)。
+///
+/// 続き読みが上限まで引いても見える投稿を 1 件も足せなかった（`pageCapHit`）が、
+/// サーバーにはまだ続きがある。⚠ 何も足されないと一覧の長さが変わらないので、
+/// 末尾への到達という続き読みの合図が来ない（Android では末尾で引っ張っても
+/// スクロールの通知が出ない）。手で先へ進める入口を出す。
+///
+/// ⚠ 一覧が空のときは各画面の空表示のほうで扱う（#1283）。
+bool olderStalled(TimelineState state) =>
+    state.pageCapHit &&
+    state.hasMore &&
+    !state.isLoadingMore &&
+    state.posts.isNotEmpty;
+
 /// 表示できる投稿が 1 件も無いが、サーバーには続きがある TL に出す入口 (#1283)。
 ///
 /// 絞り込み（タグ TL の「含まない」・実況フィルタ）で先頭の数ページが丸ごと

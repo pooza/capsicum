@@ -280,6 +280,37 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     openPost(context, _keyboardPosts[index]);
   }
 
+  /// 表示中の TL（ハッシュタグ / リスト / 本線）の続きを読む。末尾への到達
+  /// （[_onPositionsChanged]）と、末尾の「さらに古い投稿を探す」（#1292）から呼ぶ。
+  void _loadMoreSelected() {
+    final selectedHashtag = ref.read(selectedHashtagProvider);
+    final selectedList = ref.read(selectedListProvider);
+    final accountKey = ref.read(currentAccountKeyProvider);
+    if (selectedHashtag != null) {
+      ref
+          .read(
+            hashtagTimelineProvider((
+              account: accountKey,
+              spec: selectedHashtag,
+            )).notifier,
+          )
+          .loadMore();
+    } else if (selectedList != null) {
+      ref
+          .read(
+            listTimelineProvider((
+              account: accountKey,
+              id: selectedList.id,
+            )).notifier,
+          )
+          .loadMore();
+    } else {
+      ref
+          .read(timelineProvider(ref.read(currentTimelineKeyProvider)).notifier)
+          .loadMore();
+    }
+  }
+
   void _onPositionsChanged() {
     // Throttle to avoid excessive processing.
     if (_throttleTimer?.isActive ?? false) return;
@@ -322,33 +353,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       final maxIndex = positions
           .map((p) => p.index)
           .reduce((a, b) => a > b ? a : b);
-      if (maxIndex >= timeline.posts.length - 8) {
-        if (selectedHashtag != null) {
-          ref
-              .read(
-                hashtagTimelineProvider((
-                  account: accountKey,
-                  spec: selectedHashtag,
-                )).notifier,
-              )
-              .loadMore();
-        } else if (selectedList != null) {
-          ref
-              .read(
-                listTimelineProvider((
-                  account: accountKey,
-                  id: selectedList.id,
-                )).notifier,
-              )
-              .loadMore();
-        } else {
-          ref
-              .read(
-                timelineProvider(ref.read(currentTimelineKeyProvider)).notifier,
-              )
-              .loadMore();
-        }
-      }
+      if (maxIndex >= timeline.posts.length - 8) _loadMoreSelected();
     }
 
     // Show/hide scroll-to-top button.
@@ -1152,11 +1157,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                           itemPositionsListener: _itemPositionsListener,
                           itemCount: _noteListItemCount(
                             tlState.posts.length +
-                                (tlState.isLoadingMore ? 1 : 0),
+                                (tlState.isLoadingMore || olderStalled(tlState)
+                                    ? 1
+                                    : 0),
                           ),
                           separatorBuilder: (_, _) => const Divider(height: 1),
                           itemBuilder: (context, index) {
                             if (index >= tlState.posts.length) {
+                              // 上限まで引いても見える投稿が出なかったときは、
+                              // 手で先を引ける入口を出す (#1292)。何も足されない
+                              // と一覧の長さが変わらず、続き読みの合図が来ない。
+                              if (!tlState.isLoadingMore) {
+                                return TimelineOlderPrompt(
+                                  isLoading: false,
+                                  onLoadOlder: _loadMoreSelected,
+                                );
+                              }
                               return const Padding(
                                 padding: EdgeInsets.all(16),
                                 child: Center(
