@@ -8,6 +8,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'client.dart';
 import 'extensions.dart';
+import 'filters.dart';
 import 'notification_streaming.dart';
 import 'oauth_pkce.dart';
 import 'streaming.dart';
@@ -149,7 +150,8 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         TimelineCacheSupport,
         MulukhiyaRepostSupport,
         TranslationSupport,
-        MediaUpdateSupport {
+        MediaUpdateSupport,
+        FilterSupport {
   final MastodonClient client;
 
   /// 本線 TL の購読。キーごとに 1 本ずつソケットを張る (#1090)。
@@ -1647,6 +1649,25 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   Future<void> deleteList(String id) async {
     await client.deleteList(id);
   }
+
+  // FilterSupport (#1047)
+
+  @override
+  Future<List<ServerFilter>> getFilters() async =>
+      (await client.getFilters()).map(parseMastodonFilter).toList();
+
+  @override
+  Future<ServerFilter> createFilter(FilterDraft draft) async =>
+      parseMastodonFilter(await client.createFilter(mastodonFilterBody(draft)));
+
+  @override
+  Future<ServerFilter> updateFilter(String id, FilterDraft draft) async =>
+      parseMastodonFilter(
+        await client.updateFilter(id, mastodonFilterBody(draft)),
+      );
+
+  @override
+  Future<void> deleteFilter(String id) => client.deleteFilter(id);
 
   @override
   Future<List<User>> getListAccounts(String listId) async {

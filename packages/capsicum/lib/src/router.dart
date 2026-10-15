@@ -33,6 +33,8 @@ import 'ui/screen/drive_manager_screen.dart';
 import 'ui/screen/episode_browser_screen.dart';
 import 'ui/screen/eula_screen.dart';
 import 'ui/screen/favorites_screen.dart';
+import 'ui/screen/filter_edit_screen.dart';
+import 'ui/screen/filter_list_screen.dart';
 import 'ui/screen/flash_view_screen.dart';
 import 'ui/screen/follow_requests_screen.dart';
 import 'ui/screen/followed_hashtags_screen.dart';
@@ -328,6 +330,20 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/settings/followed-hashtags',
             builder: (context, state) => const FollowedHashtagsScreen(),
+          ),
+          // フィルターの一覧と編集 (#1047)。Mastodon の `api/v2/filters`。
+          GoRoute(
+            path: '/settings/filters',
+            builder: (context, state) => const FilterListScreen(),
+          ),
+          GoRoute(
+            path: '/settings/filters/edit',
+            builder: (context, state) {
+              final filter = state.extra;
+              return FilterEditScreen(
+                filter: filter is ServerFilter ? filter : null,
+              );
+            },
           ),
           GoRoute(
             path: '/settings/desktop',

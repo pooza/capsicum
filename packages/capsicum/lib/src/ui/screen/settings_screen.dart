@@ -1,3 +1,4 @@
+import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -55,6 +56,17 @@ class SettingsScreen extends ConsumerWidget {
               trailing: const Icon(Icons.chevron_right),
               onTap: () => context.push('/settings/moderation'),
             ),
+            // フィルター (#1047)。⚠ **名前は SNS の本来の用語**（Mastodon は
+            // 「フィルター」・2026-10-15 pooza 判断）。Misskey のワードミュートは
+            // #1290 で同じ位置に出す。
+            if (ref.watch(currentAdapterProvider) is FilterSupport)
+              ListTile(
+                leading: const Icon(Icons.filter_alt_outlined),
+                title: const Text('フィルター'),
+                subtitle: const Text('キーワードで投稿を伏せる'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => context.push('/settings/filters'),
+              ),
             // フォロー中のハッシュタグ (#1070)。⚠ **#1039 と同じ「付けられる
             // のに外す導線が塞がる」形**なので隣に置く。Misskey では一覧が
             // 常に空になる（フォローの概念が無い）ため、エントリ自体を

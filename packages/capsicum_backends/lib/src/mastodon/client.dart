@@ -1379,6 +1379,33 @@ class MastodonClient {
     await dio.delete('/api/v1/lists/$id');
   }
 
+  /// GET /api/v2/filters (#1047)。キーワード込みで返る（`rules_requested`）。
+  Future<List<Map<String, dynamic>>> getFilters() async {
+    final response = await dio.get('/api/v2/filters');
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/v2/filters (#1047)。
+  Future<Map<String, dynamic>> createFilter(Map<String, dynamic> body) async {
+    final response = await dio.post('/api/v2/filters', data: body);
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// PUT /api/v2/filters/:id (#1047)。キーワードの増減は
+  /// `keywords_attributes[]` の `id` / `_destroy` で同じ要求に載せる。
+  Future<Map<String, dynamic>> updateFilter(
+    String id,
+    Map<String, dynamic> body,
+  ) async {
+    final response = await dio.put('/api/v2/filters/$id', data: body);
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// DELETE /api/v2/filters/:id (#1047)。
+  Future<void> deleteFilter(String id) async {
+    await dio.delete('/api/v2/filters/$id');
+  }
+
   /// GET /api/v1/lists/:id/accounts
   ///
   /// ⚠⚠ **`limit=0` を外さない** (#1202)。送らないと 40 人で黙って切れ、
