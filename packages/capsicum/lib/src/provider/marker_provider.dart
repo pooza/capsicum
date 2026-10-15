@@ -4,6 +4,7 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../model/account.dart';
 import '../util/exception_scrub.dart';
 import 'account_manager_provider.dart';
 
@@ -270,3 +271,88 @@ final notificationMarkerSaverProvider =
       ref.onDispose(saver.dispose);
       return saver;
     }, dependencies: [currentAdapterProvider]);
+
+/// 「すべての通知」で見た通知の既読を、アカウントごとに返す保存役 (#1291)。
+///
+/// 通知タブの [NotificationMarkerSaver] / [NotificationReadSaver] は「現在の
+/// アカウント」に縛られているので、複数アカウントの通知を混ぜて出す画面では
+/// 使えない。ここは**行が持つアカウント**のアダプターで返す。
+///
+/// - **あるアカウントの一番新しい通知の行が見えたら**、そのアカウントについて
+///   返す。Mastodon はマーカー（その通知より古いものは既読）、Misskey は全既読
+///   （#1205 と同じ）。⚠ ほかのアカウントの行しか見えていないうちは返さない
+///   （見ていない通知を既読にしない・#1045）
+/// - 通知タブと同じく 5 秒待ってから返す。その間に行が画面から外れたら、または
+///   アプリが裏へ回っていたら返さない
+///
+/// ⚠⚠ 以前は「すべての通知」で見ても既読が返らず、2.1（#1207）でバッジに
+/// サーバーの未読数を出すようになってから、ほかのアカウントのバッジを 0 に
+/// する手段が「切り替えて通知タブを見る」しか無かった。
+class UnifiedNotificationReadSaver {
+  UnifiedNotificationReadSaver({bool Function()? isAppVisible})
+    : _isAppVisible =
+          isAppVisible ?? NotificationReadSaver._defaultIsAppVisible;
+
+  final bool Function() _isAppVisible;
+
+  /// アカウント（保存用のキー）ごとの、返すのを待っている予約。
+  final _timers = <String, Timer>{};
+
+  /// アカウントごとの、最後に返した通知。⚠ 同じ通知では返し直さない。
+  final _sent = <String, String>{};
+
+  /// [account] の一番新しい通知 [newestId] の行が見えた。
+  void seen(Account account, String newestId) {
+    final key = account.key.toStorageKey();
+    if (_sent[key] == newestId || _timers.containsKey(key)) return;
+    if (!_isAppVisible()) return;
+    final adapter = account.adapter;
+    if (adapter is! MarkerSupport && adapter is! NotificationReadSupport) {
+      return;
+    }
+    _timers[key] = Timer(const Duration(seconds: 5), () {
+      _timers.remove(key);
+      if (!_isAppVisible()) return;
+      _send(adapter, key, newestId);
+    });
+  }
+
+  /// [account] の一番新しい通知の行が画面から外れた。まだ返していなければやめる。
+  void unseen(Account account) {
+    _timers.remove(account.key.toStorageKey())?.cancel();
+  }
+
+  void _send(Object adapter, String key, String newestId) {
+    final Future<void> sent;
+    if (adapter is MarkerSupport) {
+      sent = adapter.saveNotificationMarker(newestId);
+    } else if (adapter is NotificationReadSupport) {
+      sent = adapter.markAllNotificationsRead();
+    } else {
+      return;
+    }
+    sent
+        .then<void>((_) {
+          _sent[key] = newestId;
+        })
+        .catchError((Object e) {
+          // ⚠ `_sent` を進めない。次に見えたときに送り直す。
+          debugLogException('Failed to mark unified notifications as read', e);
+        });
+  }
+
+  /// ⚠ 予約は捨てる（5 秒見えていなかったものは返さない）。
+  void dispose() {
+    for (final timer in _timers.values) {
+      timer.cancel();
+    }
+    _timers.clear();
+  }
+}
+
+final unifiedNotificationReadSaverProvider =
+    Provider.autoDispose<UnifiedNotificationReadSaver>((ref) {
+      final saver = UnifiedNotificationReadSaver();
+      ref.onDispose(saver.dispose);
+      return saver;
+    });

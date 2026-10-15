@@ -14,6 +14,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 
 /// #1173: 「すべての通知」をデッキのカラムとして出す（`docs/deck-ui-plan.md`
 /// 決定済み事項 7-3）。
@@ -73,6 +74,18 @@ Post _post(String id, String host) => Post(
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  // 「すべての通知」は、アカウントごとの一番新しい行が見えたかを
+  // VisibilityDetector で見ている (#1291)。既定の 500ms のバッチ通知は
+  // タイマーを残してテストの終わりで落ちるので、即時にする。
+  setUp(() {
+    VisibilityDetectorController.instance.updateInterval = Duration.zero;
+  });
+  tearDown(() {
+    VisibilityDetectorController.instance.updateInterval = const Duration(
+      milliseconds: 500,
+    );
+  });
 
   /// 「すべての通知」を [inDeck] のとおりに置き、1 件だけ通知を出す。
   ///

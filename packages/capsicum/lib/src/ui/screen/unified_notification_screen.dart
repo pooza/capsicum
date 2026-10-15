@@ -1,9 +1,11 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart' hide Notification;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 
 import '../../model/account.dart';
 import '../../provider/account_manager_provider.dart';
+import '../../provider/marker_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/unified_notification_provider.dart';
@@ -72,16 +74,45 @@ class UnifiedNotificationScreen extends ConsumerWidget {
             data.failedAccounts.isEmpty) {
           listArea = const Center(child: Text('通知はありません'));
         } else {
+          // アカウントごとの一番新しい通知の行 (#1291)。ここが見えたら、その
+          // アカウントの既読を返す（一覧は新しい順なので、最初に出てくる行）。
+          final newestIndexes = <int>{};
+          final seenAccounts = <String>{};
+          for (var i = 0; i < data.items.length; i++) {
+            if (seenAccounts.add(data.items[i].account.key.toStorageKey())) {
+              newestIndexes.add(i);
+            }
+          }
+          // ⚠ watch で持つ（read だと autoDispose で予約ごと捨てられる）。
+          final readSaver = ref.watch(unifiedNotificationReadSaverProvider);
           listArea = ListView.separated(
             // 件数が少ない / 空でも pull-to-refresh できるようにする。
             physics: const AlwaysScrollableScrollPhysics(),
             itemCount: data.items.length,
             separatorBuilder: (_, _) => const Divider(height: 1),
-            itemBuilder: (context, index) => _UnifiedNotificationTile(
-              item: data.items[index],
-              reblogLabel: reblogLabel,
-              postLabel: postLabel,
-            ),
+            itemBuilder: (context, index) {
+              final item = data.items[index];
+              final tile = _UnifiedNotificationTile(
+                item: item,
+                reblogLabel: reblogLabel,
+                postLabel: postLabel,
+              );
+              if (!newestIndexes.contains(index)) return tile;
+              return VisibilityDetector(
+                key: ValueKey(
+                  'unified-read-${item.account.key.toStorageKey()}'
+                  '-${item.notification.id}',
+                ),
+                onVisibilityChanged: (info) {
+                  if (info.visibleFraction >= 0.5) {
+                    readSaver.seen(item.account, item.notification.id);
+                  } else {
+                    readSaver.unseen(item.account);
+                  }
+                },
+                child: tile,
+              );
+            },
           );
         }
         return RefreshIndicator(
