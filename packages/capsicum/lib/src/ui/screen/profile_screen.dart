@@ -35,6 +35,7 @@ import '../widget/page_card.dart';
 import '../widget/post_tile.dart';
 import '../widget/report_comment_dialog.dart';
 import '../widget/server_badge.dart';
+import '../widget/timeline_older_prompt.dart';
 import '../widget/user_avatar.dart';
 
 /// プロフィール画面のタブ種別。表示するタブ集合は adapter のケーパビリティと
@@ -69,10 +70,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   bool _loadingMore = false;
   bool _hasMore = true;
 
+  /// 直前に読んだページが全部 hide で、何も足せなかった（PR #1285 の Codex P2）。
+  /// 一覧の長さが変わらずスクロールの合図が来ないので、末尾に入口を出す。
+  bool _postsStalled = false;
+
   List<Post> _mediaPosts = [];
   bool _loadingMediaPosts = true;
   bool _loadingMoreMedia = false;
   bool _hasMoreMedia = true;
+  bool _mediaStalled = false;
   bool _mediaTabLoaded = false;
 
   List<GalleryPost> _galleryPosts = [];
@@ -285,6 +291,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           _posts = posts.where((p) => !pinnedIds.contains(p.id)).toList();
           _loadingPosts = false;
           _hasMore = posts.length >= 20;
+          _postsStalled = _hasMore && _visible(posts).isEmpty;
         });
       }
     } catch (e) {
@@ -307,6 +314,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           _posts = [..._posts, ...older];
           _loadingMore = false;
           _hasMore = older.length >= 20;
+          _postsStalled = _hasMore && _visible(older).isEmpty;
         });
       }
     } catch (e) {
@@ -330,6 +338,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           _mediaPosts = posts;
           _loadingMediaPosts = false;
           _hasMoreMedia = posts.length >= 20;
+          _mediaStalled = _hasMoreMedia && _visible(posts).isEmpty;
         });
       }
     } catch (e) {
@@ -358,6 +367,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           _mediaPosts = [..._mediaPosts, ...older];
           _loadingMoreMedia = false;
           _hasMoreMedia = older.length >= 20;
+          _mediaStalled = _hasMoreMedia && _visible(older).isEmpty;
         });
       }
     } catch (e) {
@@ -771,20 +781,29 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
         )
       else
         SliverList(
-          delegate: SliverChildBuilderDelegate((context, index) {
-            if (index >= posts.length) {
-              return const Padding(
-                padding: EdgeInsets.all(16),
-                child: Center(child: CircularProgressIndicator()),
+          delegate: SliverChildBuilderDelegate(
+            (context, index) {
+              if (index >= posts.length) {
+                if (!_loadingMore) {
+                  return TimelineOlderPrompt(
+                    isLoading: false,
+                    onLoadOlder: _loadMorePosts,
+                  );
+                }
+                return const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              }
+              return Column(
+                children: [
+                  PostTile(post: posts[index], onPostUpdated: _onPostUpdated),
+                  const Divider(height: 1),
+                ],
               );
-            }
-            return Column(
-              children: [
-                PostTile(post: posts[index], onPostUpdated: _onPostUpdated),
-                const Divider(height: 1),
-              ],
-            );
-          }, childCount: posts.length + (_loadingMore ? 1 : 0)),
+            },
+            childCount: posts.length + (_loadingMore || _postsStalled ? 1 : 0),
+          ),
         ),
     ];
   }
@@ -798,7 +817,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       ];
     }
     final mediaPosts = _visible(_mediaPosts);
-    if (mediaPosts.isEmpty) {
+    if (mediaPosts.isEmpty && !_mediaStalled && !_loadingMoreMedia) {
       return [
         const SliverFillRemaining(
           child: Center(child: Text('メディア付きの投稿はありません')),
@@ -807,20 +826,34 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     }
     return [
       SliverList(
-        delegate: SliverChildBuilderDelegate((context, index) {
-          if (index >= mediaPosts.length) {
-            return const Padding(
-              padding: EdgeInsets.all(16),
-              child: Center(child: CircularProgressIndicator()),
+        delegate: SliverChildBuilderDelegate(
+          (context, index) {
+            if (index >= mediaPosts.length) {
+              // 読んだページが全部 hide だったときの入口（[_postsStalled] と同じ）。
+              if (!_loadingMoreMedia) {
+                return TimelineOlderPrompt(
+                  isLoading: false,
+                  onLoadOlder: _loadMoreMediaPosts,
+                );
+              }
+              return const Padding(
+                padding: EdgeInsets.all(16),
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            return Column(
+              children: [
+                PostTile(
+                  post: mediaPosts[index],
+                  onPostUpdated: _onPostUpdated,
+                ),
+                const Divider(height: 1),
+              ],
             );
-          }
-          return Column(
-            children: [
-              PostTile(post: mediaPosts[index], onPostUpdated: _onPostUpdated),
-              const Divider(height: 1),
-            ],
-          );
-        }, childCount: mediaPosts.length + (_loadingMoreMedia ? 1 : 0)),
+          },
+          childCount:
+              mediaPosts.length + (_loadingMoreMedia || _mediaStalled ? 1 : 0),
+        ),
       ),
     ];
   }
