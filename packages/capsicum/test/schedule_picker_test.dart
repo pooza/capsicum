@@ -88,5 +88,16 @@ void main() {
       expect(await result, isNull);
       expect(find.text('5分以上先の日時を指定してください'), findsOneWidget);
     });
+
+    testWidgets('⚠⚠ 1 年より先の予約でも開ける（ほかのクライアントで作った予約）', (tester) async {
+      final far = DateTime.now().add(const Duration(days: 500));
+      final result = await open(tester, initial: far);
+
+      expect(tester.takeException(), isNull, reason: '初期値が上限を超えると assert で落ちる');
+      expect(find.text('予約投稿の日付'), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(await result, isNull);
+    });
   });
 }

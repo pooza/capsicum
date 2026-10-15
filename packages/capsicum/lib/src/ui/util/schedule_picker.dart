@@ -24,12 +24,16 @@ Future<DateTime?> pickScheduleDateTime(
   final fallback = now.add(const Duration(hours: 1));
   // ⚠ いまの予約が過去になっていても、日付の下限（今日）より前を指さない。
   final start = initial != null && initial.isAfter(now) ? initial : fallback;
+  // ⚠ ほかのクライアントで 1 年より先に作った予約もある。上限をその日まで
+  // 広げる（初期値が範囲の外だと、ピッカーが assert で落ちる・PR #1285 の Codex）。
+  final yearAhead = now.add(const Duration(days: 365));
+  final lastDate = start.isAfter(yearAhead) ? start : yearAhead;
   final messenger = ScaffoldMessenger.of(context);
   final date = await showDatePicker(
     context: context,
     initialDate: start,
     firstDate: now,
-    lastDate: now.add(const Duration(days: 365)),
+    lastDate: lastDate,
     helpText: '予約投稿の日付',
     confirmText: '次へ（時刻を選択）',
   );
@@ -40,7 +44,8 @@ Future<DateTime?> pickScheduleDateTime(
     initialTime: TimeOfDay.fromDateTime(start),
     helpText: '予約投稿の時刻',
   );
-  if (time == null) return null;
+  // ⚠ 閉じるまでの間に画面が破棄されていたら、SnackBar を出さない（PR #1285 の Codex）。
+  if (time == null || !context.mounted) return null;
 
   final scheduled = DateTime(
     date.year,
