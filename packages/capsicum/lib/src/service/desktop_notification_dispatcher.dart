@@ -322,6 +322,17 @@ class DesktopNotificationDispatcher {
     }
     final dedupKey = '${account.key.toStorageKey()}|${n.id}';
     if (!_emittedKeys.add(dedupKey)) return; // 既出
+    // 後着の APNs banner を黙殺できるよう native 側の既出集合へ伝える
+    // (#674。macOS 以外では no-op)。show より先に投げ、APNs との競争窓を
+    // 最小化する。
+    // ⚠⚠ **フィルターで出さない通知でも先に伝える**（PR #1285 の Codex P1）。
+    // 下の判定で抜けたあとに伝えていたので、WebSocket が先着すると、後から
+    // 届いたネイティブのプッシュが抑止されず、伏せた投稿がバナーに出た。
+    unawaited(_ref.read(notificationDedupChannelProvider).addEmitted(relayKey));
+    // 配信済み generic 通知の掃除 (#673)。APNs が先着済みの逆順ケースと、
+    // この後に遅れて届くケース (onRemoteArrived 側) の両方をカバーする。
+    // ⚠ フィルターに当たった通知では、先に出てしまったバナーを消す役にもなる。
+    _ref.read(deliveredPushCleanerProvider).recordEmitted(relayKey);
     // 通知の適用先でフィルターに当たったものは、OS 通知を出さない (#1289)。
     // ⚠ hide だけでなく warn も出さない —— Mastodon Web のデスクトップ通知と同じ
     // 線（畳むべき本文を、畳めないバナーに出さない）。一覧には warn のまま載る。
@@ -332,13 +343,6 @@ class DesktopNotificationDispatcher {
       );
       return;
     }
-    // 後着の APNs banner を黙殺できるよう native 側の既出集合へ伝える
-    // (#674。macOS 以外では no-op)。show より先に投げ、APNs との競争窓を
-    // 最小化する。
-    unawaited(_ref.read(notificationDedupChannelProvider).addEmitted(relayKey));
-    // 配信済み generic 通知の掃除 (#673)。APNs が先着済みの逆順ケースと、
-    // この後に遅れて届くケース (onRemoteArrived 側) の両方をカバーする。
-    _ref.read(deliveredPushCleanerProvider).recordEmitted(relayKey);
     final subsystem = _ref.read(notificationSubsystemProvider);
     final display = notificationTypeDisplay(n.type);
     // 複数アカウントがログインしているときだけ宛先を明示する (単一垢では冗長)。

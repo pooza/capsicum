@@ -314,6 +314,38 @@ void main() {
     expect(dedupChannel.emitted, ['alice@h1|a1']);
   });
 
+  test('⚠⚠ フィルターで出さない通知も native の既出集合へ伝える（後着の APNs を抑える）', () async {
+    final a = _makeAccount('alice', 'h1');
+    notifier.setAccounts([a.account]);
+    await _settle();
+
+    a.controller.add(
+      Notification(
+        id: 'f1',
+        type: NotificationType.mention,
+        createdAt: DateTime(2026, 1, 1),
+        post: Post(
+          id: 'p1',
+          postedAt: DateTime(2026, 1, 1),
+          author: const User(id: 'u', username: 'someone'),
+          content: 'ほげ',
+          filterMatches: const [
+            FilterMatch(
+              action: FilterAction.warn,
+              contexts: {FilterContext.notifications},
+            ),
+          ],
+        ),
+      ),
+    );
+    await _settle();
+
+    expect(subsystem.shown, isEmpty, reason: '伏せた投稿をバナーに出さない');
+    expect(dedupChannel.emitted, [
+      'alice@h1|f1',
+    ], reason: '伝えないと、後から届いたネイティブのプッシュがそのまま出る');
+  });
+
   test('APNs 先着済み (onRemotePresented) の通知は表示しない (#674)', () async {
     final a = _makeAccount('alice', 'h1');
     notifier.setAccounts([a.account]);
