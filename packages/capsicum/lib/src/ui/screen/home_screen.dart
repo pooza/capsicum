@@ -31,6 +31,7 @@ import '../util/offline_account_display.dart';
 import '../util/stream_connection_display.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/emoji_text.dart';
+import '../widget/filter_scope.dart';
 import '../widget/home_drawer.dart';
 import '../widget/home_menu.dart';
 import '../widget/livecure_filter_button.dart';
@@ -41,6 +42,7 @@ import '../widget/scroll_jump_buttons.dart';
 import '../widget/server_badge.dart';
 import '../widget/simple_post_bar.dart';
 import '../widget/tab_management_sheet.dart';
+import '../widget/timeline_older_prompt.dart';
 import '../widget/user_avatar.dart';
 import 'announcement_screen.dart';
 import 'channel_timeline_screen.dart';
@@ -278,6 +280,37 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     openPost(context, _keyboardPosts[index]);
   }
 
+  /// 表示中の TL（ハッシュタグ / リスト / 本線）の続きを読む。末尾への到達
+  /// （[_onPositionsChanged]）と、末尾の「さらに古い投稿を探す」（#1292）から呼ぶ。
+  void _loadMoreSelected() {
+    final selectedHashtag = ref.read(selectedHashtagProvider);
+    final selectedList = ref.read(selectedListProvider);
+    final accountKey = ref.read(currentAccountKeyProvider);
+    if (selectedHashtag != null) {
+      ref
+          .read(
+            hashtagTimelineProvider((
+              account: accountKey,
+              spec: selectedHashtag,
+            )).notifier,
+          )
+          .loadMore();
+    } else if (selectedList != null) {
+      ref
+          .read(
+            listTimelineProvider((
+              account: accountKey,
+              id: selectedList.id,
+            )).notifier,
+          )
+          .loadMore();
+    } else {
+      ref
+          .read(timelineProvider(ref.read(currentTimelineKeyProvider)).notifier)
+          .loadMore();
+    }
+  }
+
   void _onPositionsChanged() {
     // Throttle to avoid excessive processing.
     if (_throttleTimer?.isActive ?? false) return;
@@ -320,33 +353,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       final maxIndex = positions
           .map((p) => p.index)
           .reduce((a, b) => a > b ? a : b);
-      if (maxIndex >= timeline.posts.length - 8) {
-        if (selectedHashtag != null) {
-          ref
-              .read(
-                hashtagTimelineProvider((
-                  account: accountKey,
-                  spec: selectedHashtag,
-                )).notifier,
-              )
-              .loadMore();
-        } else if (selectedList != null) {
-          ref
-              .read(
-                listTimelineProvider((
-                  account: accountKey,
-                  id: selectedList.id,
-                )).notifier,
-              )
-              .loadMore();
-        } else {
-          ref
-              .read(
-                timelineProvider(ref.read(currentTimelineKeyProvider)).notifier,
-              )
-              .loadMore();
-        }
-      }
+      if (maxIndex >= timeline.posts.length - 8) _loadMoreSelected();
     }
 
     // Show/hide scroll-to-top button.
@@ -684,7 +691,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('フィルタで多くの投稿が除外されています。条件を見直すと表示されるかもしれません'),
+              content: Text('絞り込みで多くの投稿が除外されています。条件を見直すと表示されるかもしれません'),
               duration: Duration(seconds: 5),
             ),
           );
@@ -940,12 +947,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onHorizontalDragEnd: _onSwipe,
-      child: _buildTabContent(
+      // タイムライン系のタブはフィルターの適用先で包む (#1289)。
+      child: FilterScope.wrapTab(
         currentTab,
-        selectedList,
-        selectedType,
-        selectedHashtag,
-        timeline,
+        _buildTabContent(
+          currentTab,
+          selectedList,
+          selectedType,
+          selectedHashtag,
+          timeline,
+        ),
       ),
     );
   }
@@ -1115,31 +1126,62 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                       }
                     }
                   },
-                  child: ScrollablePositionedList.separated(
-                    itemScrollController: _itemScrollController,
-                    itemPositionsListener: _itemPositionsListener,
-                    itemCount: _noteListItemCount(
-                      tlState.posts.length + (tlState.isLoadingMore ? 1 : 0),
-                    ),
-                    separatorBuilder: (_, _) => const Divider(height: 1),
-                    itemBuilder: (context, index) {
-                      if (index >= tlState.posts.length) {
-                        return const Padding(
-                          padding: EdgeInsets.all(16),
-                          child: Center(child: CircularProgressIndicator()),
-                        );
-                      }
-                      final post = tlState.posts[index];
-                      // 投稿 id をキーにして State を投稿に固定する (#909)。
-                      // 無いと streaming の先頭挿入で State が位置ごとズレて
-                      // 再利用され、削除中の行の状態が別の投稿へ移る。
-                      return PostTile(
-                        key: ValueKey(post.id),
-                        post: post,
-                        selected: keyboardSelectedIndex == index,
-                      );
-                    },
-                  ),
+                  // ⚠ TL が空のまま続きを持つときは、手で先を引ける入口を
+                  // 出す (#1283)。空の一覧はスクロールできないので、
+                  // [_onPositionsChanged] の続き読みが二度と呼ばれない。
+                  // ⚠ どの TL でも出してよい —— 続き読みは生のカーソル（消す
+                  // 前の末尾）で進むので、空の一覧からでも先へ進む (#1292)。
+                  child: tlState.posts.isEmpty && tlState.hasMore
+                      ? ListView(
+                          children: [
+                            const SizedBox(height: 120),
+                            Center(
+                              child: TimelineOlderPrompt(
+                                isLoading: tlState.isLoadingMore,
+                                onLoadOlder: _loadMoreSelected,
+                              ),
+                            ),
+                          ],
+                        )
+                      : ScrollablePositionedList.separated(
+                          itemScrollController: _itemScrollController,
+                          itemPositionsListener: _itemPositionsListener,
+                          itemCount: _noteListItemCount(
+                            tlState.posts.length +
+                                (tlState.isLoadingMore || olderStalled(tlState)
+                                    ? 1
+                                    : 0),
+                          ),
+                          separatorBuilder: (_, _) => const Divider(height: 1),
+                          itemBuilder: (context, index) {
+                            if (index >= tlState.posts.length) {
+                              // 上限まで引いても見える投稿が出なかったときは、
+                              // 手で先を引ける入口を出す (#1292)。何も足されない
+                              // と一覧の長さが変わらず、続き読みの合図が来ない。
+                              if (!tlState.isLoadingMore) {
+                                return TimelineOlderPrompt(
+                                  isLoading: false,
+                                  onLoadOlder: _loadMoreSelected,
+                                );
+                              }
+                              return const Padding(
+                                padding: EdgeInsets.all(16),
+                                child: Center(
+                                  child: CircularProgressIndicator(),
+                                ),
+                              );
+                            }
+                            final post = tlState.posts[index];
+                            // 投稿 id をキーにして State を投稿に固定する (#909)。
+                            // 無いと streaming の先頭挿入で State が位置ごとズレて
+                            // 再利用され、削除中の行の状態が別の投稿へ移る。
+                            return PostTile(
+                              key: ValueKey(post.id),
+                              post: post,
+                              selected: keyboardSelectedIndex == index,
+                            );
+                          },
+                        ),
                 );
               },
               loading: () {

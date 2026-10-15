@@ -31,11 +31,13 @@ import '../util/deck_tabs.dart';
 import '../util/scroll_thresholds.dart';
 import '../util/stream_connection_display.dart';
 import 'emoji_text.dart';
+import 'filter_scope.dart';
 import 'home_menu.dart' show tabLabel;
 import 'notification_filter_button.dart';
 import 'post_tile.dart';
 import 'retry_error_view.dart';
 import 'scroll_jump_buttons.dart';
+import 'timeline_older_prompt.dart';
 import 'user_avatar.dart';
 
 /// デッキのカラム 1 本 (#1092)。ヘッダーと中身。
@@ -59,7 +61,8 @@ class DeckColumnView extends ConsumerWidget {
         children: [
           _DeckColumnHeader(column: column),
           const Divider(height: 1),
-          Expanded(child: _body(ref)),
+          // タイムライン系のカラムはフィルターの適用先で包む (#1289)。
+          Expanded(child: FilterScope.wrapTab(column.tab, _body(ref))),
         ],
       ),
     );
@@ -707,17 +710,37 @@ class _DeckTimelineBodyState extends ConsumerState<_DeckTimelineBody> {
         final list = state.posts.isEmpty
             ? ListView(
                 controller: _scrollController,
-                children: const [
-                  SizedBox(height: 120),
-                  Center(child: Text('投稿がありません')),
+                children: [
+                  const SizedBox(height: 120),
+                  // 空のまま続きがあるときは、手で先を引く入口を出す (#1283)。
+                  // どの TL も続き読みは消す前の末尾から進む (#1292)。
+                  if (state.hasMore)
+                    Center(
+                      child: TimelineOlderPrompt(
+                        isLoading: state.isLoadingMore,
+                        onLoadOlder: () => widget.loadMore(ref),
+                      ),
+                    )
+                  else
+                    const Center(child: Text('投稿がありません')),
                 ],
               )
             : ListView.separated(
                 controller: _scrollController,
-                itemCount: state.posts.length + (state.isLoadingMore ? 1 : 0),
+                itemCount:
+                    state.posts.length +
+                    (state.isLoadingMore || olderStalled(state) ? 1 : 0),
                 separatorBuilder: (_, _) => const Divider(height: 1),
                 itemBuilder: (context, index) {
                   if (index >= state.posts.length) {
+                    // 上限まで引いても見える投稿が出なかったときは、手で先を
+                    // 引ける入口を出す (#1292)。
+                    if (!state.isLoadingMore) {
+                      return TimelineOlderPrompt(
+                        isLoading: false,
+                        onLoadOlder: () => widget.loadMore(ref),
+                      );
+                    }
                     return const Padding(
                       padding: EdgeInsets.all(16),
                       child: Center(child: CircularProgressIndicator()),

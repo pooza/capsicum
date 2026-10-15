@@ -26,8 +26,13 @@ class ListTimelineNotifier
     extends AutoDisposeFamilyAsyncNotifier<TimelineState, ListTimelineKey>
     with
         TimelineListMutations<ListTimelineKey>,
-        TimelineLiveIngest<ListTimelineKey> {
+        TimelineLiveIngest<ListTimelineKey>,
+        OlderCursorPaging<ListTimelineKey> {
   static const _pageSize = 20;
+
+  /// リストは `home`（Mastodon Web と同じ・#1289）。
+  @override
+  FilterContext get filterContext => FilterContext.home;
 
   @override
   String get liveStreamKey =>
@@ -66,6 +71,8 @@ class ListTimelineNotifier
   Future<TimelineState> build(ListTimelineKey key) async {
     // 前のリスト / アカウントの新着を、このカラムへ漏らさない (#1098)。
     final liveGeneration = resetLiveIngestState();
+    // 前の一覧の続き読みの起点を捨て、古い続き読みに書かせない (#1292)。
+    final onRawCursor = resetOlderCursor();
     // 🔴 `Account` 全体ではなく、解決したアダプタだけを見る（本線の
     // `TimelineNotifier.build` と同じ理由。全体を見ると、復帰のたびに読み直す）。
     final adapter = watchAdapterForTimelineKey(ref, key.account);
@@ -83,12 +90,15 @@ class ListTimelineNotifier
 
     final hideLivecure = ref.watch(hideLivecureProvider);
     final result = await fetchUntilVisible(
+      filterContext: filterContext,
       pageSize: _pageSize,
       hideLivecure: hideLivecure,
       fetch: (maxId) => (adapter as ListSupport).getListTimeline(
         key.id,
         query: TimelineQuery(maxId: maxId, limit: _pageSize),
       ),
+      // ⚠ 最初の読み込みで進めたぶんを、続き読みへ渡す (#1292)。
+      onRawCursor: onRawCursor,
     );
     seedLiveIngestAnchor(result.posts);
     if (adapter is StreamSupport) {
@@ -103,60 +113,22 @@ class ListTimelineNotifier
     );
   }
 
+  /// 続きを読む。起点・空振りの続け方・世代のガードは [OlderCursorPaging]
+  /// (#1292)。
   Future<void> loadMore() async {
-    final current = state.valueOrNull;
-    if (current == null || current.isLoadingMore || !current.hasMore) return;
-
-    state = AsyncData(current.copyWith(isLoadingMore: true));
-
-    for (var attempt = 0; attempt <= loadMoreMaxRetries; attempt++) {
-      try {
-        final adapter = adapterForTimelineKey(
-          ref.read(currentAccountProvider),
-          arg.account,
-        );
-        if (adapter == null || adapter is! ListSupport) {
-          state = AsyncData(current.copyWith(isLoadingMore: false));
-          return;
-        }
-
-        final base = state.valueOrNull ?? current;
-        final lastId = base.posts.last.id;
-        final hideLivecure = ref.read(hideLivecureProvider);
-        final raw = await (adapter as ListSupport).getListTimeline(
-          arg.id,
-          query: TimelineQuery(maxId: lastId, limit: _pageSize),
-        );
-        final older = hideLivecure
-            ? raw.where((p) => !hasLivecureTag(p)).toList()
-            : raw;
-
-        // 既にリストにある投稿は落とす (#909)。各行は id をキーにしているので、
-        // ページ境界の重複をそのまま足すと Duplicate keys で描画ごと落ちる。
-        final knownIds = {for (final p in base.posts) p.id};
-        final appended = older.where((p) => knownIds.add(p.id)).toList();
-        state = AsyncData(
-          base.copyWith(
-            posts: [...base.posts, ...appended],
-            isLoadingMore: false,
-            hasMore: raw.length >= _pageSize,
-            loadMoreError: null,
-          ),
-        );
-        return;
-      } catch (e) {
-        if (attempt < loadMoreMaxRetries) {
-          await Future<void>.delayed(loadMoreRetryDelay);
-          continue;
-        }
-        state = AsyncData(
-          (state.valueOrNull ?? current).copyWith(
-            isLoadingMore: false,
-            loadMoreError: e,
-          ),
-        );
-      }
-    }
+    final adapter = adapterForTimelineKey(
+      ref.read(currentAccountProvider),
+      arg.account,
+    );
+    if (adapter == null || adapter is! ListSupport) return;
+    await loadOlderPages(
+      site: 'list.loadMore',
+      pageSize: _pageSize,
+      fetch: (maxId) => (adapter as ListSupport).getListTimeline(
+        arg.id,
+        query: TimelineQuery(maxId: maxId, limit: _pageSize),
+      ),
+    );
   }
 }
 

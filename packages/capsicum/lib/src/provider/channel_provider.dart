@@ -15,8 +15,14 @@ class ChannelTimelineNotifier
     extends AutoDisposeFamilyAsyncNotifier<TimelineState, ChannelTimelineKey>
     with
         TimelineListMutations<ChannelTimelineKey>,
-        TimelineLiveIngest<ChannelTimelineKey> {
+        TimelineLiveIngest<ChannelTimelineKey>,
+        OlderCursorPaging<ChannelTimelineKey> {
   static const _pageSize = 20;
+
+  /// チャンネルは Misskey だけで、ワードミュートは全画面なので何でもよい。
+  /// 公開の流れとして `public` にしておく (#1289)。
+  @override
+  FilterContext get filterContext => FilterContext.public;
 
   @override
   String get liveStreamKey =>
@@ -55,6 +61,8 @@ class ChannelTimelineNotifier
   Future<TimelineState> build(ChannelTimelineKey key) async {
     // 前のチャンネル / アカウントの新着を、このカラムへ漏らさない (#1098)。
     final liveGeneration = resetLiveIngestState();
+    // 前の一覧の続き読みの起点を捨て、古い続き読みに書かせない (#1292)。
+    final onRawCursor = resetOlderCursor();
     // 🔴 `Account` 全体ではなく、解決したアダプタだけを見る（本線の
     // `TimelineNotifier.build` と同じ理由。全体を見ると、復帰のたびに読み直す）。
     final adapter = watchAdapterForTimelineKey(ref, key.account);
@@ -74,12 +82,15 @@ class ChannelTimelineNotifier
 
     final hideLivecure = ref.watch(hideLivecureProvider);
     final result = await fetchUntilVisible(
+      filterContext: filterContext,
       pageSize: _pageSize,
       hideLivecure: hideLivecure,
       fetch: (maxId) => (adapter as ChannelSupport).getChannelTimeline(
         key.id,
         query: TimelineQuery(maxId: maxId, limit: _pageSize),
       ),
+      // ⚠ 最初の読み込みで進めたぶんを、続き読みへ渡す (#1292)。
+      onRawCursor: onRawCursor,
     );
     seedLiveIngestAnchor(result.posts);
     if (adapter is StreamSupport) {
@@ -94,62 +105,22 @@ class ChannelTimelineNotifier
     );
   }
 
+  /// 続きを読む。起点・空振りの続け方・世代のガードは [OlderCursorPaging]
+  /// (#1292)。
   Future<void> loadMore() async {
-    final current = state.valueOrNull;
-    if (current == null || current.isLoadingMore || !current.hasMore) return;
-
-    state = AsyncData(current.copyWith(isLoadingMore: true));
-
-    for (var attempt = 0; attempt <= loadMoreMaxRetries; attempt++) {
-      try {
-        final adapter = adapterForTimelineKey(
-          ref.read(currentAccountProvider),
-          arg.account,
-        );
-        if (adapter == null || adapter is! ChannelSupport) {
-          state = AsyncData(current.copyWith(isLoadingMore: false));
-          return;
-        }
-
-        final base = state.valueOrNull ?? current;
-        final lastId = base.posts.last.id;
-        final hideLivecure = ref.read(hideLivecureProvider);
-        final raw = await (adapter as ChannelSupport).getChannelTimeline(
-          arg.id,
-          query: TimelineQuery(maxId: lastId, limit: _pageSize),
-        );
-        final older = hideLivecure
-            ? raw.where((p) => !hasLivecureTag(p)).toList()
-            : raw;
-
-        // 既にリストにある投稿は落とす (#909)。各行は id をキーにしているので、
-        // ページ境界の重複をそのまま足すと Duplicate keys で描画ごと落ちる。
-        final knownIds = {for (final p in base.posts) p.id};
-        final appended = older.where((p) => knownIds.add(p.id)).toList();
-        state = AsyncData(
-          base.copyWith(
-            posts: [...base.posts, ...appended],
-            isLoadingMore: false,
-            hasMore: raw.length >= _pageSize,
-            loadMoreError: null,
-          ),
-        );
-        return;
-      } catch (e) {
-        if (attempt < loadMoreMaxRetries) {
-          await Future<void>.delayed(loadMoreRetryDelay);
-          continue;
-        }
-        // 最終失敗時は loadMoreError を立て、トリガー側の再試行抑止を効かせる
-        // (#678、TimelineState / list_provider と同型の番兵パターン)。
-        state = AsyncData(
-          (state.valueOrNull ?? current).copyWith(
-            isLoadingMore: false,
-            loadMoreError: e,
-          ),
-        );
-      }
-    }
+    final adapter = adapterForTimelineKey(
+      ref.read(currentAccountProvider),
+      arg.account,
+    );
+    if (adapter == null || adapter is! ChannelSupport) return;
+    await loadOlderPages(
+      site: 'channel.loadMore',
+      pageSize: _pageSize,
+      fetch: (maxId) => (adapter as ChannelSupport).getChannelTimeline(
+        arg.id,
+        query: TimelineQuery(maxId: maxId, limit: _pageSize),
+      ),
+    );
   }
 }
 

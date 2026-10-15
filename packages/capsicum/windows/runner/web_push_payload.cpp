@@ -324,6 +324,8 @@ const char kDeReaction[] =
 const char kFollowed[] =
     "\x20\xe3\x81\xab\xe3\x83\x95\xe3\x82\xa9\xe3\x83\xad\xe3\x83\xbc"
     "\xe3\x81\x95\xe3\x82\x8c\xe3\x81\xbe\xe3\x81\x97\xe3\x81\x9f";    // " にフォローされました"
+const char kContentWarning[] =
+    "\xe9\x96\xb2\xe8\xa6\xa7\xe6\xb3\xa8\xe6\x84\x8f";                // 閲覧注意
 
 std::string TrimAsciiWs(const std::string& s) {
   size_t start = 0;
@@ -382,6 +384,14 @@ std::string SynthesizeMisskeyBody(const JsonValue& body) {
   const JsonValue* note = body.Find("note");
   std::string note_text;
   if (note != nullptr && note->IsObject()) {
+    // CW 付きは見出しだけを出す (#1282)。畳まれているはずの本文をトーストに
+    // 出さない。`cw` は「無し」が null で、空文字は「見出しの無い CW」。
+    // Dart `_synthesizeMisskeyBody` と同じ仕様。
+    const JsonValue* cw = note->Find("cw");
+    if (cw != nullptr && cw->IsString()) {
+      std::string heading = TrimAsciiWs(cw->str);
+      return heading.empty() ? std::string(kContentWarning) : heading;
+    }
     note_text = StringOr(note->Find("text"));
   }
   if (!note_text.empty()) {

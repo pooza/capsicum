@@ -7,7 +7,10 @@ class MisskeyList {
   final String id;
   final String name;
 
-  const MisskeyList({required this.id, required this.name});
+  /// リストを公開しているか。
+  final bool? isPublic;
+
+  const MisskeyList({required this.id, required this.name, this.isPublic});
 
   factory MisskeyList.fromJson(Map<String, dynamic> json) =>
       _$MisskeyListFromJson(json);

@@ -15,6 +15,7 @@ import '../widget/bottom_safe_area.dart';
 import '../widget/notification_filter_button.dart';
 import '../widget/notification_tile.dart';
 import '../widget/retry_error_view.dart';
+import '../widget/timeline_older_prompt.dart';
 
 /// Standalone screen with AppBar.
 class NotificationScreen extends ConsumerWidget {
@@ -112,9 +113,12 @@ class _NotificationViewState extends ConsumerState<NotificationView>
           .map((p) => p.index)
           .reduce((a, b) => a < b ? a : b);
       if (minIndex < state.notifications.length) {
-        ref
-            .read(notificationMarkerSaverProvider)
-            .save(state.notifications[minIndex].id);
+        // ⚠ 先頭が見えているときは、絞り込みで伏せた分も含めた一番新しい通知
+        // まで既読にする（伏せた通知が未読のまま残る・#1291 のレビュー）。
+        final id = minIndex == 0
+            ? state.rawNewestId ?? state.notifications.first.id
+            : state.notifications[minIndex].id;
+        ref.read(notificationMarkerSaverProvider).save(id);
       }
     } else if (adapter is NotificationReadSupport &&
         state.notifications.isNotEmpty) {
@@ -156,6 +160,17 @@ class _NotificationViewState extends ConsumerState<NotificationView>
     }
   }
 
+  /// 伏せた通知だけのページが上限まで続き、まだ続きがある（PR #1285 の Codex P1）。
+  static bool _showOlderPrompt(NotificationState state) =>
+      state.pageCapHit && state.hasMore && !state.isLoadingMore;
+
+  Widget _olderPrompt(NotificationState state) => TimelineOlderPrompt(
+    isLoading: state.isLoadingMore,
+    onLoadOlder: () => ref.read(notificationProvider.notifier).loadMore(),
+    message: '絞り込みで多くの通知が除外されています',
+    actionLabel: 'さらに古い通知を探す',
+  );
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -180,7 +195,13 @@ class _NotificationViewState extends ConsumerState<NotificationView>
       child: notifications.when(
         data: (state) {
           if (state.notifications.isEmpty) {
-            return const Center(child: Text('通知はありません'));
+            // ⚠ 伏せた通知だけで空になっていて続きがあるときは、手で先を引ける
+            // 入口を出す（PR #1285 の Codex P1）。空の一覧はスクロールできない。
+            return Center(
+              child: state.hasMore
+                  ? _olderPrompt(state)
+                  : const Text('通知はありません'),
+            );
           }
           _restoreMarker(state.notifications);
           return RefreshIndicator(
@@ -192,10 +213,14 @@ class _NotificationViewState extends ConsumerState<NotificationView>
               itemScrollController: _itemScrollController,
               itemPositionsListener: _itemPositionsListener,
               itemCount:
-                  state.notifications.length + (state.isLoadingMore ? 1 : 0),
+                  state.notifications.length +
+                  (state.isLoadingMore || _showOlderPrompt(state) ? 1 : 0),
               separatorBuilder: (_, _) => const Divider(height: 1),
               itemBuilder: (context, index) {
                 if (index >= state.notifications.length) {
+                  // 伏せた通知だけのページが上限まで続いたときの入口。何も
+                  // 足されないと一覧の長さが変わらず、続き読みの合図が来ない。
+                  if (!state.isLoadingMore) return _olderPrompt(state);
                   return const Padding(
                     padding: EdgeInsets.all(16),
                     child: Center(child: CircularProgressIndicator()),

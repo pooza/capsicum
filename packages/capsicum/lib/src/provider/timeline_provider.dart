@@ -149,6 +149,18 @@ String? timelineContextKey(AccountKey? accountKey, TabType tab) =>
 ///
 /// 各種別のエンドポイント対応は Mastodon / Misskey アダプタの `getTimeline`
 /// 参照（local=public?local / local-timeline、federated=public / global）。
+/// タイムラインの種別 → フィルターの適用先 (#1289)。
+///
+/// Mastodon Web（`utils/filters.ts`）と同じ: ホームは `home`、それ以外の公開系と
+/// DM は `public`（Web の `direct` カラムも既定の `public` に落ちる）。
+FilterContext filterContextForTimeline(TimelineType type) => switch (type) {
+  TimelineType.home => FilterContext.home,
+  TimelineType.local ||
+  TimelineType.social ||
+  TimelineType.federated ||
+  TimelineType.directMessages => FilterContext.public,
+};
+
 bool ownPostAppearsInTimeline(TimelineType type, Post post) {
   switch (type) {
     case TimelineType.home:
@@ -168,13 +180,22 @@ bool ownPostAppearsInTimeline(TimelineType type, Post post) {
 /// までページ取得が連発しレートリミットに達しうるため上限で打ち切る。
 const int kMaxVisibilityPageFetches = 10;
 
+/// ハッシュタグ・リスト・チャンネルの続き読みで、絞った結果が空のページが
+/// 続いたときに、続けて先を引く上限（ページ数・#1292）。
+///
+/// ⚠ 上限に達しても起点（消す前の末尾）は進めてあるので、次の続き読みは先から
+/// 引く。末尾の「さらに古い投稿を探す」（`pageCapHit`）から手で続けられる。
+const int kMaxEmptyOlderPages = 5;
+
 /// ページ取得上限に達したことを Sentry breadcrumb に残す (#601 2 回目レビュー追従)。
 /// 「全件フィルタで空一覧になる」ユーザー報告を後から切り分けるための観測ライン。
-/// 同じ category を全 3 経路 (build / fetchUntilVisible / loadMore) で共有する。
+/// 同じ category を本線（build / fetchUntilVisible / loadMore）と、[OlderCursorPaging] の
+/// 続き読み（`hashtag.loadMore` / `list.loadMore` / `channel.loadMore`・#1292）で共有する。
 void _recordPageCapHit({
   required String site,
   required int visibleCollected,
   required bool hasMore,
+  int cap = kMaxVisibilityPageFetches,
 }) {
   Sentry.addBreadcrumb(
     Breadcrumb(
@@ -183,7 +204,7 @@ void _recordPageCapHit({
       level: SentryLevel.info,
       data: {
         'site': site,
-        'cap': kMaxVisibilityPageFetches,
+        'cap': cap,
         'visibleCollected': visibleCollected,
         'hasMore': hasMore,
       },
@@ -488,11 +509,22 @@ bool hasLivecureTag(Post post) {
 /// [keep] は、この TL だけが端末側で掛ける絞り込み (#1209・タグ TL の除外)。
 /// ⚠ **[fetch] の中で絞らない。**続きがあるかは絞る前の件数で見るので、中で
 /// 絞ると、除外で薄くなったページを「最後のページ」と読んで打ち切る。
+///
+/// [onRawCursor] は、**絞る前の**末尾の id を受け取る (#1283)。続き読みを
+/// 生のカーソルで進める TL が、最初の読み込みで進んだぶんを引き継ぐためのもの。
+/// ⚠ これが無いと、上限まで引いて 1 件も残らなかった回に進めたカーソルが
+/// 捨てられ、続き読みが先頭から引き直す（＝その先へ永久に進めない）。
+///
+/// [filterContext] はこの TL のフィルターの適用先 (#1289)。hide はこれに当たる
+/// ものだけ落とす。⚠ 必須にしてある —— 以前はリスト・ハッシュタグ・チャンネルの
+/// 初回取得で hide を落としていなかった（ライブ取り込みだけが落としていた）。
 Future<TimelineState> fetchUntilVisible({
   required int pageSize,
   required bool hideLivecure,
+  required FilterContext filterContext,
   required Future<List<Post>> Function(String? maxId) fetch,
   bool Function(Post post)? keep,
+  void Function(String? rawLastId)? onRawCursor,
 }) async {
   final allVisible = <Post>[];
   String? maxId;
@@ -509,7 +541,11 @@ Future<TimelineState> fetchUntilVisible({
     maxId = posts.last.id;
     hasMore = posts.length >= pageSize;
 
-    final kept = keep == null ? posts : posts.where(keep).toList();
+    final kept = [
+      for (final post in posts)
+        if ((keep == null || keep(post)) && !post.isHiddenIn(filterContext))
+          post,
+    ];
     final visible = hideLivecure
         ? kept.where((p) => !hasLivecureTag(p)).toList()
         : kept;
@@ -528,6 +564,7 @@ Future<TimelineState> fetchUntilVisible({
     );
   }
 
+  onRawCursor?.call(maxId);
   return TimelineState(
     posts: allVisible,
     hasMore: hasMore,
@@ -635,10 +672,141 @@ mixin TimelineListMutations<Arg>
 /// [_pendingPosts] / [_dropPending] は削除・ブロック (#887) と楽観挿入 (#717 /
 /// #814) からも触られており、別ライブラリへ出すとこの 2 箇所が public な口を
 /// 通ることになって、**移動のはずの変更が API の変更に化ける**。
+/// ハッシュタグ・リスト・チャンネルの続き読み (#1292・リリース前レビュー)。
+///
+/// 3 つの続き読みは同じ形（消す前の末尾を起点に、空振りしたら上限まで続けて
+/// 引く）で、別々に持つとまたずれるので、ここに寄せた。
+///
+/// - **起点は「消す前の末尾」**（[_olderCursor]）。⚠ 表示中の最後の投稿を起点に
+///   すると、引いたページが丸ごと消えたときに先へ進めない
+/// - ⚠ **起点は 1 ページ引くたびに進める。**再試行が 1 枚目から引き直さない
+/// - ⚠⚠ **build() がやり直されたら、古い続き読みは何も書かない**（世代
+///   [_olderGeneration]）。書くと、新しい一覧の起点を古い一覧の末尾で上書きし、
+///   次の続き読みで間の投稿が抜ける
+/// - 上限まで引いても見える投稿が出なかったら `pageCapHit` を立て、Sentry に
+///   残す（末尾の「さらに古い投稿を探す」の合図）
+mixin OlderCursorPaging<Arg>
+    on
+        AutoDisposeFamilyAsyncNotifier<TimelineState, Arg>,
+        TimelineListMutations<Arg>,
+        TimelineLiveIngest<Arg> {
+  String? _olderCursor;
+  int _olderGeneration = 0;
+
+  /// build() の先頭で呼ぶ。起点を捨てて世代を進め、最初の読み込みが進めた
+  /// 起点を受け取る関数を返す（`fetchUntilVisible` の `onRawCursor` に渡す）。
+  /// ⚠ 古い build() が後から終わっても、その関数は何も書かない。
+  void Function(String? rawLastId) resetOlderCursor() {
+    final generation = ++_olderGeneration;
+    _olderCursor = null;
+    return (rawLastId) {
+      if (generation == _olderGeneration) _olderCursor = rawLastId;
+    };
+  }
+
+  /// 続きを読む。[fetch] は [maxId] より古い側の 1 ページを返す。[keep] は
+  /// この TL だけが端末側で掛ける絞り込み（タグ TL の「含まない」・#1209）。
+  Future<void> loadOlderPages({
+    required String site,
+    required int pageSize,
+    required Future<List<Post>> Function(String? maxId) fetch,
+    bool Function(Post post)? keep,
+  }) async {
+    final current = state.valueOrNull;
+    if (current == null || current.isLoadingMore || !current.hasMore) return;
+    final generation = _olderGeneration;
+    state = AsyncData(current.copyWith(isLoadingMore: true));
+
+    for (var attempt = 0; attempt <= loadMoreMaxRetries; attempt++) {
+      try {
+        final hideLivecure = ref.read(hideLivecureProvider);
+        var cursor =
+            _olderCursor ?? (state.valueOrNull ?? current).posts.lastOrNull?.id;
+        final older = <Post>[];
+        var hasMore = true;
+        // ⚠ 絞った結果が空のページは、上限まで続けて先を引く。
+        for (var page = 0; page < kMaxEmptyOlderPages; page++) {
+          final raw = await fetch(cursor);
+          if (generation != _olderGeneration) return;
+          if (raw.isNotEmpty) {
+            cursor = raw.last.id;
+            _olderCursor = cursor;
+          }
+          older.addAll(
+            raw.where(
+              (p) =>
+                  (keep == null || keep(p)) &&
+                  !p.isHiddenIn(filterContext) &&
+                  (!hideLivecure || !hasLivecureTag(p)),
+            ),
+          );
+          hasMore = raw.length >= pageSize;
+          if (older.isNotEmpty || !hasMore) break;
+        }
+
+        final pageCapHit = older.isEmpty && hasMore;
+        if (pageCapHit) {
+          _recordPageCapHit(
+            site: site,
+            visibleCollected: 0,
+            hasMore: true,
+            cap: kMaxEmptyOlderPages,
+          );
+        }
+
+        // 既にリストにある投稿は落とす (#909)。各行は id をキーにしているので、
+        // ページ境界の重複をそのまま足すと Duplicate keys で描画ごと落ちる。
+        final base = state.valueOrNull ?? current;
+        final knownIds = {for (final p in base.posts) p.id};
+        final appended = older.where((p) => knownIds.add(p.id)).toList();
+        state = AsyncData(
+          base.copyWith(
+            posts: [...base.posts, ...appended],
+            isLoadingMore: false,
+            hasMore: hasMore,
+            loadMoreError: null,
+            pageCapHit: pageCapHit,
+          ),
+        );
+        return;
+      } catch (e, st) {
+        if (generation != _olderGeneration) return;
+        if (attempt < loadMoreMaxRetries) {
+          await Future<void>.delayed(loadMoreRetryDelay);
+          continue;
+        }
+        // 最終失敗時は loadMoreError を立て、トリガー側の再試行抑止を効かせる
+        // (#678)。本線（TimelineNotifier.loadMore）と同じく Sentry にも残す。
+        try {
+          Sentry.captureException(
+            scrubException(e),
+            stackTrace: st,
+            hint: Hint.withMap({'site': site, 'attempts': '${attempt + 1}'}),
+          );
+        } catch (_) {
+          // Sentry の失敗で state の回復を止めない。
+        }
+        state = AsyncData(
+          (state.valueOrNull ?? current).copyWith(
+            isLoadingMore: false,
+            loadMoreError: e,
+          ),
+        );
+      }
+    }
+  }
+}
+
 mixin TimelineLiveIngest<Arg>
     on
         AutoDisposeFamilyAsyncNotifier<TimelineState, Arg>,
         TimelineListMutations<Arg> {
+  /// この一覧のフィルターの適用先 (#1289)。hide はこの適用先のものだけ落とす。
+  ///
+  /// ⚠⚠ **以前は適用先を見ずに落としていた**ので、「通知だけ」のフィルターが
+  /// ホームでも効いていた。対応表は `docs/filter-management-plan.md` 決定済み事項 2。
+  FilterContext get filterContext;
+
   /// スクロール中に届いた未表示の新着 (#296)。「新着 N 件」を開くまで一覧へは
   /// 出さない。⚠ **本線以外からも触られる**: 削除 / ブロック (#887) は
   /// [_dropPending] で刈り、楽観挿入 (#717 / #814) は重複判定にここを見る。
@@ -784,7 +952,7 @@ mixin TimelineLiveIngest<Arg>
     final accepted = <Post>[];
     final acceptedIds = <String>{};
     for (final post in newPosts) {
-      if (post.filterAction == FilterAction.hide) continue;
+      if (post.isHiddenIn(filterContext)) continue;
       if (hideLivecure && hasLivecureTag(post)) continue;
       if (!acceptsLivePost(post)) continue;
       if (existingIds.contains(post.id) || pendingIds.contains(post.id)) {
@@ -1210,9 +1378,21 @@ class TimelineNotifier
     with TimelineListMutations<TimelineKey>, TimelineLiveIngest<TimelineKey> {
   static const _pageSize = 20;
 
+  @override
+  FilterContext get filterContext => filterContextForTimeline(arg.type);
+
   /// ホーム TL の初回描画を 1 プロセス 1 回だけ計測するためのフラグ (#716)。
   /// AutoDispose で Notifier は作り直されるため static に持つ。
   static bool _homeFirstPaintReported = false;
+
+  /// 続き読みの、**消す前の**末尾の id（次に引く起点・#1292）。
+  ///
+  /// ⚠⚠ **表示中の最後の投稿を起点にしない。**実況フィルタやフィルターの
+  /// 「完全に隠す」で引いたページが丸ごと落ちると、表示中の最後は動かないので、
+  /// 同じページを引き直し続けて先へ進めなくなる（放送中のホームで、
+  /// [kMaxVisibilityPageFetches] ページぶん実況が続いて実際に止まった）。
+  /// ハッシュタグ TL の `_olderCursor` と同じ形。null なら表示中の最後から引く。
+  String? _olderCursor;
 
   /// provider が破棄済みか (#890)。キャッシュ先出しの裏で走る初回取得が、
   /// 破棄後に state を触らないようにするための番兵。build() のたびに false へ
@@ -1321,6 +1501,8 @@ class TimelineNotifier
     // leak into the new one via flushPending().
     resetLiveIngestState();
     _disposed = false;
+    // 前の文脈の続き読みの起点を持ち越さない (#1292)。
+    _olderCursor = null;
     // 前の文脈の窓の記録を持ち越さない (#921)。
     _resetSnapshotWindow(awaiting: false);
     _backgroundInitialLoad = null;
@@ -1344,7 +1526,10 @@ class TimelineNotifier
     // ⚠ プロフィールの差し替えではアダプタは同じインスタンスのまま
     // （`copyWithUser`）なので、ここは動かない。上のコメントの意図どおりになる。
     final adapter = watchAdapterForTimelineKey(ref, key.account);
-    if (adapter == null) return TimelineState(contextKey: contextKey);
+    // ⚠ 続きは無い。true のままだと空表示に「さらに古い投稿を探す」が出る。
+    if (adapter == null) {
+      return TimelineState(hasMore: false, contextKey: contextKey);
+    }
 
     // #716 計測: ホーム TL の初回描画を fetch (サーバー応答) / enrich (isCat) /
     // since-launch に分けて測る。fetch はサーバー負荷依存・enrich は item3 の
@@ -1458,7 +1643,7 @@ class TimelineNotifier
       // 単にキャッシュを書かない。
       for (var i = 0; i < response.posts.length; i++) {
         final post = response.posts[i];
-        if (post.filterAction == FilterAction.hide) continue;
+        if (post.isHiddenIn(filterContext)) continue;
         if (hideLivecure && _hasLivecureTag(post)) continue;
         allVisible.add(post);
         if (i < response.rawJson.length) allRaw.add(response.rawJson[i]);
@@ -1487,6 +1672,10 @@ class TimelineNotifier
         streamConnectionState: _streamConnectionState,
       );
     }
+
+    // 続き読みは、消す前の末尾から続ける (#1292)。⚠ 古い世代の結果で書かない
+    // （直前の `_isStale` で落としてある）。
+    _olderCursor = maxId;
 
     // Start streaming if supported and enabled. ユーザーがライブ更新を OFF に
     // している場合 (#854) は WebSocket を張らず、インジケータを disabled にする。
@@ -1742,7 +1931,7 @@ class TimelineNotifier
           .decodeCachedPosts(raw)
           // 保存時と設定が変わっていることがあるので、フィルタは読み出し側でも
           // かけ直す（直後に届く REST の結果でどのみち正される）。
-          .where((p) => p.filterAction != FilterAction.hide)
+          .where((p) => !p.isHiddenIn(filterContext))
           .where((p) => !hideLivecure || !_hasLivecureTag(p))
           .toList();
     } catch (e) {
@@ -1976,7 +2165,7 @@ class TimelineNotifier
     if (current == null) return;
     // 表示中の TL 種別にこの投稿が実際に載るか（種別 × 公開範囲）で弾く (#814)。
     if (!ownPostAppearsInTimeline(arg.type, post)) return;
-    if (post.filterAction == FilterAction.hide) return;
+    if (post.isHiddenIn(filterContext)) return;
     final hideLivecure = ref.read(hideLivecureProvider);
     if (hideLivecure && _hasLivecureTag(post)) return;
     // 既に載っているなら何もしない。「削除してタグづけ」は Misskey では
@@ -2043,6 +2232,8 @@ class TimelineNotifier
     }
 
     state = AsyncData(current.copyWith(isLoadingMore: true));
+    // 続き読みの起点を進めてよいかを見るための世代 (#1292)。
+    final generation = _buildGeneration;
 
     // 起動キャッシュの先出し中（窓が開いている間）は、cached-last を起点に古い
     // ページを取ると fresh の全置換で捨てられる／ギャップが残る (#942)。権威ページ
@@ -2054,6 +2245,10 @@ class TimelineNotifier
       if (pending != null) {
         // [_loadInitialInBackground] は内部で捕捉するので、この await は投げない。
         await pending;
+        // ⚠⚠ 待っている間に build() がやり直されていたら、ここで降りる（2 回目の
+        // レビュー）。下で印を立て直すと新しい一覧に立ち、取得のあとの世代
+        // ガードで降りるので、下ろす者がいなくなる（以後の続き読みが全部弾かれる）。
+        if (generation != _buildGeneration) return;
         // 裏の取得が失敗して AsyncError になったら、続きを積む土台が無い。
         // エラー画面の再試行導線に任せて降りる（isLoadingMore は AsyncError に
         // 引き継がれない）。
@@ -2082,7 +2277,8 @@ class TimelineNotifier
         // Re-read state to get the latest posts (streaming may have added
         // new ones while we were waiting for a retry delay).
         final base = state.valueOrNull ?? current;
-        String? maxId = base.posts.lastOrNull?.id;
+        // ⚠⚠ 起点は消す前の末尾 (#1292・[_olderCursor])。
+        String? maxId = _olderCursor ?? base.posts.lastOrNull?.id;
         final allVisible = <Post>[];
         bool hasMore = true;
         // build() / fetchUntilVisible と同じ #601 ガード。全件 livecure な
@@ -2120,7 +2316,7 @@ class TimelineNotifier
 
           final hideLivecure = ref.read(hideLivecureProvider);
           final visibleOlder = response.posts
-              .where((p) => p.filterAction != FilterAction.hide)
+              .where((p) => !p.isHiddenIn(filterContext))
               .where((p) => !hideLivecure || !_hasLivecureTag(p))
               .toList();
           allVisible.addAll(visibleOlder);
@@ -2141,7 +2337,16 @@ class TimelineNotifier
           );
         }
 
+        // 次の続き読みは、ここまで引いた消す前の末尾から (#1292)。⚠ 待っている
+        // 間に build() がやり直された（引っ張って更新・文脈の切替）なら書かない
+        // —— 新しい一覧の起点を、古い一覧の末尾で上書きしてしまう。
+        if (generation == _buildGeneration) _olderCursor = maxId;
+
         final enrichedMore = await _isCatEnricher.enrichPosts(allVisible);
+        // ⚠⚠ 待っている間に build() がやり直されたら、古い一覧のページを新しい
+        // 一覧へ足さない（[OlderCursorPaging] と同じ・#1292 のリリース前レビュー）。
+        // isLoadingMore は build() の新しい state で落ちている。
+        if (generation != _buildGeneration) return;
         // Re-read state to preserve posts added by streaming during await.
         final latest = state.valueOrNull ?? current;
         // 既にリストにある投稿は落とす (#909)。ページ境界の max_id が両端を含む
@@ -2161,6 +2366,9 @@ class TimelineNotifier
         );
         return; // Success — exit retry loop.
       } catch (e, st) {
+        // ⚠ 読み直された一覧に、古い続き読みの失敗を書かない（[OlderCursorPaging]
+        // と同じ・2 回目のレビュー）。
+        if (generation != _buildGeneration) return;
         if (attempt < loadMoreMaxRetries) {
           // Wait before retrying; keep isLoadingMore true so the spinner
           // stays visible and duplicate calls are blocked.
@@ -2169,7 +2377,8 @@ class TimelineNotifier
         }
         // Final attempt failed — report and surface the error.
         try {
-          final failedMaxId = current.posts.lastOrNull?.id;
+          // 実際に引いた起点（消す前の末尾）を載せる (#1292)。
+          final failedMaxId = _olderCursor ?? current.posts.lastOrNull?.id;
           Sentry.captureException(
             scrubException(e),
             stackTrace: st,

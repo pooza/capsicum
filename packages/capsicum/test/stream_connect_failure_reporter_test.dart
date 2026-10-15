@@ -212,6 +212,70 @@ void main() {
     });
   });
 
+  // #1283: 送らない時間をホストごとにした (#1267) 結果、長い圏外では再接続の
+  // 時機がホストごとにずれ、ホストの数だけ「続き」が出ていた。
+  test('⚠⚠ 長い圏外の間、送る数がホストの数に比例しない（「回線側」は全体で間引く）', () {
+    fakeAsync((async) {
+      final (reporter, sent) = make(async);
+
+      for (final host in ['a', 'b', 'c']) {
+        fail(reporter, host);
+      }
+      async.elapse(const Duration(seconds: 6));
+      expect(sent, hasLength(1));
+
+      // 60 秒が過ぎ、再接続がホストごとにずれて失敗する（15 秒おき）。
+      async.elapse(const Duration(seconds: 60));
+      fail(reporter, 'a');
+      async.elapse(const Duration(seconds: 15));
+      fail(reporter, 'b');
+      async.elapse(const Duration(seconds: 15));
+      fail(reporter, 'c');
+      async.elapse(const Duration(seconds: 6));
+
+      expect(sent, hasLength(2), reason: '以前は a・b・c の 3 件が別々に出て、計 4 件になった');
+      expect(sent.last.hosts, {'a'});
+      expect(sent.last.looksLikeNetworkDown, isTrue);
+    });
+  });
+
+  test('⚠ 全体の間引きは、時間が過ぎれば解ける（圏外が続けば、また 1 件送る）', () {
+    fakeAsync((async) {
+      final (reporter, sent) = make(async);
+
+      fail(reporter, 'a');
+      fail(reporter, 'b');
+      async.elapse(const Duration(seconds: 6));
+      async.elapse(const Duration(seconds: 61));
+      fail(reporter, 'b');
+      async.elapse(const Duration(seconds: 6));
+
+      expect(sent, hasLength(2));
+      expect(sent.last.looksLikeNetworkDown, isTrue);
+    });
+  });
+
+  test('⚠⚠ 接続が成立したら、全体の間引きも終わる（回線が戻ったあとの障害を黙らせない）', () {
+    fakeAsync((async) {
+      final (reporter, sent) = make(async);
+
+      fail(reporter, 'a');
+      fail(reporter, 'b');
+      async.elapse(const Duration(seconds: 6));
+      expect(sent.single.looksLikeNetworkDown, isTrue);
+
+      // 回線が戻った直後に、まとめに入っていなかった C だけが落ちる。
+      reporter.noteConnected();
+      async.elapse(const Duration(seconds: 10));
+      fail(reporter, 'c');
+      async.elapse(const Duration(seconds: 6));
+
+      expect(sent, hasLength(2), reason: '「回線側」の 60 秒の中でも、C の障害は送る');
+      expect(sent.last.hosts, {'c'});
+      expect(sent.last.looksLikeNetworkDown, isFalse);
+    });
+  });
+
   test('⚠ 間が空けば、続きとは読まない（サーバー側の合図を消さない）', () {
     fakeAsync((async) {
       final (reporter, sent) = make(async);

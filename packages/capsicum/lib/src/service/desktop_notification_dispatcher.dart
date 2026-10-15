@@ -17,6 +17,7 @@ import '../ui/util/moderation_notification_text.dart';
 import '../ui/util/notification_type_display.dart';
 import '../ui/widget/content_parser.dart';
 import '../util/exception_scrub.dart';
+import '../util/notification_filter.dart';
 import '../util/sentry_tag_hash.dart';
 import 'bounded_key_set.dart';
 import 'delivered_push_cleaner.dart';
@@ -193,6 +194,27 @@ class DesktopNotificationDispatcher {
   static const _eventConnected = 'connected';
   static const _eventDisconnected = 'disconnected';
 
+  /// 拾い直しの取得に失敗したとき、取り直すまでの待ち (#1283)。
+  @visibleForTesting
+  Duration catchUpRetryDelay = const Duration(seconds: 5);
+
+  /// 拾い直せなかった窓の起点を戻す (#1283)。
+  ///
+  /// ⚠ **つながっている間も起点を持つことになる**（[_disconnectedAt] の「つながって
+  /// いる間は持たない」の例外）。次に切れたときは `putIfAbsent` がこの古い起点を
+  /// 残すので、次のつなぎ直しで両方の窓をまとめて拾える。
+  /// ⚠ 待っている間にまた切れて新しい起点が入っていたら、古いほうへ寄せる。
+  /// ⚠ 窓が古くなりすぎても、出す側（[selectMissedNotifications]）が直近
+  /// [kMissedNotificationWindow] より前を落とす。
+  void _restoreCatchUpBaseline(AccountKey key, DateTime since) {
+    if (!_subs.containsKey(key)) return;
+    _disconnectedAt.update(
+      key,
+      (current) => current.isBefore(since) ? current : since,
+      ifAbsent: () => since,
+    );
+  }
+
   /// 拾い直しで見る件数。上限（[kMissedNotificationMaxCount]）より多めに引き、
   /// 窓の外のものを落としてから絞る。
   static const _catchUpFetchLimit = 10;
@@ -205,21 +227,37 @@ class DesktopNotificationDispatcher {
         .firstOrNull;
     final adapter = account?.adapter;
     if (account == null || adapter is! NotificationSupport) return;
-    final List<Notification> fetched;
-    try {
-      fetched = (await (adapter as NotificationSupport).getNotifications(
-        query: const TimelineQuery(limit: _catchUpFetchLimit),
-      )).notifications;
-    } catch (e) {
-      // 拾い直しは上積み。つなぎ直した直後は回線が不安定なこともあり、失敗して
-      // も通知の一覧には載っているので、ここでは記録だけにする。
-      Sentry.addBreadcrumb(
-        Breadcrumb(
-          category: 'push.desktop.catchup',
-          level: SentryLevel.warning,
-          message: e.runtimeType.toString(),
-        ),
-      );
+    List<Notification>? fetched;
+    // ⚠ つなぎ直した直後は回線が不安定で、ここが落ちやすい。起点は `connected`
+    // で消してあるので、何もしないとこの切断の窓がまるごと捨てられる (#1283)。
+    // 少し待って 1 回だけ取り直し、それでも駄目なら起点を戻す。
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        fetched = (await (adapter as NotificationSupport).getNotifications(
+          query: const TimelineQuery(limit: _catchUpFetchLimit),
+        )).notifications;
+        break;
+      } catch (e) {
+        Sentry.addBreadcrumb(
+          Breadcrumb(
+            category: 'push.desktop.catchup',
+            level: SentryLevel.warning,
+            message: e.runtimeType.toString(),
+            data: {'attempt': attempt + 1},
+          ),
+        );
+        if (attempt > 0) break;
+        await Future<void>.delayed(catchUpRetryDelay);
+        // 待っている間にログアウトされた。
+        if (!_subs.containsKey(key)) return;
+        // 待っている間にまた切れた。次のつなぎ直しが拾うので、ここでは引かない。
+        if (_disconnectedAt.containsKey(key)) break;
+      }
+    }
+    if (fetched == null) {
+      // 拾い直しは上積みで、通知の一覧には載っている。ここでは出さずに、次に
+      // つなぎ直したときにこの窓も一緒に拾えるよう、起点を戻しておく。
+      _restoreCatchUpBaseline(key, disconnectedAt);
       return;
     }
     // ⚠ 引いている間にログアウトされていたら出さない。
@@ -287,10 +325,24 @@ class DesktopNotificationDispatcher {
     // 後着の APNs banner を黙殺できるよう native 側の既出集合へ伝える
     // (#674。macOS 以外では no-op)。show より先に投げ、APNs との競争窓を
     // 最小化する。
+    // ⚠⚠ **フィルターで出さない通知でも先に伝える**（PR #1285 の Codex P1）。
+    // 下の判定で抜けたあとに伝えていたので、WebSocket が先着すると、後から
+    // 届いたネイティブのプッシュが抑止されず、伏せた投稿がバナーに出た。
     unawaited(_ref.read(notificationDedupChannelProvider).addEmitted(relayKey));
     // 配信済み generic 通知の掃除 (#673)。APNs が先着済みの逆順ケースと、
     // この後に遅れて届くケース (onRemoteArrived 側) の両方をカバーする。
+    // ⚠ フィルターに当たった通知では、先に出てしまったバナーを消す役にもなる。
     _ref.read(deliveredPushCleanerProvider).recordEmitted(relayKey);
+    // 通知の適用先でフィルターに当たったものは、OS 通知を出さない (#1289)。
+    // ⚠ hide だけでなく warn も出さない —— Mastodon Web のデスクトップ通知と同じ
+    // 線（畳むべき本文を、畳めないバナーに出さない）。一覧には warn のまま載る。
+    if (notificationFilterVerdict(n) != null) {
+      debugPrint(
+        'capsicum: push.desktop: skip (filtered) '
+        'account=${sentrySafeAccount(account.key)} id=${n.id}',
+      );
+      return;
+    }
     final subsystem = _ref.read(notificationSubsystemProvider);
     final display = notificationTypeDisplay(n.type);
     // 複数アカウントがログインしているときだけ宛先を明示する (単一垢では冗長)。
@@ -470,6 +522,19 @@ class DesktopNotificationDispatcher {
     }
     final post = n.post;
     if (post != null) {
+      // CW 付きは見出しだけを出す (#1282)。畳まれているはずの本文を、バナーと
+      // 通知センターに出さない。Mastodon のサーバーがモバイル向けのプッシュで
+      // 作る本文（`spoiler_text` があればそれだけ）と同じ線で、Misskey の
+      // プッシュ（`PushMessageDispatcher` と各 OS の通知拡張）も揃えてある。
+      // ⚠ 見出しが空の CW（Misskey）は、空のまま出すと本文へ落ちるので固定の
+      // 文言にする。
+      final cw = post.spoilerText;
+      if (cw != null) {
+        final heading = cw.trim();
+        return _truncate(
+          heading.isEmpty ? contentWarningFallbackLabel : heading,
+        );
+      }
       final text = _plain(post.content, isHtml: post.isHtml);
       if (text.isNotEmpty) return _truncate(text);
     }

@@ -146,7 +146,7 @@ extension CapsicumMastodonStatusExtension on MastodonStatus {
     bool pinned = false,
     Set<String> adminRoleIds = const {},
   }) {
-    final filterResult = _parseFilterResult(filtered);
+    final filterMatches = _parseFilterMatches(filtered);
     final quoteResult = _parseQuoteResult(
       quote,
       localHost,
@@ -184,8 +184,7 @@ extension CapsicumMastodonStatusExtension on MastodonStatus {
       },
       card: _parseCard(card),
       poll: _parseMastodonPoll(poll),
-      filterAction: filterResult?.action,
-      filterTitle: filterResult?.title,
+      filterMatches: filterMatches,
       pinned: pinned,
       quotable: _isQuotable(quoteApproval),
       quoteApprovalPolicy: parseMastodonQuoteApprovalPolicy(quoteApproval),
@@ -252,6 +251,7 @@ bool _isQuotable(Map<String, dynamic>? quoteApproval) {
     'pending' => QuoteState.pending,
     'accepted' => QuoteState.accepted,
     'rejected' => QuoteState.rejected,
+    'revoked' => QuoteState.revoked,
     'deleted' => QuoteState.deleted,
     'unauthorized' => QuoteState.unauthorized,
     _ => null,
@@ -389,22 +389,37 @@ PreviewCard? _parseCard(Map<String, dynamic>? card) {
   );
 }
 
-({FilterAction action, String? title})? _parseFilterResult(
-  List<Map<String, dynamic>>? filtered,
-) {
-  if (filtered == null || filtered.isEmpty) return null;
-  FilterAction action = FilterAction.warn;
-  String? title;
-  for (final entry in filtered) {
-    final filter = entry['filter'] as Map<String, dynamic>?;
-    if (filter == null) continue;
-    final filterAction = filter['filter_action'] as String?;
-    title ??= filter['title'] as String?;
-    if (filterAction == 'hide') {
-      return (action: FilterAction.hide, title: title);
-    }
-  }
-  return (action: action, title: title);
+/// Status の `filtered[]` を、適用先つきの一致の一覧にする (#1289)。
+///
+/// ⚠⚠ **`context` を落とさない。**サーバーは一致したフィルターを適用先に関係なく
+/// すべて返すので、どの画面で効かせるかはここで持った `contexts` を見て読む側が
+/// 決める（以前は `filter_action` と最初の `title` だけを読み、全画面で効かせていた）。
+///
+/// - `filter_action` は `warn` / `hide` / `blur`。知らない値は warn（伏せる側に倒す）
+/// - `context` が無い・読めない要素は「全画面」（null）。⚠ 知らない値だけが並んで
+///   空集合になったものは、どの画面にも効かせない（サーバーが新しい適用先を足した
+///   場合に、関係ない画面で伏せないため）
+List<FilterMatch> _parseFilterMatches(List<Map<String, dynamic>>? filtered) {
+  if (filtered == null || filtered.isEmpty) return const [];
+  return [
+    for (final entry in filtered)
+      if (entry['filter'] case final Map<String, dynamic> filter)
+        FilterMatch(
+          action: switch (filter['filter_action']) {
+            'hide' => FilterAction.hide,
+            'blur' => FilterAction.blur,
+            _ => FilterAction.warn,
+          },
+          title: filter['title'] as String?,
+          contexts: switch (filter['context']) {
+            final List<dynamic> names => {
+              for (final name in names)
+                if (name is String) ?FilterContext.fromName(name),
+            },
+            _ => null,
+          },
+        ),
+  ];
 }
 
 const mastodonNotificationTypeMap = <String, NotificationType>{
@@ -642,7 +657,12 @@ Map<String, String> _extractHtmlCustomEmojis(String html) {
 
 extension CapsicumMastodonListExtension on MastodonList {
   PostList toCapsicum() {
-    return PostList(id: id, title: title);
+    return PostList(
+      id: id,
+      title: title,
+      repliesPolicy: ListRepliesPolicy.fromApi(repliesPolicy),
+      exclusive: exclusive,
+    );
   }
 }
 

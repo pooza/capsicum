@@ -20,8 +20,8 @@ import 'now_playing_provider.dart';
 ///
 /// ネイティブ I/O は Windows SMTC (#484) と同じ入口に揃える — メソッドチャンネル
 /// `capsicum/now_playing` の `getNowPlaying` が title / artist / albumTitle の
-/// マップを返し、それを [NowPlayingInfo] へ変換する。macOS はジャケットの
-/// 一時ファイルのパス（`artworkPath`）も添える (#1273)。
+/// マップを返し、それを [NowPlayingInfo] へ変換する。ジャケットの
+/// 一時ファイルのパス（`artworkPath`）も添える（macOS は #1273・iOS は #1275）。
 ///
 /// 設計どおり Apple Music も **「文字情報のみの源」** として扱い、
 /// `NowPlayingInfo.url` は常に null（`MPMediaItem` は共有 URL を持たない。URL 源は
@@ -31,7 +31,12 @@ import 'now_playing_provider.dart';
 /// 実機 I/O から切り離してテストするため、変換ロジックは
 /// [nowPlayingFromAppleMusicMetadata] に切り出す。
 class AppleMusicNowPlayingProvider implements NowPlayingProvider {
-  const AppleMusicNowPlayingProvider();
+  const AppleMusicNowPlayingProvider({this.preferSpotify});
+
+  /// macOS でミュージックと Spotify が同じ状態（両方再生中・両方一時停止中）の
+  /// とき、Spotify を採るか (#1276)。設定の「ナウプレの優先サービス」を読む。
+  /// 取得のたびに呼ぶ（設定を変えたらすぐ効く）。iOS は使わない。
+  final bool Function()? preferSpotify;
 
   static const _channel = MethodChannel('capsicum/now_playing');
 
@@ -44,7 +49,9 @@ class AppleMusicNowPlayingProvider implements NowPlayingProvider {
   Future<NowPlayingInfo?> currentlyPlaying() async {
     final Map<String, Object?>? raw;
     try {
-      raw = await _channel.invokeMapMethod<String, Object?>('getNowPlaying');
+      raw = await _channel.invokeMapMethod<String, Object?>('getNowPlaying', {
+        'prefer': (preferSpotify?.call() ?? false) ? 'spotify' : 'appleMusic',
+      });
     } catch (_) {
       // チャンネル未登録 / ネイティブ例外は null に倒す（resolver が次の源へ）。
       return null;
@@ -59,21 +66,31 @@ class AppleMusicNowPlayingProvider implements NowPlayingProvider {
     if (errorKind is String) {
       if (errorKind == 'automation_denied' ||
           errorKind == 'automation_pending') {
-        throw NowPlayingPermissionException(errorKind);
+        // どのアプリの許可かを添える（Spotify はミュージックとは別に確認が
+        // 出る・#1276）。
+        throw NowPlayingPermissionException(
+          errorKind,
+          appName: raw['__app'] == 'spotify' ? 'Spotify' : null,
+        );
       }
       // no_track（未再生・停止・未起動）は正常系なので無音で null に倒す。
       // script_error（想定外の実行時エラー）だけ観測する。#668 の sandbox 解決は
       // temporary-exception.apple-events(com.apple.Music) で済み（build 117 で動作確認）、
       // 診断用の __automationStatus / __scriptItems タグは不要になったため落とした。
       if (errorKind == 'script_error') {
+        // ⚠ どちらのアプリのスクリプトかで分ける（Spotify の失敗がミュージックの
+        // 群に混ざらないように・#1276 のリリース前レビュー）。
+        final source = raw['__app'] == 'spotify' ? 'spotify' : 'apple_music';
         Sentry.captureMessage(
-          'nowplaying: apple music script error',
+          source == 'spotify'
+              ? 'nowplaying: spotify script error'
+              : 'nowplaying: apple music script error',
           level: SentryLevel.warning,
           withScope: (scope) {
-            scope.setTag('nowplaying.source', 'apple_music');
+            scope.setTag('nowplaying.source', source);
             final code = raw!['__code'];
             if (code != null) scope.setTag('nowplaying.code', '$code');
-            scope.fingerprint = ['nowplaying', 'apple_music_script_error'];
+            scope.fingerprint = ['nowplaying', '${source}_script_error'];
           },
         );
       }
@@ -99,15 +116,55 @@ NowPlayingInfo? nowPlayingFromAppleMusicMetadata(Map<String, Object?> data) {
     title: title,
     artist: artist,
     album: album,
-    // ジャケット (#1273)。macOS のネイティブが、ミュージックアプリから取った
+    // ジャケット (#1273 / #1275)。iOS / macOS のネイティブが、ミュージックから取った
     // 絵を一時ファイルへ書き出してパスを返す。`file://` にすると、MPRIS と同じ
     // 添付の経路（`fetchNowPlayingArtwork`）にそのまま乗る。
-    // ⚠ iOS はまだ返さない（#1275）ので、キーが無ければ null。
-    artworkUrl: _artworkFileUri(data['artworkPath']),
-    // Apple Music は文字情報源（URL 源は Spotify provider が担う）。
-    url: null,
+    // Spotify のデスクトップアプリ（macOS・#1276）は、ファイルではなく画像の
+    // URL を返す。http(s) の取得の経路にそのまま乗る。
+    artworkUrl:
+        _artworkFileUri(data['artworkPath']) ?? _httpsUri(data['artworkUrl']),
+    artworkSkipReason: _artworkSkipReason(data['artworkSkipped']),
+    // ミュージックは文字情報源（共有 URL を持たない）。Spotify のデスクトップ
+    // アプリは共有 URI を返すので、本文の URL 行に使う (#1276)。
+    url: spotifyShareUrl(data['shareUri']),
   );
 }
+
+/// Spotify の共有 URI（`spotify:track:<id>`）を、本文に載せる
+/// `https://open.spotify.com/track/<id>` にする (#1276)。曲以外・形の違うものは null。
+///
+/// ⚠ AppleScript の `spotify url` は https ではなく URI の形で返る（2026-10-15 実測）。
+Uri? spotifyShareUrl(Object? value) {
+  if (value is! String) return null;
+  final match = RegExp(r'^spotify:track:([A-Za-z0-9]+)$').firstMatch(value);
+  if (match == null) return null;
+  return Uri.https('open.spotify.com', '/track/${match.group(1)}');
+}
+
+/// https の URL だけを通す（ジャケットの取得先・#1276）。
+Uri? _httpsUri(Object? value) {
+  if (value is! String) return null;
+  final uri = Uri.tryParse(value);
+  return uri != null && uri.scheme == 'https' && uri.host.isNotEmpty
+      ? uri
+      : null;
+}
+
+/// ネイティブがジャケットを書き出さなかった理由として受け取る値 (#1283)。
+/// iOS / macOS の `NowPlayingPlugin.swift` が返す値と揃える（どちらも返す）。
+const kNowPlayingArtworkSkipReasons = {
+  'no_artwork',
+  'unsupported_format',
+  'too_large',
+  'write_failed',
+};
+
+/// ⚠ **知っている値だけを通す。**この値はそのまま Sentry の breadcrumb に載る
+/// ので、ネイティブが返した任意の文字列を素通しにしない。
+String? _artworkSkipReason(Object? value) =>
+    value is String && kNowPlayingArtworkSkipReasons.contains(value)
+    ? value
+    : null;
 
 /// ネイティブが返した絶対パスを `file://` にする。相対パスや空は捨てる
 /// （行き先の分からないファイルを添付の候補にしない）。

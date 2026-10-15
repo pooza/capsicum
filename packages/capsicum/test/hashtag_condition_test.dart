@@ -73,6 +73,7 @@ void main() {
       };
       final asked = <String?>[];
       final state = await fetchUntilVisible(
+        filterContext: FilterContext.home,
         pageSize: 2,
         hideLivecure: false,
         fetch: (maxId) async {
@@ -85,6 +86,62 @@ void main() {
       expect(asked, [null, '3']);
       expect(state.posts.map((p) => p.id), ['2']);
       expect(state.hasMore, isTrue, reason: '2 ページめも満ページで返ってきている');
+    });
+  });
+
+  // #1283: Mastodon は「すべて含む」のうちサーバーに実在しないタグを黙って落とし、
+  // AND が外れた一覧を返す。返ってきた投稿を端末側で確かめ直す。
+  group('「すべて含む」の確かめ直し', () {
+    final query = HashtagQuery.parse('a+unused');
+
+    test('⚠⚠ 「すべて含む」のタグを欠く投稿は一覧に残さない', () {
+      expect(postKeptByHashtagQuery(_post('1', ['a']), query), isFalse);
+      expect(
+        postKeptByHashtagQuery(_post('2', ['a', 'unused']), query),
+        isTrue,
+      );
+      expect(
+        postKeptByHashtagQuery(_post('3', ['A', 'Unused']), query),
+        isTrue,
+      );
+    });
+
+    test('除外も同じ口で見る', () {
+      final excluding = HashtagQuery.parse('a!x');
+      expect(
+        postKeptByHashtagQuery(_post('1', ['a', 'x']), excluding),
+        isFalse,
+      );
+      expect(postKeptByHashtagQuery(_post('2', ['a']), excluding), isTrue);
+    });
+
+    test('⚠ ブースト / リノートは中身の投稿のタグで見る', () {
+      final boost = _post('9', const [], reblog: _post('1', ['a', 'unused']));
+      expect(postKeptByHashtagQuery(boost, query), isTrue);
+      final lacking = _post('8', const [], reblog: _post('2', ['a']));
+      expect(postKeptByHashtagQuery(lacking, query), isFalse);
+    });
+
+    test('AND が外れた一覧（#a の全件）が返っても、合う投稿だけを残して先へ進む', () async {
+      final pages = <String?, List<Post>>{
+        null: [
+          _post('4', ['a']),
+          _post('3', ['a']),
+        ],
+        '3': [
+          _post('2', ['a', 'unused']),
+          _post('1', ['a']),
+        ],
+      };
+      final state = await fetchUntilVisible(
+        filterContext: FilterContext.home,
+        pageSize: 2,
+        hideLivecure: false,
+        fetch: (maxId) async => pages[maxId] ?? const [],
+        keep: (post) => postKeptByHashtagQuery(post, query),
+      );
+
+      expect(state.posts.map((p) => p.id), ['2']);
     });
   });
 

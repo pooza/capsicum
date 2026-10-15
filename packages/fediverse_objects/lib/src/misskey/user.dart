@@ -26,8 +26,19 @@ class MisskeyUser {
   final List<Map<String, dynamic>>? roles;
   final List<Map<String, dynamic>>? fields;
   final Map<String, String>? emojis;
-  final List<List<String>>? mutedWords;
-  final List<List<String>>? hardMutedWords;
+
+  /// ワードミュート（#1288）。要素は **`List<String>`（キーワードの AND）か
+  /// `String`（正規表現 `/pattern/flags`）** のどちらか。
+  ///
+  /// ⚠⚠ **`List<List<String>>` ではない。**サーバーの型は `(string[] | string)[]`
+  /// （`UserProfile.ts`）で、正規表現の行は配列に入らない素の文字列で返る。
+  /// JSON スキーマ（`json-schema/user.ts`）は array of array と書いているが実体と
+  /// 違う。以前は配列と決め打ちしていたので、正規表現を 1 行でも持つアカウントは
+  /// `/api/i` の parse が型エラーになっていた。
+  @JsonKey(fromJson: _readMuteWords)
+  final List<Object>? mutedWords;
+  @JsonKey(fromJson: _readMuteWords)
+  final List<Object>? hardMutedWords;
   final List<Map<String, dynamic>>? pinnedNotes;
   final List<Map<String, dynamic>>? avatarDecorations;
   final List<Map<String, dynamic>>? badgeRoles;
@@ -93,4 +104,20 @@ class MisskeyUser {
       _$MisskeyUserFromJson(json);
 
   Map<String, dynamic> toJson() => _$MisskeyUserToJson(this);
+}
+
+/// `mutedWords` / `hardMutedWords` を `String | List<String>` の並びとして読む。
+/// 形の合わない要素は捨てる（1 行の崩れで `/api/i` 全体を落とさない）。
+List<Object>? _readMuteWords(dynamic value) {
+  if (value is! List) return null;
+  return [
+    for (final item in value)
+      if (item is String)
+        item
+      else if (item is List)
+        [
+          for (final word in item)
+            if (word is String) word,
+        ],
+  ];
 }

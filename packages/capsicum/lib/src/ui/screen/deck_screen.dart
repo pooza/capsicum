@@ -275,6 +275,50 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
     _reveal(columnId);
   }
 
+  /// ドロワーを開く。⚠⚠ **開く前に、現在のアカウントをフォーカス中のカラムの
+  /// アカウントへ切り替える**（#1286・2026-10-15 pooza 決定・決定済み事項 15 を
+  /// 改めた）。
+  ///
+  /// - ドロワーの頭も、項目も、そこから開いた全画面も、すべて現在のアカウントで
+  ///   動くので、切り替えておけば**途中でアカウントが入れ替わらない**（#1150 の
+  ///   穴に当たらない）
+  /// - ⚠ **切り替えのきっかけはドロワーを開くときだけ。**現在のアカウントが
+  ///   変わると、前後 2 アカウントのカラムがルートとアカウント別のコンテナの
+  ///   間で組み替わり、読み直しになる（決定済み事項 8）。フォーカスの移動ごと
+  ///   （狭幅ではスワイプのたび）に切り替えると、そのたびに起きる
+  /// - アカウントをまたぐカラム（「すべての通知」・決定済み事項 14）にフォーカス
+  ///   しているときは切り替えない
+  void _openDrawerForFocused(ScaffoldState scaffold) {
+    final id = ref.read(deckFocusProvider).columnId;
+    final column = ref
+        .read(deckColumnsProvider)
+        .where((c) => c.id == id)
+        .firstOrNull;
+    final current = ref.read(currentAccountKeyProvider);
+    final target = column == null || column.tab.spansAccounts
+        ? null
+        : column.account;
+    if (target == null || target == current) {
+      scaffold.openDrawer();
+      return;
+    }
+    final account = ref
+        .read(accountManagerProvider)
+        .accounts
+        .where((a) => a.key == target)
+        .firstOrNull;
+    if (account == null) {
+      scaffold.openDrawer();
+      return;
+    }
+    ref.read(accountManagerProvider.notifier).switchAccount(account);
+    // ⚠ 組み替えのフレームが済んでから開く。同じフレームで開くと、ドロワーの
+    // 頭と項目が切り替える前のアカウントで組まれる。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && scaffold.mounted) scaffold.openDrawer();
+    });
+  }
+
   /// フォーカス中のカラムのアカウントで新規投稿を開く（⌘N / Ctrl+N・#1170）。
   ///
   /// ⚠⚠ **メニューから直接 `/compose` を push してはいけない。**メニューバーは
@@ -578,9 +622,10 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
       //
       // ⚠ **常駐はさせない**（決定済み事項 7-1 / 8）。禁じているのは広い幅で
       // 出しっぱなしになるドロワーで、押したときだけ重なるものは当たらない。
-      // ⚠ アカウントの切り替えは持ち込まない（`inDeck`・決定済み事項 8 / 11）。
-      // ⚠ 項目は**現在のアカウント**のもので、フォーカス中のカラムのアカウント
-      // には合わせない（決定済み事項 15・#1272）。タイムラインになるもの
+      // ⚠ アカウントの切り替えの一覧は持ち込まない（`inDeck`・決定済み事項 8 / 11）。
+      // ⚠ 項目は**現在のアカウント**のもの。ただし開くときに、現在のアカウントを
+      // フォーカス中のカラムのアカウントへ切り替えてから開く（#1286・
+      // [_openDrawerForFocused]・決定済み事項 15）。タイムラインになるもの
       // （リスト・チャンネル・プロフィールタグ）はカラムで開き、ほかは全画面。
       drawer: buildHomeDrawer(
         context,
@@ -623,7 +668,7 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
               child: const Icon(Icons.menu),
             ),
             tooltip: MaterialLocalizations.of(context).openAppDrawerTooltip,
-            onPressed: () => Scaffold.of(context).openDrawer(),
+            onPressed: () => _openDrawerForFocused(Scaffold.of(context)),
           ),
         ),
         // ⚠ **題は置かない (#1242・2026-10-06 pooza)。**デッキ画面であることは

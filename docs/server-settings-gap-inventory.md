@@ -63,7 +63,7 @@ capsicum は `draft.sensitive ? true : null` と書いてこれを回避して�
 
 | 設定 | サーバーが効かせるか | capsicum | 判定 |
 | --- | --- | --- | --- |
-| Mastodon フィルタ（キーワードミュート） | △ 判定はサーバー・**適用はクライアント**（Status の `filtered` に結果を載せて返す・`status_serializer.rb:18,147`） | **読んでいる** — `_parseFilterResult(filtered)`（`mastodon/extensions.dart:99`） | ✅ |
+| Mastodon のフィルター（Misskey はワードミュート） | △ 判定はサーバー・**適用はクライアント**（Status の `filtered` に結果を載せて返す・`status_serializer.rb:18,147`） | **読んでいる** — `_parseFilterMatches(filtered)`（`mastodon/extensions.dart:149`）。適用先（context）ごとの判定は `Post.filterMatches` → `resolveFilterMatches`（#1289） | ✅ |
 | Misskey `mutedWords` / `hardMutedWords` | ✗（クライアント側の責務） | **読んで適用している** — `adapter.dart:210-211` で保持し `480-514` で判定 | ✅ |
 | Mastodon 通知ポリシー（`notifications/policy`） | ○ `notify_service.rb:30` の `NotificationPolicy` | 読んでいない | ✅ **読む必要なし** |
 | Misskey `notificationRecieveConfig` | ○ `NotificationService.ts:100`（通知生成時） | 読んでいない | ✅ **読む必要なし** |

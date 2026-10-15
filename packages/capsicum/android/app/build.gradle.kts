@@ -44,10 +44,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_17.toString()
-    }
-
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "net.shrieker.capsicum"
@@ -81,6 +77,13 @@ android {
                 signingConfigs.getByName("debug")
             }
         }
+    }
+}
+
+// Kotlin 2.4 で android { kotlinOptions {} } はエラーになった（#1280）。
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
 }
 

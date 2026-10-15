@@ -881,6 +881,8 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
 Future<void> showFavoriteTags(BuildContext context, WidgetRef ref) async {
   final mulukhiya = ref.read(currentMulukhiyaProvider);
   if (mulukhiya == null) return;
+  // ⚠ 一覧を引いたアカウントを開く先にも渡す（[showListChooser] と同じ理由）。
+  final listedFor = ref.read(currentAccountProvider)?.key;
 
   try {
     final tags = await mulukhiya.getFavoriteTags();
@@ -918,7 +920,7 @@ Future<void> showFavoriteTags(BuildContext context, WidgetRef ref) async {
                 dense: true,
                 onTap: () {
                   Navigator.pop(context);
-                  openHashtag(context, tag.name);
+                  openHashtag(context, tag.name, account: listedFor);
                 },
               ),
           ],
@@ -1164,6 +1166,11 @@ Future<void> showAntennaList(BuildContext context, WidgetRef ref) async {
 Future<void> showListChooser(BuildContext context, WidgetRef ref) async {
   final adapter = ref.read(currentAdapterProvider);
   if (adapter is! ListSupport) return;
+  // ⚠ 一覧を引いたアカウントを、開く先にも明示して渡す (#1286 / #1283)。
+  // 渡さないと、カラムで開くときに「その時点のフォーカス中のカラム」の
+  // アカウントになり、一覧を引いたアカウントとずれうる（リストの id は
+  // サーバーローカル）。
+  final listedFor = ref.read(currentAccountProvider)?.key;
 
   final List<PostList> lists;
   try {
@@ -1202,7 +1209,7 @@ Future<void> showListChooser(BuildContext context, WidgetRef ref) async {
                 onTap: () {
                   Navigator.pop(context);
                   // ⚠ デッキのドロワーから開いたときはカラムになる (#1272)。
-                  openList(context, list.id, list.title);
+                  openList(context, list.id, list.title, account: listedFor);
                 },
               ),
           const Divider(height: 1),
@@ -1222,9 +1229,11 @@ Future<void> showListChooser(BuildContext context, WidgetRef ref) async {
 }
 
 Future<void> showChannelList(BuildContext context, WidgetRef ref) async {
+  // ⚠ 一覧を引いたアカウントを開く先にも渡す（[showListChooser] と同じ理由）。
+  final listedFor = ref.read(currentAccountProvider)?.key;
   final channel = await pickFollowedChannel(context, ref);
   if (channel == null || !context.mounted) return;
-  openChannel(context, channel.id, channel.name);
+  openChannel(context, channel.id, channel.name, account: listedFor);
 }
 
 /// フォロー中のチャンネルを 1 つ選ばせる (#805 のクイックチューザ様式)。

@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../service/background_notification_service.dart';
 import '../util/conversion_skip_report.dart';
+import '../util/notification_filter.dart';
 import 'account_manager_provider.dart';
 import 'is_cat_provider.dart';
 import 'preferences_provider.dart';
@@ -57,11 +58,25 @@ class NotificationState {
   /// don't stall pagination by re-fetching the same page (#777).
   final String? lastRawId;
 
+  /// 絞り込みで落とす前の、一番新しい通知 (#1291 のリリース前レビュー)。
+  ///
+  /// ⚠ 一覧の先頭が見えているときの既読位置はこちらで返す。先頭の通知を
+  /// フィルターで伏せていると、見えている先頭はその 1 つ下になり、伏せた
+  /// 通知が未読のまま残ってバッジが 0 にならない。
+  final String? rawNewestId;
+
+  /// 伏せた通知だけのページが上限まで続き、何も足せなかったが、まだ続きがある
+  /// （[TimelineState.pageCapHit] と同じ意味）
+  /// （PR #1285 の Codex P1）。画面は手で先を引ける入口を出す。
+  final bool pageCapHit;
+
   const NotificationState({
     this.notifications = const [],
     this.isLoadingMore = false,
     this.hasMore = true,
     this.lastRawId,
+    this.rawNewestId,
+    this.pageCapHit = false,
   });
 
   NotificationState copyWith({
@@ -69,11 +84,14 @@ class NotificationState {
     bool? isLoadingMore,
     bool? hasMore,
     String? lastRawId,
+    bool? pageCapHit,
   }) => NotificationState(
     notifications: notifications ?? this.notifications,
     isLoadingMore: isLoadingMore ?? this.isLoadingMore,
     hasMore: hasMore ?? this.hasMore,
     lastRawId: lastRawId ?? this.lastRawId,
+    rawNewestId: rawNewestId,
+    pageCapHit: pageCapHit ?? this.pageCapHit,
   );
 }
 
@@ -98,6 +116,9 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
   /// 直前に読んだページが、手元で絞ったものだったか (#1251)。
   bool _lastPageFilteredLocally = false;
 
+  /// build() のたびに進める世代。続き読みが、読み直された一覧へ書かないように使う。
+  int _buildGeneration = 0;
+
   /// 「サーバーが除外を断った」を記録済みか。⚠ ページごとに出さない。
   bool _localFilterReported = false;
 
@@ -115,6 +136,7 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
 
   @override
   Future<NotificationState> build() async {
+    _buildGeneration++;
     _lastPageFilteredLocally = false;
     _localFilterReported = false;
     final adapter = ref.watch(currentAdapterProvider);
@@ -122,34 +144,115 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
       return const NotificationState(hasMore: false);
     }
 
-    final response = await (adapter as NotificationSupport).getNotifications(
-      query: const TimelineQuery(limit: _pageSize),
+    final page = await _fetchVisible(
+      adapter as NotificationSupport,
+      maxId: null,
       filter: _filter(watch: true),
+      source: 'notification',
     );
-    reportSkippedNotifications(response.skippedPosts, source: 'notification');
-    _noteLocalFilter(response);
     // ⚠ **猫耳のために通知一覧の表示を止めない (#1080)。**理由と仕組みは
     // `is_cat_provider.dart` の [kIsCatEnrichBudget] の doc が正本。
     // ⚠ **待ち上限は enricher の中で掛かる (#1083-C)。**以前はこの 4 箇所が
     // それぞれ `.timeout` を書いており、超過がどこでも計装されていなかった。
     final notifications = await ref
         .read(isCatEnricherProvider)
-        .enrichNotifications(response.notifications);
+        .enrichNotifications(page.visible);
     // Update last-seen ID so background polling skips already-seen items.
-    if (notifications.isNotEmpty) {
-      _updateLastSeen(notifications.first.id);
+    // ⚠ 起点はフィルターで落とす前の先頭で取る (#1289)。落とした後の先頭だと、
+    // 伏せた通知がバックグラウンドの巡回で「未読の新着」に見える。
+    final newestRaw = page.newestRawId;
+    if (newestRaw != null) {
+      _updateLastSeen(newestRaw);
     }
 
     return NotificationState(
       notifications: notifications,
-      lastRawId: response.rawLastId,
+      lastRawId: page.lastRawId,
+      rawNewestId: newestRaw,
+      hasMore: page.hasMore,
+      pageCapHit: page.capHit,
+    );
+  }
+
+  /// 伏せた通知だけのページを、上限つきで読み飛ばす（PR #1285 の Codex P1）。
+  ///
+  /// ⚠⚠ 通知に hide を掛けるようになって（#1289）、1 ページ丸ごと落ちることが
+  /// ある。何も足されないと一覧の長さが変わらず、続き読みの合図（末尾が近い）が
+  /// 来ない。先頭のページなら空表示になり、先へ進む手段が無くなる。
+  /// ⚠ 上限まで空なら [NotificationState.pageCapHit] を立て、画面で手で先を
+  /// 引ける入口を出す（`timeline_older_prompt.dart` と同じ考え方）。
+  ///
+  /// [maxId] が null なら先頭から。カーソルは生の末尾で進める (#777)。
+  Future<
+    ({
+      List<Notification> visible,
+      String? newestRawId,
+      String? lastRawId,
+      bool hasMore,
+      bool stalled,
+      bool capHit,
+    })
+  >
+  _fetchVisible(
+    NotificationSupport adapter, {
+    required String? maxId,
+    required NotificationQuery filter,
+    required String source,
+  }) async {
+    String? cursor = maxId;
+    String? newestRawId;
+    var visible = const <Notification>[];
+    var hasMore = true;
+    var stalled = false;
+    var pages = 0;
+    while (true) {
+      // 手元で絞ったページが続いているあいだは、間を置いてから読む (#1251)。
+      if (pages > 0 && _lastPageFilteredLocally) {
+        await Future<void>.delayed(locallyFilteredLoadMoreInterval);
+      }
+      pages++;
+      final response = await adapter.getNotifications(
+        query: TimelineQuery(maxId: cursor, limit: _pageSize),
+        filter: filter,
+      );
+      reportSkippedNotifications(
+        response.skippedPosts,
+        source: source,
+        maxId: cursor,
+      );
+      _noteLocalFilter(response);
+      newestRawId ??= response.notifications.firstOrNull?.id;
+      visible = dropFilteredNotifications(response.notifications);
+      final next = response.rawLastId ?? cursor;
+      // ⚠⚠ **カーソルが進まなかったら打ち切る** (#1048)。グループ化した経路の
+      // `hasMore` は「ページが空でなければ続きがありうる」なので、サーバーが
+      // 同じページを返し続けると**スクロールのたびに同じ通知を足し続ける**。
+      stalled = cursor != null && next == cursor;
       // Judge "more pages" on the raw server count, not the post-skip list
       // length: skipping a malformed notification must not drop a full page
       // (19 < 20) and stall pagination (#777).
       //
       // ⚠⚠ **グループ化した取得では件数で判定できない** (#1048)。アダプタが
       // 判断できるときはそちらに従う（理由は [NotificationResponse.hasMore]）。
-      hasMore: response.hasMore ?? response.rawCount >= _pageSize,
+      hasMore =
+          !stalled && (response.hasMore ?? response.rawCount >= _pageSize);
+      cursor = next;
+      // ⚠ 生の末尾を返さないアダプタでは先へ進めない（次も先頭を引き直す）。
+      // 続き読みは表示中の末尾で進める従来の経路に任せる。
+      if (visible.isNotEmpty ||
+          !hasMore ||
+          next == null ||
+          pages >= kMaxEmptyOlderPages) {
+        break;
+      }
+    }
+    return (
+      visible: visible,
+      newestRawId: newestRawId,
+      lastRawId: cursor,
+      hasMore: hasMore,
+      stalled: stalled,
+      capHit: visible.isEmpty && hasMore,
     );
   }
 
@@ -170,6 +273,7 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
     if (current == null || current.isLoadingMore || !current.hasMore) return;
 
     state = AsyncData(current.copyWith(isLoadingMore: true));
+    final generation = _buildGeneration;
 
     // 手元で絞ったページが続いているあいだは、間を置いてから読む (#1251)。
     // 理由は [locallyFilteredLoadMoreInterval]。
@@ -199,45 +303,39 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
           );
           return;
         }
-        final response = await (adapter as NotificationSupport)
-            .getNotifications(
-              query: TimelineQuery(maxId: lastId, limit: _pageSize),
-              filter: _filter(watch: false),
-            );
-        reportSkippedNotifications(
-          response.skippedPosts,
-          source: 'notification.loadMore',
+        final page = await _fetchVisible(
+          adapter as NotificationSupport,
           maxId: lastId,
+          filter: _filter(watch: false),
+          source: 'notification.loadMore',
         );
-        _noteLocalFilter(response);
         // 追加読み込みも同じ扱い (#1080)。ここで止まるとスクロールが刺さる。
         final older = await ref
             .read(isCatEnricherProvider)
-            .enrichNotifications(response.notifications);
+            .enrichNotifications(page.visible);
 
-        // ⚠⚠ **カーソルが進まなかったら打ち切る** (#1048)。グループ化した経路の
-        // `hasMore` は「ページが空でなければ続きがありうる」なので、サーバーが
-        // 同じページを返し続けると**スクロールのたびに同じ通知を足し続ける**。
-        // 件数での判定と違い、ここが最後の歯止めになる。
-        final nextRawId = response.rawLastId ?? base.lastRawId;
-        final stalled = nextRawId == lastId;
+        // ⚠⚠ カーソルが進まなかったページは足さない（[_fetchVisible] の #1048）。
+        // ⚠⚠ 待っている間に build() がやり直されていたら（アカウントの切替・
+        // 絞り込みの変更）、古いページも古いカーソルも書かない（2 回目のレビュー）。
+        if (generation != _buildGeneration) return;
+        final latest = state.valueOrNull ?? base;
         state = AsyncData(
-          base.copyWith(
-            notifications: stalled
-                ? base.notifications
+          latest.copyWith(
+            notifications: page.stalled
+                ? latest.notifications
                 : [
-                    ...base.notifications,
-                    ...dropAlreadyShownGroups(base.notifications, older),
+                    ...latest.notifications,
+                    ...dropAlreadyShownGroups(latest.notifications, older),
                   ],
             isLoadingMore: false,
-            lastRawId: nextRawId,
-            hasMore:
-                !stalled &&
-                (response.hasMore ?? response.rawCount >= _pageSize),
+            lastRawId: page.lastRawId,
+            hasMore: page.hasMore,
+            pageCapHit: page.capHit,
           ),
         );
         return;
       } catch (_) {
+        if (generation != _buildGeneration) return;
         if (attempt < loadMoreMaxRetries) {
           await Future<void>.delayed(loadMoreRetryDelay);
           continue;

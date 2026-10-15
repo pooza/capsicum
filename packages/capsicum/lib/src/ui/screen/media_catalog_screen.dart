@@ -1,3 +1,5 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
@@ -5,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../../provider/preferences_provider.dart';
 import '../../url_helper.dart';
 import '../../util/exception_scrub.dart';
 import '../util/deck_navigation.dart';
@@ -30,6 +33,10 @@ class _MediaCatalogScreenState extends ConsumerState<MediaCatalogScreen> {
   bool _hasMore = true;
   String? _error;
   bool _personOnly = false;
+
+  /// 閲覧注意のぼかしを外したメディアの id (#1284)。グリッドの要素は
+  /// スクロールで作り直されるので、画面の側で持つ。
+  final _revealed = <String>{};
 
   @override
   void initState() {
@@ -78,6 +85,7 @@ class _MediaCatalogScreenState extends ConsumerState<MediaCatalogScreen> {
       _loading = true;
       _error = null;
       _page = 1;
+      _revealed.clear();
     });
 
     try {
@@ -222,6 +230,7 @@ class _MediaCatalogScreenState extends ConsumerState<MediaCatalogScreen> {
       );
     }
 
+    final blurAll = ref.watch(blurAllImagesProvider);
     return RefreshIndicator(
       onRefresh: () async => _load(),
       child: GridView.builder(
@@ -237,9 +246,14 @@ class _MediaCatalogScreenState extends ConsumerState<MediaCatalogScreen> {
           if (index >= _items.length) {
             return const Center(child: CircularProgressIndicator());
           }
-          return _MediaThumbnail(
-            item: _items[index],
-            onTap: () => _showDetail(_items[index]),
+          final item = _items[index];
+          return MediaCatalogThumbnail(
+            item: item,
+            // 本体のタイムラインと同じ扱い: 閲覧注意（CW つきを含む）と
+            // 「すべての画像をぼかす」は、押すまで見せない (#1284)。
+            hidden: (item.sensitive || blurAll) && !_revealed.contains(item.id),
+            onReveal: () => setState(() => _revealed.add(item.id)),
+            onTap: () => _showDetail(item),
           );
         },
       ),
@@ -268,31 +282,54 @@ bool _isImageUrl(String url) {
       !lower.endsWith('.ogg');
 }
 
-class _MediaThumbnail extends StatelessWidget {
+/// カタログの 1 枚。[hidden] のあいだはぼかして「閲覧注意」（CW があれば
+/// その文言）を重ね、押すと [onReveal]。見えている状態で押すと [onTap]。
+@visibleForTesting
+class MediaCatalogThumbnail extends StatelessWidget {
   final MediaCatalogItem item;
+  final bool hidden;
   final VoidCallback onTap;
+  final VoidCallback onReveal;
 
-  const _MediaThumbnail({required this.item, required this.onTap});
+  const MediaCatalogThumbnail({
+    super.key,
+    required this.item,
+    required this.hidden,
+    required this.onTap,
+    required this.onReveal,
+  });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final imageUrl = _resolveImageUrl(item);
 
+    Widget? image;
+    if (imageUrl != null) {
+      image = Image.network(
+        imageUrl,
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => Container(
+          color: theme.colorScheme.surfaceContainerHighest,
+          child: const Center(child: Icon(Icons.broken_image)),
+        ),
+      );
+      // 見せるときに no-op の filter を被せない（post_tile と同じ・#491）。
+      if (hidden) {
+        image = ImageFiltered(
+          imageFilter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+          child: image,
+        );
+      }
+    }
+
     return GestureDetector(
-      onTap: onTap,
+      onTap: hidden ? onReveal : onTap,
       child: Stack(
         fit: StackFit.expand,
         children: [
-          if (imageUrl != null)
-            Image.network(
-              imageUrl,
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => Container(
-                color: theme.colorScheme.surfaceContainerHighest,
-                child: const Center(child: Icon(Icons.broken_image)),
-              ),
-            )
+          if (image != null)
+            ClipRect(child: image)
           else
             Container(
               color: theme.colorScheme.surfaceContainerHighest,
@@ -301,6 +338,35 @@ class _MediaThumbnail extends StatelessWidget {
                   _iconForType(item.mediatype),
                   size: 32,
                   color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          if (hidden)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black45,
+                alignment: Alignment.center,
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.visibility_off,
+                      color: Colors.white70,
+                      size: 28,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      item.spoilerText ?? '閲覧注意',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                      ),
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -461,6 +527,10 @@ class _MediaDetailSheet extends ConsumerWidget {
                 ),
               ),
             ),
+          // CW つきは本文が届かない（CW の内側は一覧に出さない）。代わりに
+          // CW の文言を見出しとして出す (#1284)。
+          if (item.spoilerText != null)
+            _detailRow(Icons.warning_amber, item.spoilerText!),
           if (item.statusBody != null && item.statusBody!.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 8),

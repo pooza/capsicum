@@ -334,6 +334,13 @@ class MediaCatalogItem {
   final String? statusBody;
   final String? statusPublicUrl;
 
+  /// 閲覧注意。CW つきの投稿のメディアも true で届く（モロヘイヤ 5.41.0〜）。
+  /// カタログは未認証で届く一覧で、ぼかすのはクライアントの責任 (#1284)。
+  final bool sensitive;
+
+  /// CW の文言。無ければ null。CW つきのとき [statusBody] は null で届く。
+  final String? spoilerText;
+
   const MediaCatalogItem({
     required this.id,
     required this.url,
@@ -349,7 +356,39 @@ class MediaCatalogItem {
     this.accountDisplayName,
     this.statusBody,
     this.statusPublicUrl,
+    this.sensitive = false,
+    this.spoilerText,
   });
+
+  /// `/mulukhiya/api/media` の `items[]` 1 件を読む。
+  ///
+  /// モロヘイヤ 5.40.x 以前は `sensitive` / `status.spoiler_text` のキーを
+  /// 返さない。キーが無いときは「印なし」として従来どおり表示する (#1284)。
+  factory MediaCatalogItem.fromJson(Map<String, dynamic> m) {
+    final account = m['account'] as Map<String, dynamic>?;
+    final status = m['status'] as Map<String, dynamic>?;
+    final spoilerText = status?['spoiler_text'];
+    return MediaCatalogItem(
+      id: m['id']?.toString() ?? '',
+      url: m['url'] as String? ?? '',
+      thumbnailUrl: m['thumbnail_url'] as String?,
+      createdAt: m['created_at'] as String?,
+      fileName: m['file_name'] as String?,
+      fileSizeStr: m['file_size_str'] as String?,
+      type: m['type'] as String?,
+      mediatype: m['mediatype'] as String?,
+      pixelSize: m['pixel_size'] as String?,
+      duration: (m['duration'] as num?)?.toDouble(),
+      accountUsername: account?['username'] as String?,
+      accountDisplayName: account?['display_name'] as String?,
+      statusBody: status?['body'] as String?,
+      statusPublicUrl: status?['public_url'] as String?,
+      sensitive: m['sensitive'] == true,
+      spoilerText: spoilerText is String && spoilerText.trim().isNotEmpty
+          ? spoilerText
+          : null,
+    );
+  }
 }
 
 class MediaCatalogResult {
@@ -1463,27 +1502,9 @@ class MulukhiyaService {
       }
       final rawItems = data['items'] as List? ?? [];
       final hasNext = data['has_next'] as bool? ?? false;
-      final items = rawItems.map((e) {
-        final m = e as Map<String, dynamic>;
-        final account = m['account'] as Map<String, dynamic>?;
-        final status = m['status'] as Map<String, dynamic>?;
-        return MediaCatalogItem(
-          id: m['id']?.toString() ?? '',
-          url: m['url'] as String? ?? '',
-          thumbnailUrl: m['thumbnail_url'] as String?,
-          createdAt: m['created_at'] as String?,
-          fileName: m['file_name'] as String?,
-          fileSizeStr: m['file_size_str'] as String?,
-          type: m['type'] as String?,
-          mediatype: m['mediatype'] as String?,
-          pixelSize: m['pixel_size'] as String?,
-          duration: (m['duration'] as num?)?.toDouble(),
-          accountUsername: account?['username'] as String?,
-          accountDisplayName: account?['display_name'] as String?,
-          statusBody: status?['body'] as String?,
-          statusPublicUrl: status?['public_url'] as String?,
-        );
-      }).toList();
+      final items = rawItems
+          .map((e) => MediaCatalogItem.fromJson(e as Map<String, dynamic>))
+          .toList();
       return MediaCatalogResult(items: items, hasNext: hasNext);
     } on DioException catch (e) {
       if (e.response?.statusCode == 404 || _isAuthError(e)) {

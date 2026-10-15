@@ -6,9 +6,11 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/hashtag_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../util/scroll_thresholds.dart';
+import '../widget/filter_scope.dart';
 import '../widget/post_tile.dart';
 import '../widget/retry_error_view.dart';
 import '../widget/simple_post_bar.dart';
+import '../widget/timeline_older_prompt.dart';
 
 class HashtagTimelineScreen extends ConsumerStatefulWidget {
   final String hashtag;
@@ -138,7 +140,12 @@ class _HashtagTimelineScreenState extends ConsumerState<HashtagTimelineScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => FilterScope(
+    filterContext: FilterContext.public,
+    child: Builder(builder: _buildFiltered),
+  );
+
+  Widget _buildFiltered(BuildContext context) {
     final HashtagTimelineKey key = (
       account: ref.watch(currentAccountKeyProvider),
       spec: widget.hashtag,
@@ -164,17 +171,40 @@ class _HashtagTimelineScreenState extends ConsumerState<HashtagTimelineScreen> {
           Expanded(
             child: timeline.when(
               data: (state) => state.posts.isEmpty
-                  ? const Center(child: Text('投稿がありません'))
+                  // ⚠ 続きがあるのに空のときは、手で先を引ける入口を出す (#1283)。
+                  ? Center(
+                      child: state.hasMore
+                          ? TimelineOlderPrompt(
+                              isLoading: state.isLoadingMore,
+                              onLoadOlder: () => ref
+                                  .read(hashtagTimelineProvider(key).notifier)
+                                  .loadMore(),
+                            )
+                          : const Text('投稿がありません'),
+                    )
                   : RefreshIndicator(
                       onRefresh: () =>
                           ref.refresh(hashtagTimelineProvider(key).future),
                       child: ListView.separated(
                         controller: _scrollController,
                         itemCount:
-                            state.posts.length + (state.isLoadingMore ? 1 : 0),
+                            state.posts.length +
+                            (state.isLoadingMore || olderStalled(state)
+                                ? 1
+                                : 0),
                         separatorBuilder: (_, _) => const Divider(height: 1),
                         itemBuilder: (context, index) {
                           if (index >= state.posts.length) {
+                            // 上限まで引いても見える投稿が出なかったときの入口
+                            // (#1292)。理由は `timeline_older_prompt.dart`。
+                            if (!state.isLoadingMore) {
+                              return TimelineOlderPrompt(
+                                isLoading: false,
+                                onLoadOlder: () => ref
+                                    .read(hashtagTimelineProvider(key).notifier)
+                                    .loadMore(),
+                              );
+                            }
                             return const Padding(
                               padding: EdgeInsets.all(16),
                               child: Center(child: CircularProgressIndicator()),

@@ -15,6 +15,14 @@ class UserRelationship {
   /// いない」と読むと、押すと逆向きに倒れる項目になる。
   final bool showingReposts;
 
+  /// フォロー中のこの相手の返信を、TL に流しているか（Misskey のフォローごとの
+  /// `withReplies`・#1211）。
+  ///
+  /// ⚠ **null は「切り替えられない」。**この概念が無い（Mastodon）か、フォロー
+  /// していない。画面は null のとき項目を出さない。
+  /// ⚠ 自分の既定（新しくフォローするときの初期値）とは別物。
+  final bool? showingReplies;
+
   const UserRelationship({
     this.following = false,
     this.followedBy = false,
@@ -22,5 +30,6 @@ class UserRelationship {
     this.blocking = false,
     this.mutingExpiresAt,
     this.showingReposts = true,
+    this.showingReplies,
   });
 }

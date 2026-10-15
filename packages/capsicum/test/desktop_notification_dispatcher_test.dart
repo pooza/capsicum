@@ -249,6 +249,49 @@ void main() {
     expect(subsystem.shown.single.title, isNot(contains('@alice@h1')));
   });
 
+  group('CW 付きの投稿の本文 (#1282)', () {
+    Notification mentionWith({String? spoilerText, required String content}) =>
+        Notification(
+          id: 'a1',
+          type: NotificationType.mention,
+          createdAt: DateTime(2026, 1, 1),
+          post: Post(
+            id: 'p1',
+            postedAt: DateTime(2026, 1, 1),
+            author: _MockUser(),
+            content: content,
+            spoilerText: spoilerText,
+          ),
+        );
+
+    Future<String> bodyOf(Notification n) async {
+      final a = _makeAccount('alice', 'h1');
+      notifier.setAccounts([a.account]);
+      await _settle();
+      a.controller.add(n);
+      await _settle();
+      return subsystem.shown.single.body;
+    }
+
+    test('見出しだけを出し、畳まれている本文を出さない', () async {
+      final body = await bodyOf(
+        mentionWith(spoilerText: 'ネタバレ', content: '犯人はヤス'),
+      );
+      expect(body, 'ネタバレ');
+      expect(body, isNot(contains('犯人')));
+    });
+
+    test('見出しの無い CW（空文字）は固定の文言にし、本文へ落とさない', () async {
+      final body = await bodyOf(mentionWith(spoilerText: '', content: '犯人はヤス'));
+      expect(body, '閲覧注意');
+    });
+
+    test('CW が無ければ従来どおり本文を出す', () async {
+      final body = await bodyOf(mentionWith(content: 'こんにちは'));
+      expect(body, 'こんにちは');
+    });
+  });
+
   test('payload に宛先アカウントを含める', () async {
     final a = _makeAccount('alice', 'h1');
     notifier.setAccounts([a.account]);
@@ -269,6 +312,38 @@ void main() {
     await _settle();
 
     expect(dedupChannel.emitted, ['alice@h1|a1']);
+  });
+
+  test('⚠⚠ フィルターで出さない通知も native の既出集合へ伝える（後着の APNs を抑える）', () async {
+    final a = _makeAccount('alice', 'h1');
+    notifier.setAccounts([a.account]);
+    await _settle();
+
+    a.controller.add(
+      Notification(
+        id: 'f1',
+        type: NotificationType.mention,
+        createdAt: DateTime(2026, 1, 1),
+        post: Post(
+          id: 'p1',
+          postedAt: DateTime(2026, 1, 1),
+          author: const User(id: 'u', username: 'someone'),
+          content: 'ほげ',
+          filterMatches: const [
+            FilterMatch(
+              action: FilterAction.warn,
+              contexts: {FilterContext.notifications},
+            ),
+          ],
+        ),
+      ),
+    );
+    await _settle();
+
+    expect(subsystem.shown, isEmpty, reason: '伏せた投稿をバナーに出さない');
+    expect(dedupChannel.emitted, [
+      'alice@h1|f1',
+    ], reason: '伝えないと、後から届いたネイティブのプッシュがそのまま出る');
   });
 
   test('APNs 先着済み (onRemotePresented) の通知は表示しない (#674)', () async {

@@ -137,6 +137,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         BookmarkSupport,
         ThreadMuteSupport,
         RepostMuteSupport,
+        FollowRepliesSupport,
         AnnouncementSupport,
         FollowSupport,
         FollowRequestSupport,
@@ -171,7 +172,8 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         PagesSupport,
         TimelineCacheSupport,
         MulukhiyaRepostSupport,
-        ChatSupport {
+        ChatSupport,
+        WordMuteSupport {
   /// 本線 TL の購読。キーごとに 1 本ずつソケットを張る (#1089)。
   ///
   /// ⚠ 以前は単数で持っており、2 本目の購読が 1 本目を黙って止めていた（B-1）。
@@ -187,8 +189,10 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   // aggregate 不可、#438)。表示中のルームに対して都度購読 / 切断する。
   final Map<String, MisskeyChatRoomStreaming> _chatRoomStreamings = {};
   final MisskeyClient client;
-  List<List<String>> _mutedWords = [];
-  List<List<String>> _hardMutedWords = [];
+
+  /// 要素は `List<String>`（キーワードの AND）か `String`（正規表現）。#1288
+  List<Object> _mutedWords = [];
+  List<Object> _hardMutedWords = [];
   final Set<String> _adminRoleIds = {};
   User? _myUser;
   // _canWriteChat は user.canChat (chatAvailability == 'available') と一致。
@@ -261,6 +265,25 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     UserSecret userSecret,
   ) {
     client.setAccessToken(userSecret.accessToken);
+  }
+
+  // WordMuteSupport (#1290)
+
+  @override
+  Future<({List<Object> soft, List<Object> hard})> getWordMutes() async {
+    final user = await client.getI();
+    _mutedWords = user.mutedWords ?? [];
+    _hardMutedWords = user.hardMutedWords ?? [];
+    return (soft: _mutedWords, hard: _hardMutedWords);
+  }
+
+  /// ⚠ **応答の `MeDetailed` で保持語を更新する。**しないと、次の TTL（#1185）で
+  /// `getMyself` が走るまで古い語で判定し続ける。
+  @override
+  Future<void> setWordMutes({List<Object>? soft, List<Object>? hard}) async {
+    final user = await client.updateI(mutedWords: soft, hardMutedWords: hard);
+    _mutedWords = user.mutedWords ?? [];
+    _hardMutedWords = user.hardMutedWords ?? [];
   }
 
   @override
@@ -391,6 +414,33 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   @override
   Future<void> cancelScheduledPost(String id) async {
     await client.deleteNoteDraft(id);
+  }
+
+  @override
+  Future<void> rescheduleScheduledPost(String id, DateTime scheduledAt) =>
+      updateScheduledNote(id: id, scheduledAt: scheduledAt);
+
+  /// 予約投稿の本文か時刻を変える (#1212)。[text] が null なら本文は変えない。
+  ///
+  /// ⚠⚠ **`client.updateScheduledNote` を画面から直に呼ばない。**投票つきの
+  /// 予約投稿は、投票を送り直さないと期限が消える（上流の挙動）。ここで
+  /// いまの下書きを引いて投票を添える。⚠ **引くのに失敗した回は更新しない**
+  /// （例外をそのまま返す）—— 投票の有無が分からないまま送ると、期限を消す側に
+  /// 倒れる。一覧に見つからなかった回は投票なしで送り、サーバーの判定に任せる。
+  Future<void> updateScheduledNote({
+    required String id,
+    String? text,
+    required DateTime scheduledAt,
+  }) async {
+    final draft = (await client.getScheduledNotesRaw())
+        .where((d) => d['id'] == id)
+        .firstOrNull;
+    await client.updateScheduledNote(
+      draftId: id,
+      text: text,
+      scheduledAt: scheduledAt,
+      poll: draft == null ? null : misskeyDraftPollParams(draft),
+    );
   }
 
   // DraftSupport (#174)
@@ -587,8 +637,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     var matchedSoft = false;
     for (final target in targets) {
       if (myId != null && target.author.id == myId) continue;
-      final text = '${target.content ?? ''} ${target.spoilerText ?? ''}'
-          .toLowerCase();
+      final text = '${target.content ?? ''} ${target.spoilerText ?? ''}';
       if (text.trim().isEmpty) continue;
       if (_matchesMuteWords(text, _hardMutedWords)) {
         matchedHard = true;
@@ -597,42 +646,80 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       if (_matchesMuteWords(text, _mutedWords)) matchedSoft = true;
     }
 
+    // Misskey に適用先の概念は無いので「全画面」（contexts: null）で載せる (#1289)。
     if (matchedHard) {
       return post.copyWith(
-        filterAction: FilterAction.hide,
-        filterTitle: 'ワードミュート',
+        filterMatches: const [
+          FilterMatch(action: FilterAction.hide, title: 'ワードミュート'),
+        ],
       );
     }
     if (matchedSoft) {
       return post.copyWith(
-        filterAction: FilterAction.warn,
-        filterTitle: 'ワードミュート',
+        filterMatches: const [
+          FilterMatch(action: FilterAction.warn, title: 'ワードミュート'),
+        ],
       );
     }
     return post;
   }
 
-  static bool _matchesMuteWords(String text, List<List<String>> muteWords) {
-    for (final group in muteWords) {
-      if (group.isEmpty) continue;
-      // Single-element group starting with "/" is a regex pattern.
-      if (group.length == 1 &&
-          group[0].startsWith('/') &&
-          group[0].endsWith('/')) {
-        final pattern = group[0].substring(1, group[0].length - 1);
-        try {
-          if (RegExp(pattern, caseSensitive: false).hasMatch(text)) return true;
-        } catch (_) {
-          // Invalid regex — skip.
-        }
+  /// 本家の `check-word-mute.ts` に倣う（#1288）。
+  ///
+  /// - **`String` の要素は正規表現**（`/pattern/flags`）。⚠ フラグを効かせ、
+  ///   **小文字化していない本文**に当てる —— 以前は全文を小文字化してから
+  ///   `caseSensitive: false` で当てていたので、`i` の無い正規表現も大文字小文字を
+  ///   区別しなかった。
+  /// - **`List<String>` の要素はキーワードの AND**。空のキーワードは捨てる（本家と
+  ///   同じ。捨てないと `['']` が全投稿に当たる）。⚠ 配列の中の `/…/` は正規表現に
+  ///   しない（本家も素の文字列として比べる）。
+  /// - ⚠ **キーワードは大文字小文字を区別する**（本家と同じ・#1290 で揃えた・
+  ///   2026-10-15 pooza 判断）。以前の capsicum は区別しなかったので、管理 UI を
+  ///   付けると「Web で効かない語が capsicum では効く」差が見えるようになっていた。
+  ///   ⚠ 既存の利用者には「いままで伏せていた投稿が出る」変化
+  static bool _matchesMuteWords(String text, List<Object> muteWords) {
+    for (final filter in muteWords) {
+      if (filter is String) {
+        final regex = _compileMuteRegex(filter);
+        if (regex != null && regex.hasMatch(text)) return true;
         continue;
       }
-      // Multi-element group: all words must match (AND condition).
-      final allMatch = group.every((word) => text.contains(word.toLowerCase()));
-      if (allMatch) return true;
+      if (filter is! List<String>) continue;
+      final keywords = filter.where((word) => word.isNotEmpty).toList();
+      if (keywords.isEmpty) continue;
+      if (keywords.every(text.contains)) {
+        return true;
+      }
     }
     return false;
   }
+
+  static final Map<String, RegExp?> _muteRegexCache = {};
+
+  /// `/pattern/flags` を Dart の `RegExp` にする。形が崩れている・知らないフラグ・
+  /// コンパイルできない、のいずれも null（その行は当たらない扱い・本家と同じ）。
+  ///
+  /// JS のフラグのうち `g` / `y` / `d` は 1 回の判定に影響しないので読み捨てる。
+  static RegExp? _compileMuteRegex(String filter) =>
+      _muteRegexCache.putIfAbsent(filter, () {
+        final parts = RegExp(r'^/(.+)/(.*)$', dotAll: true).firstMatch(filter);
+        if (parts == null) return null;
+        final flags = parts.group(2)!;
+        if (flags.split('').any((flag) => !'gimsuyvd'.contains(flag))) {
+          return null;
+        }
+        try {
+          return RegExp(
+            parts.group(1)!,
+            caseSensitive: !flags.contains('i'),
+            multiLine: flags.contains('m'),
+            dotAll: flags.contains('s'),
+            unicode: flags.contains('u') || flags.contains('v'),
+          );
+        } on FormatException {
+          return null;
+        }
+      });
 
   @override
   Future<Post> getPostById(String id) async {
@@ -1028,8 +1115,15 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       muting: r['isMuted'] as bool? ?? false,
       blocking: r['isBlocking'] as bool? ?? false,
       showingReposts: !(r['isRenoteMuted'] as bool? ?? false),
+      showingReplies: misskeyFollowWithReplies(r),
     );
   }
+
+  // FollowRepliesSupport (#1211)
+
+  @override
+  Future<void> setShowReplies(String userId, {required bool show}) =>
+      client.updateFollowing(userId, withReplies: show);
 
   // RepostMuteSupport (#1245)
 
@@ -1546,6 +1640,22 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   @override
   Future<PostList> updateList(String id, String title) async {
     final list = await client.updateList(id, title);
+    return list.toCapsicum();
+  }
+
+  /// ⚠ [repliesPolicy] / [exclusive] は Misskey に無い項目なので送らない。
+  /// [isPublic] が null なら、変えるものが無いので送らない（空の更新は送らない）。
+  @override
+  Future<PostList> updateListSettings(
+    String id, {
+    ListRepliesPolicy? repliesPolicy,
+    bool? exclusive,
+    bool? isPublic,
+  }) async {
+    if (isPublic == null) {
+      return MisskeyList.fromJson(await client.showList(id)).toCapsicum();
+    }
+    final list = await client.updateListVisibility(id, isPublic: isPublic);
     return list.toCapsicum();
   }
 

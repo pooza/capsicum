@@ -294,6 +294,20 @@ class MisskeyClient {
     );
   }
 
+  /// POST /api/following/update — フォロー中の相手の返信を TL に流すか (#1211)。
+  ///
+  /// ⚠ `notify`（投稿の通知）も同じ口が受けるが、送らない（送らなかった項目は
+  /// 変わらない）。
+  Future<void> updateFollowing(
+    String userId, {
+    required bool withReplies,
+  }) async {
+    await dio.post(
+      '/api/following/update',
+      data: createBody({'userId': userId, 'withReplies': withReplies}),
+    );
+  }
+
   /// POST /api/renote-mute/create — この相手のリノートを TL に出さない (#1245)。
   /// フォローしていない相手にも掛けられる。
   Future<void> muteRenotes(String userId) async {
@@ -678,19 +692,40 @@ class MisskeyClient {
         .toList();
   }
 
-  /// POST /api/notes/drafts/update — update a scheduled note's text.
+  /// POST /api/notes/drafts/list — 予約投稿を、変換せずそのまま返す (#1212)。
+  ///
+  /// [ScheduledPost] に載らない項目（投票）を、更新のときに送り直すために引く。
+  Future<List<Map<String, dynamic>>> getScheduledNotesRaw() async {
+    final response = await dio.post(
+      '/api/notes/drafts/list',
+      data: createBody({'scheduled': true}),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/notes/drafts/update — 予約投稿の本文か時刻を変える。
+  ///
+  /// 送らなかった項目（添付・CW・公開範囲など）は、サーバーに残っている値の
+  /// まま。[text] が null なら本文も変えない（時刻だけの変更・#1212）。
+  ///
+  /// ⚠⚠ **投票だけは例外で、送らないと期限が消える。**上流のエンドポイントは
+  /// `poll` が無い要求でも `pollExpiresAt` を null で上書きする。投票つきの
+  /// 予約投稿を更新するときは、いまの投票を [poll] で送り直すこと
+  /// （[misskeyDraftPollParams] が下書きから組む）。
   Future<void> updateScheduledNote({
     required String draftId,
-    required String text,
+    String? text,
     required DateTime scheduledAt,
+    Map<String, dynamic>? poll,
   }) async {
     await dio.post(
       '/api/notes/drafts/update',
       data: createBody({
         'draftId': draftId,
-        'text': text,
+        'text': ?text,
         'scheduledAt': scheduledAt.toUtc().millisecondsSinceEpoch,
         'isActuallyScheduled': true,
+        'poll': ?poll,
       }),
     );
   }
@@ -1528,6 +1563,20 @@ class MisskeyClient {
     return MisskeyList.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// POST /api/users/lists/update — リストの公開 / 非公開だけを変える (#1211)。
+  ///
+  /// ⚠ `name` は送らない（必須は `listId` だけで、送らなかった項目は変わらない）。
+  Future<MisskeyList> updateListVisibility(
+    String listId, {
+    required bool isPublic,
+  }) async {
+    final response = await dio.post(
+      '/api/users/lists/update',
+      data: createBody({'listId': listId, 'isPublic': isPublic}),
+    );
+    return MisskeyList.fromJson(response.data as Map<String, dynamic>);
+  }
+
   /// POST /api/users/lists/delete
   Future<void> deleteList(String listId) async {
     await dio.post(
@@ -1598,6 +1647,8 @@ class MisskeyClient {
     List<Map<String, String>>? fields,
     bool? isLocked,
     bool? isExplorable,
+    List<Object>? mutedWords,
+    List<Object>? hardMutedWords,
   }) async {
     final params = <String, dynamic>{
       'avatarId': ?avatarId,
@@ -1606,6 +1657,10 @@ class MisskeyClient {
       // null は「変更しない」でキーを送らない (#865)。
       'isLocked': ?isLocked,
       'isExplorable': ?isExplorable,
+      // ワードミュート (#1290)。⚠ **全置換**（差分ではない）。要素は
+      // `List<String>`（キーワードの AND）か `String`（正規表現）。
+      'mutedWords': ?mutedWords,
+      'hardMutedWords': ?hardMutedWords,
     };
     // Misskey rejects "" but accepts explicit null to clear a field.
     // null parameter = "not changing" (omit key), empty string = "clear" (send null value).

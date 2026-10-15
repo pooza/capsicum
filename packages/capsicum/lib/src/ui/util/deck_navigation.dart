@@ -135,31 +135,42 @@ void openProfile(BuildContext context, User user, {AccountKey? account}) =>
 ///
 /// ⚠ URL へは **spec をもう一度エスケープして**載せる。go_router がパスパラメータを
 /// URL デコードするため、`%2B` を素で置くと `+` に戻ってしまう。
-void openHashtag(BuildContext context, String tag) {
+void openHashtag(BuildContext context, String tag, {AccountKey? account}) {
   final spec = hashtagSpecFromTag(tag);
   openColumnOrPush(
     context,
     HashtagTab(spec),
+    account: account,
     push: () => context.push('/hashtag/${Uri.encodeComponent(spec)}'),
   );
 }
 
 /// リストのタイムラインを開く (#1272)。デッキのドロワーから選んだリストを、
 /// 全画面ではなくカラムで開くための口。
-void openList(BuildContext context, String id, String? name) =>
-    openColumnOrPush(
-      context,
-      ListTab(id: id, name: name),
-      push: () => context.push('/list/$id', extra: name),
-    );
+void openList(
+  BuildContext context,
+  String id,
+  String? name, {
+  AccountKey? account,
+}) => openColumnOrPush(
+  context,
+  ListTab(id: id, name: name),
+  account: account,
+  push: () => context.push('/list/$id', extra: name),
+);
 
 /// チャンネルのタイムラインを開く (#1150)。
-void openChannel(BuildContext context, String id, String? name) =>
-    openColumnOrPush(
-      context,
-      ChannelTab(id: id, name: name),
-      push: () => context.push('/channel/$id', extra: name),
-    );
+void openChannel(
+  BuildContext context,
+  String id,
+  String? name, {
+  AccountKey? account,
+}) => openColumnOrPush(
+  context,
+  ChannelTab(id: id, name: name),
+  account: account,
+  push: () => context.push('/channel/$id', extra: name),
+);
 
 /// ユーザー一覧（フォロー / フォロワー / 反応した人）を開く (#1150)。
 ///

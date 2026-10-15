@@ -118,4 +118,49 @@ void main() {
     // 表示された投稿に、除外のタグを持つものは無い。
     expect(afterTwo.posts.every((e) => !e.tags.contains('b')), isTrue);
   });
+
+  // #1283（v2.2 のリリース PR の締めの Codex レビュー・P2）。
+  test('⚠⚠ 最初の読み込みが上限まで引いて空でも、続き読みはその先から進む', () async {
+    // 260 件。新しい側 220 件（11 ページぶん）は除外 / 残り 40 件は出る。
+    // 最初の読み込みは 10 ページ（200 件）で打ち切られ、1 件も残らない。
+    final all = [for (var n = 260; n >= 1; n--) _post(n, excluded: n > 40)];
+    final adapter = _PagedAdapter(all);
+    final container = ProviderContainer(
+      overrides: [
+        currentAccountProvider.overrideWith(
+          (ref) => Account(
+            key: _meKey,
+            adapter: adapter,
+            user: const User(id: 'me', username: 'me'),
+            userSecret: const UserSecret(accessToken: 'token'),
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    final p = hashtagTimelineProvider((account: _meKey, spec: 'a!b'));
+    container.listen(p, (_, _) {}, fireImmediately: true);
+    final first = await container.read(p.future);
+    expect(first.posts, isEmpty);
+    expect(first.hasMore, isTrue, reason: '画面はここから続きを読む入口を出す');
+    expect(first.pageCapHit, isTrue);
+    expect(adapter.requestedMaxIds.length, 10);
+
+    await container.read(p.notifier).loadMore();
+    final after = container.read(p).requireValue;
+    expect(
+      after.posts,
+      isNotEmpty,
+      reason: '最初の読み込みで進んだ先（201 件め以降）から引く。先頭から引き直さない',
+    );
+    expect(after.posts.first.id, '0040');
+    // 11 回めの起点は、最初の読み込みの生の末尾（200 件め = 0061）。
+    expect(adapter.requestedMaxIds[10], '0061');
+    // 同じページを 2 度引いていない（先頭の null も 1 回だけ）。
+    expect(
+      adapter.requestedMaxIds.toSet().length,
+      adapter.requestedMaxIds.length,
+    );
+  });
 }

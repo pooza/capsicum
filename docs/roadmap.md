@@ -3,7 +3,7 @@
 棚卸し 3 本（[#993](https://github.com/pooza/capsicum/issues/993) / [#991](https://github.com/pooza/capsicum/issues/991) / [#992](https://github.com/pooza/capsicum/issues/992)）が 2026-09-04 に打ち止めになり、v2.0 のホールディング枠に 20 件が溜まった状態を解消するために作った。
 
 - 策定日: **2026-09-04**（pooza 判断）
-- ⚠⚠ **いまの位置（2026-10-11）: v2.0 は 2026-10-08、v2.1 は 2026-10-10 に出荷済み。v2.2 から平常運用**（決定済み事項 3 の (5)）。この文書に残っているのは、**枠を割るときにいまも効く基準と pooza の判断**。枠を配り直した当時の表・件数・経過は [archive/roadmap-settled.md](archive/roadmap-settled.md) へ移した
+- ⚠⚠ **いまの位置（2026-10-13）: v2.0 は 2026-10-08、v2.1 は 2026-10-10、v2.2 は 2026-10-12 に出荷済みで、稼働枠は v2.3。v2.2 から平常運用**（決定済み事項 3 の (5)）。この文書に残っているのは、**枠を割るときにいまも効く基準と pooza の判断**。枠を配り直した当時の表・件数・経過は [archive/roadmap-settled.md](archive/roadmap-settled.md) へ移した
 - ⚠ **この文書は枠の設計（枠の数・各枠の主題・境界の基準）だけを持つ。**各枠の含有 Issue は **GitHub Milestones の description が正本**で、ここには複写しない（[CLAUDE.md の正本ルール](CLAUDE.md#正本ルール)）
 - 手順の正本は [milestone-transition.md](milestone-transition.md)、判断規約の正本は [CLAUDE.md「マイルストーン運用」](CLAUDE.md#マイルストーン運用)
 

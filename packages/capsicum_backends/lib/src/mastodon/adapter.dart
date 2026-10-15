@@ -8,6 +8,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'client.dart';
 import 'extensions.dart';
+import 'filters.dart';
 import 'notification_streaming.dart';
 import 'oauth_pkce.dart';
 import 'streaming.dart';
@@ -149,7 +150,8 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         TimelineCacheSupport,
         MulukhiyaRepostSupport,
         TranslationSupport,
-        MediaUpdateSupport {
+        MediaUpdateSupport,
+        FilterSupport {
   final MastodonClient client;
 
   /// 本線 TL の購読。キーごとに 1 本ずつソケットを張る (#1090)。
@@ -430,6 +432,11 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   @override
   Future<void> cancelScheduledPost(String id) async {
     await client.deleteScheduledStatus(id);
+  }
+
+  @override
+  Future<void> rescheduleScheduledPost(String id, DateTime scheduledAt) async {
+    await client.updateScheduledStatusTime(id, scheduledAt);
   }
 
   @override
@@ -867,6 +874,24 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       ).results,
       nextCursor: result.nextMaxId,
     );
+  }
+
+  @override
+  Future<Post> revokeQuote({
+    required String quotedPostId,
+    required String quotingPostId,
+  }) async {
+    final status = await client.revokeQuote(quotedPostId, quotingPostId);
+    return status.toCapsicum(host, adminRoleIds: _adminRoleIds);
+  }
+
+  @override
+  Future<Post> setQuoteApprovalPolicy(String postId, String policy) async {
+    final status = await client.updateInteractionPolicy(
+      postId,
+      quoteApprovalPolicy: policy,
+    );
+    return status.toCapsicum(host, adminRoleIds: _adminRoleIds);
   }
 
   @override
@@ -1604,10 +1629,45 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     return list.toCapsicum();
   }
 
+  /// ⚠ [isPublic] は Mastodon に無い項目なので送らない。
+  @override
+  Future<PostList> updateListSettings(
+    String id, {
+    ListRepliesPolicy? repliesPolicy,
+    bool? exclusive,
+    bool? isPublic,
+  }) async {
+    final list = await client.updateListSettings(
+      id,
+      repliesPolicy: repliesPolicy?.apiValue,
+      exclusive: exclusive,
+    );
+    return list.toCapsicum();
+  }
+
   @override
   Future<void> deleteList(String id) async {
     await client.deleteList(id);
   }
+
+  // FilterSupport (#1047)
+
+  @override
+  Future<List<ServerFilter>> getFilters() async =>
+      (await client.getFilters()).map(parseMastodonFilter).toList();
+
+  @override
+  Future<ServerFilter> createFilter(FilterDraft draft) async =>
+      parseMastodonFilter(await client.createFilter(mastodonFilterBody(draft)));
+
+  @override
+  Future<ServerFilter> updateFilter(String id, FilterDraft draft) async =>
+      parseMastodonFilter(
+        await client.updateFilter(id, mastodonFilterBody(draft)),
+      );
+
+  @override
+  Future<void> deleteFilter(String id) => client.deleteFilter(id);
 
   @override
   Future<List<User>> getListAccounts(String listId) async {

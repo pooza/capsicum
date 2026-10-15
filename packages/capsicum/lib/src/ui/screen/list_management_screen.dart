@@ -5,7 +5,10 @@ import 'package:go_router/go_router.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../provider/list_provider.dart';
+import '../../util/exception_scrub.dart';
+import '../util/op_error.dart';
 import '../widget/bottom_safe_area.dart';
+import '../widget/list_settings_dialog.dart';
 
 class ListManagementScreen extends ConsumerWidget {
   const ListManagementScreen({super.key});
@@ -124,6 +127,16 @@ class ListManagementScreen extends ConsumerWidget {
                 _showRenameDialog(context, ref, list);
               },
             ),
+            // リストの設定 (#1211)。⚠ そのサーバーが持つ項目が無ければ出さない。
+            if (list.hasSettings)
+              ListTile(
+                leading: const Icon(Icons.tune),
+                title: const Text('設定'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _showSettings(context, ref, list);
+                },
+              ),
             ListTile(
               leading: const Icon(Icons.delete, color: Colors.red),
               title: const Text('削除', style: TextStyle(color: Colors.red)),
@@ -166,6 +179,46 @@ class ListManagementScreen extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  /// リストの設定を見て、変える (#1211)。
+  Future<void> _showSettings(
+    BuildContext context,
+    WidgetRef ref,
+    PostList list,
+  ) async {
+    // ⚠ ダイアログを開く前に確定させる（閉じたあとに `ref` を読まない）。
+    final messenger = ScaffoldMessenger.of(context);
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter == null || adapter is! ListSupport) return;
+
+    final change = await showListSettingsDialog(context, list);
+    if (change == null) return;
+    Object? error;
+    try {
+      await (adapter as ListSupport).updateListSettings(
+        list.id,
+        repliesPolicy: change.repliesPolicy,
+        exclusive: change.exclusive,
+        isPublic: change.isPublic,
+      );
+    } catch (e) {
+      debugLogException('List settings update error', e);
+      error = e;
+    }
+    // ⚠ 通信の間に画面を離れていたら、`ref` も SnackBar も触らない（PR #1285 の
+    // Codex P2）。破棄済みの `ref` で投げ、成功した変更が失敗の表示に落ちる。
+    if (!context.mounted) return;
+    if (error == null) {
+      ref.invalidate(listsProvider);
+      messenger.showSnackBar(
+        SnackBar(content: Text('リスト「${list.title}」の設定を変更しました')),
+      );
+    } else {
+      messenger.showSnackBar(
+        SnackBar(content: Text('設定の変更に失敗しました\n${summarizeOpError(error)}')),
+      );
+    }
   }
 
   void _showDeleteDialog(BuildContext context, WidgetRef ref, PostList list) {

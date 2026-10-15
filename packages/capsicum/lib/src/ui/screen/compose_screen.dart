@@ -55,6 +55,7 @@ import '../util/provider_scope_carrier.dart';
 import '../util/redraft_carry_over.dart';
 import '../util/relative_time.dart';
 import '../util/reply_mentions.dart';
+import '../util/schedule_picker.dart';
 import '../util/shortcode_warning_controller.dart';
 import '../util/text_length_counter.dart';
 import '../util/visible_timeline.dart';
@@ -875,11 +876,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   bool _pollMultiple = false;
   int _pollExpiresIn = 86400; // 1 day in seconds
 
-  static const _quoteApprovalLabels = {
-    'public': '誰でも',
-    'followers': 'フォロワーのみ',
-    'nobody': '許可しない',
-  };
+  static const _quoteApprovalLabels = quoteApprovalLabels;
 
   static const _quoteApprovalIcons = {
     'public': Icons.public,
@@ -2980,12 +2977,15 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         // 「オートメーション」で拒否 / 応答待ち #668）。「曲なし」と誤誘導せず、
         // 解消手順を案内する。denied は設定変更が要るので Sentry にも残す。
         final pending = e.reason == 'automation_pending';
+        // どのアプリの許可かで名前を変える（Spotify はミュージックとは別に
+        // 確認が出る・#1276）。
+        final app = e.appName ?? 'ミュージック';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
               pending
-                  ? 'ミュージックへのアクセスを許可するか確認したうえで、もう一度お試しください。'
-                  : 'ミュージックへのアクセスが許可されていません。システム設定 ＞ プライバシーとセキュリティ ＞ オートメーション で capsicum にミュージックの操作を許可してください。',
+                  ? '$appへのアクセスを許可するか確認したうえで、もう一度お試しください。'
+                  : '$appへのアクセスが許可されていません。システム設定 ＞ プライバシーとセキュリティ ＞ オートメーション で capsicum に$appの操作を許可してください。',
             ),
           ),
         );
@@ -2994,7 +2994,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
             'nowplaying: music automation denied',
             level: SentryLevel.warning,
             withScope: (scope) {
-              scope.setTag('nowplaying.source', 'apple_music');
+              scope.setTag(
+                'nowplaying.source',
+                e.appName == 'Spotify' ? 'spotify_app' : 'apple_music',
+              );
               scope.setTag('nowplaying.error', e.reason);
               scope.fingerprint = ['nowplaying', 'automation_denied'];
             },
@@ -3168,7 +3171,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   Future<void> _attachNowPlayingArtwork(NowPlayingInfo info) async {
     final uri = info.artworkUrl;
     if (uri == null) {
-      _noteNowPlayingArtwork('no_source');
+      // ネイティブが理由を返した回は、それも残す (#1283)。「源が絵を持って
+      // いない」と「絵はあったが書き出せなかった」を分けられる。
+      _noteNowPlayingArtwork(nowPlayingArtworkNoSourceOutcome(info));
       return;
     }
     if (_attachedNowPlayingArtwork.contains(uri)) {
@@ -3786,43 +3791,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   bool get _effectiveSensitive => _cwEnabled || _sensitiveEnabled;
 
   Future<void> _pickScheduleDate() async {
-    final now = DateTime.now();
-    final date = await showDatePicker(
-      context: context,
-      initialDate: _scheduledAt ?? now.add(const Duration(hours: 1)),
-      firstDate: now,
-      lastDate: now.add(const Duration(days: 365)),
-      helpText: '予約投稿の日付',
-      confirmText: '次へ（時刻を選択）',
+    // ⚠ 選ばせ方と下限は、予約投稿一覧の「時刻を変更」と共有する (#1212)。
+    final scheduled = await pickScheduleDateTime(
+      context,
+      initial: _scheduledAt,
     );
-    if (date == null || !mounted) return;
-
-    final time = await showTimePicker(
-      context: context,
-      initialTime: _scheduledAt != null
-          ? TimeOfDay.fromDateTime(_scheduledAt!)
-          : TimeOfDay.fromDateTime(now.add(const Duration(hours: 1))),
-      helpText: '予約投稿の時刻',
-    );
-    if (time == null || !mounted) return;
-
-    final scheduled = DateTime(
-      date.year,
-      date.month,
-      date.day,
-      time.hour,
-      time.minute,
-    );
-    // Mastodon requires at least 5 minutes in the future.
-    final minTime = DateTime.now().add(const Duration(minutes: 5));
-    if (scheduled.isBefore(minTime)) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('5分以上先の日時を指定してください')));
-      }
-      return;
-    }
+    if (scheduled == null || !mounted) return;
     setState(() => _scheduledAt = scheduled);
   }
 
@@ -5306,7 +5280,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : Icon(_scheduledAt != null ? Icons.schedule_send : Icons.send),
-            tooltip: _scheduledAt != null ? '予約投稿' : null,
+            tooltip: _scheduledAt != null ? '予約投稿' : '投稿',
           ),
         ],
       ),

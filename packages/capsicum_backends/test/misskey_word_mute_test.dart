@@ -31,13 +31,19 @@ void main() {
   /// ⚠ **`getMyself` を通してからタイムラインを引く。**ミュート語と「自分が誰か」は
   /// どちらも `/api/i` で入るので、そこを省くと判定そのものが走らない。
   Future<MisskeyAdapter> adapterWith({
-    required List<List<String>> mutedWords,
+    required List<Object> mutedWords,
     required List<Map<String, dynamic>> notes,
+    List<Object> hardMutedWords = const [],
     String myId = 'me',
   }) async {
     final adapter = await MisskeyAdapter.create('misskey.example');
     adapter.client.dio.httpClientAdapter = _StubAdapter({
-      '/api/i': {'id': myId, 'username': 'pooza', 'mutedWords': mutedWords},
+      '/api/i': {
+        'id': myId,
+        'username': 'pooza',
+        'mutedWords': mutedWords,
+        'hardMutedWords': hardMutedWords,
+      },
       '/api/notes/timeline': notes,
     });
     await adapter.getMyself();
@@ -67,8 +73,8 @@ void main() {
 
     final post = (await timelineOf(adapter)).single;
 
-    expect(post.filterAction, FilterAction.warn);
-    expect(post.filterTitle, 'ワードミュート');
+    expect(post.filterVerdictFor(null)?.action, FilterAction.warn);
+    expect(post.filterVerdictFor(null)?.title, 'ワードミュート');
   });
 
   test('⚠ 引用の中身にミュート語があっても当たる', () async {
@@ -85,7 +91,10 @@ void main() {
       ],
     );
 
-    expect((await timelineOf(adapter)).single.filterAction, FilterAction.warn);
+    expect(
+      (await timelineOf(adapter)).single.filterVerdictFor(null)?.action,
+      FilterAction.warn,
+    );
   });
 
   test('⚠ 中身にも語が無ければ当たらない（何でも当てていないことの固定）', () async {
@@ -103,7 +112,7 @@ void main() {
     );
 
     expect(
-      (await timelineOf(adapter)).single.filterAction,
+      (await timelineOf(adapter)).single.filterVerdictFor(null)?.action,
       isNot(FilterAction.warn),
     );
   });
@@ -128,7 +137,7 @@ void main() {
     );
 
     expect(
-      (await timelineOf(adapter)).single.filterAction,
+      (await timelineOf(adapter)).single.filterVerdictFor(null)?.action,
       isNot(FilterAction.warn),
     );
   });
@@ -143,8 +152,8 @@ void main() {
 
     final post = (await timelineOf(adapter)).single;
 
-    expect(post.filterAction, FilterAction.warn);
-    expect(post.filterTitle, 'ワードミュート');
+    expect(post.filterVerdictFor(null)?.action, FilterAction.warn);
+    expect(post.filterVerdictFor(null)?.title, 'ワードミュート');
   });
 
   // ⚠⚠ ここが本題。組み直しをやめないと軒並み落ちる。
@@ -173,7 +182,7 @@ void main() {
 
     final post = (await timelineOf(adapter)).single;
 
-    expect(post.filterAction, FilterAction.warn);
+    expect(post.filterVerdictFor(null)?.action, FilterAction.warn);
     expect(post.localOnly, isTrue, reason: '「ローカルのみ」が落ちると再編集で公開されうる');
     expect(post.channelId, 'ch1');
     expect(post.channelName, '実況');
@@ -199,8 +208,8 @@ void main() {
 
     final post = (await timelineOf(adapter)).single;
 
-    expect(post.filterAction, isNull);
-    expect(post.filterTitle, isNull);
+    expect(post.filterVerdictFor(null)?.action, isNull);
+    expect(post.filterVerdictFor(null)?.title, isNull);
   });
 
   test('ミュート語に当たらなければ何も載らない', () async {
@@ -211,13 +220,19 @@ void main() {
       notes: [note({})],
     );
 
-    expect((await timelineOf(adapter)).single.filterAction, isNull);
+    expect(
+      (await timelineOf(adapter)).single.filterVerdictFor(null)?.action,
+      isNull,
+    );
   });
 
   test('ミュート語が無ければ素通し', () async {
     final adapter = await adapterWith(mutedWords: [], notes: [note({})]);
 
-    expect((await timelineOf(adapter)).single.filterAction, isNull);
+    expect(
+      (await timelineOf(adapter)).single.filterVerdictFor(null)?.action,
+      isNull,
+    );
   });
 
   // ⚠ AND 条件（配列の中の全語を含む）。本家と同じ扱い。
@@ -234,10 +249,129 @@ void main() {
 
     final posts = await timelineOf(adapter);
 
-    expect(posts.firstWhere((p) => p.id == 'n1').filterAction, isNull);
     expect(
-      posts.firstWhere((p) => p.id == 'n2').filterAction,
+      posts.firstWhere((p) => p.id == 'n1').filterVerdictFor(null)?.action,
+      isNull,
+    );
+    expect(
+      posts.firstWhere((p) => p.id == 'n2').filterVerdictFor(null)?.action,
       FilterAction.warn,
+    );
+  });
+
+  // #1288: 正規表現の行は配列に入らない素の文字列で返る（`(string[] | string)[]`）。
+  group('正規表現のミュート (#1288)', () {
+    // ⚠⚠ 本題。以前は `e as List<dynamic>` で決め打ちしていたので、ここで
+    // `/api/i` の parse ごと落ちていた（getMyself が TypeError を投げる）。
+    test('⚠⚠ 正規表現の行があっても /api/i を読めて、正規表現で当たる', () async {
+      final adapter = await adapterWith(
+        mutedWords: [
+          ['アバン'],
+          '/ダイの.+冒険/',
+        ],
+        notes: [note({})],
+      );
+
+      expect(
+        (await timelineOf(adapter)).single.filterVerdictFor(null)?.action,
+        FilterAction.warn,
+      );
+    });
+
+    test('hardMutedWords の正規表現は hide になる', () async {
+      final adapter = await adapterWith(
+        mutedWords: [],
+        hardMutedWords: ['/大冒険/'],
+        notes: [note({})],
+      );
+
+      expect(
+        (await timelineOf(adapter)).single.filterVerdictFor(null)?.action,
+        FilterAction.hide,
+      );
+    });
+
+    test('⚠ i フラグがあれば大文字小文字を区別しない', () async {
+      final adapter = await adapterWith(
+        mutedWords: ['/DAI/i'],
+        notes: [
+          note({'text': 'dai no daibouken'}),
+        ],
+      );
+
+      expect(
+        (await timelineOf(adapter)).single.filterVerdictFor(null)?.action,
+        FilterAction.warn,
+      );
+    });
+
+    // ⚠ 以前は本文を小文字化して caseSensitive: false で当てていたので、
+    // フラグの無い正規表現も区別しなかった。本家はフラグどおり。
+    test('⚠ フラグが無ければ大文字小文字を区別する（本家と同じ）', () async {
+      final adapter = await adapterWith(
+        mutedWords: ['/DAI/'],
+        notes: [
+          note({'text': 'dai no daibouken'}),
+        ],
+      );
+
+      expect(
+        (await timelineOf(adapter)).single.filterVerdictFor(null)?.action,
+        isNull,
+      );
+    });
+
+    test('⚠ 配列の中の /…/ は正規表現にしない（素の文字列として比べる・本家と同じ）', () async {
+      final adapter = await adapterWith(
+        mutedWords: [
+          ['/ダイ.+/'],
+        ],
+        notes: [note({})],
+      );
+
+      expect(
+        (await timelineOf(adapter)).single.filterVerdictFor(null)?.action,
+        isNull,
+      );
+    });
+
+    test('⚠ 壊れた正規表現・知らないフラグの行は当たらず、ほかの行は効く', () async {
+      final adapter = await adapterWith(
+        mutedWords: ['/(/', '/ダイ/z', 'ダイ', '/名作/'],
+        notes: [note({})],
+      );
+
+      expect(
+        (await timelineOf(adapter)).single.filterVerdictFor(null)?.action,
+        FilterAction.warn,
+      );
+    });
+
+    test('⚠ 壊れた行だけなら何も当たらない', () async {
+      final adapter = await adapterWith(
+        mutedWords: ['/(/', '/ダイ/z', 'ダイ'],
+        notes: [note({})],
+      );
+
+      expect(
+        (await timelineOf(adapter)).single.filterVerdictFor(null)?.action,
+        isNull,
+      );
+    });
+  });
+
+  // ⚠ 本家は空のキーワードを捨てる。捨てないと `''` が全投稿に当たる。
+  test('⚠ 空のキーワードだけのグループは当たらない', () async {
+    final adapter = await adapterWith(
+      mutedWords: [
+        [''],
+      ],
+      notes: [note({})],
+    );
+
+    expect(
+      (await timelineOf(adapter)).single.filterVerdictFor(null)?.action,
+      isNull,
     );
   });
 }

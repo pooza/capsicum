@@ -21,6 +21,7 @@ import '../../service/tco_resolver.dart';
 import '../../service/url_preview_cache.dart';
 import '../../util/exception_scrub.dart';
 import '../../util/user_acct.dart';
+import '../util/compose_settings_display.dart';
 import '../util/deck_navigation.dart';
 import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
@@ -28,6 +29,7 @@ import '../util/post_action_error.dart';
 import '../util/post_actions.dart';
 import '../util/post_scope_display.dart';
 import '../util/provider_scope_carrier.dart';
+import '../util/quote_actions.dart';
 import '../util/reaction_acceptance.dart';
 import '../util/relative_time.dart';
 import '../util/visible_timeline.dart';
@@ -35,6 +37,7 @@ import 'content_parser.dart';
 import 'cross_account_boost.dart';
 import 'emoji_action_sheet.dart';
 import 'emoji_text.dart';
+import 'filter_scope.dart';
 import 'home_menu.dart' show pickFollowedChannel;
 import 'inline_custom_emoji.dart';
 import 'post_touch_action_row.dart';
@@ -448,7 +451,16 @@ class _PostTileState extends ConsumerState<PostTile> {
     }
 
     final displayPost = post.reblog ?? post;
-    final isFilteredWarn = displayPost.filterAction == FilterAction.warn;
+    // フィルターは画面の適用先で解決する (#1289)。⚠ hide がここまで届いたとき
+    // （一覧の側で落としていない画面）は、全文を出さずに warn と同じく畳む。
+    final filterScope = FilterScope.maybeOf(context);
+    final filterVerdict = displayPost.filterVerdictFor(
+      filterScope?.filterContext,
+      weakenHide: filterScope?.weakenHide ?? false,
+    );
+    final isFilteredWarn =
+        filterVerdict != null && filterVerdict.action != FilterAction.blur;
+    final isFilteredBlur = filterVerdict?.action == FilterAction.blur;
     final hideInstanceTicker = ref.watch(hideInstanceTickerProvider);
 
     // Show a compact placeholder for warn-filtered posts until expanded.
@@ -467,7 +479,7 @@ class _PostTileState extends ConsumerState<PostTile> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'フィルタ: ${displayPost.filterTitle ?? "非表示"}',
+                  'フィルター: ${filterVerdict.title ?? "非表示"}',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),
@@ -980,7 +992,8 @@ class _PostTileState extends ConsumerState<PostTile> {
                           padding: const EdgeInsets.only(top: 8),
                           child: _AttachmentThumbnails(
                             attachments: displayPost.attachments,
-                            sensitive: displayPost.sensitive,
+                            // 「メディアをぼかす」フィルター (#1289) は閲覧注意と同じぼかし。
+                            sensitive: displayPost.sensitive || isFilteredBlur,
                             postAuthorId: displayPost.author.id,
                             postId: displayPost.id,
                             onAttachmentsUpdated: (updated) {
@@ -1534,8 +1547,50 @@ class _PostTileState extends ConsumerState<PostTile> {
                     },
                   ),
                 ],
+                // 自分の投稿への引用を撤回する (#1213)。引用された側の自衛の
+                // 道具なので、通報の並びに置く。
+                if (adapter is QuoteSupport &&
+                    canRevokeQuote(targetPost, currentUser))
+                  item(
+                    leading: const Icon(Icons.link_off),
+                    title: const Text('この引用を撤回'),
+                    onSelected: () async {
+                      if (!await confirmRevokeQuote(context)) return;
+                      await _runAction(
+                        messenger,
+                        () => (adapter as QuoteSupport).revokeQuote(
+                          quotedPostId: targetPost.quote!.id,
+                          quotingPostId: targetPost.id,
+                        ),
+                        '引用を撤回しました',
+                      );
+                    },
+                  ),
                 if (isOwn) ...[
                   const Divider(),
+                  // 投稿したあとに引用の許可を変える (#1213)。
+                  if (adapter is QuoteSupport &&
+                      canChangeQuoteApproval(targetPost, currentUser))
+                    item(
+                      leading: const Icon(Icons.format_quote),
+                      title: Text(
+                        '引用の許可を変更'
+                        '（${quoteApprovalLabels[targetPost.quoteApprovalPolicy]}）',
+                      ),
+                      onSelected: () async {
+                        final policy = await pickQuoteApprovalPolicy(
+                          context,
+                          current: targetPost.quoteApprovalPolicy!,
+                        );
+                        if (policy == null) return;
+                        await _runAction(
+                          messenger,
+                          () => (adapter as QuoteSupport)
+                              .setQuoteApprovalPolicy(targetPost.id, policy),
+                          '引用の許可を「${quoteApprovalLabels[policy]}」に変更しました',
+                        );
+                      },
+                    ),
                   if (hasMulukhiya) ...[
                     if (canRetag)
                       item(
@@ -3436,6 +3491,7 @@ class _QuoteStateCard extends StatelessWidget {
     final (icon, label) = switch (state) {
       QuoteState.pending => (Icons.hourglass_empty, '引用元の承認待ちです'),
       QuoteState.rejected => (Icons.block, '引用が拒否されました'),
+      QuoteState.revoked => (Icons.link_off, '引用が撤回されました'),
       QuoteState.deleted => (Icons.delete_outline, '引用元の投稿が削除されました'),
       QuoteState.unauthorized => (Icons.lock_outline, '引用元を表示する権限がありません'),
       QuoteState.accepted => (Icons.format_quote, ''),

@@ -30,10 +30,12 @@ import '../widget/content_parser.dart';
 import '../widget/emoji_text.dart';
 import '../widget/featured_tags_editor_sheet.dart';
 import '../widget/featured_tags_section.dart';
+import '../widget/filter_scope.dart';
 import '../widget/page_card.dart';
 import '../widget/post_tile.dart';
 import '../widget/report_comment_dialog.dart';
 import '../widget/server_badge.dart';
+import '../widget/timeline_older_prompt.dart';
 import '../widget/user_avatar.dart';
 
 /// プロフィール画面のタブ種別。表示するタブ集合は adapter のケーパビリティと
@@ -68,10 +70,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   bool _loadingMore = false;
   bool _hasMore = true;
 
+  /// 直前に読んだページが全部 hide で、何も足せなかった（PR #1285 の Codex P2）。
+  /// 一覧の長さが変わらずスクロールの合図が来ないので、末尾に入口を出す。
+  bool _postsStalled = false;
+
   List<Post> _mediaPosts = [];
   bool _loadingMediaPosts = true;
   bool _loadingMoreMedia = false;
   bool _hasMoreMedia = true;
+  bool _mediaStalled = false;
   bool _mediaTabLoaded = false;
 
   List<GalleryPost> _galleryPosts = [];
@@ -284,6 +291,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           _posts = posts.where((p) => !pinnedIds.contains(p.id)).toList();
           _loadingPosts = false;
           _hasMore = posts.length >= 20;
+          _postsStalled = _hasMore && _visible(posts).isEmpty;
         });
       }
     } catch (e) {
@@ -306,6 +314,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           _posts = [..._posts, ...older];
           _loadingMore = false;
           _hasMore = older.length >= 20;
+          _postsStalled = _hasMore && _visible(older).isEmpty;
         });
       }
     } catch (e) {
@@ -329,6 +338,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           _mediaPosts = posts;
           _loadingMediaPosts = false;
           _hasMoreMedia = posts.length >= 20;
+          _mediaStalled = _hasMoreMedia && _visible(posts).isEmpty;
         });
       }
     } catch (e) {
@@ -357,6 +367,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           _mediaPosts = [..._mediaPosts, ...older];
           _loadingMoreMedia = false;
           _hasMoreMedia = older.length >= 20;
+          _mediaStalled = _hasMoreMedia && _visible(older).isEmpty;
         });
       }
     } catch (e) {
@@ -587,7 +598,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   bool get _excludeMediaReplies => _user.showMediaReplies == false;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => FilterScope(
+    filterContext: FilterContext.account,
+    child: Builder(builder: _buildFiltered),
+  );
+
+  Widget _buildFiltered(BuildContext context) {
     final user = _user;
     final colorScheme = Theme.of(context).colorScheme;
 
@@ -694,7 +710,19 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     }
   }
 
+  /// プロフィールの適用先で hide の投稿は出さない（#1289 のリリース前レビュー）。
+  ///
+  /// ⚠ 落とすのは描くときだけ。続き読みの起点は取得した末尾（`_posts.last`）の
+  /// ままにする —— 取得の時点で落とすと、全部伏せたページで起点が動かず
+  /// 止まる（#1292 と同じ）。
+  List<Post> _visible(List<Post> posts) => [
+    for (final p in posts)
+      if (!p.isHiddenIn(FilterContext.account)) p,
+  ];
+
   List<Widget> _buildPostsTab(ColorScheme colorScheme) {
+    final pinnedPosts = _visible(_pinnedPosts);
+    final posts = _visible(_posts);
     return [
       // プロフィールで紹介しているハッシュタグ (#1075)。⚠ WebUI では固定投稿と
       // 同じ「注目」タブに並ぶので、show_featured == false（#732）なら一緒に
@@ -708,7 +736,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           ),
         ),
       // show_featured == false のとき固定投稿（フィーチャー）を隠す（#732）。
-      if (_pinnedPosts.isNotEmpty && _user.showFeatured != false) ...[
+      if (pinnedPosts.isNotEmpty && _user.showFeatured != false) ...[
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -736,13 +764,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             (context, index) => Column(
               children: [
                 PostTile(
-                  post: _pinnedPosts[index],
+                  post: pinnedPosts[index],
                   onPostUpdated: _onPostUpdated,
                 ),
                 const Divider(height: 1),
               ],
             ),
-            childCount: _pinnedPosts.length,
+            childCount: pinnedPosts.length,
           ),
         ),
         const SliverToBoxAdapter(child: Divider(height: 8, thickness: 4)),
@@ -753,20 +781,29 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
         )
       else
         SliverList(
-          delegate: SliverChildBuilderDelegate((context, index) {
-            if (index >= _posts.length) {
-              return const Padding(
-                padding: EdgeInsets.all(16),
-                child: Center(child: CircularProgressIndicator()),
+          delegate: SliverChildBuilderDelegate(
+            (context, index) {
+              if (index >= posts.length) {
+                if (!_loadingMore) {
+                  return TimelineOlderPrompt(
+                    isLoading: false,
+                    onLoadOlder: _loadMorePosts,
+                  );
+                }
+                return const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              }
+              return Column(
+                children: [
+                  PostTile(post: posts[index], onPostUpdated: _onPostUpdated),
+                  const Divider(height: 1),
+                ],
               );
-            }
-            return Column(
-              children: [
-                PostTile(post: _posts[index], onPostUpdated: _onPostUpdated),
-                const Divider(height: 1),
-              ],
-            );
-          }, childCount: _posts.length + (_loadingMore ? 1 : 0)),
+            },
+            childCount: posts.length + (_loadingMore || _postsStalled ? 1 : 0),
+          ),
         ),
     ];
   }
@@ -779,7 +816,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
         ),
       ];
     }
-    if (_mediaPosts.isEmpty) {
+    final mediaPosts = _visible(_mediaPosts);
+    if (mediaPosts.isEmpty && !_mediaStalled && !_loadingMoreMedia) {
       return [
         const SliverFillRemaining(
           child: Center(child: Text('メディア付きの投稿はありません')),
@@ -788,20 +826,34 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     }
     return [
       SliverList(
-        delegate: SliverChildBuilderDelegate((context, index) {
-          if (index >= _mediaPosts.length) {
-            return const Padding(
-              padding: EdgeInsets.all(16),
-              child: Center(child: CircularProgressIndicator()),
+        delegate: SliverChildBuilderDelegate(
+          (context, index) {
+            if (index >= mediaPosts.length) {
+              // 読んだページが全部 hide だったときの入口（[_postsStalled] と同じ）。
+              if (!_loadingMoreMedia) {
+                return TimelineOlderPrompt(
+                  isLoading: false,
+                  onLoadOlder: _loadMoreMediaPosts,
+                );
+              }
+              return const Padding(
+                padding: EdgeInsets.all(16),
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            return Column(
+              children: [
+                PostTile(
+                  post: mediaPosts[index],
+                  onPostUpdated: _onPostUpdated,
+                ),
+                const Divider(height: 1),
+              ],
             );
-          }
-          return Column(
-            children: [
-              PostTile(post: _mediaPosts[index], onPostUpdated: _onPostUpdated),
-              const Divider(height: 1),
-            ],
-          );
-        }, childCount: _mediaPosts.length + (_loadingMoreMedia ? 1 : 0)),
+          },
+          childCount:
+              mediaPosts.length + (_loadingMoreMedia || _mediaStalled ? 1 : 0),
+        ),
       ),
     ];
   }
@@ -1504,6 +1556,27 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                   ),
                 );
               }
+            case 'toggle_replies':
+              // フォロー中の相手の返信を TL に流すか (#1211)。Misskey の
+              // フォローごとの設定。
+              final show = !(rel.showingReplies ?? false);
+              final ok = await _performAction(
+                () => (adapter as FollowRepliesSupport).setShowReplies(
+                  widget.user.id,
+                  show: show,
+                ),
+              );
+              if (ok && mounted) {
+                messenger.showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      show
+                          ? 'この人の返信をタイムラインに表示します'
+                          : 'この人の返信をタイムラインに表示しないようにしました',
+                    ),
+                  ),
+                );
+              }
             case 'block':
               await _confirmAndBlock(adapter);
             case 'unblock':
@@ -1549,6 +1622,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
               value: 'toggle_reposts',
               child: Text(
                 rel.showingReposts ? '$boostLabelを表示しない' : '$boostLabelを表示する',
+              ),
+            ),
+          // フォロー中の相手の返信を TL に流すか (#1211)。⚠ いまの値が読めた
+          // とき（＝フォロー中）にだけ出す。読めないまま出すと、押すと逆向きに
+          // 倒れる項目になる。
+          if (adapter is FollowRepliesSupport &&
+              rel.following &&
+              rel.showingReplies != null)
+            PopupMenuItem(
+              value: 'toggle_replies',
+              child: Text(
+                rel.showingReplies! ? '返信をタイムラインに表示しない' : '返信をタイムラインに表示する',
               ),
             ),
           if (rel.blocking)

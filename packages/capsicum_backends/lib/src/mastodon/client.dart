@@ -599,6 +599,21 @@ class MastodonClient {
     return (posts: posts, nextMaxId: _parseLinkNextMaxId(response));
   }
 
+  /// PUT /api/v1/scheduled_statuses/:id — 予約の時刻を変える (#1212)。
+  ///
+  /// ⚠ **標準 API で予約投稿に対してできる唯一の編集。**上流は
+  /// `params.permit(:scheduled_at)` で、本文やタグは受けない。
+  /// ⚠ 5 分後より手前の時刻は 422 になる。
+  Future<void> updateScheduledStatusTime(
+    String id,
+    DateTime scheduledAt,
+  ) async {
+    await dio.put(
+      '/api/v1/scheduled_statuses/$id',
+      data: {'scheduled_at': scheduledAt.toUtc().toIso8601String()},
+    );
+  }
+
   /// DELETE /api/v1/scheduled_statuses/:id
   Future<void> deleteScheduledStatus(String id) async {
     await dio.delete('/api/v1/scheduled_statuses/$id');
@@ -1114,6 +1129,32 @@ class MastodonClient {
     return (statuses: statuses, nextMaxId: _parseLinkNextMaxId(response));
   }
 
+  /// POST /api/v1/statuses/:id/quotes/:quoting_status_id/revoke (#1213)
+  ///
+  /// 自分の投稿（[id]）への引用（[quotingStatusId]）を撤回する。戻り値は
+  /// 引用した側の投稿（`quote.state` が `revoked` になる）。
+  Future<MastodonStatus> revokeQuote(String id, String quotingStatusId) async {
+    final response = await dio.post(
+      '/api/v1/statuses/$id/quotes/$quotingStatusId/revoke',
+    );
+    return MastodonStatus.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// PUT /api/v1/statuses/:id/interaction_policy (#1213)
+  ///
+  /// 投稿したあとに引用の許可を変える。⚠ 送るのは `quote_approval_policy` だけ
+  /// （本文や公開範囲には触らない。投稿の編集とは別の口）。
+  Future<MastodonStatus> updateInteractionPolicy(
+    String id, {
+    required String quoteApprovalPolicy,
+  }) async {
+    final response = await dio.put(
+      '/api/v1/statuses/$id/interaction_policy',
+      data: {'quote_approval_policy': quoteApprovalPolicy},
+    );
+    return MastodonStatus.fromJson(response.data as Map<String, dynamic>);
+  }
+
   /// GET /api/v1/bookmarks
   Future<List<MastodonStatus>> getBookmarks({
     String? maxId,
@@ -1317,9 +1358,52 @@ class MastodonClient {
     return MastodonList.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// PUT /api/v1/lists/:id — リストの設定だけを変える (#1211)。
+  ///
+  /// ⚠ **渡した項目だけを送る。**`title` は送らない（上流は
+  /// `params.permit(:title, :replies_policy, :exclusive)` の部分更新）。
+  Future<MastodonList> updateListSettings(
+    String id, {
+    String? repliesPolicy,
+    bool? exclusive,
+  }) async {
+    final response = await dio.put(
+      '/api/v1/lists/$id',
+      data: {'replies_policy': ?repliesPolicy, 'exclusive': ?exclusive},
+    );
+    return MastodonList.fromJson(response.data as Map<String, dynamic>);
+  }
+
   /// DELETE /api/v1/lists/:id
   Future<void> deleteList(String id) async {
     await dio.delete('/api/v1/lists/$id');
+  }
+
+  /// GET /api/v2/filters (#1047)。キーワード込みで返る（`rules_requested`）。
+  Future<List<Map<String, dynamic>>> getFilters() async {
+    final response = await dio.get('/api/v2/filters');
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/v2/filters (#1047)。
+  Future<Map<String, dynamic>> createFilter(Map<String, dynamic> body) async {
+    final response = await dio.post('/api/v2/filters', data: body);
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// PUT /api/v2/filters/:id (#1047)。キーワードの増減は
+  /// `keywords_attributes[]` の `id` / `_destroy` で同じ要求に載せる。
+  Future<Map<String, dynamic>> updateFilter(
+    String id,
+    Map<String, dynamic> body,
+  ) async {
+    final response = await dio.put('/api/v2/filters/$id', data: body);
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// DELETE /api/v2/filters/:id (#1047)。
+  Future<void> deleteFilter(String id) async {
+    await dio.delete('/api/v2/filters/$id');
   }
 
   /// GET /api/v1/lists/:id/accounts

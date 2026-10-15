@@ -87,6 +87,31 @@ void main() {
     dio: Dio()..httpClientAdapter = server,
   );
 
+  // #1283: 源が絵を渡さなかった回に breadcrumb へ残す文面。
+  group('源が絵を渡さなかった回の記録', () {
+    test('理由が分からなければ no_source（従来どおり）', () {
+      expect(
+        nowPlayingArtworkNoSourceOutcome(
+          const NowPlayingInfo(sourceAppName: 'Apple Music', title: 'Song'),
+        ),
+        'no_source',
+      );
+    });
+
+    test('ネイティブが理由を返した回は、それを添える', () {
+      expect(
+        nowPlayingArtworkNoSourceOutcome(
+          const NowPlayingInfo(
+            sourceAppName: 'Apple Music',
+            title: 'Song',
+            artworkSkipReason: 'too_large',
+          ),
+        ),
+        'no_source: too_large',
+      );
+    });
+  });
+
   group('http(s)', () {
     test('⚠⚠ 上限を超えたら、残りを受け取らずに打ち切る', () async {
       // PR #1256 の Codex P2。以前は全量をメモリへ載せてから大きさを見ていた

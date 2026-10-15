@@ -26,7 +26,7 @@ void main() {
     });
 
     test('⚠ 渡されたタグをそのまま書く（エスケープや整形をしない）', () {
-      // spec の分解は呼ぶ側（hashtagSpecTags）の責務。ここで `+` を触ると
+      // spec の分解は呼ぶ側（HashtagQuery.parse）の責務。ここで `+` を触ると
       // `#c++` が壊れる (#1159)。
       expect(appendHashtags('x', const ['c++']), 'x\n\n#c++');
     });

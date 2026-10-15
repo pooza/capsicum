@@ -367,10 +367,11 @@ class PushMessageDispatcher {
   /// 文章化する必要がある。
   ///
   /// 優先順位:
-  /// 1. `note.text` がある種別（mention / reply / quote / renote） → 投稿本文
-  /// 2. reaction → `@user が {reaction} でリアクション`
-  /// 3. follow → `@user にフォローされました`
-  /// 4. それ以外 → 送信者の表示名のみ
+  /// 1. `note.cw` がある（CW 付き） → CW の見出しだけ（本文は出さない・#1282）
+  /// 2. `note.text` がある種別（mention / reply / quote / renote） → 投稿本文
+  /// 3. reaction → `@user が {reaction} でリアクション`
+  /// 4. follow → `@user にフォローされました`
+  /// 5. それ以外 → 送信者の表示名のみ
   static String? _synthesizeMisskeyBody(Map<String, dynamic> body) {
     final note = body['note'] is Map<String, dynamic>
         ? body['note'] as Map<String, dynamic>
@@ -380,6 +381,15 @@ class PushMessageDispatcher {
         : null;
     final reaction = body['reaction'] as String?;
     final type = body['type'] as String?;
+
+    // CW 付きは見出しだけを出す (#1282)。`note.text` をそのまま出すと、畳まれて
+    // いるはずの本文がバナーに出る。Mastodon はサーバーが同じ形で本文を作る。
+    // ⚠ `cw` は「無し」が null で、空文字は「見出しの無い CW」。
+    final noteCw = note?['cw'];
+    if (noteCw is String) {
+      final heading = noteCw.trim();
+      return heading.isEmpty ? contentWarningFallbackLabel : heading;
+    }
 
     final noteText = note?['text'] as String?;
     if (noteText != null && noteText.isNotEmpty) {

@@ -307,6 +307,15 @@ enum PayloadParser {
         let reaction = body["reaction"] as? String
         let type = body["type"] as? String
 
+        // CW 付きは見出しだけを出す (#1282)。畳まれているはずの本文をバナーに
+        // 出さない。`cw` は「無し」が null で、空文字は「見出しの無い CW」。
+        // Dart 側 _synthesizeMisskeyBody と同じ仕様（文言は
+        // contentWarningFallbackLabel と揃える）。
+        if let noteCw = note?["cw"] as? String {
+            let heading = noteCw.trimmingCharacters(in: .whitespacesAndNewlines)
+            return heading.isEmpty ? "閲覧注意" : heading
+        }
+
         if let noteText = note?["text"] as? String, !noteText.isEmpty {
             return noteText
         }

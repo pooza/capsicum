@@ -12,6 +12,15 @@ class NotificationTypeDisplay {
   const NotificationTypeDisplay({required this.icon, required this.label});
 }
 
+/// 見出しの無い CW（Misskey の `cw` が空文字）の投稿を、OS の通知に出すときの
+/// 文言 (#1282)。CW 付きの通知は本文を出さず見出しだけにするが、見出しが空だと
+/// 出すものが無いので、これを代わりに出す。
+///
+/// ⚠ **各 OS の通知拡張にも同じ文言がある**（iOS / macOS の
+/// `NotificationService.swift`・Windows の `web_push_payload.cpp`）。変えるときは
+/// 4 か所とも変える。
+const contentWarningFallbackLabel = '閲覧注意';
+
 /// `NotificationType` に対する表示情報を返す。
 ///
 /// [reblogLabel] は Mastodon では「ブースト」、Misskey では「リノート」など、

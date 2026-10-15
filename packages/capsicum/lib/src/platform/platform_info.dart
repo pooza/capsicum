@@ -43,6 +43,12 @@ bool get fileTypeFilterNeedsUti => !kIsWeb && Platform.isIOS;
 /// UI 層に `Platform.isX` を直書きしない設計指針 (#650) に従い機能名で公開する。
 bool get colorEmojiFallbackConfigurable => !kIsWeb && Platform.isLinux;
 
+/// ナウプレの取得元が複数のアプリにまたがり、どちらを採るかを設定で選ぶ
+/// プラットフォームか (#1276)。macOS はミュージックと Spotify のデスクトップ
+/// アプリの両方に問い合わせ、同じ状態のときに「ナウプレの優先サービス」で決める。
+/// UI 層に `Platform.isX` を直書きしない設計指針（#650）に従い機能名で公開する。
+bool get nowPlayingChoosesBetweenApps => !kIsWeb && Platform.isMacOS;
+
 /// 常駐モード (#752) の常駐先の OS 別呼称。macOS は「メニューバー」
 /// （NSStatusItem）、Windows / Linux は「トレイ」。設定画面の説明文を OS に
 /// 合わせて出し分けるために機能名で公開する（UI 層に `Platform.isX` を直書き

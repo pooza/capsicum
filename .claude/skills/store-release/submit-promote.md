@@ -11,6 +11,8 @@ iOS / macOS の `release` レーンは **`skip_binary_upload: true`** なので�
 - **iOS ベータ → macOS ビルドの順に走らせると、macOS 側の `flutter clean` で `build/ios/ipa/capsicum.ipa` が消える**（下の ⚠️ と同じ罠）。**beta の直後にスクラッチ領域へ `cp` して退避し、submit の直前に戻すのが最も確実**（v1.53 ではこれで復旧作業ゼロで通した）
 - macOS の `.pkg` は最後にビルドしたものが残るので、Apple 2 つを submit するときは **macOS → iOS の順**にすると退避が 1 つで済む
 
+⚠ **退避を忘れて ipa が消えた回は、`flutter clean` をせずに `flutter build ipa` を同じビルド番号で流し直す**（アップロードはされない）。2026-10-12 の v2.2.0 でこの形になり、作り直した ipa の中の版とビルド番号（`Payload/Runner.app/Info.plist`）が提出するビルドと一致するのを見てから `fastlane release` を流して、止まらずに通った。⚠ macOS の `.pkg` は先にスクラッチ領域へ写しておく。
+
 Android は `flutter build appbundle` → `fastlane internal` → `fastlane release` の流れが必要なので対象外（`release` が内部トラックの「現在の」リリースを promote する仕様）。**Android のビルドは Apple 2 つの submit が終わってから走らせること**（`flutter clean` が `.pkg` と `.ipa` を両方消す）。
 
 
@@ -85,7 +87,7 @@ https://github.com/pooza/capsicum/releases
 
 #### macOS の Apple Events (temporary-exception) 審査ノート（[#668](https://github.com/pooza/capsicum/issues/668)、v1.37〜）
 
-macOS のナウプレ挿入は、ミュージック.app（`com.apple.Music`）の**現在再生中の曲（タイトル/アーティスト/アルバム）を AppleScript で読み取る**ため、Release.entitlements に `com.apple.security.temporary-exception.apple-events` = `["com.apple.Music"]` を持つ。これは MAS 審査で必ず見られる entitlement なので、**App Review Information の Notes に下記英文を貼る**（macOS バージョン提出時）。
+macOS のナウプレ挿入は、ミュージック.app（`com.apple.Music`）と Spotify のデスクトップアプリ（`com.spotify.client`・v2.3〜・[#1276](https://github.com/pooza/capsicum/issues/1276)）の**現在再生中の曲（タイトル/アーティスト/アルバム）を AppleScript で読み取る**ため、Release.entitlements に `com.apple.security.temporary-exception.apple-events` = `["com.apple.Music", "com.spotify.client"]` を持つ。これは MAS 審査で必ず見られる entitlement なので、**App Review Information の Notes に下記英文を貼る**（macOS バージョン提出時）。
 
 **なぜ temporary-exception が必要か**（capsicum での実証経緯）: modern の `com.apple.security.automation.apple-events`（boolean）だけだと、App Sandbox 下でミュージックへの Apple Events が記述子（bundleId / PID）・スレッドを問わず **procNotFound (-600)** で弾かれ、対象アプリを解決すらできない（build 109-116 の内部ベータ実機 Sentry で確定）。特定アプリ宛てを明示する temporary-exception を併用して初めて addressable になり、TCC「オートメーション」許可プロンプトが出て読み取りが成立した（build 117 で動作確認）。
 
@@ -94,17 +96,28 @@ macOS のナウプレ挿入は、ミュージック.app（`com.apple.Music`）�
 ```text
 On macOS, capsicum's compose screen has an optional "Insert Now Playing"
 button. When the user taps it, the app reads the *currently playing track's
-title / artist / album* from the Music app (com.apple.Music) via Apple Events,
-so the user can mention what they are listening to in a post. It is
-read-only — the app never controls playback. The Apple Event is sent only on
-that explicit user action, and NSAppleEventsUsageDescription explains the
-purpose; the first use shows the standard Automation consent prompt.
+title / artist / album and its album artwork* from the Music app
+(com.apple.Music) and, if it is running, the Spotify desktop app
+(com.spotify.client) via Apple Events, so the user can mention what they are
+listening to in a post, with the artwork attached as an image. It is
+read-only — the app never controls playback, and it never launches either
+app (Spotify is queried only when it is already running). The Apple Event is
+sent only on that explicit user action, and NSAppleEventsUsageDescription
+explains the purpose; the first use shows the standard Automation consent
+prompt for each app.
 
 We declare com.apple.security.temporary-exception.apple-events limited to
-com.apple.Music because the modern com.apple.security.automation.apple-events
-entitlement alone returns procNotFound (-600) when resolving the Music app
-inside the App Sandbox, so the feature cannot work without it.
+com.apple.Music and com.spotify.client because the modern
+com.apple.security.automation.apple-events entitlement alone returns
+procNotFound (-600) when resolving the target app inside the App Sandbox, so
+the feature cannot work without it.
 ```
+
+⚠⚠ **v2.3 から Spotify も読む**（[#1276](https://github.com/pooza/capsicum/issues/1276)）ので、上の文面に Spotify を足してある。**v2.3 の macOS の提出で、App Store Connect のメモのこの段落を差し替える**（下の注意のとおり、欄ごとではなくこの段落だけ）。
+
+⚠ **v2.2 からジャケット画像も読む**（[#1273](https://github.com/pooza/capsicum/issues/1273)）ので、上の文面に `and its album artwork` を足してある。2026-10-12 の v2.2.0 の提出で、App Store Connect のメモをこの文面に差し替えた。⚠⚠ **読むものを増やしたら、メモも同じ提出で直す**（メモと実際の動きが食い違うと差し戻しの理由になる）。
+
+⚠⚠ **メモはこの節だけではない。**App Store Connect の「App Review に関する情報」のメモには、ログインの手順・この節・サブスクの説明が 1 つの欄に並んでいる。**欄ごと置き換えない** —— 直すのは該当の段落だけ。レーンはメモに触らない（`fastlane/metadata` に審査情報を置いていない）ので、書き換えは App Store Connect の画面で行う。
 
 > 万一 temporary-exception で差し戻された場合の代替は、macOS を Developer ID 直接配布（非サンドボックス）にすること。ただし **macOS の投げ銭 IAP（#598、StoreKit）は MAS 専用**で非サンドボックス化すると失われるため、ナウプレ機能と IAP のトレードオフになる。まず temporary-exception で挑み、不可なら配布形態を pooza 判断。
 
@@ -127,6 +140,16 @@ fastlane release skip_metadata:true
 ⚠ **飛ばした段は「このバージョンの新機能」欄も埋めていた**ので、そのまま提出すると下の `whatsNew` のエラーで弾かれる。**先に下の手順で定型文を入れてから**提出する（iOS でも起きる）。
 
 ⚠⚠ **審査中の版があるプラットフォームそのものには、新しい版を出せない**（公開前の版はプラットフォームごとに 1 つ）。取り下げて出し直すか、公開を待ってから出す。v2.1.0 の macOS は、2.0.1 の公開を待ってから出すと決めた（取り下げると審査の列に並び直すため）。2.0.1 は 2026-10-11 に公開され、同日に 2.1.0 を提出した。
+
+#### 審査待ちの版を取り下げて、次の版に差し替える
+
+審査待ち（`WAITING_FOR_REVIEW`）のまま次の版が出来たときは、取り下げて差し替えられる。2026-10-12 に、macOS の 2.1.0（10-11 提出・審査待ち）を取り下げて 2.2.0 を出した。
+
+1. pooza が App Store Connect で審査を取り下げる。版の状態は `DEVELOPER_REJECTED` になる
+2. ⚠ **取り下げた版のページはそのまま残り、編集できる。**審査メモを直すならここで直す
+3. `fastlane release` を流すと、**そのページの版番号とビルドが書き換わって**審査へ出る（新しいページは作られない。ログの `Successfully set the version to '2.2.0'` がこれ）。審査メモ・掲載文は引き継がれる
+
+⚠ 取り下げると審査の列に並び直す。⚠ **取り下げは、差し替える版の確認が済んでから**（先に取り下げると、手直しが入ったときにそのプラットフォームだけ何も審査に出ていない期間ができる）。
 
 #### macOS の whatsNew (新機能欄) 未入力で submit が弾かれる罠
 

@@ -119,14 +119,17 @@ Account _account(DecentralizedBackendAdapter adapter) => Account(
   userSecret: const UserSecret(accessToken: 'token'),
 );
 
-Post _post(String id, {String content = 'body', FilterAction? filterAction}) =>
-    Post(
-      id: id,
-      postedAt: DateTime.utc(2026, 9, 19),
-      author: const User(id: 'u1', username: 'someone'),
-      content: content,
-      filterAction: filterAction,
-    );
+Post _post(
+  String id, {
+  String content = 'body',
+  List<FilterMatch> filterMatches = const [],
+}) => Post(
+  id: id,
+  postedAt: DateTime.utc(2026, 9, 19),
+  author: const User(id: 'u1', username: 'someone'),
+  content: content,
+  filterMatches: filterMatches,
+);
 
 /// ⚠ Mastodon の数値 id。`comparePostIdDesc` が数として比較する側 (#781)。
 final _p101 = _post('101');
@@ -253,12 +256,64 @@ void main() {
   });
 
   group('ライブ取り込み — フィルタ', () {
-    test('filterAction が hide の投稿は取り込まない', () async {
+    test('ホームに効く hide の投稿は取り込まない', () async {
       final adapter = _LiveAdapter([_p102, _p101]);
       final container = makeContainer(adapter);
       await start(container);
 
-      adapter.emit(streamKey, _post('103', filterAction: FilterAction.hide));
+      adapter.emit(
+        streamKey,
+        _post(
+          '103',
+          filterMatches: const [
+            FilterMatch(
+              action: FilterAction.hide,
+              contexts: {FilterContext.home},
+            ),
+          ],
+        ),
+      );
+      await settle();
+
+      expect(read(container).posts.map((p) => p.id), ['102', '101']);
+    });
+
+    // ⚠⚠ #1289 の本題。以前は適用先を見ずに落としていたので、「通知だけ」の
+    // フィルターがホームでも効いていた。
+    test('⚠⚠ 通知だけに効く hide の投稿は、ホームでは取り込む (#1289)', () async {
+      final adapter = _LiveAdapter([_p102, _p101]);
+      final container = makeContainer(adapter);
+      await start(container);
+
+      adapter.emit(
+        streamKey,
+        _post(
+          '103',
+          filterMatches: const [
+            FilterMatch(
+              action: FilterAction.hide,
+              contexts: {FilterContext.notifications},
+            ),
+          ],
+        ),
+      );
+      await settle();
+
+      expect(read(container).posts.map((p) => p.id), ['103', '102', '101']);
+    });
+
+    test('適用先の無い hide（Misskey のハードワードミュート）は取り込まない', () async {
+      final adapter = _LiveAdapter([_p102, _p101]);
+      final container = makeContainer(adapter);
+      await start(container);
+
+      adapter.emit(
+        streamKey,
+        _post(
+          '103',
+          filterMatches: const [FilterMatch(action: FilterAction.hide)],
+        ),
+      );
       await settle();
 
       expect(read(container).posts.map((p) => p.id), ['102', '101']);

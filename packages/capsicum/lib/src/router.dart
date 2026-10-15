@@ -33,6 +33,8 @@ import 'ui/screen/drive_manager_screen.dart';
 import 'ui/screen/episode_browser_screen.dart';
 import 'ui/screen/eula_screen.dart';
 import 'ui/screen/favorites_screen.dart';
+import 'ui/screen/filter_edit_screen.dart';
+import 'ui/screen/filter_list_screen.dart';
 import 'ui/screen/flash_view_screen.dart';
 import 'ui/screen/follow_requests_screen.dart';
 import 'ui/screen/followed_hashtags_screen.dart';
@@ -71,6 +73,7 @@ import 'ui/screen/splash_screen.dart';
 import 'ui/screen/templates_manage_screen.dart';
 import 'ui/screen/unified_notification_screen.dart';
 import 'ui/screen/user_list_screen.dart';
+import 'ui/screen/word_mute_screen.dart';
 import 'ui/util/provider_scope_carrier.dart';
 import 'ui/widget/desktop_menu_bar.dart';
 
@@ -328,6 +331,25 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/settings/followed-hashtags',
             builder: (context, state) => const FollowedHashtagsScreen(),
+          ),
+          // フィルターの一覧と編集 (#1047)。Mastodon の `api/v2/filters`。
+          GoRoute(
+            path: '/settings/filters',
+            builder: (context, state) => const FilterListScreen(),
+          ),
+          // Misskey のワードミュート (#1290)。入口はフィルターと同じ行。
+          GoRoute(
+            path: '/settings/word-mutes',
+            builder: (context, state) => const WordMuteScreen(),
+          ),
+          GoRoute(
+            path: '/settings/filters/edit',
+            builder: (context, state) {
+              final filter = state.extra;
+              return FilterEditScreen(
+                filter: filter is ServerFilter ? filter : null,
+              );
+            },
           ),
           GoRoute(
             path: '/settings/desktop',

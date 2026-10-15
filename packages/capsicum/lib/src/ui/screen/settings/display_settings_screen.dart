@@ -67,12 +67,16 @@ class DisplaySettingsScreen extends ConsumerWidget {
           // Spotify どちらの URL を載せるかの端末共通 (アカウント非依存) 嗜好。
           // enrich が使える (`nowplayingResolverEnabled`) サーバーのアカウントを
           // 現在選択しているときだけ表示する（enrich が走らなければ効かない）。
-          if (mulukhiya?.nowplayingResolverEnabled ?? false)
+          // macOS では、ミュージックと Spotify の両方が再生中（または両方が
+          // 一時停止中）のときにどちらを採るかにも使う (#1276・2026-10-15 pooza)。
+          // モロヘイヤが無いサーバーでも意味を持つので、macOS では常に出す。
+          if ((mulukhiya?.nowplayingResolverEnabled ?? false) ||
+              nowPlayingChoosesBetweenApps)
             ListTile(
-              title: const Text('ナウプレの URL 優先プロバイダ'),
+              title: const Text('ナウプレの優先サービス'),
               subtitle: Text(
-                '再生中の曲に URL を補完するとき、'
-                '${_nowPlayingUrlProviderLabel(nowPlayingUrlProvider)} の URL を優先',
+                '${_nowPlayingUrlProviderLabel(nowPlayingUrlProvider)} を優先'
+                '（URL の補完${nowPlayingChoosesBetweenApps ? '・両方で再生中のときの取得元' : ''}）',
               ),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => _showNowPlayingUrlProviderDialog(context, ref),
@@ -193,7 +197,7 @@ class DisplaySettingsScreen extends ConsumerWidget {
     showDialog<void>(
       context: context,
       builder: (context) => SimpleDialog(
-        title: const Text('ナウプレの URL 優先プロバイダ'),
+        title: const Text('ナウプレの優先サービス'),
         children: [
           RadioGroup<NowPlayingUrlProvider>(
             groupValue: ref.watch(nowPlayingUrlProviderProvider),
