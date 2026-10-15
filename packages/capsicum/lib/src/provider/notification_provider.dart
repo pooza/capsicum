@@ -116,6 +116,9 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
   /// 直前に読んだページが、手元で絞ったものだったか (#1251)。
   bool _lastPageFilteredLocally = false;
 
+  /// build() のたびに進める世代。続き読みが、読み直された一覧へ書かないように使う。
+  int _buildGeneration = 0;
+
   /// 「サーバーが除外を断った」を記録済みか。⚠ ページごとに出さない。
   bool _localFilterReported = false;
 
@@ -133,6 +136,7 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
 
   @override
   Future<NotificationState> build() async {
+    _buildGeneration++;
     _lastPageFilteredLocally = false;
     _localFilterReported = false;
     final adapter = ref.watch(currentAdapterProvider);
@@ -269,6 +273,7 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
     if (current == null || current.isLoadingMore || !current.hasMore) return;
 
     state = AsyncData(current.copyWith(isLoadingMore: true));
+    final generation = _buildGeneration;
 
     // 手元で絞ったページが続いているあいだは、間を置いてから読む (#1251)。
     // 理由は [locallyFilteredLoadMoreInterval]。
@@ -310,6 +315,9 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
             .enrichNotifications(page.visible);
 
         // ⚠⚠ カーソルが進まなかったページは足さない（[_fetchVisible] の #1048）。
+        // ⚠⚠ 待っている間に build() がやり直されていたら（アカウントの切替・
+        // 絞り込みの変更）、古いページも古いカーソルも書かない（2 回目のレビュー）。
+        if (generation != _buildGeneration) return;
         final latest = state.valueOrNull ?? base;
         state = AsyncData(
           latest.copyWith(
@@ -327,6 +335,7 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
         );
         return;
       } catch (_) {
+        if (generation != _buildGeneration) return;
         if (attempt < loadMoreMaxRetries) {
           await Future<void>.delayed(loadMoreRetryDelay);
           continue;

@@ -232,4 +232,15 @@ void main() {
 
     expect(adapter.markedAll, 1);
   });
+
+  testWidgets('⚠ Misskey: 確かめの応答が空なら全既読を返さない（新着が無いのか分からない）', (tester) async {
+    final adapter = _MisskeyLike();
+    final saver = UnifiedNotificationReadSaver(isAppVisible: () => true);
+    addTearDown(saver.dispose);
+
+    saver.seen(_account('a', adapter), 'n9');
+    await pumpPast5s(tester);
+
+    expect(adapter.markedAll, 0);
+  });
 }

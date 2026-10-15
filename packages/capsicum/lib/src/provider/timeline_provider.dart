@@ -1526,7 +1526,10 @@ class TimelineNotifier
     // ⚠ プロフィールの差し替えではアダプタは同じインスタンスのまま
     // （`copyWithUser`）なので、ここは動かない。上のコメントの意図どおりになる。
     final adapter = watchAdapterForTimelineKey(ref, key.account);
-    if (adapter == null) return TimelineState(contextKey: contextKey);
+    // ⚠ 続きは無い。true のままだと空表示に「さらに古い投稿を探す」が出る。
+    if (adapter == null) {
+      return TimelineState(hasMore: false, contextKey: contextKey);
+    }
 
     // #716 計測: ホーム TL の初回描画を fetch (サーバー応答) / enrich (isCat) /
     // since-launch に分けて測る。fetch はサーバー負荷依存・enrich は item3 の
@@ -2242,6 +2245,10 @@ class TimelineNotifier
       if (pending != null) {
         // [_loadInitialInBackground] は内部で捕捉するので、この await は投げない。
         await pending;
+        // ⚠⚠ 待っている間に build() がやり直されていたら、ここで降りる（2 回目の
+        // レビュー）。下で印を立て直すと新しい一覧に立ち、取得のあとの世代
+        // ガードで降りるので、下ろす者がいなくなる（以後の続き読みが全部弾かれる）。
+        if (generation != _buildGeneration) return;
         // 裏の取得が失敗して AsyncError になったら、続きを積む土台が無い。
         // エラー画面の再試行導線に任せて降りる（isLoadingMore は AsyncError に
         // 引き継がれない）。
@@ -2359,6 +2366,9 @@ class TimelineNotifier
         );
         return; // Success — exit retry loop.
       } catch (e, st) {
+        // ⚠ 読み直された一覧に、古い続き読みの失敗を書かない（[OlderCursorPaging]
+        // と同じ・2 回目のレビュー）。
+        if (generation != _buildGeneration) return;
         if (attempt < loadMoreMaxRetries) {
           // Wait before retrying; keep isLoadingMore true so the spinner
           // stays visible and duplicate calls are blocked.

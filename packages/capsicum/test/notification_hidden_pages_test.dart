@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:capsicum/src/model/account.dart';
 import 'package:capsicum/src/model/account_key.dart';
 import 'package:capsicum/src/provider/account_manager_provider.dart';
@@ -22,6 +24,9 @@ class _PagedAdapter extends Mock
   final List<Notification> all;
   final requestedMaxIds = <String?>[];
 
+  /// 立っている間、続き読み（`maxId` あり）の取得をここで待たせる。
+  Completer<void>? gate;
+
   @override
   Future<NotificationResponse> getNotifications({
     TimelineQuery? query,
@@ -29,6 +34,8 @@ class _PagedAdapter extends Mock
   }) async {
     final maxId = query?.maxId;
     requestedMaxIds.add(maxId);
+    final g = gate;
+    if (g != null && maxId != null) await g.future;
     final start = maxId == null ? 0 : all.indexWhere((n) => n.id == maxId) + 1;
     final page = all.skip(start).take(query?.limit ?? 20).toList();
     return NotificationResponse(
@@ -125,5 +132,29 @@ void main() {
       adapter.requestedMaxIds.length,
       reason: '同じページを 2 度引いていない',
     );
+  });
+
+  test('⚠⚠ 続き読みの途中で読み直したら、古いページもカーソルも書かない', () async {
+    final adapter = _PagedAdapter([
+      for (var n = 1080; n > 1000; n--) _mention(n, hidden: false),
+    ]);
+    final container = await _container(adapter);
+    await container.read(notificationProvider.future);
+
+    final gate = Completer<void>();
+    adapter.gate = gate;
+    final pending = container.read(notificationProvider.notifier).loadMore();
+    await Future<void>.delayed(Duration.zero);
+
+    adapter.gate = null;
+    container.invalidate(notificationProvider);
+    final rebuilt = await container.read(notificationProvider.future);
+    expect(rebuilt.notifications.length, 20);
+
+    gate.complete();
+    await pending;
+    final after = container.read(notificationProvider).requireValue;
+    expect(after.notifications.length, 20, reason: '古い続き読みのページを足さない');
+    expect(after.lastRawId, '1061', reason: '読み直した一覧のカーソルのまま');
   });
 }

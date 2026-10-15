@@ -373,7 +373,9 @@ class UnifiedNotificationReadSaver {
           filter: query,
         );
         final latestId = latest.notifications.firstOrNull?.id;
-        if (latestId != null && latestId != newestId) return;
+        // ⚠ 空の応答（手元で絞るサーバーで先頭が除外種別だった等）は、本当に
+        // 新着が無いのか区別できないので返さない（2 回目のレビュー）。
+        if (latestId != newestId) return;
         await adapter.markAllNotificationsRead();
       } else {
         return;
