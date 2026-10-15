@@ -1,4 +1,5 @@
 import 'package:capsicum_core/capsicum_core.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -144,13 +145,18 @@ class _FilterEditScreenState extends ConsumerState<FilterEditScreen> {
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } catch (e, st) {
-      reportOpFailure(
-        tagKey: 'filter.op',
-        operation: _isNew ? 'create' : 'update',
-        error: e,
-        stackTrace: st,
-        account: _account,
-      );
+      // ⚠ 422 は入力の検証で弾かれたもの（理由は下の SnackBar に出す）。
+      // 障害ではないので送らない（#1047 のリリース前レビュー）。
+      final rejected = e is DioException && e.response?.statusCode == 422;
+      if (!rejected) {
+        reportOpFailure(
+          tagKey: 'filter.op',
+          operation: _isNew ? 'create' : 'update',
+          error: e,
+          stackTrace: st,
+          account: _account,
+        );
+      }
       if (!mounted) return;
       setState(() => _saving = false);
       // ⚠ Mastodon の 422 は人間向けの文で返る（「メディアをぼかす」を知らない
@@ -293,7 +299,7 @@ class _FilterEditScreenState extends ConsumerState<FilterEditScreen> {
                       DropdownMenuItem(
                         value: -1,
                         child: Text(
-                          '変えない（${_formatExpiry(existingExpiry.toLocal())} まで）',
+                          '変えない（${formatFilterExpiry(existingExpiry.toLocal())} まで）',
                         ),
                       ),
                     for (var i = 0; i < filterExpiryChoices.length; i++)
@@ -357,9 +363,6 @@ class _FilterEditScreenState extends ConsumerState<FilterEditScreen> {
       ],
     ),
   );
-
-  static String _formatExpiry(DateTime at) =>
-      '${at.month}/${at.day} ${at.hour}:${at.minute.toString().padLeft(2, '0')}';
 }
 
 class _SectionHeader extends StatelessWidget {

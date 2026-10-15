@@ -42,3 +42,7 @@ const filterExpiryChoices = <(String, Duration?)>[
   ('1 日', Duration(days: 1)),
   ('1 週間', Duration(days: 7)),
 ];
+
+/// フィルターの期限の表示（一覧と編集画面で共有）。[at] は端末の時刻で渡す。
+String formatFilterExpiry(DateTime at) =>
+    '${at.month}/${at.day} ${at.hour}:${at.minute.toString().padLeft(2, '0')}';

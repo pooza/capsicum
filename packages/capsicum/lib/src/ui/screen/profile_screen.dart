@@ -700,7 +700,19 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     }
   }
 
+  /// プロフィールの適用先で hide の投稿は出さない（#1289 のリリース前レビュー）。
+  ///
+  /// ⚠ 落とすのは描くときだけ。続き読みの起点は取得した末尾（`_posts.last`）の
+  /// ままにする —— 取得の時点で落とすと、全部伏せたページで起点が動かず
+  /// 止まる（#1292 と同じ）。
+  List<Post> _visible(List<Post> posts) => [
+    for (final p in posts)
+      if (!p.isHiddenIn(FilterContext.account)) p,
+  ];
+
   List<Widget> _buildPostsTab(ColorScheme colorScheme) {
+    final pinnedPosts = _visible(_pinnedPosts);
+    final posts = _visible(_posts);
     return [
       // プロフィールで紹介しているハッシュタグ (#1075)。⚠ WebUI では固定投稿と
       // 同じ「注目」タブに並ぶので、show_featured == false（#732）なら一緒に
@@ -714,7 +726,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           ),
         ),
       // show_featured == false のとき固定投稿（フィーチャー）を隠す（#732）。
-      if (_pinnedPosts.isNotEmpty && _user.showFeatured != false) ...[
+      if (pinnedPosts.isNotEmpty && _user.showFeatured != false) ...[
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -742,13 +754,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             (context, index) => Column(
               children: [
                 PostTile(
-                  post: _pinnedPosts[index],
+                  post: pinnedPosts[index],
                   onPostUpdated: _onPostUpdated,
                 ),
                 const Divider(height: 1),
               ],
             ),
-            childCount: _pinnedPosts.length,
+            childCount: pinnedPosts.length,
           ),
         ),
         const SliverToBoxAdapter(child: Divider(height: 8, thickness: 4)),
@@ -760,7 +772,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       else
         SliverList(
           delegate: SliverChildBuilderDelegate((context, index) {
-            if (index >= _posts.length) {
+            if (index >= posts.length) {
               return const Padding(
                 padding: EdgeInsets.all(16),
                 child: Center(child: CircularProgressIndicator()),
@@ -768,11 +780,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             }
             return Column(
               children: [
-                PostTile(post: _posts[index], onPostUpdated: _onPostUpdated),
+                PostTile(post: posts[index], onPostUpdated: _onPostUpdated),
                 const Divider(height: 1),
               ],
             );
-          }, childCount: _posts.length + (_loadingMore ? 1 : 0)),
+          }, childCount: posts.length + (_loadingMore ? 1 : 0)),
         ),
     ];
   }
@@ -785,7 +797,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
         ),
       ];
     }
-    if (_mediaPosts.isEmpty) {
+    final mediaPosts = _visible(_mediaPosts);
+    if (mediaPosts.isEmpty) {
       return [
         const SliverFillRemaining(
           child: Center(child: Text('メディア付きの投稿はありません')),
@@ -795,7 +808,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     return [
       SliverList(
         delegate: SliverChildBuilderDelegate((context, index) {
-          if (index >= _mediaPosts.length) {
+          if (index >= mediaPosts.length) {
             return const Padding(
               padding: EdgeInsets.all(16),
               child: Center(child: CircularProgressIndicator()),
@@ -803,11 +816,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           }
           return Column(
             children: [
-              PostTile(post: _mediaPosts[index], onPostUpdated: _onPostUpdated),
+              PostTile(post: mediaPosts[index], onPostUpdated: _onPostUpdated),
               const Divider(height: 1),
             ],
           );
-        }, childCount: _mediaPosts.length + (_loadingMoreMedia ? 1 : 0)),
+        }, childCount: mediaPosts.length + (_loadingMoreMedia ? 1 : 0)),
       ),
     ];
   }

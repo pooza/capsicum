@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../widget/bottom_safe_area.dart';
 import '../widget/cursor_paged_list_view.dart';
+import '../widget/filter_scope.dart';
 import '../widget/post_tile.dart';
 
 /// 投稿一覧をカーソルページングで出す汎用画面 (#1072)。
@@ -39,27 +40,34 @@ class PostListScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return Scaffold(
-      appBar: embedded ? null : AppBar(title: Text(title)),
-      body: BottomSafeArea(
-        child: CursorPagedListView<Post>(
-          debugLabel: 'PostListScreen',
-          // 一覧の取得失敗を観測する (#1083-D)。お気に入り / 引用の一覧。
-          // ⚠ **一覧の取得は経路型 (`<領域>.list`)** に揃える (#1117-E)。同じ
-          // 「一覧を引く」経路なのに `post_list.op` / `user_list.op` /
-          // `hashtag.list` と 2 型あり、Sentry で「一覧の取得失敗を全部見る」が
-          // 1 クエリで書けなかった。
-          tagKey: 'post_list.list',
-          // ⚠ **ページサイズはこの画面が決めない。**`fetcher` を渡す側が
-          // `limit` ごと閉じ込めている。継続の判定も件数ではなく
-          // `nextCursor` の有無だけで行う（サーバーはフィルタで件数を
-          // 減らしたうえで next リンクを返すため）。
-          fetcher: (cursor) async {
-            final page = await fetcher(cursor);
-            return (items: page.posts, nextCursor: page.nextCursor);
-          },
-          emptyMessage: emptyMessage,
-          itemBuilder: (context, post) => PostTile(post: post),
+    // 引用の一覧は、ほかの人の投稿を読む面なので `public`。⚠ 自分で開いた
+    // 一覧なので hide は警告に弱める（検索・ブックマークと同じ・#1289 の
+    // リリース前レビュー）。
+    return FilterScope(
+      filterContext: FilterContext.public,
+      weakenHide: true,
+      child: Scaffold(
+        appBar: embedded ? null : AppBar(title: Text(title)),
+        body: BottomSafeArea(
+          child: CursorPagedListView<Post>(
+            debugLabel: 'PostListScreen',
+            // 一覧の取得失敗を観測する (#1083-D)。お気に入り / 引用の一覧。
+            // ⚠ **一覧の取得は経路型 (`<領域>.list`)** に揃える (#1117-E)。同じ
+            // 「一覧を引く」経路なのに `post_list.op` / `user_list.op` /
+            // `hashtag.list` と 2 型あり、Sentry で「一覧の取得失敗を全部見る」が
+            // 1 クエリで書けなかった。
+            tagKey: 'post_list.list',
+            // ⚠ **ページサイズはこの画面が決めない。**`fetcher` を渡す側が
+            // `limit` ごと閉じ込めている。継続の判定も件数ではなく
+            // `nextCursor` の有無だけで行う（サーバーはフィルタで件数を
+            // 減らしたうえで next リンクを返すため）。
+            fetcher: (cursor) async {
+              final page = await fetcher(cursor);
+              return (items: page.posts, nextCursor: page.nextCursor);
+            },
+            emptyMessage: emptyMessage,
+            itemBuilder: (context, post) => PostTile(post: post),
+          ),
         ),
       ),
     );

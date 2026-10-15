@@ -37,8 +37,8 @@ class _FilterListScreenState extends ConsumerState<FilterListScreen> {
       return await support.getFilters();
     } catch (e, st) {
       reportOpFailure(
-        tagKey: 'filter.op',
-        operation: 'list',
+        tagKey: 'filter.list',
+        operation: 'load',
         error: e,
         stackTrace: st,
         account: account,
@@ -51,12 +51,17 @@ class _FilterListScreenState extends ConsumerState<FilterListScreen> {
     setState(() => _filters = _load(support));
   }
 
-  Future<void> _open(FilterSupport support, ServerFilter? filter) async {
+  Future<void> _open(ServerFilter? filter) async {
     final changed = await context.push<bool>(
       '/settings/filters/edit',
       extra: filter,
     );
-    if (changed == true && mounted) _reload(support);
+    if (changed != true || !mounted) return;
+    // ⚠ 開く前に掴んだアダプターでは読み直さない。編集の間にアカウントが
+    // 替わっていたら、別のアカウントの一覧を出してしまう（#1047 のリリース前
+    // レビュー）。替わっていれば build() が新しいアカウントで読み直す。
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is FilterSupport) _reload(adapter as FilterSupport);
   }
 
   @override
@@ -78,7 +83,7 @@ class _FilterListScreenState extends ConsumerState<FilterListScreen> {
             IconButton(
               icon: const Icon(Icons.add),
               tooltip: '新規作成',
-              onPressed: () => _open(support, null),
+              onPressed: () => _open(null),
             ),
         ],
       ),
@@ -132,7 +137,7 @@ class _FilterListScreenState extends ConsumerState<FilterListScreen> {
                                 const Divider(height: 1),
                             itemBuilder: (context, index) => _FilterRow(
                               filter: filters[index],
-                              onTap: () => _open(support, filters[index]),
+                              onTap: () => _open(filters[index]),
                             ),
                           ),
                   );
@@ -163,7 +168,7 @@ class _FilterRow extends StatelessWidget {
       if (expired)
         '期限切れ'
       else if (filter.expiresAt case final at?)
-        '${_formatExpiry(at.toLocal())} まで',
+        '${formatFilterExpiry(at.toLocal())} まで',
     ].join(' ／ ');
     final mutedColor = Theme.of(context).disabledColor;
     return ListTile(
@@ -177,7 +182,4 @@ class _FilterRow extends StatelessWidget {
       onTap: onTap,
     );
   }
-
-  static String _formatExpiry(DateTime at) =>
-      '${at.month}/${at.day} ${at.hour}:${at.minute.toString().padLeft(2, '0')}';
 }

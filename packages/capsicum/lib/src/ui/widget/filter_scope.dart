@@ -1,6 +1,8 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/widgets.dart';
 
+import '../../provider/timeline_provider.dart';
+
 /// この下に描かれる投稿の、フィルターの適用先 (#1289)。
 ///
 /// ⚠⚠ **投稿タイルは自分がどの画面にいるかを知らない**ので、一覧の外側から渡す。
@@ -44,8 +46,9 @@ class FilterScope extends InheritedWidget {
 /// 対応は Mastodon Web（`utils/filters.ts`）と同じ。ホームとリストは `home`、
 /// それ以外の公開系（ハッシュタグ・チャンネルを含む）と DM は `public`。
 FilterContext? filterContextForTab(TabType tab) => switch (tab) {
-  TimelineTab(:final type) =>
-    type == TimelineType.home ? FilterContext.home : FilterContext.public,
+  // ⚠ 本線 TL の対応は provider 側の正本を使う（ずれると、画面と取得とで
+  // 適用先が食い違う・#1289 のリリース前レビュー）。
+  TimelineTab(:final type) => filterContextForTimeline(type),
   ListTab() => FilterContext.home,
   HashtagTab() || ChannelTab() => FilterContext.public,
   _ => null,

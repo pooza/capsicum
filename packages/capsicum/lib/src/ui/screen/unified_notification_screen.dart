@@ -10,6 +10,7 @@ import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/unified_notification_provider.dart';
 import '../../service/tco_resolver.dart';
+import '../../util/notification_filter.dart';
 import '../util/deck_navigation.dart';
 import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
@@ -206,6 +207,7 @@ class _UnifiedNotificationTileState
     final post = notification.post;
     final (icon, label) = _iconAndLabel(notification.type);
     final useAbsoluteTime = ref.watch(absoluteTimeProvider);
+    final filterVerdict = notificationFilterVerdict(notification);
 
     return InkWell(
       onTap: () => _openInOwningAccount(context, ref),
@@ -239,7 +241,33 @@ class _UnifiedNotificationTileState
                     notification.createdAt,
                     useAbsoluteTime,
                   ),
-                  if (post?.content != null && post!.content!.isNotEmpty) ...[
+                  // 通知の適用先でフィルターに当たった本文は畳む（通知タブの
+                  // `NotificationTile` と同じ・#1289 のリリース前レビュー）。
+                  // hide は一覧の側で落としてあるので、ここに来るのは warn と
+                  // メディアだけの blur。
+                  if (post?.content != null &&
+                      post!.content!.isNotEmpty &&
+                      filterVerdict != null &&
+                      filterVerdict.action != FilterAction.blur) ...[
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.filter_alt_outlined,
+                          size: 16,
+                          color: theme.textTheme.bodySmall?.color,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'フィルター: ${filterVerdict.title ?? "非表示"}',
+                            style: theme.textTheme.bodySmall,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ] else if (post?.content != null &&
+                      post!.content!.isNotEmpty) ...[
                     const SizedBox(height: 4),
                     Text.rich(
                       _renderContent(

@@ -62,7 +62,7 @@ class _WordMuteScreenState extends ConsumerState<WordMuteScreen> {
       setState(() => _loading = false);
     } catch (e, st) {
       reportOpFailure(
-        tagKey: 'word_mute.op',
+        tagKey: 'word_mute.list',
         operation: 'load',
         error: e,
         stackTrace: st,
@@ -109,24 +109,31 @@ class _WordMuteScreenState extends ConsumerState<WordMuteScreen> {
         const SnackBar(content: Text('保存しました。次に読み込んだ投稿から効きます')),
       );
     } catch (e, st) {
-      reportOpFailure(
-        tagKey: 'word_mute.op',
-        operation: 'save',
-        error: e,
-        stackTrace: st,
-        account: _account,
-      );
+      // ⚠ 入力が原因の既知のエラーは送らない（理由は SnackBar に出す・#1047 の
+      // リリース前レビュー）。
+      if (_saveFailureReason(e) == null) {
+        reportOpFailure(
+          tagKey: 'word_mute.op',
+          operation: 'save',
+          error: e,
+          stackTrace: st,
+          account: _account,
+        );
+      }
       if (!mounted) return;
       setState(() => _saving = false);
-      messenger.showSnackBar(SnackBar(content: Text(_saveFailureText(e))));
+      messenger.showSnackBar(
+        SnackBar(content: Text(_saveFailureReason(e) ?? 'ワードミュートの保存に失敗しました')),
+      );
     }
   }
 
-  static String _saveFailureText(Object error) =>
+  /// 入力が原因で弾かれたときの理由。それ以外の失敗は null。
+  static String? _saveFailureReason(Object error) =>
       switch (misskeyApiErrorCode(error)) {
         'TOO_MANY_MUTED_WORDS' => '保存に失敗しました: 語句が多すぎます（文字数の合計の上限を超えています）',
         'INVALID_REGEXP' => '保存に失敗しました: サーバーが読めない正規表現があります',
-        _ => 'ワードミュートの保存に失敗しました',
+        _ => null,
       };
 
   @override
