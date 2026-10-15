@@ -525,6 +525,61 @@ void main() {
       expect(container.read(deckFocusProvider).columnId, 'b');
     });
   });
+
+  // #1286: ドロワーは、開くときにフォーカス中のカラムのアカウントへ切り替えて
+  // から開く（決定済み事項 15 を改めた・2026-10-15 pooza）。
+  group('ドロワーとフォーカス (#1286)', () {
+    Future<ProviderContainer> pumpTwoAccounts(WidgetTester tester) async {
+      await pumpDeckLines(
+        tester,
+        size: const Size(1600, 600),
+        lines: const ['a|me|timeline:home', 'b|other|timeline:home'],
+        accounts: [_account('me'), _account('other')],
+      );
+      return ProviderScope.containerOf(tester.element(find.byType(DeckScreen)));
+    }
+
+    Finder hamburger(WidgetTester tester) => find.byTooltip(
+      MaterialLocalizations.of(
+        tester.element(find.byType(DeckScreen)),
+      ).openAppDrawerTooltip,
+    );
+
+    testWidgets('⚠⚠ 別アカウントのカラムにフォーカスして開くと、そのアカウントへ切り替えて開く', (tester) async {
+      final container = await pumpTwoAccounts(tester);
+      container.read(deckFocusProvider.notifier).focus('b');
+      await tester.pumpAndSettle();
+      expect(container.read(currentAccountKeyProvider)?.username, 'me');
+
+      await tester.tap(hamburger(tester));
+      await tester.pumpAndSettle();
+
+      expect(container.read(currentAccountKeyProvider)?.username, 'other');
+      expect(find.byType(Drawer), findsOneWidget);
+    });
+
+    testWidgets('⚠ フォーカス中のカラムが現在のアカウントなら、切り替えずに開く', (tester) async {
+      final container = await pumpTwoAccounts(tester);
+      container.read(deckFocusProvider.notifier).focus('a');
+      await tester.pumpAndSettle();
+
+      await tester.tap(hamburger(tester));
+      await tester.pumpAndSettle();
+
+      expect(container.read(currentAccountKeyProvider)?.username, 'me');
+      expect(find.byType(Drawer), findsOneWidget);
+    });
+
+    // ⚠ フォーカスを移しただけでは切り替えない（切り替えると 2 アカウントの
+    // カラムが読み直しになる・決定済み事項 8）。
+    testWidgets('⚠⚠ フォーカスを移すだけでは、現在のアカウントは変わらない', (tester) async {
+      final container = await pumpTwoAccounts(tester);
+      container.read(deckFocusProvider.notifier).focus('b');
+      await tester.pumpAndSettle();
+
+      expect(container.read(currentAccountKeyProvider)?.username, 'me');
+    });
+  });
 }
 
 /// 縦に長いリストを持つだけのカラム。`initState` の回数と、自分の位置で見える
