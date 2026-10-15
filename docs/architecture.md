@@ -47,6 +47,7 @@ capsicum/
 | `deck-ui-decisions.md` | デッキの**決定済み事項 4〜12 の本文**（2026-10-03 に分けた・#1184）。⚠⚠ **新しい決定はここに足す**（入口は表に 1 行だけ） |
 | `paid-relay-plan.md` | #597 有償プッシュリレーの設計書（⚠ #596 は記録層で判定層ではない） |
 | `paid-relay-baseline.md` | #597 の前提になる実測（⚠ プリセット非保有の利用者は 0 人） |
+| `filter-management-plan.md` | #1047 フィルタ（キーワードミュート）の管理 UI の設計書（⚠ 難所は UI ではなく、Mastodon のフィルタの適用先（context）を capsicum が見ていないこと） |
 | `doc-maintenance.md` | 配置の原則（公開境界・二重管理禁止・メモリは status を持たない）。⚠ 回す手順はスキル側 |
 | `store-release-guide.md` | 初回セットアップ（署名・fastlane）とストア掲載情報・配布方針 |
 | `store-listing.md` | 各ストアの掲載文（提出のたびに参照する現役ドキュメント） |
