@@ -27,6 +27,7 @@ class _FilterListScreenState extends ConsumerState<FilterListScreen> {
   /// 一覧がどのアカウントのものか。⚠ 切り替えたら取り直す（前のアカウントの
   /// フィルターを、切替後のアカウントへ書き込ませない）。
   String? _loadedFor;
+  bool _initialized = false;
 
   /// 取得して、失敗を 1 回だけ報告する。⚠ build の中で報告すると再描画のたびに
   /// 積まれるので、future の側で済ませる。
@@ -63,7 +64,8 @@ class _FilterListScreenState extends ConsumerState<FilterListScreen> {
     final adapter = ref.watch(currentAdapterProvider);
     final support = adapter is FilterSupport ? adapter as FilterSupport : null;
     final accountKey = ref.watch(currentAccountProvider)?.key.toStorageKey();
-    if (support != null && _loadedFor != accountKey) {
+    if (support != null && (!_initialized || _loadedFor != accountKey)) {
+      _initialized = true;
       _loadedFor = accountKey;
       _filters = _load(support);
     }
