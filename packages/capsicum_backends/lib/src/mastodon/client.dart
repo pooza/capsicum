@@ -1320,6 +1320,7 @@ class MastodonClient {
   /// GET /api/v1/timelines/public
   Future<List<MastodonStatus>> getPublicTimeline({
     bool? local,
+    bool? remote,
     String? maxId,
     String? sinceId,
     int? limit,
@@ -1328,6 +1329,7 @@ class MastodonClient {
       '/api/v1/timelines/public',
       queryParameters: {
         'local': ?local,
+        'remote': ?remote,
         'max_id': ?maxId,
         'since_id': ?sinceId,
         'limit': ?limit,

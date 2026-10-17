@@ -377,6 +377,8 @@ const defaultTabConfig = [
   TabConfigEntry(tab: TimelineTab(TimelineType.local), visible: true),
   TabConfigEntry(tab: TimelineTab(TimelineType.social), visible: true),
   TabConfigEntry(tab: TimelineTab(TimelineType.federated), visible: true),
+  // リモートのみの連合 TL (#1278)。使う人が限られるので既定は隠す。
+  TabConfigEntry(tab: TimelineTab(TimelineType.remote), visible: false),
   TabConfigEntry(tab: TimelineTab(TimelineType.directMessages), visible: true),
   TabConfigEntry(tab: NotificationsTab(), visible: false),
   TabConfigEntry(tab: AnnouncementsTab(), visible: false),
@@ -394,6 +396,19 @@ class TabConfigEntry {
   TabConfigEntry copyWith({bool? visible}) =>
       TabConfigEntry(tab: tab, visible: visible ?? this.visible);
 }
+
+/// 保存済みのタブ設定に無いタイムラインの種類を、**隠した状態で**末尾に足す (#1278)。
+///
+/// ⚠ 種類を増やしたとき（#1278 のリモートのみの連合 TL）、保存済みの利用者の
+/// 設定には載らない —— 足さないと、タブ管理に出てこないので**表示に切り替える
+/// 手段が無い**。表示で足すと、頼んでいないタブが突然増える。
+/// 保存はしない（タブ管理で並べ替え・切替をしたときに一緒に保存される）。
+List<TabConfigEntry> withMissingTimelineTabs(List<TabConfigEntry> entries) => [
+  ...entries,
+  for (final type in TimelineType.values)
+    if (!entries.any((e) => e.tab == TimelineTab(type)))
+      TabConfigEntry(tab: TimelineTab(type), visible: false),
+];
 
 /// Per-account unified tab configuration.
 ///
@@ -415,7 +430,7 @@ class TabConfigNotifier extends FamilyNotifier<List<TabConfigEntry>, String> {
     final prefs = sharedPrefsOrThrow;
     final saved = prefs.getStringList('$_tabConfigPrefix$arg');
     if (saved != null) {
-      return _deserialize(saved);
+      return withMissingTimelineTabs(_deserialize(saved));
     }
     // Migrate from legacy providers (synchronous).
     final entries = _migrate(prefs);

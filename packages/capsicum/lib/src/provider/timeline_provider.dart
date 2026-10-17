@@ -158,6 +158,7 @@ FilterContext filterContextForTimeline(TimelineType type) => switch (type) {
   TimelineType.local ||
   TimelineType.social ||
   TimelineType.federated ||
+  TimelineType.remote ||
   TimelineType.directMessages => FilterContext.public,
 };
 
@@ -170,6 +171,8 @@ bool ownPostAppearsInTimeline(TimelineType type, Post post) {
       return post.scope == PostScope.public;
     case TimelineType.federated:
       return post.scope == PostScope.public && !post.localOnly;
+    // 自分の投稿はこのサーバーのものなので、リモートのみには出ない (#1278)。
+    case TimelineType.remote:
     case TimelineType.directMessages:
       return false;
   }

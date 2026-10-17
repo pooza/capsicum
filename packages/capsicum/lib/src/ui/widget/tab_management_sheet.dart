@@ -183,6 +183,7 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
     TimelineType.local: 'ローカル',
     TimelineType.social: 'ソーシャル',
     TimelineType.federated: 'グローバル',
+    TimelineType.remote: '連合（リモートのみ）',
   };
 
   static const _mastodonLabelOverrides = {TimelineType.federated: '連合'};

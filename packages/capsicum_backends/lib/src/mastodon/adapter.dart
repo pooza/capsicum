@@ -68,6 +68,7 @@ class MastodonCapabilities extends AdapterCapabilities {
     TimelineType.home,
     TimelineType.local,
     TimelineType.federated,
+    TimelineType.remote,
     TimelineType.directMessages,
   };
 
@@ -242,6 +243,8 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       TimelineType.home,
       if (localEnabled) TimelineType.local,
       if (federatedEnabled) TimelineType.federated,
+      // リモートのみは連合と同じ設定（`live_feeds.remote`）に従う (#1278)。
+      if (federatedEnabled) TimelineType.remote,
       TimelineType.directMessages,
     };
   }
@@ -518,6 +521,12 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         limit: query?.limit,
       ),
       TimelineType.federated => await client.getPublicTimeline(
+        maxId: query?.maxId,
+        sinceId: query?.sinceId,
+        limit: query?.limit,
+      ),
+      TimelineType.remote => await client.getPublicTimeline(
+        remote: true,
         maxId: query?.maxId,
         sinceId: query?.sinceId,
         limit: query?.limit,

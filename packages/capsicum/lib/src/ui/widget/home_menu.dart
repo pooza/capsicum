@@ -68,6 +68,10 @@ const timelineLabels = {
   TimelineType.local: 'ローカル',
   TimelineType.social: 'ソーシャル',
   TimelineType.federated: 'グローバル',
+  // Mastodon だけ (#1278)。本家の列設定の「リモートのみ表示」と、capsicum の
+  // 「連合」を合わせた語（本家の Web の「ほかのサーバー」は「連合」と並べると
+  // 何の一部か読めない）。
+  TimelineType.remote: '連合（リモートのみ）',
 };
 
 /// Mastodon uses "連合" instead of "グローバル".

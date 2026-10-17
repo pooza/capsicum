@@ -27,6 +27,7 @@ MastodonStreamTarget? mastodonStreamTarget(TabType tab) {
         TimelineType.home => 'user',
         TimelineType.local => 'public:local',
         TimelineType.federated => 'public',
+        TimelineType.remote => 'public:remote',
         // DM には専用ストリームが無い。'user' へ落とすと DM タブに DM でない
         // 投稿が混ざる (#793)。social も Mastodon には無い。
         _ => null,
