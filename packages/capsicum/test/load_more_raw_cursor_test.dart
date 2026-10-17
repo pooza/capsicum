@@ -36,6 +36,9 @@ class _PagedAdapter extends Mock
   /// 立っている間、続き読み（`maxId` あり）の取得をここで待たせる。
   Completer<void>? gate;
 
+  /// この `maxId` での取得を 1 回だけ失敗させる（#1293）。
+  String? failOnceAt;
+
   @override
   AdapterCapabilities get capabilities => _FakeCapabilities();
 
@@ -54,6 +57,10 @@ class _PagedAdapter extends Mock
     final page = _page(query);
     final g = gate;
     if (g != null && query?.maxId != null) await g.future;
+    if (failOnceAt != null && query?.maxId == failOnceAt) {
+      failOnceAt = null;
+      throw Exception('network');
+    }
     return TimelineResponse(
       posts: page,
       rawCount: page.length,
@@ -256,6 +263,34 @@ void main() {
     adapter.requestedMaxIds.clear();
     await container.read(p.notifier).loadMore();
     expect(adapter.requestedMaxIds.first, '0061');
+    expect(container.read(p).requireValue.posts.length, 40);
+  });
+
+  // #1293: 以前は起点を書くのがループを抜けたあとだけで、途中のページで失敗すると
+  // 再試行が 1 枚目（全部実況のページ）から引き直していた。
+  test('⚠⚠ ホーム: 途中のページで失敗しても、再試行は引いたページの先から', () async {
+    // 新しい側 20 件は出る / 続く 40 件（2 ページ）は実況 / 残り 20 件は出る。
+    final all = [
+      for (var n = 80; n >= 1; n--) _post(n, livecure: n <= 60 && n > 20),
+    ];
+    final adapter = _PagedAdapter(all);
+    final container = await _container(adapter);
+    const key = (account: _meKey, type: TimelineType.home);
+    final p = timelineProvider(key);
+    container.listen(p, (_, _) {}, fireImmediately: true);
+    await container.read(p.future);
+
+    // 2 枚目（実況のページの続き）の取得で 1 回だけ落ちる。
+    adapter.failOnceAt = '0041';
+    adapter.requestedMaxIds.clear();
+    await container.read(p.notifier).loadMore();
+
+    expect(adapter.requestedMaxIds, [
+      '0061', // 1 枚目: 全部実況
+      '0041', // 2 枚目: ここで落ちる
+      '0041', // ⚠⚠ 再試行は 2 枚目から（以前は '0061' から引き直した）
+      '0021', // その先の 20 件
+    ]);
     expect(container.read(p).requireValue.posts.length, 40);
   });
 }

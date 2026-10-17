@@ -2265,6 +2265,12 @@ class TimelineNotifier
       }
     }
 
+    // ⚠ 待っている間に build() がやり直された（引っ張って更新・文脈の切替）なら
+    // 書かない —— 新しい一覧の起点を、古い一覧の末尾で上書きしてしまう。
+    void advanceOlderCursor(String? maxId) {
+      if (generation == _buildGeneration) _olderCursor = maxId;
+    }
+
     for (var attempt = 0; attempt <= loadMoreMaxRetries; attempt++) {
       try {
         final adapter = _adapterFor(ref.read(currentAccountProvider));
@@ -2305,7 +2311,10 @@ class TimelineNotifier
               // Server had data but all conversions failed; advance cursor.
               hasMore = response.rawCount > 0;
               maxId = rawLast;
-              if (hasMore) continue;
+              if (hasMore) {
+                advanceOlderCursor(maxId);
+                continue;
+              }
             }
             hasMore = false;
             break;
@@ -2323,6 +2332,11 @@ class TimelineNotifier
 
           // Stop when visible posts are found or the server has no more data.
           if (allVisible.isNotEmpty || !hasMore) break;
+          // ⚠ 次のページへ進む前に起点を書く (#1293)。ここへ来るのは、このページに
+          // 見える投稿が 1 件も無かったときだけなので、飛ばしても失うものは無い。
+          // 書かないと、途中のページで失敗したときの再試行が 1 枚目から引き直す
+          // （[OlderCursorPaging] はページごとに進めている）。
+          advanceOlderCursor(maxId);
         }
 
         final pageCapHit =
@@ -2337,10 +2351,8 @@ class TimelineNotifier
           );
         }
 
-        // 次の続き読みは、ここまで引いた消す前の末尾から (#1292)。⚠ 待っている
-        // 間に build() がやり直された（引っ張って更新・文脈の切替）なら書かない
-        // —— 新しい一覧の起点を、古い一覧の末尾で上書きしてしまう。
-        if (generation == _buildGeneration) _olderCursor = maxId;
+        // 次の続き読みは、ここまで引いた消す前の末尾から (#1292)。
+        advanceOlderCursor(maxId);
 
         final enrichedMore = await _isCatEnricher.enrichPosts(allVisible);
         // ⚠⚠ 待っている間に build() がやり直されたら、古い一覧のページを新しい
