@@ -1,6 +1,28 @@
 import Cocoa
 import FlutterMacOS
 
+/// Intel Mac でだけ、描画エンジンを Impeller から従来の Skia へ戻す (#1299)。
+///
+/// Flutter 3.46 から macOS の既定が Impeller（flutter#186546）になり、capsicum は
+/// v2.2.0 からその版で出ている。Intel Mac（MacBookPro16,1）の利用者から、
+/// **起動すると画面にノイズが出て使えない**と報告があった。崩れ始めた時期が
+/// Impeller に切り替わった版と合う。
+///
+/// ⚠⚠ **全 macOS には効かせない**（2026-10-18 pooza）。Info.plist の
+/// `FLTEnableImpeller` は全端末に効くので使わず、エンジンが読む
+/// `FlutterDartProject.enableImpeller`（非公開の property・
+/// `FlutterDartProject_Internal.h`）を x86_64 のスライスでだけ上書きする。
+/// Apple Silicon では上書きが無く、既定（Impeller）のまま。
+///
+/// ⚠⚠ **非公開の名前に乗っている。**上流が名前を変えると、**黙って効かなくなる**
+/// （コンパイルは通る）。`macos_impeller_opt_out_guard_test.dart` が、手元の
+/// Flutter SDK のエンジンのソースにこの名前が残っていることを見ている。
+final class CapsicumDartProject: FlutterDartProject {
+  #if arch(x86_64)
+    @objc(enableImpeller) var capsicumEnableImpeller: Bool { false }
+  #endif
+}
+
 class MainFlutterWindow: NSWindow {
   // UNUserNotificationCenter.delegate は weak のため、proxy (#674) を
   // window が強参照して生かしておく。
@@ -25,7 +47,9 @@ class MainFlutterWindow: NSWindow {
     // applicationShouldTerminateAfterLastWindowClosed が担う。
     self.isReleasedWhenClosed = false
 
-    let flutterViewController = FlutterViewController()
+    let flutterViewController = FlutterViewController(
+      project: CapsicumDartProject(precompiledDartBundle: nil)
+    )
     let windowFrame = self.frame
     self.contentViewController = flutterViewController
     self.setFrame(windowFrame, display: true)
