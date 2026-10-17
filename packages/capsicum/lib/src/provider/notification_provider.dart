@@ -1,10 +1,12 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../service/background_notification_service.dart';
 import '../util/conversion_skip_report.dart';
+import '../util/exception_scrub.dart';
 import '../util/notification_filter.dart';
 import 'account_manager_provider.dart';
 import 'is_cat_provider.dart';
@@ -70,6 +72,14 @@ class NotificationState {
   /// （PR #1285 の Codex P1）。画面は手で先を引ける入口を出す。
   final bool pageCapHit;
 
+  /// 直前の続き読みが、再試行しても失敗した (#1293)。
+  ///
+  /// ⚠ 立っている間は、画面が位置の変化での自動の続き読みを止める
+  /// （[TimelineState.loadMoreError] と同じ止め方・#678）。止めないと、末尾の入口が
+  /// 出ている間に失敗が続いても叩き続ける。戻すのは引っ張って更新（build()）か、
+  /// 次に成功した続き読み。
+  final Object? loadMoreError;
+
   const NotificationState({
     this.notifications = const [],
     this.isLoadingMore = false,
@@ -77,14 +87,18 @@ class NotificationState {
     this.lastRawId,
     this.rawNewestId,
     this.pageCapHit = false,
+    this.loadMoreError,
   });
 
+  /// [loadMoreError] は引数省略時に現状を保持する。`null` を渡すとクリア
+  /// （[TimelineState.copyWith] と同じ三状態）。
   NotificationState copyWith({
     List<Notification>? notifications,
     bool? isLoadingMore,
     bool? hasMore,
     String? lastRawId,
     bool? pageCapHit,
+    Object? loadMoreError = _keepNotificationLoadMoreError,
   }) => NotificationState(
     notifications: notifications ?? this.notifications,
     isLoadingMore: isLoadingMore ?? this.isLoadingMore,
@@ -92,8 +106,13 @@ class NotificationState {
     lastRawId: lastRawId ?? this.lastRawId,
     rawNewestId: rawNewestId,
     pageCapHit: pageCapHit ?? this.pageCapHit,
+    loadMoreError: identical(loadMoreError, _keepNotificationLoadMoreError)
+        ? this.loadMoreError
+        : loadMoreError,
   );
 }
+
+const Object _keepNotificationLoadMoreError = Object();
 
 /// Notifier that manages paginated notification fetching.
 class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
@@ -246,13 +265,24 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
         break;
       }
     }
+    final capHit = visible.isEmpty && hasMore;
+    // ⚠ TL と同じ breadcrumb を残す (#1293)。「通知が空のまま」の報告を、伏せた
+    // 通知が続いたせいか切り分けるため。
+    if (capHit) {
+      recordPageCapHit(
+        site: source,
+        visibleCollected: 0,
+        hasMore: true,
+        cap: kMaxEmptyOlderPages,
+      );
+    }
     return (
       visible: visible,
       newestRawId: newestRawId,
       lastRawId: cursor,
       hasMore: hasMore,
       stalled: stalled,
-      capHit: visible.isEmpty && hasMore,
+      capHit: capHit,
     );
   }
 
@@ -331,17 +361,36 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
             lastRawId: page.lastRawId,
             hasMore: page.hasMore,
             pageCapHit: page.capHit,
+            loadMoreError: null,
           ),
         );
         return;
-      } catch (_) {
+      } catch (e, st) {
         if (generation != _buildGeneration) return;
         if (attempt < loadMoreMaxRetries) {
           await Future<void>.delayed(loadMoreRetryDelay);
           continue;
         }
+        // ⚠ 最終失敗は TL の続き読みと同じく Sentry に残し、loadMoreError を
+        // 立てて自動の続き読みを止める (#1293)。以前はどちらも無く、失敗が
+        // 続いても位置の変化で叩き続け、記録も残らなかった。
+        try {
+          Sentry.captureException(
+            scrubException(e),
+            stackTrace: st,
+            hint: Hint.withMap({
+              'site': 'notification.loadMore',
+              'attempts': '${attempt + 1}',
+            }),
+          );
+        } catch (_) {
+          // Sentry の失敗で state の回復を止めない。
+        }
         state = AsyncData(
-          (state.valueOrNull ?? current).copyWith(isLoadingMore: false),
+          (state.valueOrNull ?? current).copyWith(
+            isLoadingMore: false,
+            loadMoreError: e,
+          ),
         );
       }
     }

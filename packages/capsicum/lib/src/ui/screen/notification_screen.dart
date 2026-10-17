@@ -97,7 +97,9 @@ class _NotificationViewState extends ConsumerState<NotificationView>
     if (state == null) return;
 
     // Load more when near the end.
-    if (!state.isLoadingMore) {
+    // ⚠ 続き読みが失敗し続けているあいだは自動では叩かない（TL と同じ・#678 /
+    // #1293）。回復は引っ張って更新か、末尾の入口から手で。
+    if (!state.isLoadingMore && state.loadMoreError == null) {
       final maxIndex = positions
           .map((p) => p.index)
           .reduce((a, b) => a > b ? a : b);
@@ -164,12 +166,10 @@ class _NotificationViewState extends ConsumerState<NotificationView>
   static bool _showOlderPrompt(NotificationState state) =>
       state.pageCapHit && state.hasMore && !state.isLoadingMore;
 
-  Widget _olderPrompt(NotificationState state) => TimelineOlderPrompt(
-    isLoading: state.isLoadingMore,
-    onLoadOlder: () => ref.read(notificationProvider.notifier).loadMore(),
-    message: '絞り込みで多くの通知が除外されています',
-    actionLabel: 'さらに古い通知を探す',
-  );
+  static const _olderMessage = '絞り込みで多くの通知が除外されています';
+  static const _olderAction = 'さらに古い通知を探す';
+
+  void _loadOlder() => ref.read(notificationProvider.notifier).loadMore();
 
   @override
   Widget build(BuildContext context) {
@@ -197,10 +197,13 @@ class _NotificationViewState extends ConsumerState<NotificationView>
           if (state.notifications.isEmpty) {
             // ⚠ 伏せた通知だけで空になっていて続きがあるときは、手で先を引ける
             // 入口を出す（PR #1285 の Codex P1）。空の一覧はスクロールできない。
-            return Center(
-              child: state.hasMore
-                  ? _olderPrompt(state)
-                  : const Text('通知はありません'),
+            return TimelineEmptyOrOlder(
+              hasMore: state.hasMore,
+              isLoadingMore: state.isLoadingMore,
+              onLoadOlder: _loadOlder,
+              emptyText: '通知はありません',
+              message: _olderMessage,
+              actionLabel: _olderAction,
             );
           }
           _restoreMarker(state.notifications);
@@ -214,16 +217,20 @@ class _NotificationViewState extends ConsumerState<NotificationView>
               itemPositionsListener: _itemPositionsListener,
               itemCount:
                   state.notifications.length +
-                  (state.isLoadingMore || _showOlderPrompt(state) ? 1 : 0),
+                  olderTailCount(
+                    isLoadingMore: state.isLoadingMore,
+                    stalled: _showOlderPrompt(state),
+                  ),
               separatorBuilder: (_, _) => const Divider(height: 1),
               itemBuilder: (context, index) {
                 if (index >= state.notifications.length) {
                   // 伏せた通知だけのページが上限まで続いたときの入口。何も
                   // 足されないと一覧の長さが変わらず、続き読みの合図が来ない。
-                  if (!state.isLoadingMore) return _olderPrompt(state);
-                  return const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Center(child: CircularProgressIndicator()),
+                  return TimelineOlderTail(
+                    isLoadingMore: state.isLoadingMore,
+                    onLoadOlder: _loadOlder,
+                    message: _olderMessage,
+                    actionLabel: _olderAction,
                   );
                 }
                 return NotificationTile(
