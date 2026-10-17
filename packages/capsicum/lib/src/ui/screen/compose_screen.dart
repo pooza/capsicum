@@ -536,7 +536,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     // ⚠ **知らない値は無視する。**上流が増やした policy を素通しで入れると、
     // メニューに無い値が選択済みとして残る（再編集の引き継ぎと同じ守り）。
     final quotePolicy = user.defaultQuotePolicy;
-    if (quotePolicy != null && _quoteApprovalLabels.containsKey(quotePolicy)) {
+    if (quotePolicy != null && quoteApprovalLabels.containsKey(quotePolicy)) {
       _quoteApprovalPolicy = quotePolicy;
     }
     if (user.defaultSensitive != null) {
@@ -876,8 +876,6 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   bool _pollMultiple = false;
   int _pollExpiresIn = 86400; // 1 day in seconds
 
-  static const _quoteApprovalLabels = quoteApprovalLabels;
-
   static const _quoteApprovalIcons = {
     'public': Icons.public,
     'followers': Icons.lock_outline,
@@ -1020,7 +1018,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       // 「誰でも」へ広がり、ドロップダウンは案内表示のままなので気づけない。
       // 知らない値は入れない（items に無い値を value に渡すと落ちる）。
       final quotePolicy = redraft.quoteApprovalPolicy;
-      if (_quoteApprovalLabels.containsKey(quotePolicy)) {
+      if (quoteApprovalLabels.containsKey(quotePolicy)) {
         _quoteApprovalPolicy = quotePolicy;
       }
       // ⚠ **投票は引き継ぐ (#1113)。**旧実装は「投票結果がリセットされるため」
@@ -3845,7 +3843,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   };
 
   late final Map<String, VoidCallback> _quoteApprovalSetters = {
-    for (final policy in _quoteApprovalLabels.keys)
+    for (final policy in quoteApprovalLabels.keys)
       policy: () => setState(() {
         _quoteApprovalPolicy = policy;
         _chosen.add(ComposeDraftStore.chosenQuotePolicy);
@@ -4647,7 +4645,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         MenuSubmenuEntry(
           label: '引用許可',
           children: [
-            for (final entry in _quoteApprovalLabels.entries)
+            for (final entry in quoteApprovalLabels.entries)
               MenuActionEntry(
                 label: entry.value,
                 icon: _quoteApprovalIcons[entry.key],
@@ -5000,17 +4998,17 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           _compactMenu<String>(
             tooltip: _quoteApprovalPolicy == null
                 ? '引用許可'
-                : '引用許可: ${_quoteApprovalLabels[_quoteApprovalPolicy]}',
+                : '引用許可: ${quoteApprovalLabels[_quoteApprovalPolicy]}',
             child: _quoteApprovalPolicy == null
                 ? const Icon(Icons.format_quote, size: 16)
                 : _compactSetting(
                     icon: _quoteApprovalIcons[_quoteApprovalPolicy]!,
                     label:
                         composeQuoteApprovalShortLabels[_quoteApprovalPolicy] ??
-                        _quoteApprovalLabels[_quoteApprovalPolicy]!,
+                        quoteApprovalLabels[_quoteApprovalPolicy]!,
                   ),
             items: [
-              for (final entry in _quoteApprovalLabels.entries)
+              for (final entry in quoteApprovalLabels.entries)
                 PopupMenuItem(
                   value: entry.key,
                   child: _compactSetting(
@@ -5037,7 +5035,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
             onChanged: _sending
                 ? null
                 : (v) => setState(() => _quoteApprovalPolicy = v),
-            items: _quoteApprovalLabels.entries
+            items: quoteApprovalLabels.entries
                 .map(
                   (e) => DropdownMenuItem(
                     value: e.key,

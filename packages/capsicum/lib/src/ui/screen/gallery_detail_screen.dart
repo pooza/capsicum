@@ -4,7 +4,10 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../util/notification_type_display.dart'
+    show contentWarningFallbackLabel;
 import '../util/provider_scope_carrier.dart';
+import '../util/sensitive_media.dart';
 import '../widget/bottom_safe_area.dart';
 
 class GalleryDetailScreen extends StatelessWidget {
@@ -119,7 +122,10 @@ class GalleryDetailScreen extends StatelessWidget {
                     ),
                     Positioned.fill(
                       child: BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+                        filter: ImageFilter.blur(
+                          sigmaX: kSensitiveMediaBlurSigma,
+                          sigmaY: kSensitiveMediaBlurSigma,
+                        ),
                         child: Container(color: Colors.black.withAlpha(30)),
                       ),
                     ),
@@ -128,7 +134,10 @@ class GalleryDetailScreen extends StatelessWidget {
                       children: [
                         Icon(Icons.visibility_off, color: Colors.white),
                         SizedBox(height: 4),
-                        Text('閲覧注意', style: TextStyle(color: Colors.white)),
+                        Text(
+                          contentWarningFallbackLabel,
+                          style: TextStyle(color: Colors.white),
+                        ),
                       ],
                     ),
                   ],

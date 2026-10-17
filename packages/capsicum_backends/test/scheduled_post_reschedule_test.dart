@@ -131,6 +131,45 @@ void main() {
       });
     });
 
+    // #1293: 以前は limit を付けず、上流の既定（30 件）で切れていた。
+    test('⚠⚠ 予約が 100 件を超えても、全件を辿って投票を送り直す', () async {
+      final all = [
+        for (var i = 0; i < 101; i++)
+          {
+            'id': 'd${1000 - i}',
+            'text': '予約 $i',
+            'scheduledAt': 1,
+            'poll': i == 100
+                ? {
+                    'choices': ['A', 'B'],
+                    'multiple': false,
+                    'expiresAt': '2026-12-31T00:00:00.000Z',
+                    'expiredAfter': null,
+                  }
+                : null,
+          },
+      ];
+      http = _Recorder((options) {
+        if (!options.path.contains('drafts/list')) return <String, dynamic>{};
+        final body = _body(options);
+        final untilId = body['untilId'] as String?;
+        final start = untilId == null
+            ? 0
+            : all.indexWhere((d) => d['id'] == untilId) + 1;
+        return all.skip(start).take(body['limit'] as int).toList();
+      });
+      adapter.client.dio.httpClientAdapter = http;
+
+      await (adapter as ScheduleSupport).rescheduleScheduledPost(
+        'd900',
+        newTime,
+      );
+
+      final lists = http.requests.where((r) => r.path.contains('drafts/list'));
+      expect(lists.length, 2, reason: '100 件のページを辿って 101 件目まで引く');
+      expect(_body(update())['poll'], isNotNull, reason: '101 件目の投票を送り直す');
+    });
+
     test('本文を変える回（タグ編集）も同じ口を通り、投票を送り直す', () async {
       drafts = [
         {

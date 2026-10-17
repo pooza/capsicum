@@ -55,7 +55,12 @@ Future<DateTime?> pickScheduleDateTime(
     time.minute,
   );
   if (isScheduleTooSoon(scheduled)) {
-    messenger.showSnackBar(const SnackBar(content: Text('5分以上先の日時を指定してください')));
+    // ⚠ 文言の分数は [kScheduleMinLeadTime] から作る（別に持つとずれる・#1293）。
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text('${kScheduleMinLeadTime.inMinutes} 分以上先の日時を指定してください'),
+      ),
+    );
     return null;
   }
   return scheduled;

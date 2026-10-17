@@ -25,6 +25,8 @@ import '../util/compose_settings_display.dart';
 import '../util/deck_navigation.dart';
 import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
+import '../util/notification_type_display.dart'
+    show contentWarningFallbackLabel;
 import '../util/post_action_error.dart';
 import '../util/post_actions.dart';
 import '../util/post_scope_display.dart';
@@ -32,6 +34,7 @@ import '../util/provider_scope_carrier.dart';
 import '../util/quote_actions.dart';
 import '../util/reaction_acceptance.dart';
 import '../util/relative_time.dart';
+import '../util/sensitive_media.dart';
 import '../util/visible_timeline.dart';
 import 'content_parser.dart';
 import 'cross_account_boost.dart';
@@ -3696,7 +3699,10 @@ class _AttachmentThumbnailsState extends ConsumerState<_AttachmentThumbnails> {
     // (Linux GTK で確認、#491)、no-op の filter は実害だけ残るため外す。
     if (isSensitive) {
       media = ImageFiltered(
-        imageFilter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+        imageFilter: ImageFilter.blur(
+          sigmaX: kSensitiveMediaBlurSigma,
+          sigmaY: kSensitiveMediaBlurSigma,
+        ),
         child: media,
       );
     }
@@ -3730,7 +3736,7 @@ class _AttachmentThumbnailsState extends ConsumerState<_AttachmentThumbnails> {
                       ),
                       SizedBox(height: 4),
                       Text(
-                        '閲覧注意',
+                        contentWarningFallbackLabel,
                         style: TextStyle(color: Colors.white70, fontSize: 12),
                       ),
                     ],

@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/gallery_provider.dart';
 import '../util/deck_navigation.dart';
+import '../util/notification_type_display.dart'
+    show contentWarningFallbackLabel;
 import '../util/scroll_thresholds.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/retry_error_view.dart';
@@ -112,7 +114,7 @@ class _GalleryCard extends StatelessWidget {
                             children: [
                               Icon(Icons.visibility_off, size: 32),
                               SizedBox(height: 4),
-                              Text('閲覧注意'),
+                              Text(contentWarningFallbackLabel),
                             ],
                           ),
                         ),

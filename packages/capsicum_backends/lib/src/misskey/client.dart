@@ -695,12 +695,27 @@ class MisskeyClient {
   /// POST /api/notes/drafts/list — 予約投稿を、変換せずそのまま返す (#1212)。
   ///
   /// [ScheduledPost] に載らない項目（投票）を、更新のときに送り直すために引く。
+  ///
+  /// ⚠ **全件を辿る** (#1293)。`limit` を付けないと上流の既定（30 件）で切れ、
+  /// 31 件目以降の予約を時刻変更すると、投票を添えられずに期限が消えていた。
   Future<List<Map<String, dynamic>>> getScheduledNotesRaw() async {
-    final response = await dio.post(
-      '/api/notes/drafts/list',
-      data: createBody({'scheduled': true}),
-    );
-    return (response.data as List).cast<Map<String, dynamic>>();
+    const pageSize = 100; // 上流の上限
+    final all = <Map<String, dynamic>>[];
+    String? untilId;
+    while (true) {
+      final response = await dio.post(
+        '/api/notes/drafts/list',
+        data: createBody({
+          'scheduled': true,
+          'limit': pageSize,
+          'untilId': ?untilId,
+        }),
+      );
+      final page = (response.data as List).cast<Map<String, dynamic>>();
+      all.addAll(page);
+      if (page.length < pageSize) return all;
+      untilId = page.last['id'] as String;
+    }
   }
 
   /// POST /api/notes/drafts/update — 予約投稿の本文か時刻を変える。

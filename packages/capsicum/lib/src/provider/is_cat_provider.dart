@@ -363,7 +363,9 @@ class IsCatEnricher {
   ///
   /// 「解決できない」のは **acct とモロヘイヤの組**に対する事実であって、
   /// acct 単独の性質ではない。
-  String _failureKey(String acct) => '${_mulukhiya?.baseUrl} $acct';
+  // ⚠ 区切りの NUL はエスケープで書く。生の NUL 文字を置くと、grep がファイルを
+  // 「バイナリ」と見なして検索から漏れる (#1293)。値は以前と同じ。
+  String _failureKey(String acct) => '${_mulukhiya?.baseUrl}\u0000$acct';
 
   /// 直近に失敗していない acct だけ問い合わせる (#1080)。
   bool _shouldQuery(String acct) {
