@@ -12,6 +12,12 @@ class MisskeyDriveFile {
   final String? comment;
   final bool isSensitive;
 
+  /// 読み込み中の枠に敷く色の元 (#1186)。無いファイル（音声など）もある。
+  final String? blurhash;
+
+  /// `avgColor`（`rgb(r,g,b)`）・`width` / `height` などを持つ。無いこともある。
+  final Map<String, dynamic>? properties;
+
   const MisskeyDriveFile({
     required this.id,
     required this.name,
@@ -20,6 +26,8 @@ class MisskeyDriveFile {
     this.thumbnailUrl,
     this.comment,
     required this.isSensitive,
+    this.blurhash,
+    this.properties,
   });
 
   factory MisskeyDriveFile.fromJson(Map<String, dynamic> json) =>

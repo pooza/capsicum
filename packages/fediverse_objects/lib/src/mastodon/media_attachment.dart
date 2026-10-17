@@ -10,12 +10,16 @@ class MastodonMediaAttachment {
   final String? previewUrl;
   final String? description;
 
+  /// 読み込み中の枠に敷く色の元 (#1186)。無いこともある。
+  final String? blurhash;
+
   const MastodonMediaAttachment({
     required this.id,
     required this.type,
     this.url,
     this.previewUrl,
     this.description,
+    this.blurhash,
   });
 
   factory MastodonMediaAttachment.fromJson(Map<String, dynamic> json) =>

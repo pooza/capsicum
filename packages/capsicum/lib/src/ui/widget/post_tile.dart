@@ -3694,6 +3694,12 @@ class _AttachmentThumbnailsState extends ConsumerState<_AttachmentThumbnails> {
         ),
       );
     }
+    // 画像が届くまで、サーバーが返した平均色を敷く (#1186)。以前は空の枠
+    // （背景のまま）だった。届けば画像が覆う。閲覧注意の覆いはこの上に重なる。
+    final placeholder = attachment.placeholderColor;
+    if (placeholder != null) {
+      media = ColoredBox(color: Color(placeholder), child: media);
+    }
     // sensitive 時のみ ImageFiltered で blur を掛ける。非 sensitive 時に
     // identity (no-op) の filter を被せても render が黒に落ちる事例があり
     // (Linux GTK で確認、#491)、no-op の filter は実害だけ残るため外す。

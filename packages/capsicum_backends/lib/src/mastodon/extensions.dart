@@ -319,6 +319,7 @@ bool _isQuotable(Map<String, dynamic>? quoteApproval) {
               url: a['url'] as String? ?? '',
               previewUrl: a['preview_url'] as String?,
               description: a['description'] as String?,
+              placeholderColor: blurhashAverageColor(a['blurhash'] as String?),
             ),
           )
           .toList(),
@@ -674,6 +675,8 @@ extension CapsicumMastodonMediaAttachmentExtension on MastodonMediaAttachment {
       url: url ?? '',
       previewUrl: previewUrl,
       description: description,
+      // Mastodon は平均色を返さないので、blurhash の平均色を使う (#1186)。
+      placeholderColor: blurhashAverageColor(blurhash),
     );
   }
 }
