@@ -1160,6 +1160,15 @@ class MisskeyClient {
         .toList();
   }
 
+  /// POST /api/channels/show
+  Future<Map<String, dynamic>> showChannel(String channelId) async {
+    final response = await dio.post(
+      '/api/channels/show',
+      data: createBody({'channelId': channelId}),
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
   /// POST /api/channels/followed
   Future<List<Map<String, dynamic>>> getFollowedChannels({
     String? sinceId,

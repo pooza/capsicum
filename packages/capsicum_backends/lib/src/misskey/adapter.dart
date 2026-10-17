@@ -1766,6 +1766,12 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }
 
   @override
+  Future<Channel> getChannel(String channelId) async {
+    final ch = await client.showChannel(channelId);
+    return Channel(id: ch['id'] as String, name: ch['name'] as String? ?? '');
+  }
+
+  @override
   Future<List<Post>> getChannelTimeline(
     String channelId, {
     TimelineQuery? query,
