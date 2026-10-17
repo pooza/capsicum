@@ -311,7 +311,11 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
       scaffold.openDrawer();
       return;
     }
-    ref.read(accountManagerProvider.notifier).switchAccount(account);
+    // ⚠ 未読の印は消さない (#1293)。ドロワーを開いただけで、利用者はまだ
+    // そのアカウントの通知を見ていない。
+    ref
+        .read(accountManagerProvider.notifier)
+        .switchAccount(account, clearUnread: false);
     // ⚠ 組み替えのフレームが済んでから開く。同じフレームで開くと、ドロワーの
     // 頭と項目が切り替える前のアカウントで組まれる。
     WidgetsBinding.instance.addPostFrameCallback((_) {

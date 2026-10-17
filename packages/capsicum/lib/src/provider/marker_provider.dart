@@ -10,6 +10,12 @@ import 'account_manager_provider.dart';
 import 'preferences_provider.dart';
 import 'unified_notification_provider.dart';
 
+/// 既読の位置をサーバーへ返すまでの待ち。スクロールのたびに送らないため。
+///
+/// ⚠ ホーム・通知タブ・通知の既読・「すべての通知」の 4 つの保存役が同じ値を使う
+/// （「通知タブと同じく 5 秒」と揃えてある）。直すのはここだけ (#1293)。
+const kMarkerSaveDelay = Duration(seconds: 5);
+
 /// Fetches markers from the server (Mastodon only).
 final markersProvider = FutureProvider.autoDispose<MarkerSet?>((ref) async {
   final adapter = ref.watch(currentAdapterProvider);
@@ -37,7 +43,7 @@ class HomeMarkerSaver {
     _pendingAdapter = adapter as MarkerSupport;
     _pendingId = lastReadId;
     _timer?.cancel();
-    _timer = Timer(const Duration(seconds: 5), _flush);
+    _timer = Timer(kMarkerSaveDelay, _flush);
   }
 
   void _flush() {
@@ -107,7 +113,7 @@ class NotificationMarkerSaver {
     _pendingAdapter = adapter as MarkerSupport;
     _pendingId = lastReadId;
     _timer?.cancel();
-    _timer = Timer(const Duration(seconds: 5), _flush);
+    _timer = Timer(kMarkerSaveDelay, _flush);
   }
 
   /// [id] がこれまでの位置より新しければ覚えて true。
@@ -206,7 +212,7 @@ class NotificationReadSaver {
     _pendingAdapter = adapter as NotificationReadSupport;
     _pendingId = newestId;
     _timer?.cancel();
-    _timer = Timer(const Duration(seconds: 5), _flushIfStillVisible);
+    _timer = Timer(kMarkerSaveDelay, _flushIfStillVisible);
   }
 
   /// 一覧の先頭が画面から外れた。まだ返していなければ、返すのをやめる。
@@ -332,7 +338,7 @@ class UnifiedNotificationReadSaver {
     final query = _query();
     _pending[key] = (
       id: newestId,
-      timer: Timer(const Duration(seconds: 5), () {
+      timer: Timer(kMarkerSaveDelay, () {
         _pending.remove(key);
         if (!_isAppVisible()) return;
         _send(adapter, key, newestId, query);

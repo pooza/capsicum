@@ -333,7 +333,12 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     );
   }
 
-  void switchAccount(Account account) {
+  /// [clearUnread] が false なら、切替先の未読の印を消さない。
+  ///
+  /// ⚠ デッキのドロワーを開くときの切り替え（#1286）がこれ。ドロワーを開いて
+  /// 閉じただけで未読の印が消えていた (#1293)。利用者がアカウントを選んだ
+  /// 切り替えは、従来どおり消す。
+  void switchAccount(Account account, {bool clearUnread = true}) {
     final reordered = [
       account,
       ...state.accounts.where((a) => a.key != account.key),
@@ -345,7 +350,11 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     storage.touchAccount(account.key.toStorageKey()).catchError((_) {});
 
     // Clear unread notification count for the account we're switching to.
-    BackgroundNotificationService.clearUnreadCount(account.key.toStorageKey());
+    if (clearUnread) {
+      BackgroundNotificationService.clearUnreadCount(
+        account.key.toStorageKey(),
+      );
+    }
 
     // Prefetch server metadata for badge display (non-blocking). Misskey
     // フォークの偽 Mastodon 互換版で name/icon が化けないよう型ヒントを渡す (#827)。

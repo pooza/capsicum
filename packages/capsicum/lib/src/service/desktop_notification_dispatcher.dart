@@ -341,6 +341,16 @@ class DesktopNotificationDispatcher {
         'capsicum: push.desktop: skip (filtered) '
         'account=${sentrySafeAccount(account.key)} id=${n.id}',
       );
+      // ⚠ 「デスクトップ通知が来ない」報告に備えて breadcrumb にも残す (#1293)。
+      // debugPrint だけでは、報告の前後に何が出なかったのかを追えない。
+      Sentry.addBreadcrumb(
+        Breadcrumb(
+          category: 'push.desktop.skip',
+          level: SentryLevel.info,
+          message: 'filtered',
+          data: {'type': n.type.name},
+        ),
+      );
       return;
     }
     final subsystem = _ref.read(notificationSubsystemProvider);
