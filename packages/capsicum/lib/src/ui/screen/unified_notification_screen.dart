@@ -20,6 +20,7 @@ import '../util/relative_time.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/content_parser.dart';
 import '../widget/emoji_text.dart';
+import '../widget/filter_notice_row.dart';
 import '../widget/notification_filter_button.dart';
 import '../widget/retry_error_view.dart';
 import '../widget/server_badge.dart';
@@ -250,22 +251,7 @@ class _UnifiedNotificationTileState
                       filterVerdict != null &&
                       filterVerdict.action != FilterAction.blur) ...[
                     const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.filter_alt_outlined,
-                          size: 16,
-                          color: theme.textTheme.bodySmall?.color,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'フィルター: ${filterVerdict.title ?? "非表示"}',
-                            style: theme.textTheme.bodySmall,
-                          ),
-                        ),
-                      ],
-                    ),
+                    FilterNoticeRow(verdict: filterVerdict),
                   ] else if (post?.content != null &&
                       post!.content!.isNotEmpty) ...[
                     const SizedBox(height: 4),

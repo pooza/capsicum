@@ -154,6 +154,25 @@ void main() {
 
     expect(post.filterVerdictFor(null)?.action, FilterAction.warn);
     expect(post.filterVerdictFor(null)?.title, 'ワードミュート');
+    expect(post.filterVerdictFor(null)?.wordMute, isTrue);
+  });
+
+  // #1293: 題を設定画面の段の名前に揃える。hide を warn に弱める画面（詳細など）
+  // で畳んだとき、「ワードミュート」と出ると設定のどちらの段か分からない。
+  test('ハードワードミュートは「ハードワードミュート」の題で載る', () async {
+    final adapter = await adapterWith(
+      mutedWords: const [],
+      hardMutedWords: [
+        ['ダイの大冒険'],
+      ],
+      notes: [note({})],
+    );
+
+    final post = (await timelineOf(adapter)).single;
+
+    expect(post.filterVerdictFor(null)?.action, FilterAction.hide);
+    expect(post.filterVerdictFor(null)?.title, 'ハードワードミュート');
+    expect(post.filterVerdictFor(null)?.wordMute, isTrue);
   });
 
   // ⚠⚠ ここが本題。組み直しをやめないと軒並み落ちる。

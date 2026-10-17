@@ -647,17 +647,27 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     }
 
     // Misskey に適用先の概念は無いので「全画面」（contexts: null）で載せる (#1289)。
+    // ⚠ 題は設定画面の段の名前と揃える（#1293）。hide を warn に弱める画面
+    // （詳細など）では「ハードワードミュート」の題で畳む。
     if (matchedHard) {
       return post.copyWith(
         filterMatches: const [
-          FilterMatch(action: FilterAction.hide, title: 'ワードミュート'),
+          FilterMatch(
+            action: FilterAction.hide,
+            title: 'ハードワードミュート',
+            wordMute: true,
+          ),
         ],
       );
     }
     if (matchedSoft) {
       return post.copyWith(
         filterMatches: const [
-          FilterMatch(action: FilterAction.warn, title: 'ワードミュート'),
+          FilterMatch(
+            action: FilterAction.warn,
+            title: 'ワードミュート',
+            wordMute: true,
+          ),
         ],
       );
     }
@@ -700,13 +710,20 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   /// コンパイルできない、のいずれも null（その行は当たらない扱い・本家と同じ）。
   ///
   /// JS のフラグのうち `g` / `y` / `d` は 1 回の判定に影響しないので読み捨てる。
+  ///
+  /// ⚠ 読めなかったことはログに残す（キャッシュがあるので 1 パターン 1 回）。
+  /// 利用者には、ワードミュートの画面がその行を知らせる (#1293)。⚠ 中身（語句）は
+  /// 出さない。
+  ///
+  /// ⚠ 判定はメインの isolate で回る。病的なパターン（壊滅的なバックトラック）は
+  /// UI を止めうるが、サーバーの RE2 で受け付けた形しか来ない前提で置いていない。
   static RegExp? _compileMuteRegex(String filter) =>
       _muteRegexCache.putIfAbsent(filter, () {
         final parts = RegExp(r'^/(.+)/(.*)$', dotAll: true).firstMatch(filter);
-        if (parts == null) return null;
+        if (parts == null) return _unreadableMuteRegex('shape');
         final flags = parts.group(2)!;
         if (flags.split('').any((flag) => !'gimsuyvd'.contains(flag))) {
-          return null;
+          return _unreadableMuteRegex('flags');
         }
         try {
           return RegExp(
@@ -717,9 +734,17 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
             unicode: flags.contains('u') || flags.contains('v'),
           );
         } on FormatException {
-          return null;
+          return _unreadableMuteRegex('compile');
         }
       });
+
+  static RegExp? _unreadableMuteRegex(String reason) {
+    developer.log(
+      'word mute regex is not usable in Dart ($reason); skipped',
+      name: 'capsicum',
+    );
+    return null;
+  }
 
   @override
   Future<Post> getPostById(String id) async {

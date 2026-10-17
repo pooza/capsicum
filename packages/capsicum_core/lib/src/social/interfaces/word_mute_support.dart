@@ -46,7 +46,23 @@ typedef WordMuteParseResult = ({List<Object> entries, int? invalidLine});
 /// ⚠ 正規表現は Dart の [RegExp] で確かめる。本家は JS、サーバーは RE2 で確かめる
 /// ので完全には一致しない —— 最後に判定するのはサーバー（`INVALID_REGEXP`）。
 /// ここで捕まえるのは、何行目かを示せるうちに示すため。
-WordMuteParseResult parseWordMuteText(String text) {
+///
+/// ⚠⚠ **[original]（読み込んだときの一覧）と同じ文面の行は、元の要素をそのまま
+/// 使い、検査もしない** (#1293)。テキストの形式は往復で形が変わることがある:
+/// - 1 語だけの組 `['/foo/']` は `/foo/` の行になり、読み直すと正規表現になる
+/// - サーバー（RE2）は受け付けたが Dart では読めない正規表現の行があると、
+///   **その段は何を直しても保存の検査で止まっていた**
+///
+/// 触っていない行は変わらない、を保つ。
+WordMuteParseResult parseWordMuteText(
+  String text, {
+  List<Object> original = const [],
+}) {
+  final untouched = <String, Object>{};
+  for (final entry in original) {
+    final line = formatWordMuteText([entry]).trim();
+    if (line.isNotEmpty) untouched.putIfAbsent(line, () => entry);
+  }
   final entries = <Object>[];
   final lines = text.trim().split('\n');
   var lineNumber = 0;
@@ -54,6 +70,11 @@ WordMuteParseResult parseWordMuteText(String text) {
     lineNumber++;
     final line = raw.trim();
     if (line.isEmpty) continue;
+    final kept = untouched[line];
+    if (kept != null) {
+      entries.add(kept);
+      continue;
+    }
     final regexp = RegExp(r'^/(.+)/(.*)$').firstMatch(line);
     if (regexp != null) {
       if (!_isValidMuteRegex(regexp.group(1)!, regexp.group(2)!)) {
@@ -69,6 +90,23 @@ WordMuteParseResult parseWordMuteText(String text) {
     if (words.isNotEmpty) entries.add(words);
   }
   return (entries: entries, invalidLine: null);
+}
+
+/// [entries] のうち、capsicum（Dart の [RegExp]）では読めない正規表現の行番号
+/// （[formatWordMuteText] の 1 始まり）(#1293)。
+///
+/// ⚠ サーバー（RE2）と本家の Web（JS）では効くが、**capsicum の判定からは黙って
+/// 外れる**行。画面で知らせるために使う。
+List<int> unreadableWordMuteLines(List<Object> entries) => [
+  for (var i = 0; i < entries.length; i++)
+    if (entries[i] case final String line when !_isReadableMuteRegexLine(line))
+      i + 1,
+];
+
+bool _isReadableMuteRegexLine(String line) {
+  final regexp = RegExp(r'^/(.+)/(.*)$', dotAll: true).firstMatch(line);
+  if (regexp == null) return false;
+  return _isValidMuteRegex(regexp.group(1)!, regexp.group(2)!);
 }
 
 bool _isValidMuteRegex(String pattern, String flags) {

@@ -65,4 +65,59 @@ void main() {
       expect(parseWordMuteText(formatWordMuteText(entries)).entries, entries);
     });
   });
+
+  // #1293: テキストの形式は往復で形が変わることがある。触っていない行は変えない。
+  group('⚠⚠ 触っていない行は元の要素のまま（original）', () {
+    test('1 語だけの組 [/foo/] は、触らなければ正規表現に化けない', () {
+      const original = <Object>[
+        ['/foo/'],
+      ];
+      final text = formatWordMuteText(original);
+      expect(text, '/foo/', reason: 'テキストでは正規表現と区別できない');
+      expect(parseWordMuteText(text).entries, ['/foo/'], reason: '素の往復では化ける');
+      expect(parseWordMuteText(text, original: original).entries, original);
+    });
+
+    test('⚠⚠ Dart で読めない正規表現の行があっても、触らなければ保存を止めない', () {
+      // RE2 は受け付けるが、JS / Dart は名前付きグループの `(?P<…>` を読めない。
+      const original = <Object>['/(?P<x>ダイ)/'];
+      final text = '${formatWordMuteText(original)}\nポップ';
+      expect(parseWordMuteText(text).invalidLine, 1, reason: '素では 1 行目で止まる');
+      final parsed = parseWordMuteText(text, original: original);
+      expect(parsed.invalidLine, isNull);
+      expect(parsed.entries, [
+        '/(?P<x>ダイ)/',
+        ['ポップ'],
+      ]);
+    });
+
+    test('書き換えた行は従来どおり検査する', () {
+      const original = <Object>['/ダイ/'];
+      final parsed = parseWordMuteText('/(?P<x>ダイ)/', original: original);
+      expect(parsed.invalidLine, 1);
+    });
+  });
+
+  group('unreadableWordMuteLines（#1293）', () {
+    test('Dart で読めない正規表現の行番号だけを返す', () {
+      expect(
+        unreadableWordMuteLines(const [
+          ['ダイ'],
+          '/アバン/i',
+          '/(?P<x>ダイ)/',
+          '/ハドラー/z',
+        ]),
+        [3, 4],
+      );
+    });
+
+    test('キーワードの組は対象外', () {
+      expect(
+        unreadableWordMuteLines(const [
+          ['/(?P<x>ダイ)/'],
+        ]),
+        isEmpty,
+      );
+    });
+  });
 }

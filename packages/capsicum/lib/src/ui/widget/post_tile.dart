@@ -37,6 +37,7 @@ import 'content_parser.dart';
 import 'cross_account_boost.dart';
 import 'emoji_action_sheet.dart';
 import 'emoji_text.dart';
+import 'filter_notice_row.dart';
 import 'filter_scope.dart';
 import 'home_menu.dart' show pickFollowedChannel;
 import 'inline_custom_emoji.dart';
@@ -469,28 +470,15 @@ class _PostTileState extends ConsumerState<PostTile> {
         onTap: () => setState(() => _filterExpanded = true),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: Row(
-            children: [
-              Icon(
-                Icons.filter_alt_outlined,
-                size: 16,
-                color: Theme.of(context).textTheme.bodySmall?.color,
+          child: FilterNoticeRow(
+            verdict: filterVerdict,
+            trailing: Text(
+              '表示する',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.primary,
+                fontSize: 13,
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'フィルター: ${filterVerdict.title ?? "非表示"}',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ),
-              Text(
-                '表示する',
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.primary,
-                  fontSize: 13,
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       );

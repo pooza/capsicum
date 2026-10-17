@@ -64,7 +64,7 @@ Issue 本文の問い 3 つへの答え:
 | --- | --- |
 | モデル | `FilterAction { hide, warn }`（`capsicum_core/lib/src/model/post.dart`）。`Post.filterAction` / `filterTitle` の 2 つだけ。⚠ **適用先を持つ場所が無い** |
 | Mastodon の解釈 | `_parseFilterResult`（`mastodon/extensions.dart`）。`hide` が 1 つでもあれば hide、それ以外は warn。**`blur` は warn に落ちる。`context` は読まない** |
-| Misskey の解釈 | `MisskeyAdapter._applyWordFilter`。hard → hide、soft → warn、タイトルは「ワードミュート」。`i` で読んだ語を adapter に保持し、[#1185](https://github.com/pooza/capsicum/issues/1185) の TTL で取り直す |
+| Misskey の解釈 | `MisskeyAdapter._applyWordFilter`。hard → hide、soft → warn、タイトルは設定画面の段の名前（「ハードワードミュート」「ワードミュート」）。畳んだ行は「フィルター:」を付けずタイトルだけを出す（決定済み事項 4 の本来の用語・[#1293](https://github.com/pooza/capsicum/issues/1293)）。`i` で読んだ語を adapter に保持し、[#1185](https://github.com/pooza/capsicum/issues/1185) の TTL で取り直す |
 | hide の適用 | `timeline_provider.dart`（5 か所）と `hashtag_provider.dart`。⚠ **通知・スレッド・プロフィール・検索・ブックマーク・お気に入りでは落としていない** |
 | warn の表示 | `post_tile.dart` が「フィルタ: {title}／表示する」の 1 行に畳む。**どの画面で見ているかを知らないので、context があっても判定できない** |
 | 管理 | `GET /api/v2/filters` を呼ぶコードは無い。`i/update` は `updateI()`（プロフィール編集・[#865](https://github.com/pooza/capsicum/issues/865)）が既にあり、引数を足せば使える |
