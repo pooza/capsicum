@@ -2884,7 +2884,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   }
 
   Future<void> _openEpisodeBrowser() async {
-    final result = await context.push<String>('/episodes');
+    final result = await context.push<String>(
+      '/episodes',
+      extra: extraWithProviderScope(context),
+    );
     if (result != null && mounted) {
       _controller.text = result.replaceFirst(RegExp(r'^---\n'), '');
       _controller.selection = TextSelection.collapsed(
@@ -2912,11 +2915,13 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     ].join(' ');
     context.push(
       '/annict/record',
-      extra: AnnictRecordScreenArgs(
-        episodeId: episodeId,
-        workTitle: program.series ?? program.name,
-        episodeLabel: episodeLabel,
-      ),
+      extra: extraWithProviderScope(context, {
+        'args': AnnictRecordScreenArgs(
+          episodeId: episodeId,
+          workTitle: program.series ?? program.name,
+          episodeLabel: episodeLabel,
+        ),
+      }),
     );
   }
 
@@ -3359,7 +3364,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           },
           onManage: () {
             Navigator.pop(sheetContext);
-            context.push('/templates/manage');
+            context.push(
+              '/templates/manage',
+              extra: extraWithProviderScope(context),
+            );
           },
           onLoaded: (templates) {
             // 取得できた id 集合で使用履歴を掃除する（削除済みを落とす）。

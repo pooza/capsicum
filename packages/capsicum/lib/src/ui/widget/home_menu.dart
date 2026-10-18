@@ -380,7 +380,12 @@ List<HomeNavItem> buildHomeNavItems(
       HomeNavItem(
         title: '投稿テンプレート',
         icon: Icons.description_outlined,
-        onSelected: () => act(() => context.push('/templates/manage')),
+        onSelected: () => act(
+          () => context.push(
+            '/templates/manage',
+            extra: extraWithProviderScope(context),
+          ),
+        ),
       ),
     HomeNavItem(
       title: 'サーバー情報',

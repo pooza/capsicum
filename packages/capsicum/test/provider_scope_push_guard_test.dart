@@ -16,6 +16,12 @@ import 'support/source_files.dart';
 /// コンテナを読む。カラムのスコープは `extra` に載せて運び、ルーターの builder
 /// が `withExtraProviderScope` で包み直す。
 ///
+/// #1305 でエピソードブラウザ（`/episodes`）・Annict の記録と感想（`/annict/record`・
+/// `/annict/review`）・テンプレート管理（`/templates/manage`）も足した。どれも
+/// 投稿フォームから開き、アカウントごとのモロヘイヤを叩く。運ばないと、美食丼の
+/// カラムから開いても別サーバーのモロヘイヤへ行き、Annict が未連携扱いになって
+/// 連携もできなかった。
+///
 /// ⚠ 対象外: `main.dart`（共有インテント）と `splash_screen.dart`（起動時）は
 /// アプリの入口から開くので、ルートのスコープで正しい。
 void main() {
@@ -27,7 +33,7 @@ void main() {
   // ⚠ 型引数は入れ子になる（`push<List<Attachment>>(`）。`<[^>]*>` だと最初の
   // `>` で切れて当たらない（歯の確認で実際に取りこぼした）。
   final callStart = RegExp(
-    r'''\b(?:push|go|pushReplacement)(?:<[^(]*>)?\(\s*['"]/(?:compose|media|profile/edit)['"]''',
+    r'''\b(?:push|go|pushReplacement)(?:<[^(]*>)?\(\s*['"]/(?:compose|media|profile/edit|episodes|annict/(?:record|review)|templates/manage)['"]''',
   );
 
   /// 呼び出し全体（開き括弧から対応する閉じ括弧まで）を切り出す。
@@ -113,6 +119,11 @@ void main() {
         // ⚠⚠ キーを手で書く形は通さない (#1170)。キーだけ合っていれば何を載せても
         // 通ってしまい、この検査の意味が消える。
         "context.push('/compose', extra: {providerScopeExtraKey: container});",
+        // #1305: 投稿フォームから開く Annict・テンプレートの画面
+        "await context.push<String>('/episodes');",
+        "context.push(\n  '/annict/record',\n  extra: AnnictRecordScreenArgs(episodeId: 1),\n);",
+        "context.push('/annict/review', extra: AnnictReviewScreenArgs(workId: 1));",
+        "context.push('/templates/manage');",
       ];
       for (final sample in samples) {
         expect(offendersIn(sample), isNotEmpty, reason: sample);
@@ -130,6 +141,10 @@ void main() {
         "context.push('/composer');",
         "context.push('/media_catalog');",
         "context.push('/profile', extra: user);",
+        "context.push('/episodes_archive');",
+        "context.push('/annict/oauth');",
+        "context.push('/templates');",
+        "context.push(\n  '/annict/record',\n  extra: extraWithProviderScope(context, {'args': a}),\n);",
         "context.push('/post', extra: post);",
         // コメントでの言及
         "// context.push('/compose') はしない",
@@ -162,9 +177,32 @@ void main() {
         reason: '返信・引用・削除して再編集・メディアビューアの 4 箇所が素の push',
       );
     });
+
+    test('修正前の compose_screen と episode_browser_screen は当たる (#1305)', () {
+      // ⚠ v2.4.0 のタグで固定する（修正のコミット後も修正前を取り出せるように）。
+      String at(String path) {
+        final r = Process.runSync('git', [
+          'show',
+          'v2.4.0:packages/capsicum/lib/src/ui/screen/$path',
+        ], workingDirectory: '../..');
+        expect(r.exitCode, 0, reason: (r.stderr as String));
+        return r.stdout as String;
+      }
+
+      expect(
+        offendersIn(at('compose_screen.dart')).length,
+        greaterThanOrEqualTo(3),
+        reason: 'エピソードブラウザ・Annict の記録・テンプレート管理の 3 箇所が素の push',
+      );
+      expect(
+        offendersIn(at('episode_browser_screen.dart')).length,
+        greaterThanOrEqualTo(2),
+        reason: 'Annict の記録と感想の 2 箇所が素の push',
+      );
+    });
   });
 
-  test('/compose・/media・/profile/edit への push はスコープを載せている', () {
+  test('全画面へ開く push はスコープを載せている', () {
     final offenders = <String>[];
     for (final file in sources) {
       final path = file.path.replaceAll('\\', '/');
@@ -175,7 +213,7 @@ void main() {
     }
     if (offenders.isNotEmpty) {
       fail(
-        '/compose・/media・/profile/edit へは extraWithProviderScope(context, …) で push '
+        '/compose・/media・/profile/edit・/episodes・/annict/*・/templates/manage へは extraWithProviderScope(context, …) で push '
         'すること (#1149)。素のままだとカラムから開いても現在のアカウントで'
         '動く:\n${offenders.join('\n')}',
       );

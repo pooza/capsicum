@@ -442,7 +442,11 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: '/templates/manage',
-            builder: (context, state) => const TemplatesManageScreen(),
+            // テンプレートはアカウントごとにモロヘイヤへ保存される (#1305)。
+            builder: (context, state) => withExtraProviderScope(
+              state.extra,
+              const TemplatesManageScreen(),
+            ),
           ),
           GoRoute(
             path: '/search',
@@ -744,28 +748,42 @@ final routerProvider = Provider<GoRouter>((ref) {
               return PageViewScreen(username: username, name: name);
             },
           ),
+          // ⚠⚠ Annict の 3 画面も開いた側（デッキのカラム）のアカウントで動かす
+          // (#1305)。運ばないと、美食丼のカラムの投稿フォームから開いても、ルートで
+          // 選ばれている別サーバーのモロヘイヤを叩き、未連携扱い・連携失敗になる。
           GoRoute(
             path: '/episodes',
-            builder: (context, state) => const EpisodeBrowserScreen(),
+            builder: (context, state) => withExtraProviderScope(
+              state.extra,
+              const EpisodeBrowserScreen(),
+            ),
           ),
           GoRoute(
             path: '/annict/record',
             builder: (context, state) {
-              final args = state.extra;
+              final extra = state.extra;
+              final args = extra is Map ? extra['args'] : null;
               if (args is! AnnictRecordScreenArgs) {
                 return _goHomeAfterBuild(context);
               }
-              return AnnictRecordScreen(args: args);
+              return withExtraProviderScope(
+                extra,
+                AnnictRecordScreen(args: args),
+              );
             },
           ),
           GoRoute(
             path: '/annict/review',
             builder: (context, state) {
-              final args = state.extra;
+              final extra = state.extra;
+              final args = extra is Map ? extra['args'] : null;
               if (args is! AnnictReviewScreenArgs) {
                 return _goHomeAfterBuild(context);
               }
-              return AnnictReviewScreen(args: args);
+              return withExtraProviderScope(
+                extra,
+                AnnictReviewScreen(args: args),
+              );
             },
           ),
           GoRoute(
