@@ -1,6 +1,8 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/services.dart';
 
+import 'apple_music_now_playing_provider.dart'
+    show kNowPlayingArtworkSkipReasons;
 import 'now_playing_provider.dart';
 
 /// Windows の System Media Transport Controls (SMTC) から「現在再生中の曲」を
@@ -10,7 +12,9 @@ import 'now_playing_provider.dart';
 /// pure-Dart パッケージが無いため、Windows ランナー側に C++/WinRT の
 /// メソッドチャンネル（`capsicum/now_playing` の `getNowPlaying`）を実装し、
 /// その戻り値（title / artist / albumTitle / sourceAppId / status のマップ）を
-/// ここで [NowPlayingInfo] に変換する。
+/// ここで [NowPlayingInfo] に変換する。ジャケットは、ネイティブが SMTC の
+/// `Thumbnail` を一時ファイルへ書き出したパス（`artworkPath`）で受け取る
+/// （#1274・受け渡しの形は macOS / iOS の #1273 / #1275 と同じ）。
 ///
 /// 設計どおり SMTC も MPRIS と同じく **「文字情報のみの源」** として扱い、
 /// `NowPlayingInfo.url` は常に null（SMTC はトラック URL を持たない）。
@@ -58,9 +62,28 @@ NowPlayingInfo? nowPlayingFromSmtcMetadata(Map<String, Object?> data) {
     title: title,
     artist: artist,
     album: album,
+    // ジャケット (#1274)。`file://` にすると、MPRIS / macOS と同じ添付の経路
+    // （`fetchNowPlayingArtwork`）にそのまま乗る。
+    artworkUrl: _artworkFileUri(data['artworkPath']),
+    artworkSkipReason: _artworkSkipReason(data['artworkSkipped']),
     // SMTC は文字情報源（URL 源は Spotify provider が担う）。
     url: null,
   );
+}
+
+/// ⚠ **知っている値だけを通す**（macOS / iOS と同じ表）。この値はそのまま
+/// Sentry の breadcrumb に載るので、ネイティブが返した任意の文字列を素通しにしない。
+String? _artworkSkipReason(Object? value) =>
+    value is String && kNowPlayingArtworkSkipReasons.contains(value)
+    ? value
+    : null;
+
+/// ネイティブが返した Windows の絶対パス（`C:\…`）を `file://` にする。
+/// 相対パスや空・UNC は捨てる（行き先の分からないファイルを添付の候補にしない）。
+Uri? _artworkFileUri(Object? value) {
+  final path = _trimmedString(value);
+  if (path == null || !RegExp(r'^[A-Za-z]:\\').hasMatch(path)) return null;
+  return Uri.file(path, windows: true);
 }
 
 String? _trimmedString(Object? value) {
