@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../model/account.dart';
 import '../util/chat_error.dart';
+import '../util/chat_message_preview.dart';
 import '../util/relative_time.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/user_avatar.dart';
@@ -137,15 +138,15 @@ class _ChatMessageSearchScreenState extends State<ChatMessageSearchScreen> {
       separatorBuilder: (_, _) => const Divider(height: 1),
       itemBuilder: (context, index) {
         final message = results[index];
-        final sender = message.fromUser;
-        final name = sender.displayName?.isNotEmpty == true
-            ? sender.displayName!
-            : sender.username;
         return ListTile(
-          leading: UserAvatar(user: sender, size: 36),
-          title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
+          leading: UserAvatar(user: message.fromUser, size: 36),
+          title: Text(
+            chatSenderShortName(message),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
           subtitle: Text(
-            message.text ?? (message.file != null ? '（ファイル）' : ''),
+            chatMessagePreviewText(message),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),

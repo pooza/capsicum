@@ -49,6 +49,10 @@ abstract mixin class ProfileEditSupport {
   /// `avatar_description` / `header_description`。未対応なら false（欄を出さない）。
   bool get supportsProfileImageDescription => false;
 
+  /// アイコン・ヘッダーの ALT の文字数の上限（v2.4 リリース前レビュー）。超えると
+  /// サーバーが保存全体を弾くので、欄で止める。
+  int get maxProfileImageDescriptionLength => 150;
+
   /// Update the current user's profile. Only non-null values are sent.
   ///
   /// [removeAvatar] / [removeHeader] が true のとき該当画像をデフォルトへ戻す

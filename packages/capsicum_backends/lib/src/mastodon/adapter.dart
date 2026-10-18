@@ -1976,6 +1976,12 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   @override
   bool get supportsProfileImageDescription => true;
 
+  /// Mastodon の `Account::Avatar` / `Header` の `MAX_DESCRIPTION_LENGTH`（定数で、
+  /// 運用者は変えられない）。超えると `update_credentials` 全体が 422 になり、
+  /// 表示名や画像の差し替えまで巻き添えで保存されない。
+  @override
+  int get maxProfileImageDescriptionLength => 150;
+
   // PostingDefaultsSupport (#1210)
 
   @override

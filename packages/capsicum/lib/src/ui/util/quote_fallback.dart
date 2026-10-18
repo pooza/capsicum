@@ -37,13 +37,20 @@ final _href = RegExp(r'''href=["']([^"']+)["']''');
 /// 形は 3 つ: Misskey が送る `<p><span class="quote-inline">RE: <a href>` /
 /// `<br><br><span class="quote-inline">RE: <a href>`（本文と同じ段落）と、
 /// Mastodon 自身が付ける `<p class="quote-inline">RE: <a href>`。
+///
+/// ⚠ **http(s) の URL だけを返す**（v2.4 リリース前レビュー）。Mastodon の検索は
+/// http(s) 以外を URL として扱わず全文検索へ回すので、`RE: <a href="xmpp:…">` の
+/// ような本文から、無関係な投稿を引用元として出せてしまう。
 String? quoteFallbackUrl(String? html) {
   if (html == null) return null;
   final inline = _quoteInline.firstMatch(html);
   if (inline == null) return null;
   final href = _href.firstMatch(inline.group(2)!)?.group(1);
   if (href == null) return null;
-  return href.replaceAll('&amp;', '&');
+  final url = href.replaceAll('&amp;', '&');
+  final scheme = Uri.tryParse(url)?.scheme;
+  if (scheme != 'https' && scheme != 'http') return null;
+  return url;
 }
 
 /// 本文から `quote-inline` の行（と、その前の改行）を外す。引用のカードを出す
@@ -57,13 +64,18 @@ String stripQuoteFallback(String html) {
 
 /// [post] が、引用元を補って見せる対象か。
 ///
-/// 引用元が届いておらず、本文に `quote-inline` の URL があるもの。引用の状態は
-/// 「無い」（旧形式の引用・上の ⚠⚠）か `pending`。⚠ 却下・取り消し・削除など、
-/// サーバーが見せないと決めた状態のものは補わない。⚠ Misskey のアカウントは
-/// 引用をもとから出せるので対象外（呼び出し側）。
+/// 引用元が届いておらず、本文に `quote-inline` の URL があり、引用の状態が
+/// 「無い」（旧形式の引用・上の ⚠⚠）もの。⚠ Misskey のアカウントは引用を
+/// もとから出せるので対象外（呼び出し側）。
+///
+/// ⚠⚠ **`pending` は補わない**（v2.4 リリース前レビュー・2026-10-18 pooza 判断）。
+/// 新形式の承認待ちで、引用された人がまだ承認していない。補うと同意の仕組み
+/// （FEP-044f）をクライアントで迂回することになり、Mastodon の Web とも違って
+/// 見える。却下・取り消し・削除なども同じく補わない。
+/// ⚠ ただし旧形式の引用は、引用された人が外しても（revoked / rejected）
+/// Mastodon が状態を返さない（`quote` ごと null）ので、補い続ける。上流の制約。
 String? quoteFallbackTarget(Post post) {
-  final state = post.quoteState;
-  if (state != null && state != QuoteState.pending) return null;
+  if (post.quoteState != null) return null;
   if (post.quote != null || !post.isHtml) return null;
   return quoteFallbackUrl(post.content);
 }
@@ -114,8 +126,10 @@ class QuoteFallbackResolver {
 
   static Future<Post?> _lookup(SearchSupport search, String url) async {
     final results = await search.search(url);
+    // URL が一致しないときは、解決した 1 件だけを採る。複数あるのは URL として
+    // 解決されなかった（全文検索に回った）ときで、先頭は無関係な投稿になりうる。
     return results.posts.where((p) => p.url == url).firstOrNull ??
-        results.posts.firstOrNull;
+        (results.posts.length == 1 ? results.posts.single : null);
   }
 
   Future<T> _throttled<T>(Future<T> Function() task) async {

@@ -54,14 +54,19 @@ typedef WordMuteParseResult = ({List<Object> entries, int? invalidLine});
 ///   **その段は何を直しても保存の検査で止まっていた**
 ///
 /// 触っていない行は変わらない、を保つ。
+///
+/// ⚠ **同じ文面の行が複数あれば、元の要素を前から 1 つずつ割り当てる**（v2.4
+/// リリース前レビュー・PR #1303 の Codex P2）。`['/foo/']` と `'/foo/'` はどちらも
+/// `/foo/` の行になるので、文面を鍵に 1 つだけ持つと、ほかの行を直しただけで
+/// 片方の意味がもう片方に化ける。
 WordMuteParseResult parseWordMuteText(
   String text, {
   List<Object> original = const [],
 }) {
-  final untouched = <String, Object>{};
+  final untouched = <String, List<Object>>{};
   for (final entry in original) {
     final line = formatWordMuteText([entry]).trim();
-    if (line.isNotEmpty) untouched.putIfAbsent(line, () => entry);
+    if (line.isNotEmpty) (untouched[line] ??= []).add(entry);
   }
   final entries = <Object>[];
   final lines = text.trim().split('\n');
@@ -71,8 +76,8 @@ WordMuteParseResult parseWordMuteText(
     final line = raw.trim();
     if (line.isEmpty) continue;
     final kept = untouched[line];
-    if (kept != null) {
-      entries.add(kept);
+    if (kept != null && kept.isNotEmpty) {
+      entries.add(kept.removeAt(0));
       continue;
     }
     final regexp = RegExp(r'^/(.+)/(.*)$').firstMatch(line);

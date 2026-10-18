@@ -40,6 +40,8 @@ class _HostState extends State<_Host> with ChatMessageJump {
   }
 
   Future<void> loadMore() async {
+    // provider と同じく、進行中なら何もせずに返る。
+    if (state.isLoadingMore) return;
     loads++;
     setState(() => state = _page(state.messages.length));
   }
@@ -129,6 +131,21 @@ void main() {
 
     expect(found, isFalse);
     expect(host.loads, kChatJumpMaxPages);
+  });
+
+  testWidgets('⚠⚠ スクロールの続き読みが進行中なら、終わるのを待ってから引く', (tester) async {
+    final host = await pump(tester);
+    // スクロールで走った続き読み（再試行の待ちを含む）が 1 秒かかっている。
+    host.state = host.state.copyWith(isLoadingMore: true);
+    Future<void>.delayed(const Duration(seconds: 1), () {
+      host.state = host.state.copyWith(isLoadingMore: false);
+    });
+
+    final found = await drive(tester, host.jump('m150'));
+    await tester.pumpAndSettle();
+
+    expect(found, isTrue, reason: '待たずに回すと上限を使い切って false になる');
+    await tester.pump(kChatJumpHighlight + const Duration(milliseconds: 100));
   });
 
   testWidgets('存在しない id は、最後まで引いて false', (tester) async {

@@ -10,6 +10,11 @@ import '../../provider/chat_provider.dart';
 /// 届かなければ「遡れなかった」と知らせる。
 const kChatJumpMaxPages = 20;
 
+/// 進行中の続き読みを待つ間隔と上限（v2.4 リリース前レビュー）。上限は、続き読みの
+/// 再試行の待ちを含めても足りる長さ。
+const _kChatJumpWaitStep = Duration(milliseconds: 100);
+const _kChatJumpWaitLimit = Duration(seconds: 30);
+
 /// 選んだメッセージに色を付けておく時間 (#1188)。
 const kChatJumpHighlight = Duration(seconds: 2);
 
@@ -48,7 +53,9 @@ mixin ChatMessageJump<T extends StatefulWidget> on State<T> {
     required ChatThreadState? Function() read,
     required Future<void> Function() loadMore,
   }) async {
-    for (var page = 0; ; page++) {
+    var page = 0;
+    var waited = Duration.zero;
+    while (true) {
       final state = read();
       if (state == null) return false;
       if (state.messages.any((m) => m.id == id)) break;
@@ -57,7 +64,19 @@ mixin ChatMessageJump<T extends StatefulWidget> on State<T> {
           state.loadMoreError != null) {
         return false;
       }
+      // ⚠ 続き読みの途中（スクロールで走ったもの・再試行の待ち）は、終わるまで
+      // 待つ（v2.4 リリース前レビュー）。`loadMore` は進行中だと何もせずに返る
+      // ので、そのまま回すと一覧が伸びないまま上限を使い切り、届くメッセージでも
+      // 「遡れなかった」になる。⚠ 待つ時間にも上限を置く。
+      if (state.isLoadingMore) {
+        if (waited >= _kChatJumpWaitLimit) return false;
+        await Future<void>.delayed(_kChatJumpWaitStep);
+        waited += _kChatJumpWaitStep;
+        if (!mounted) return false;
+        continue;
+      }
       await loadMore();
+      page++;
       if (!mounted) return false;
     }
 

@@ -374,6 +374,16 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     state = state.copyWith(accounts: accounts, current: updated);
   }
 
+  /// [key] がまだ現在のアカウントなら、[updateCurrentUser] する。
+  ///
+  /// ⚠ 画面の `ref` で現在のアカウントを確かめる形にしない（v2.4 リリース前
+  /// レビュー）。保存の応答を待つ間に画面が閉じられると、破棄済みの `ref` が
+  /// 例外を投げ、保存できたのに失敗として扱われる。
+  void updateCurrentUserIfCurrent(AccountKey? key, User user) {
+    if (key == null || state.current?.key != key) return;
+    updateCurrentUser(user);
+  }
+
   Future<void> logout(Account account) async {
     // プッシュ通知登録解除（ベストエフォート）。
     PushRegistrationService.unregisterAccount(account);
@@ -1067,6 +1077,20 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     await _persistNotificationLabels(account);
     await _syncWindowsPushLabels();
 
+    // ⚠⚠ **後から戻ったアカウントも、プッシュに登録し直す**（v2.4 リリース前
+    // レビュー）。起動時の登録（splash の `registerAllAccounts`）は、その時点で
+    // 戻っていたアカウントしか見ない。#1294 の締切で「遅いだけ」のサーバーも
+    // ここへ回るようになったので、デバイストークンが変わった起動と重なると、
+    // そのアカウントの通知がこのセッションの間ずっと止まる。⚠ 起動時の登録と
+    // 重なっても、`registerAccount` は進行中のものを重ねない（済んだ後なら
+    // 起動 1 回分の登録し直しと同じ）。⚠ プリセットの判定は届かないアカウントも
+    // 数える（[hasPresetAccountProvider]）。
+    unawaited(
+      PushRegistrationService.registerAccounts([
+        account,
+      ], eligible: ref.read(hasPresetAccountProvider)),
+    );
+
     // Prefetch server metadata for badge display (non-blocking). Misskey
     // フォークの偽 Mastodon 互換版で name/icon が化けないよう型ヒントを渡す (#827)。
     ServerMetadataCache.instance.fetch(
@@ -1541,12 +1565,6 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     }
   }
 
-  /// ネットワーク一過性として再試行を尽くしても復元できなかったアカウントを
-  /// per-process で 1 度だけ観測する (#730)。例外経路 (`_reportRestoreOnce`) /
-  /// null 経路 (`_reportNullSecretSkipOnce`) と同じ de-identification ポリシー
-  /// （tag は host のみ・username はハッシュ・dedup は [_reportedRestoreErrors]
-  /// を `:network_exhausted` 接尾辞で共用）に従う。一過性前提の握り潰しが恒久
-  /// 障害を覆い隠していないか、本番 Sentry で頻度・規模を把握するため。
   /// 起動時の復元が締切（[kRestoreStartupDeadline]）までに返らなかった (#1294)。
   ///
   /// 「繋がるが返さない」サーバーの記録。⚠ **これだけでは不具合ではない**（締切で
@@ -1583,6 +1601,12 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     }
   }
 
+  /// ネットワーク一過性として再試行を尽くしても復元できなかったアカウントを
+  /// per-process で 1 度だけ観測する (#730)。例外経路 (`_reportRestoreOnce`) /
+  /// null 経路 (`_reportNullSecretSkipOnce`) と同じ de-identification ポリシー
+  /// （tag は host のみ・username はハッシュ・dedup は [_reportedRestoreErrors]
+  /// を `:network_exhausted` 接尾辞で共用）に従う。一過性前提の握り潰しが恒久
+  /// 障害を覆い隠していないか、本番 Sentry で頻度・規模を把握するため。
   static void _reportRestoreExhaustedOnce(String accountKey) {
     final dedupKey = '$accountKey:network_exhausted';
     if (!_reportedRestoreErrors.add(dedupKey)) return;

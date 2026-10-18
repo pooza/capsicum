@@ -353,6 +353,15 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
         (adapter as ProfileEditSupport).supportsProfileImageDescription;
   }
 
+  /// ALT の文字数の上限。⚠ 超えるとプロフィールの保存全体が弾かれ、原因も
+  /// 画面に出ないので、欄で止める（v2.4 リリース前レビュー）。
+  int? get _altMaxLength {
+    final adapter = ref.read(currentAccountProvider)?.adapter;
+    return adapter is ProfileEditSupport
+        ? (adapter as ProfileEditSupport).maxProfileImageDescriptionLength
+        : null;
+  }
+
   /// 画像の下に置く ALT の欄 (#1210)。
   Widget _altField(TextEditingController controller, String label) => Padding(
     padding: const EdgeInsets.only(top: 8),
@@ -360,6 +369,7 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
       controller: controller,
       enabled: !_saving,
       maxLines: 2,
+      maxLength: _altMaxLength,
       // 文章を書く欄なので、投稿の欄と同じフォントを当てる（#1283 のガード）。
       style: composeTextStyle(ref),
       decoration: InputDecoration(

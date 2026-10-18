@@ -91,6 +91,20 @@ void main() {
       ]);
     });
 
+    test('⚠⚠ 同じ文面になる別の条件は、それぞれ元のまま（PR #1303 の Codex P2）', () {
+      const original = <Object>[
+        ['/foo/'],
+        '/foo/',
+      ];
+      final text = '${formatWordMuteText(original)}\nポップ';
+      expect(text, '/foo/\n/foo/\nポップ');
+      expect(parseWordMuteText(text, original: original).entries, [
+        ['/foo/'],
+        '/foo/',
+        ['ポップ'],
+      ]);
+    });
+
     test('書き換えた行は従来どおり検査する', () {
       const original = <Object>['/ダイ/'];
       final parsed = parseWordMuteText('/(?P<x>ダイ)/', original: original);

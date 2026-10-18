@@ -81,11 +81,8 @@ class _PostingDefaultsScreenState extends ConsumerState<PostingDefaultsScreen> {
       );
       // ⚠ 開いたアカウントがまだ現在のアカウントなら、手元の `User` を差し替える。
       // 差し替えないと、次の取り直し（#1185 の TTL）まで投稿フォームが古い既定で
-      // 開く。
-      if (ref.exists(currentAccountProvider) &&
-          ref.read(currentAccountProvider)?.key == account?.key) {
-        accountManager.updateCurrentUser(user);
-      }
+      // 開く。⚠ ここで `ref` を使わない（待つ間に戻られると破棄済みで投げる）。
+      accountManager.updateCurrentUserIfCurrent(account?.key, user);
       if (!mounted) return;
       navigator.maybePop();
       messenger.showSnackBar(

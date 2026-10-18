@@ -131,9 +131,21 @@ ArtworkResult WriteArtwork(const std::vector<uint8_t>& data) {
     const fs::path tmp(std::wstring(buffer, length));
     const fs::path dir = tmp / (kArtworkDirPrefix + ArtworkDigest(data));
     const fs::path file = dir / (L"nowplaying-artwork." + ext);
-    const fs::path partial = dir / (L"nowplaying-artwork." + ext + L".partial");
+    // ⚠ 書きかけの名前はスレッドごとに分ける。3 秒の打ち切りで切り離した
+    // ワーカーと次の取得が、同じ絵を同時に書くことがある（v2.4 リリース前レビュー）。
+    const fs::path partial =
+        dir / (L"nowplaying-artwork." + ext + L"." +
+               std::to_wstring(GetCurrentThreadId()) + L".partial");
 
     std::error_code ec;
+    // ⚠⚠ 既にあればそのまま使う（v2.4 リリース前レビュー・PR #1303 の Codex P2）。
+    // ディレクトリ名は絵のハッシュなので中身は同じ。書き直すと、置き換えに失敗した
+    // ときやアップロード中でファイルが開かれているときに `write_failed` になり、
+    // 同じ曲の 2 回目からジャケットが付かなくなる。
+    if (fs::is_regular_file(file, ec)) {
+      PurgeStaleArtwork(tmp, dir);
+      return {winrt::to_string(file.wstring()), ""};
+    }
     fs::create_directories(dir, ec);
     if (ec) return {"", "write_failed"};
     {
@@ -145,8 +157,10 @@ ArtworkResult WriteArtwork(const std::vector<uint8_t>& data) {
     // 書きかけを読ませない（macOS の `.atomic` と同じ）。
     fs::rename(partial, file, ec);
     if (ec) {
-      fs::remove(partial, ec);
-      return {"", "write_failed"};
+      std::error_code ignored;
+      fs::remove(partial, ignored);
+      // 同時に書いた別のスレッドが先に置いていれば、それを使う。
+      if (!fs::is_regular_file(file, ignored)) return {"", "write_failed"};
     }
     PurgeStaleArtwork(tmp, dir);
     return {winrt::to_string(file.wstring()), ""};

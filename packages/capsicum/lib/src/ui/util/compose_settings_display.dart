@@ -80,7 +80,6 @@ const int _compactLabelMaxLength = 5;
 /// 超えたときに残す文字数（残り 1 文字は `…` が使う）。
 const int _compactLabelKeepLength = 4;
 
-/// 引用の許可の選択肢と、その表示名。キーは Mastodon の
 /// 投稿の言語の選択肢。投稿画面と、サーバー側の投稿の既定の画面 (#1210) が
 /// 共有する。⚠ この外の言語（`it` / `zh-TW` など）も保存されうるので、使う側は
 /// 現在値を必ず選択肢に含める。
@@ -96,6 +95,7 @@ const composeLanguageOptions = {
   'ru': 'Русский',
 };
 
+/// 引用の許可の選択肢と、その表示名。キーは Mastodon の
 /// `quote_approval_policy` の語彙。
 ///
 /// 投稿画面の引用許可と、投稿後に許可を変えるダイアログ (#1213) が共有する。

@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../provider/chat_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../util/oauth_scope_error.dart';
+import '../util/chat_message_preview.dart';
 import '../util/deck_navigation.dart';
 import '../util/op_error.dart';
 import '../util/relative_time.dart';
@@ -177,7 +178,7 @@ class _ChatThreadTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final preview = _previewText(thread.lastMessage);
+    final preview = chatMessagePreviewText(thread.lastMessage);
     // DM とルーム (#438) を同一履歴画面に出すため、isRoom / isDm で leading・
     // title・遷移先を分岐する。Misskey 側 WebUI と同じ並べ方。
     if (thread.isRoom) {
@@ -200,7 +201,7 @@ class _ChatThreadTile extends ConsumerWidget {
         ),
         subtitle: Text(
           // ルームは発信者が毎メッセージ変わるので、先頭に発信者名を補う。
-          '${_senderShortName(thread.lastMessage)}: $preview',
+          '${chatSenderShortName(thread.lastMessage)}: $preview',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
@@ -225,31 +226,6 @@ class _ChatThreadTile extends ConsumerWidget {
       trailing: _ThreadMetaColumn(thread: thread, ref: ref),
       onTap: () => openChatWithUser(context, otherUser),
     );
-  }
-
-  String _senderShortName(ChatMessage message) {
-    final dn = message.fromUser.displayName;
-    if (dn != null && dn.isNotEmpty) return dn;
-    return message.fromUser.username;
-  }
-
-  String _previewText(ChatMessage message) {
-    if (message.text != null && message.text!.isNotEmpty) return message.text!;
-    if (message.file != null) {
-      switch (message.file!.type) {
-        case AttachmentType.image:
-          return '[画像]';
-        case AttachmentType.video:
-          return '[動画]';
-        case AttachmentType.audio:
-          return '[音声]';
-        case AttachmentType.gifv:
-          return '[GIF]';
-        case AttachmentType.unknown:
-          return '[ファイル]';
-      }
-    }
-    return '';
   }
 }
 

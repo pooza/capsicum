@@ -49,6 +49,15 @@ class _ImmediateSearch with SearchSupport {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+class _ManySearch with SearchSupport {
+  @override
+  Future<SearchResults> search(String query) async =>
+      SearchResults(posts: [_post('a'), _post('b')]);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 Post _post(String id, {String? content, QuoteState? state, Post? quote}) =>
     Post(
       id: id,
@@ -99,6 +108,22 @@ void main() {
       expect(quoteFallbackUrl('<p>RE: ふつうの本文</p>'), isNull);
       expect(quoteFallbackUrl(null), isNull);
     });
+
+    test('⚠ http(s) 以外の href は拾わない（全文検索に回って別の投稿が出る）', () {
+      expect(
+        quoteFallbackUrl(
+          '<p>x<br><br><span class="quote-inline">RE: '
+          '<a href="xmpp:someone">someone</a></span></p>',
+        ),
+        isNull,
+      );
+      expect(
+        quoteFallbackUrl(
+          '<p class="quote-inline">RE: <a href="ふつうの言葉">x</a></p>',
+        ),
+        isNull,
+      );
+    });
   });
 
   group('stripQuoteFallback', () {
@@ -126,8 +151,9 @@ void main() {
       );
     });
 
-    test('⚠ 却下・取り消し・削除・見せられないは補わない', () {
+    test('⚠⚠ 承認待ち・却下・取り消し・削除・見せられないは補わない', () {
       for (final state in [
+        QuoteState.pending,
         QuoteState.rejected,
         QuoteState.revoked,
         QuoteState.deleted,
@@ -143,11 +169,9 @@ void main() {
       }
     });
 
-    test('pending で引用元が無く、RE: があれば対象', () {
+    test('状態が無く、引用元が無く、RE: があれば対象（Misskey の今の形以外も）', () {
       expect(
-        quoteFallbackTarget(
-          _post('1', content: misskeyBody, state: QuoteState.pending),
-        ),
+        quoteFallbackTarget(_post('1', content: misskeyBody)),
         'https://misskey.example/notes/q1',
       );
     });
@@ -161,21 +185,11 @@ void main() {
       );
       expect(
         quoteFallbackTarget(
-          _post(
-            '1',
-            content: misskeyBody,
-            state: QuoteState.pending,
-            quote: _post('q'),
-          ),
+          _post('1', content: misskeyBody, quote: _post('q')),
         ),
         isNull,
       );
-      expect(
-        quoteFallbackTarget(
-          _post('1', content: '<p>x</p>', state: QuoteState.pending),
-        ),
-        isNull,
-      );
+      expect(quoteFallbackTarget(_post('1', content: '<p>x</p>')), isNull);
     });
   });
 
@@ -217,6 +231,21 @@ void main() {
       await Future.wait(futures);
       expect(search.maxRunning, 2);
       expect(search.calls, hasLength(5));
+    });
+
+    test('⚠ URL が一致せず複数届いたら採らない（全文検索の先頭は無関係）', () async {
+      final resolver = QuoteFallbackResolver();
+      final many = _ManySearch();
+      expect(await resolver.resolve('me', many, 'https://x.example/1'), isNull);
+      expect(
+        (await resolver.resolve(
+          'me',
+          many,
+          'https://misskey.example/notes/b',
+        ))?.id,
+        'b',
+        reason: 'URL が一致するものは採る',
+      );
     });
 
     test('⚠ 通信の失敗は持たず、次は引き直す（見つからないは持つ）', () async {
