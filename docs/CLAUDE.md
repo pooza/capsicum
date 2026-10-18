@@ -158,7 +158,7 @@ claude plugin install ginseng@ginseng-style
 ## Issue 管理
 
 - GitHub Issues + Milestones で管理（モロヘイヤと同じ体系）
-- **優先度のラベルは無い。**P1〜P3 はリリース前レビューと Codex の指摘に付ける分類で、Issue の優先度はマイルストーン（どの枠に入れるか）で表す。ラベルは種別（`bug` / `enhancement` / `documentation`）・対象（`Mastodon` / `Misskey` / `モロヘイヤ` / `desktop` / `flutter`）・状態（`on-hold` / `reproduction-needed` / `verification-pending`）・端末（`Windows` / `Linux`）の 4 系統
+- **優先度のラベルは無い。**P1〜P3 はリリース前レビューと Codex の指摘に付ける分類で、Issue の優先度はマイルストーン（どの枠に入れるか）で表す。ラベルは種別（`bug` / `enhancement` / `documentation`）・対象（`Mastodon` / `Misskey` / `モロヘイヤ` / `desktop` / `flutter`）・状態（`on-hold` / `reproduction-needed` / `verification-pending` / `observing`）・端末（`Windows` / `Linux`）の 4 系統
 - 1 マイルストーンの規模は「大更新の数」で測る（件数ではなく）。詳細は[マイルストーン運用](#マイルストーン運用)節を参照
 
 ### 正本ルール
@@ -363,6 +363,10 @@ dart analyze --fatal-infos > /tmp/analyze.log 2>&1; echo "ANALYZE_EXIT=$?"
 - **`verification-pending` は「実装は済んでいて、動作確認だけが残っている」の目印**（2026-10-01 新設）。⚠ **`reproduction-needed` と逆向き** —— あちらは情報が足りず**着手しない**側、こちらは**出来上がっていて見るだけ**の側。**手が空いたときにまとめて消化する**ための札なので、`gh issue list --label verification-pending` で引けること自体が目的。⚠ **動作確認が済んだら、ラベルを外すのではなく Issue を close する**（close し忘れるとラベルだけが残って数が合わなくなる）。⚠⚠ **`gh issue list --label` は検索インデックス経由で数十秒遅れる** —— 付けた直後に数えるなら `gh api 'repos/pooza/capsicum/issues?labels=verification-pending&state=open'` を使う
   - **付ける側の基準**: UI レイアウト / タップ挙動 / 画面遷移・設定画面の追加のように、**アプリを触れば分かるもの**。⚠ **検証困難なもの（race / fork 依存 / 認証エラーの類別 / 再現条件が薄いもの）には付けない** —— あれらは**動作確認なしで close してよい**側（修正コミットの hash を添えて閉じ、再発は Sentry で観察する）なので、札を付けると**永久に消えないキュー**になる
   - **実機が要るものは端末ラベルと併用する**（例: #1190 は `verification-pending` + `Windows`）。⚠ **`verification-pending` 単独なら「手元の Mac で見られる」**と読めるようにしておく
+- **`observing` は「実装は済んでいて、本番の値が閉じる条件を満たすのを待っている」の目印**（2026-10-18 新設・capsicum / relay 共通）。例: 修正を入れた端末が次に起動して登録が通るか（relay#101）、counter の水準を見て切り替えの時期を決める（relay#91）、最初の返金で状態が追随するか（relay#63）。⚠ **`verification-pending` と分ける** —— あちらは **pooza が手で触って確かめる**札、こちらは**同期のたびに Claude が測る**札。⚠ **`on-hold` にしない**（on-hold は確認そのものが忘れられる）
+  - **付けるときは、閉じる条件と測り方を Issue に書く**（測るコマンド・見る値・「満たした / 満たしていない / まだ分からない」の読み分け）。書いていないものには付けない
+  - **マイルストーンに載せたまま持ち越す。**移行時に条件を満たしていなければ次の枠へ移す（[milestone-transition](../.claude/skills/milestone-transition/SKILL.md) の 1.）。⚠ **枠の目安（大更新 0〜1 + 小中 5〜12）の件数には数えない**・**進捗報告でも作業の残件と分けて書く**（作業が残っているように見せない）
+  - 条件を満たしたら、測った値を添えて close する
 - Flutter framework 由来の不具合（capsicum 側で根治不能なもの、`flutter` ラベル付き）は [flutter-upstream-watch.md](flutter-upstream-watch.md) で集中管理し、**月初のセッションで手動 chase** して上流の進捗を巡回する。⚠ **クラウドの schedule routine は 2026-08-21 に廃止した**（4 か月連続で発火しても成果コミットが 1 件も残らず、実務はローカル頼みだった）。**資格情報の満了チェックがこの巡回に相乗りしている**点に注意
 
 ### 実装しない機能

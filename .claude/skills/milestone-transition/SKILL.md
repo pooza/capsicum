@@ -23,6 +23,7 @@ disable-model-invocation: true
 ### 1. 完了確認
 
 - 直近マイルストーンを close 済みにする（残 Issue 0 が前提）。
+- ⚠ **`observing`（本番の値を待つだけの Issue・`docs/CLAUDE.md`「運用ルール」）は残 Issue に数えない。**先に条件を測り、満たしていれば close、満たしていなければ**次の枠へ移す**（capsicum・relay とも）。⚠ on-hold にも未割り当てにもしない。移した件は次の枠の目安の件数に数えない。
 - 主役 Issue が close 済みで、リリースノート / リリースログに反映されていることを確認。
 - **[capsicum-relay](https://github.com/pooza/capsicum-relay) の同名マイルストーンも残 0 であることを確認する**（下記「関連リポジトリの同名マイルストーン」）。
 
