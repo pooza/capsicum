@@ -119,7 +119,7 @@ class _PostTileState extends ConsumerState<PostTile> {
     _resolveQuoteFallback();
   }
 
-  /// Misskey からの引用（Mastodon で `pending` のまま止まるもの）の引用元を、
+  /// Misskey からの引用（Mastodon が `quote` を返さないもの）の引用元を、
   /// 本文の `RE:` の URL から引く (#1269・`quote_fallback.dart`)。
   void _resolveQuoteFallback() {
     final displayPost = post.reblog ?? post;

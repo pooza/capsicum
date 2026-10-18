@@ -8,8 +8,14 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 ///
 /// Misskey は引用を `_misskey_quote` / `quoteUrl` で送り、承認の証明
 /// （FEP-044f）を出さない。Mastodon はこれを「旧形式の引用」として `pending` の
-/// まま止め、`quoted_status` を返さない。**待っても承認されない。**本文の末尾には
-/// `RE: <URL>`（`quote-inline`）だけが残る。
+/// まま止める。**待っても承認されない。**本文の末尾には `RE: <URL>`
+/// （`quote-inline`）だけが残る。
+///
+/// ⚠⚠ **API は `quote` を `null` で返す**（`quote` 自体を出さない）。Mastodon の
+/// `REST::StatusSerializer#quote` は `acceptable?`（承認済みか、旧形式でない）の
+/// ときだけ出すため。`state: pending` が付いて届くのは、新形式の承認待ちだけ
+/// （2026-10-18 に `mk.precure.fun` → 美食丼 で実測・最初の実装はここを誤り、
+/// Misskey からの引用を 1 件も拾えていなかった）。
 ///
 /// その URL を `search(resolve: true)` で引いて、引用のカードにする（2026-10-18
 /// pooza 判断: 表示したときに自動で・結果は端末のメモリに持つ・同時に引く本数を
@@ -18,12 +24,19 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 final _quoteInline = RegExp(
   r'(?:<br\s*/?>\s*)*<(p|span) class="quote-inline">([\s\S]*?)</\1>',
 );
+
+/// `quote-inline` の span だけを包んだ段落（Misskey の今の形）。段落ごと外さないと
+/// 空の `<p></p>` が残り、本文の下に空行が出る。
+final _quoteInlineParagraph = RegExp(
+  r'<p>\s*<span class="quote-inline">[\s\S]*?</span>\s*</p>',
+);
 final _href = RegExp(r'''href=["']([^"']+)["']''');
 
 /// 本文（HTML）の `quote-inline` の行が指す URL。無ければ null。
 ///
-/// 形は 2 つ: Misskey が送る `<br><br><span class="quote-inline">RE: <a href>`
-/// と、Mastodon 自身が付ける `<p class="quote-inline">RE: <a href>`。
+/// 形は 3 つ: Misskey が送る `<p><span class="quote-inline">RE: <a href>` /
+/// `<br><br><span class="quote-inline">RE: <a href>`（本文と同じ段落）と、
+/// Mastodon 自身が付ける `<p class="quote-inline">RE: <a href>`。
 String? quoteFallbackUrl(String? html) {
   if (html == null) return null;
   final inline = _quoteInline.firstMatch(html);
@@ -35,14 +48,22 @@ String? quoteFallbackUrl(String? html) {
 
 /// 本文から `quote-inline` の行（と、その前の改行）を外す。引用のカードを出す
 /// ときだけ使う（Mastodon の Web と同じ扱い）。
-String stripQuoteFallback(String html) => html.replaceFirst(_quoteInline, '');
+String stripQuoteFallback(String html) {
+  if (_quoteInlineParagraph.hasMatch(html)) {
+    return html.replaceFirst(_quoteInlineParagraph, '');
+  }
+  return html.replaceFirst(_quoteInline, '');
+}
 
 /// [post] が、引用元を補って見せる対象か。
 ///
-/// 引用の状態が `pending` で、引用元が届いておらず、本文に `quote-inline` の URL が
-/// あるもの。⚠ Misskey のアカウントは引用をもとから出せるので対象外（呼び出し側）。
+/// 引用元が届いておらず、本文に `quote-inline` の URL があるもの。引用の状態は
+/// 「無い」（旧形式の引用・上の ⚠⚠）か `pending`。⚠ 却下・取り消し・削除など、
+/// サーバーが見せないと決めた状態のものは補わない。⚠ Misskey のアカウントは
+/// 引用をもとから出せるので対象外（呼び出し側）。
 String? quoteFallbackTarget(Post post) {
-  if (post.quoteState != QuoteState.pending) return null;
+  final state = post.quoteState;
+  if (state != null && state != QuoteState.pending) return null;
   if (post.quote != null || !post.isHtml) return null;
   return quoteFallbackUrl(post.content);
 }

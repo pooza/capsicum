@@ -70,8 +70,20 @@ void main() {
       '<p class="quote-inline">RE: <a href="https://mstdn.example/@a/1?x=1&amp;y=2">'
       '<span class="invisible">https://</span><span class="ellipsis">mstdn.example/@a/1</span>'
       '</a></p><p>ほんぶん</p>';
+  // ⚠⚠ 2026-10-18 に 美食丼 が `mk.precure.fun/notes/asgx8182e3` について
+  // 返した content そのまま（`quote` は null で届いた）。
+  const misskeyParagraphBody =
+      '<p>かわいい。<br>Misskeyで引用を行うテスト。</p><p><a href="https://mk.precure.fun/tags/precure_fun" rel="nofollow noopener" target="_blank">#precure_fun</a></p>'
+      '<p><span class="quote-inline">RE: <a href="https://precure.ml/users/mikabot/statuses/117459886495203098" rel="nofollow noopener" target="_blank">https://precure.ml/users/mikabot/statuses/117459886495203098</a></span></p>';
 
   group('quoteFallbackUrl', () {
+    test('⚠⚠ Misskey の今の形（span だけの段落）', () {
+      expect(
+        quoteFallbackUrl(misskeyParagraphBody),
+        'https://precure.ml/users/mikabot/statuses/117459886495203098',
+      );
+    });
+
     test('Misskey の形（<span class="quote-inline">）', () {
       expect(quoteFallbackUrl(misskeyBody), 'https://misskey.example/notes/q1');
     });
@@ -97,9 +109,40 @@ void main() {
     test('Mastodon の形は段落ごと外す', () {
       expect(stripQuoteFallback(mastodonBody), '<p>ほんぶん</p>');
     });
+
+    test('⚠ span だけの段落は、空の <p></p> を残さず段落ごと外す', () {
+      final stripped = stripQuoteFallback(misskeyParagraphBody);
+      expect(stripped, isNot(contains('quote-inline')));
+      expect(stripped, isNot(contains('<p></p>')));
+      expect(stripped, endsWith('#precure_fun</a></p>'));
+    });
   });
 
   group('quoteFallbackTarget', () {
+    test('⚠⚠ 引用の状態が無い（Mastodon が quote を null で返す）なら対象', () {
+      expect(
+        quoteFallbackTarget(_post('1', content: misskeyParagraphBody)),
+        'https://precure.ml/users/mikabot/statuses/117459886495203098',
+      );
+    });
+
+    test('⚠ 却下・取り消し・削除・見せられないは補わない', () {
+      for (final state in [
+        QuoteState.rejected,
+        QuoteState.revoked,
+        QuoteState.deleted,
+        QuoteState.unauthorized,
+      ]) {
+        expect(
+          quoteFallbackTarget(
+            _post('1', content: misskeyParagraphBody, state: state),
+          ),
+          isNull,
+          reason: '$state',
+        );
+      }
+    });
+
     test('pending で引用元が無く、RE: があれば対象', () {
       expect(
         quoteFallbackTarget(
