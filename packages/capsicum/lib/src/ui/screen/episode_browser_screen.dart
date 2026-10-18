@@ -9,6 +9,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../util/exception_scrub.dart';
 import '../util/annict_link.dart';
 import '../util/deck_navigation.dart';
+import '../util/provider_scope_carrier.dart';
 import '../widget/bottom_safe_area.dart';
 import 'annict_record_screen.dart';
 import 'annict_review_screen.dart';
@@ -101,11 +102,13 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
     }
     context.push(
       '/annict/record',
-      extra: AnnictRecordScreenArgs(
-        episodeId: ep.annictId,
-        workTitle: _selectedWork!.title,
-        episodeLabel: episodeLabel,
-      ),
+      extra: extraWithProviderScope(context, {
+        'args': AnnictRecordScreenArgs(
+          episodeId: ep.annictId,
+          workTitle: _selectedWork!.title,
+          episodeLabel: episodeLabel,
+        ),
+      }),
     );
   }
 
@@ -119,10 +122,12 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
     }
     context.push(
       '/annict/review',
-      extra: AnnictReviewScreenArgs(
-        workId: work.annictId,
-        workTitle: work.title,
-      ),
+      extra: extraWithProviderScope(context, {
+        'args': AnnictReviewScreenArgs(
+          workId: work.annictId,
+          workTitle: work.title,
+        ),
+      }),
     );
   }
 
