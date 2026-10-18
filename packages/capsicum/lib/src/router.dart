@@ -54,6 +54,7 @@ import 'ui/screen/page_view_screen.dart';
 import 'ui/screen/pages_screen.dart';
 import 'ui/screen/post_detail_screen.dart';
 import 'ui/screen/post_list_screen.dart';
+import 'ui/screen/posting_defaults_screen.dart';
 import 'ui/screen/profile_edit_screen.dart';
 import 'ui/screen/profile_screen.dart';
 import 'ui/screen/scheduled_posts_screen.dart';
@@ -331,6 +332,11 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/settings/followed-hashtags',
             builder: (context, state) => const FollowedHashtagsScreen(),
+          ),
+          // サーバー側の投稿の既定 (#1210)。Mastodon の `source[*]`。
+          GoRoute(
+            path: '/settings/posting-defaults',
+            builder: (context, state) => const PostingDefaultsScreen(),
           ),
           // フィルターの一覧と編集 (#1047)。Mastodon の `api/v2/filters`。
           GoRoute(

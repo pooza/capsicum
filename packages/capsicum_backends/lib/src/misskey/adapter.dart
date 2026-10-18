@@ -2337,6 +2337,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     bool removeHeader = false,
     bool? locked,
     bool? discoverable,
+    // Misskey にアイコン・ヘッダーの ALT は無い（#1210・受け取って捨てる）。
+    String? avatarDescription,
+    String? headerDescription,
   }) async {
     String? avatarId;
     String? bannerId;

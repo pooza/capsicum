@@ -25,6 +25,13 @@ class ProfileEditScreen extends ConsumerStatefulWidget {
 class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
   final _displayNameController = TextEditingController();
   final _bioController = TextEditingController();
+
+  /// アイコン・ヘッダーの ALT (#1210)。⚠ 読み込んだときの値と同じなら送らない
+  /// （触っていない ALT をサーバーへ書き戻さない）。
+  final _avatarAltController = TextEditingController();
+  final _bannerAltController = TextEditingController();
+  String _loadedAvatarAlt = '';
+  String _loadedBannerAlt = '';
   final List<_FieldEntry> _fields = [];
   XFile? _avatarFile;
   XFile? _bannerFile;
@@ -73,6 +80,10 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
         _displayNameController.text = credentials.displayName;
         _locked = credentials.locked ?? false;
         _discoverable = credentials.discoverable ?? false;
+        _loadedAvatarAlt = credentials.avatarDescription ?? '';
+        _loadedBannerAlt = credentials.headerDescription ?? '';
+        _avatarAltController.text = _loadedAvatarAlt;
+        _bannerAltController.text = _loadedBannerAlt;
         final source = credentials.source;
         _bioController.text = (source?['note'] as String?) ?? '';
         final sourceFields = source?['fields'] as List<dynamic>? ?? [];
@@ -127,6 +138,8 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
   void dispose() {
     _displayNameController.dispose();
     _bioController.dispose();
+    _avatarAltController.dispose();
+    _bannerAltController.dispose();
     for (final f in _fields) {
       f.name.dispose();
       f.value.dispose();
@@ -244,6 +257,8 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
         removeHeader: _removeBanner,
         locked: _locked,
         discoverable: _discoverable,
+        avatarDescription: _changedAlt(_avatarAltController, _loadedAvatarAlt),
+        headerDescription: _changedAlt(_bannerAltController, _loadedBannerAlt),
       );
 
       accountManager.updateCurrentUser(updatedUser);
@@ -323,6 +338,38 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
     }
   }
 
+  /// ALT を送るか。ALT を書けないバックエンドと、読み込んだときから変えて
+  /// いないときは null（送らない）。空文字は「ALT を消す」として送る (#1210)。
+  String? _changedAlt(TextEditingController controller, String loaded) {
+    if (!_canDescribeImages) return null;
+    final text = controller.text.trim();
+    return text == loaded ? null : text;
+  }
+
+  /// アイコン・ヘッダーの ALT を書けるバックエンドか（Mastodon 4.6・#1210）。
+  bool get _canDescribeImages {
+    final adapter = ref.read(currentAccountProvider)?.adapter;
+    return adapter is ProfileEditSupport &&
+        (adapter as ProfileEditSupport).supportsProfileImageDescription;
+  }
+
+  /// 画像の下に置く ALT の欄 (#1210)。
+  Widget _altField(TextEditingController controller, String label) => Padding(
+    padding: const EdgeInsets.only(top: 8),
+    child: TextField(
+      controller: controller,
+      enabled: !_saving,
+      maxLines: 2,
+      // 文章を書く欄なので、投稿の欄と同じフォントを当てる（#1283 のガード）。
+      style: composeTextStyle(ref),
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: '画像の内容を短く書く（読み上げなどで使われます）',
+        border: const OutlineInputBorder(),
+      ),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     final account = ref.watch(currentAccountProvider);
@@ -353,8 +400,12 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     _buildBannerPicker(user),
+                    if (_canDescribeImages)
+                      _altField(_bannerAltController, 'ヘッダーの説明 (ALT)'),
                     const SizedBox(height: 16),
                     _buildAvatarPicker(user),
+                    if (_canDescribeImages)
+                      _altField(_avatarAltController, 'アイコンの説明 (ALT)'),
                     const SizedBox(height: 24),
                     TextField(
                       controller: _displayNameController,

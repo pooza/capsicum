@@ -121,6 +121,8 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         RepostMuteSupport,
         // 引用の一覧 (#1072)。Misskey には無いので Mastodon adapter だけが持つ。
         QuoteSupport,
+        // サーバー側の投稿の既定 (#1210)。Misskey には今回は作らない。
+        PostingDefaultsSupport,
         AnnouncementSupport,
         AnnouncementReactionSupport,
         FollowSupport,
@@ -1913,6 +1915,8 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     bool removeHeader = false,
     bool? locked,
     bool? discoverable,
+    String? avatarDescription,
+    String? headerDescription,
   }) async {
     var account = await client.updateCredentials(
       displayName: displayName,
@@ -1924,6 +1928,8 @@ class MastodonAdapter extends DecentralizedBackendAdapter
           .toList(),
       locked: locked,
       discoverable: discoverable,
+      avatarDescription: avatarDescription,
+      headerDescription: headerDescription,
     );
     // 画像削除は update_credentials では表現できないため 4.6 の destroy
     // エンドポイントで行い、最新の account を返す（#736）。差し替えとは排他。
@@ -1964,6 +1970,29 @@ class MastodonAdapter extends DecentralizedBackendAdapter
 
   @override
   bool get supportsProfileImageRemoval => true;
+
+  /// 削除（[supportsProfileImageRemoval]）と同じく 4.6 の口。古いサーバーは
+  /// 知らない項目を permit で読み捨てるので、送っても害は無い (#1210)。
+  @override
+  bool get supportsProfileImageDescription => true;
+
+  // PostingDefaultsSupport (#1210)
+
+  @override
+  Future<User> updatePostingDefaults({
+    PostScope? scope,
+    bool? sensitive,
+    String? language,
+    String? quotePolicy,
+  }) async {
+    final account = await client.updateCredentials(
+      sourcePrivacy: scope == null ? null : mastodonVisibilityFromScope(scope),
+      sourceSensitive: sensitive,
+      sourceLanguage: language,
+      sourceQuotePolicy: quotePolicy,
+    );
+    return account.toCapsicum(host, adminRoleIds: _adminRoleIds);
+  }
 
   // ReportSupport
 

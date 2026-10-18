@@ -45,6 +45,10 @@ abstract mixin class ProfileEditSupport {
   /// バックエンドでは false（削除ボタンを出さない）。
   bool get supportsProfileImageRemoval => false;
 
+  /// アイコン・ヘッダーの ALT（代替テキスト）を書けるか (#1210)。Mastodon 4.6 の
+  /// `avatar_description` / `header_description`。未対応なら false（欄を出さない）。
+  bool get supportsProfileImageDescription => false;
+
   /// Update the current user's profile. Only non-null values are sent.
   ///
   /// [removeAvatar] / [removeHeader] が true のとき該当画像をデフォルトへ戻す
@@ -54,6 +58,10 @@ abstract mixin class ProfileEditSupport {
   /// [locked]（承認制）/ [discoverable]（ディレクトリ掲載）は null のとき変更しない
   /// （#865）。Mastodon は `locked` / `discoverable`、Misskey は `isLocked` /
   /// `isExplorable` に対応する。
+  ///
+  /// [avatarDescription] / [headerDescription] は null のとき変更しない
+  /// （[supportsProfileImageDescription] が true のバックエンドのみ有効・#1210）。
+  /// 空文字は ALT を消す。
   Future<User> updateProfile({
     String? displayName,
     String? description,
@@ -64,5 +72,7 @@ abstract mixin class ProfileEditSupport {
     bool removeHeader = false,
     bool? locked,
     bool? discoverable,
+    String? avatarDescription,
+    String? headerDescription,
   });
 }

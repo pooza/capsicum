@@ -78,6 +78,7 @@ export 'src/social/interfaces/notification_unread_count_support.dart';
 export 'src/social/interfaces/pages_support.dart';
 export 'src/social/interfaces/pin_support.dart';
 export 'src/social/interfaces/poll_support.dart';
+export 'src/social/interfaces/posting_defaults_support.dart';
 export 'src/social/interfaces/profile_edit_support.dart';
 export 'src/social/interfaces/push_subscription_support.dart';
 export 'src/social/interfaces/quote_support.dart';

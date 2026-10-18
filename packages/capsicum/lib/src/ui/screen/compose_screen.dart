@@ -882,18 +882,6 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     'nobody': Icons.block,
   };
 
-  static const _languageOptions = {
-    'ja': '日本語',
-    'en': 'English',
-    'zh': '中文',
-    'ko': '한국어',
-    'fr': 'Français',
-    'de': 'Deutsch',
-    'es': 'Español',
-    'pt': 'Português',
-    'ru': 'Русский',
-  };
-
   /// 言語の選択肢。⚠ **現在値は必ず含める**（[_scopeItems] と同じ理由）。
   ///
   /// 削除して再編集で引き継いだ言語（#1113）や端末ロケールが 9 言語の外
@@ -903,10 +891,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// 送られる言語が黙って変わる。知らない言語はコードをそのまま出す。
   Map<String, String> get _languageEntries {
     final current = _language;
-    if (current == null || _languageOptions.containsKey(current)) {
-      return _languageOptions;
+    if (current == null || composeLanguageOptions.containsKey(current)) {
+      return composeLanguageOptions;
     }
-    return {..._languageOptions, current: current};
+    return {...composeLanguageOptions, current: current};
   }
 
   /// 公開範囲のドロップダウンに並べる値。
@@ -3835,7 +3823,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// 投稿言語 / 引用許可のメニュー項目のコールバック (#971)。[_scopeSetters] と
   /// 同じ理由でフィールドに一度だけ組む。
   late final Map<String, VoidCallback> _languageSetters = {
-    for (final code in _languageOptions.keys)
+    for (final code in composeLanguageOptions.keys)
       code: () => setState(() {
         _language = code;
         _chosen.add(ComposeDraftStore.chosenLanguage);
