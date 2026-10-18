@@ -1754,6 +1754,25 @@ class MisskeyClient {
     return (response.data as List).cast<Map<String, dynamic>>();
   }
 
+  /// POST /api/chat/messages/search (#1188)。ページングは無く、上限は 100 件。
+  Future<List<Map<String, dynamic>>> searchChatMessages({
+    required String query,
+    String? userId,
+    String? roomId,
+    int limit = 100,
+  }) async {
+    final response = await dio.post(
+      '/api/chat/messages/search',
+      data: createBody({
+        'query': query,
+        'limit': limit,
+        'userId': ?userId,
+        'roomId': ?roomId,
+      }),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
   /// POST /api/chat/messages/create-to-user
   Future<Map<String, dynamic>> createChatMessageToUser({
     required String toUserId,

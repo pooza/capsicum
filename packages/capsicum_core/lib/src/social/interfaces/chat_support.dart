@@ -41,6 +41,18 @@ abstract mixin class ChatSupport {
   Future<void> deleteChatMessage(String messageId);
   Future<void> markAllChatRead();
 
+  /// メッセージを検索する (#1188)。[userId] か [roomId] を渡すと、その相手 /
+  /// ルームの中だけに絞る。新しい順で、ページングは無い（上流の上限は 100 件）。
+  ///
+  /// 実装しないバックエンドは UnsupportedError を投げる。
+  Future<List<ChatMessage>> searchChatMessages({
+    required String query,
+    String? userId,
+    String? roomId,
+  }) async => throw UnsupportedError(
+    'chat message search is not supported by this backend',
+  );
+
   /// chat メッセージに reaction を付ける (#612)。DM・ルーム共通
   /// (`/api/chat/messages/react`)。[reaction] は `:shortcode:` または Unicode
   /// 絵文字。実装しないバックエンドは UnsupportedError を投げる。

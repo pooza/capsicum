@@ -8,6 +8,7 @@ import '../../provider/chat_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../util/oauth_scope_error.dart';
 import '../util/chat_error.dart';
+import '../util/chat_message_jump.dart';
 import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
 import '../util/op_error.dart';
@@ -19,6 +20,7 @@ import '../widget/content_parser.dart';
 import '../widget/oauth_scope_error_view.dart';
 import '../widget/retry_error_view.dart';
 import '../widget/user_avatar.dart';
+import 'chat_message_search_screen.dart';
 
 class ChatThreadScreen extends ConsumerStatefulWidget {
   final User otherUser;
@@ -37,7 +39,8 @@ class ChatThreadScreen extends ConsumerStatefulWidget {
   ConsumerState<ChatThreadScreen> createState() => _ChatThreadScreenState();
 }
 
-class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
+class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen>
+    with ChatMessageJump {
   final _scrollController = ScrollController();
   final _textController = TextEditingController();
   bool _sending = false;
@@ -56,7 +59,39 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _textController.dispose();
+    disposeChatJump();
     super.dispose();
+  }
+
+  /// この相手とのメッセージを検索し、選んだものの位置へ移る (#1188)。
+  ///
+  /// ⚠ アダプタはこの画面のスコープから取って渡す（デッキのカラムの中では、
+  /// カラムのアカウントのもの）。検索画面はルートに積まれるため。
+  Future<void> _openSearch(String displayName) async {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! ChatSupport) return;
+    final provider = chatThreadProvider(widget.otherUser.id);
+    final id = await Navigator.of(context).push<String>(
+      MaterialPageRoute(
+        builder: (_) => ChatMessageSearchScreen(
+          support: adapter as ChatSupport,
+          title: displayName,
+          userId: widget.otherUser.id,
+          account: ref.accountForReport,
+        ),
+      ),
+    );
+    if (id == null || !mounted) return;
+    final found = await jumpToMessage(
+      id: id,
+      controller: _scrollController,
+      read: () => ref.read(provider).valueOrNull,
+      loadMore: () => ref.read(provider.notifier).loadMore(),
+    );
+    if (found || !mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('このメッセージまで遡れませんでした')));
   }
 
   void _onScroll() {
@@ -204,6 +239,14 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
           ],
         ),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        actions: [
+          if (adapter is ChatSupport)
+            IconButton(
+              icon: const Icon(Icons.search),
+              tooltip: 'メッセージを検索',
+              onPressed: () => _openSearch(displayName),
+            ),
+        ],
       ),
       body: Column(
         children: [
@@ -275,13 +318,16 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
                 final message = data.messages[index];
                 final isMine =
                     myUserId != null && message.fromUser.id == myUserId;
-                return _MessageBubble(
-                  message: message,
-                  isMine: isMine,
-                  myUserId: myUserId,
-                  onLongPress: () => _showActions(message, isMine),
-                  onToggleReaction: (reaction) =>
-                      _toggleReaction(message.id, reaction),
+                return wrapForJump(
+                  message.id,
+                  _MessageBubble(
+                    message: message,
+                    isMine: isMine,
+                    myUserId: myUserId,
+                    onLongPress: () => _showActions(message, isMine),
+                    onToggleReaction: (reaction) =>
+                        _toggleReaction(message.id, reaction),
+                  ),
                 );
               },
             ),

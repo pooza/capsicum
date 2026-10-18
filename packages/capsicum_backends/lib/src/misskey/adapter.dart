@@ -2541,6 +2541,33 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         .toList();
   }
 
+  /// ⚠ 検索の結果は完全な ChatMessage（`fromUser` / `toUser` 込み）で返るので、
+  /// 相手のユーザーを先に引かない（ルームの検索では相手が 1 人に決まらない）。
+  @override
+  Future<List<ChatMessage>> searchChatMessages({
+    required String query,
+    String? userId,
+    String? roomId,
+  }) async {
+    final me = await _ensureMyUser();
+    final messages = await client.searchChatMessages(
+      query: query,
+      userId: userId,
+      roomId: roomId,
+    );
+    return messages
+        .map(
+          (m) => misskeyChatMessageFromMap(
+            m,
+            host,
+            adminRoleIds: _adminRoleIds,
+            selfUser: me,
+            defaultIsRead: true,
+          ),
+        )
+        .toList();
+  }
+
   @override
   Future<ChatMessage> sendUserMessage({
     required String userId,
