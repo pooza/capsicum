@@ -40,6 +40,11 @@ class _FilterEditScreenState extends ConsumerState<FilterEditScreen> {
   late Set<FilterContext> _contexts;
   late FilterAction _action;
 
+  /// 動作を画面で選び直したか（PR #1303 の締めの Codex P2）。⚠ 値の比較では
+  /// 分からない —— 知らない値（`shout` など）は `warn` として出すので、利用者が
+  /// 改めて「警告」を選んでも元の値と同じに見え、知らない値を送り返してしまう。
+  var _actionEdited = false;
+
   /// [filterExpiryChoices] の添字。⚠ **-1 は「変えない」**（編集で期限が付いて
   /// いるときだけ選べる）。
   late int _expiryIndex;
@@ -109,7 +114,7 @@ class _FilterEditScreenState extends ConsumerState<FilterEditScreen> {
       // ⚠ capsicum が知らない値は送り返す（読み捨てると保存のたびに消える・
       // #1293）。動作は、画面で変えていなければ元の値のまま。
       unknownContexts: filter?.unknownContexts ?? const [],
-      rawAction: _action == filter?.action ? filter?.unknownAction : null,
+      rawAction: _actionEdited ? null : filter?.unknownAction,
       expiry: switch (_expiryIndex) {
         -1 => const KeepFilterExpiry(),
         _ => switch (filterExpiryChoices[_expiryIndex].$2) {
@@ -287,7 +292,11 @@ class _FilterEditScreenState extends ConsumerState<FilterEditScreen> {
               RadioGroup<FilterAction>(
                 groupValue: _action,
                 onChanged: (value) {
-                  if (value != null) setState(() => _action = value);
+                  if (value == null) return;
+                  setState(() {
+                    _action = value;
+                    _actionEdited = true;
+                  });
                 },
                 child: Column(
                   children: [
