@@ -119,11 +119,28 @@ void main() {
       expect(query['tag'], 'c++', reason: '⚠ AND 指定として割れると別のタグを購読してしまう');
     });
 
-    test('⚠⚠ AND 指定のタグは購読しない（代表タグだけで繋ぐと AND 外が流れ込む）', () async {
+    // #1277 で改めた。以前は「代表タグだけで繋ぐと AND 外が流れ込む」ので張らな
+    // かった。いまは代表タグを購読し、残りの AND は provider が端末側で確かめる
+    // （`postKeptByHashtagQuery`）。⚠ 確かめが当てにならないタグ（サーバーの正規化で
+    // 形が変わるもの）を含む条件は、従来どおり張らない。
+    test('AND 指定のタグも、端末側で確かめられれば張る（#1277）', () async {
       final adapter = await makeAdapter();
-      final stream = adapter.streamTimeline(
+      adapter.streamTimeline(
         'me|hashtag:delmulin+capsicum',
         HashtagTab('delmulin+capsicum'),
+      );
+      addTearDown(() => adapter.disposeStream('me|hashtag:delmulin+capsicum'));
+      await waitForConnections(1);
+      final query = connections.single.uri.queryParameters;
+      expect(query.containsKey('stream'), isFalse, reason: '購読はつないでから送る');
+    });
+
+    test('⚠⚠ 確かめが当てにならない AND のタグを含む条件は張らない（AND 外が流れ込む）', () async {
+      final adapter = await makeAdapter();
+      // 全角英数はサーバーの正規化で半角になるので、端末側の比較が当てにならない。
+      final stream = adapter.streamTimeline(
+        'me|hashtag:delmulin+ＣＡＰＳＩＣＵＭ',
+        HashtagTab('delmulin+ＣＡＰＳＩＣＵＭ'),
       );
       expect(await stream.isEmpty, isTrue);
       await expectNoConnection();

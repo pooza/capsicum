@@ -1824,9 +1824,9 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   }) {
     // 同じキーの前の購読だけを閉じる。他のキーには触らない (#1090)。
     _streamings.remove(key)?.dispose();
-    // 対応するストリームが無いタブ (DM / チャンネル / AND 指定のタグ) では
+    // 対応するストリームが無いタブ (DM / チャンネル) では
     // 接続そのものを作らない。'user' へ落とすと別の TL を隠れ購読する (#793)。
-    if (mastodonStreamTarget(tab) == null) return const Stream.empty();
+    if (!mastodonCanStream(tab)) return const Stream.empty();
     final token = client.accessToken;
     if (token == null) return const Stream.empty();
     final streaming = MastodonStreaming(

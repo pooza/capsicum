@@ -209,4 +209,23 @@ void main() {
     expect(HashtagQuery.parse('a+b').tagsToPost, ['a', 'b']);
     expect(HashtagQuery.parse('x?a+b!z').tagsToPost, ['x', 'a']);
   });
+
+  // #1277: Mastodon の複数タグのライブ更新を張れるか。
+  group('verifiableOnDevice', () {
+    test('確かめる側（all の残り・none）が全部、正規化で変わらないタグなら true', () {
+      expect(HashtagQuery.parse('a+b').verifiableOnDevice, isTrue);
+      expect(HashtagQuery.parse('?a+b!c').verifiableOnDevice, isTrue);
+      expect(HashtagQuery.parse('ダイ+大冒険').verifiableOnDevice, isTrue);
+    });
+
+    test('⚠ 全角英数・アクセント付きが確かめる側にあれば false', () {
+      expect(HashtagQuery.parse('a+Ｂ').verifiableOnDevice, isFalse);
+      expect(HashtagQuery.parse('a!café').verifiableOnDevice, isFalse);
+    });
+
+    test('購読する側（all の先頭・any）は見ない', () {
+      expect(HashtagQuery.parse('Ａ+b').verifiableOnDevice, isTrue);
+      expect(HashtagQuery.parse('?Ａ+Ｂ').verifiableOnDevice, isTrue);
+    });
+  });
 }
