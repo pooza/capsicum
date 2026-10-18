@@ -220,7 +220,10 @@ void main() {
         tempDir: tempDir,
       );
 
-      expect(file!.path, local.path);
+      // ⚠ Windows では `local.path` が `/` と `\` の混ざった表記になるので、
+      // 文字列ではなく指す先で比べる（写していないこと）。
+      expect(Uri.file(file!.path), Uri.file(local.path));
+      expect(file.name, 'nowplaying-artwork.jpg');
       expect(file.mimeType, 'image/jpeg');
     });
 
