@@ -32,6 +32,7 @@ import '../util/post_actions.dart';
 import '../util/post_scope_display.dart';
 import '../util/provider_scope_carrier.dart';
 import '../util/quote_actions.dart';
+import '../util/quote_fallback.dart';
 import '../util/reaction_acceptance.dart';
 import '../util/relative_time.dart';
 import '../util/sensitive_media.dart';
@@ -105,12 +106,48 @@ class _PostTileState extends ConsumerState<PostTile> {
   TranslationResult? _translation;
   bool _translating = false;
 
+  /// 補って見せる引用元 (#1269)。⚠ どの投稿のものかを id で持つ（State は位置で
+  /// 再利用されるので、別の投稿に古い引用元を出さない）。
+  Post? _fallbackQuote;
+  String? _fallbackQuoteFor;
+
   @override
   void initState() {
     super.initState();
     _prepareCardFetch();
     _resolveTcoUrls();
+    _resolveQuoteFallback();
   }
+
+  /// Misskey からの引用（Mastodon で `pending` のまま止まるもの）の引用元を、
+  /// 本文の `RE:` の URL から引く (#1269・`quote_fallback.dart`)。
+  void _resolveQuoteFallback() {
+    final displayPost = post.reblog ?? post;
+    _fallbackQuote = null;
+    _fallbackQuoteFor = null;
+    final url = quoteFallbackTarget(displayPost);
+    if (url == null) return;
+    final adapter = ref.read(currentAdapterProvider);
+    // Misskey のアカウントは引用をもとから出せる。
+    if (adapter is! SearchSupport || isMisskeyAdapter(adapter)) return;
+    final account = ref.read(currentAccountProvider)?.key.toStorageKey();
+    if (account == null) return;
+    final postId = displayPost.id;
+    QuoteFallbackResolver.instance
+        .resolve(account, adapter as SearchSupport, url)
+        .then((quote) {
+          if (!mounted || quote == null) return;
+          if ((post.reblog ?? post).id != postId) return;
+          setState(() {
+            _fallbackQuote = quote;
+            _fallbackQuoteFor = postId;
+          });
+        });
+  }
+
+  /// いま描いている投稿に対する、補った引用元。
+  Post? _fallbackQuoteOf(Post displayPost) =>
+      _fallbackQuoteFor == displayPost.id ? _fallbackQuote : null;
 
   @override
   void didUpdateWidget(PostTile oldWidget) {
@@ -127,6 +164,7 @@ class _PostTileState extends ConsumerState<PostTile> {
       _translation = null;
       _translating = false;
       _prepareCardFetch();
+      _resolveQuoteFallback();
     }
   }
 
@@ -774,7 +812,12 @@ class _PostTileState extends ConsumerState<PostTile> {
                     if (displayPost.spoilerText == null || _cwExpanded) ...[
                       Builder(
                         builder: (_) {
-                          final rawContent = displayPost.content ?? '';
+                          // ⚠ 引用元を補って出すときは、本文の `RE:` の行を
+                          // 隠す（Mastodon の Web と同じ・#1269）。
+                          final rawContent =
+                              _fallbackQuoteOf(displayPost) != null
+                              ? stripQuoteFallback(displayPost.content ?? '')
+                              : displayPost.content ?? '';
                           final isHtml = displayPost.isHtml;
                           final parsed = isHtml
                               ? extractTrailingTagsHtml(rawContent)
@@ -969,6 +1012,12 @@ class _PostTileState extends ConsumerState<PostTile> {
                         Padding(
                           padding: const EdgeInsets.only(top: 8),
                           child: _QuoteCard(quote: displayPost.quote!),
+                        )
+                      // Misskey からの引用を補ったもの (#1269)。
+                      else if (_fallbackQuoteOf(displayPost) case final quote?)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: _QuoteCard(quote: quote),
                         )
                       else if (displayPost.quoteState != null &&
                           displayPost.quoteState != QuoteState.accepted)
