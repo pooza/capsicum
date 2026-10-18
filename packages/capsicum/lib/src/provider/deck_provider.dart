@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../model/account_key.dart';
 import '../model/deck_column.dart';
 import 'preferences_provider.dart';
 
@@ -46,6 +47,30 @@ bool shouldStartInDeck({
 ///
 /// 書き換えるのは `DeckScreen` の initState / dispose だけ。
 final mountedDeckCountProvider = StateProvider<int>((ref) => 0);
+
+/// 通知のタップで、デッキの通知カラムへ送ってほしいアカウント (#1295)。
+///
+/// デッキで使っているときに通知をタップしたら、タブ UI へは行かず、宛先の
+/// アカウントの通知カラムへフォーカスして点滅させる。無ければ通知カラムを足す
+/// （2026-10-18 pooza 判断）。立てるのは通知の経路（`main.dart`）、受けて下ろすのは
+/// `DeckScreen`。
+///
+/// ⚠ **起動時にも効く。**前回デッキで終えていた人が通知から起動したときは、
+/// これを立てておくとデッキで始まり（タブ UI 用の `pendingInitialTabProvider` を
+/// 立てないので [shouldStartInDeck] が通る）、開いた `DeckScreen` が受ける。
+final pendingDeckNotificationsProvider = StateProvider<AccountKey?>(
+  (ref) => null,
+);
+
+/// 通知のタップをデッキで受けるか (#1295)。
+///
+/// デッキが開いている（[deckOpen]）か、前回デッキで終えていてカラムがある（＝
+/// 起動するとデッキで始まる）とき。
+bool notificationTapGoesToDeck({
+  required bool deckOpen,
+  required LastViewMode lastMode,
+  required bool hasColumns,
+}) => deckOpen || (lastMode == LastViewMode.deck && hasColumns);
 
 /// この `ref` がデッキのカラムのスコープにあるか (#1099)。**ルートでは false**。
 ///

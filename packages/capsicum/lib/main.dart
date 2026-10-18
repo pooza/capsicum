@@ -20,6 +20,7 @@ import 'src/model/account.dart';
 import 'src/platform/paths.dart';
 import 'src/platform/platform_info.dart';
 import 'src/provider/account_manager_provider.dart';
+import 'src/provider/deck_provider.dart';
 import 'src/provider/preferences_provider.dart';
 import 'src/provider/server_config_provider.dart';
 import 'src/provider/timeline_provider.dart';
@@ -837,7 +838,7 @@ void _routeToChatThread(
         );
         return;
       }
-      if (currentLocation != '/home') {
+      if (!_canPushOver(currentLocation)) {
         router.go('/home');
       }
       router.push('/chat/user/$userId', extra: user);
@@ -907,7 +908,7 @@ void _routeToAnnouncements(String? accountString, {int attempt = 0}) {
     );
     return;
   }
-  if (currentLocation != '/home') {
+  if (!_canPushOver(currentLocation)) {
     router.go('/home');
   }
   router.push('/announcements');
@@ -941,7 +942,7 @@ void _routeToPushSettings({int attempt = 0}) {
   final currentLocation = router.state.matchedLocation;
   // ⚠ ゲートの最中（splash / EULA）に割り込まない。他の通知経路と同じ扱い。
   if (currentLocation == '/splash' || currentLocation == '/eula') return;
-  if (currentLocation != '/home') {
+  if (!_canPushOver(currentLocation)) {
     router.go('/home');
   }
   router.push('/settings/push');
@@ -980,11 +981,33 @@ void _routeToNotificationsTab(String? accountString, {int attempt = 0}) {
     return;
   }
 
-  if (accountString != null) {
-    final matched = _findAccountByString(accounts, accountString);
-    if (matched != null) {
-      container.read(accountManagerProvider.notifier).switchAccount(matched);
+  final matched = accountString == null
+      ? null
+      : _findAccountByString(accounts, accountString);
+
+  // デッキで使っているときは、タブ UI へ行かずデッキの通知カラムへ送る (#1295・
+  // 2026-10-18 pooza 判断)。⚠ アカウントは切り替えない —— デッキでは、現在の
+  // アカウントが変わると前後 2 アカウントのカラムが組み替わり読み直しになる
+  // （決定済み事項 8）。カラムは宛先のアカウントのものを使うので、切り替える
+  // 必要が無い。
+  if (notificationTapGoesToDeck(
+    deckOpen: container.read(mountedDeckCountProvider) > 0,
+    lastMode: readLastViewMode(),
+    hasColumns: container.read(deckColumnsProvider).isNotEmpty,
+  )) {
+    final target =
+        matched?.key ?? container.read(accountManagerProvider).current?.key;
+    if (target != null) {
+      container.read(pendingDeckNotificationsProvider.notifier).state = target;
+      // デッキが開いていればそこで受ける。起動の途中なら、HomeScreen が
+      // デッキを開き（pendingInitialTab を立てていないので）、開いた
+      // DeckScreen が受ける。
+      return;
     }
+  }
+
+  if (matched != null) {
+    container.read(accountManagerProvider.notifier).switchAccount(matched);
   }
 
   // pendingInitialTabProvider は常に立てる。HomeScreen が mount 済みなら
@@ -1046,6 +1069,16 @@ void _rescheduleNotificationRoute(
     (_) => _routeToNotificationsTab(accountString, attempt: attempt + 1),
   );
 }
+
+/// 通知から開く全画面（チャット・お知らせ・登録ステータス）を、いまの画面の上に
+/// そのまま積めるか (#1295)。積めなければ先に `/home` へ揃える。
+///
+/// ⚠ **デッキ（`/deck`）の上にも積む。**デッキは `/home` の上に push した画面
+/// なので、以前の「`/home` でなければ go('/home')」だとデッキを閉じてしまい、
+/// 通知をタップするたびにタブ UI へ戻っていた（2026-10-18 pooza 判断:
+/// カラムにならない行き先は、デッキの上に全画面で開く）。
+bool _canPushOver(String location) =>
+    location == '/home' || location == '/deck';
 
 Account? _findAccountByString(List<Account> accounts, String accountString) {
   // 'username@host' 形式。capsicum-relay の sub['account'] と同じ。
