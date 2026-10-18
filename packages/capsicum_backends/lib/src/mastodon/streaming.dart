@@ -27,6 +27,7 @@ MastodonStreamTarget? mastodonStreamTarget(TabType tab) {
         TimelineType.home => 'user',
         TimelineType.local => 'public:local',
         TimelineType.federated => 'public',
+        TimelineType.remote => 'public:remote',
         // DM には専用ストリームが無い。'user' へ落とすと DM タブに DM でない
         // 投稿が混ざる (#793)。social も Mastodon には無い。
         _ => null,
@@ -35,7 +36,8 @@ MastodonStreamTarget? mastodonStreamTarget(TabType tab) {
     case HashtagTab() && final tab:
       // ⚠ 割り方の正本は capsicum_core の HashtagQuery (#1159 / #1209)。
       // Mastodon の `hashtag` ストリームはタグ 1 つしか受けないので、AND・OR・
-      // 除外のある条件には張らない（複数タグのライブ更新は #1277）。
+      // 除外のある条件には張らない（それらは購読を重ねる・
+      // [mastodonHashtagSubscriptions]・#1277）。
       final single = tab.query.singleTag;
       if (single == null) return null;
       return (stream: 'hashtag', tag: single, list: null);
@@ -45,6 +47,39 @@ MastodonStreamTarget? mastodonStreamTarget(TabType tab) {
       return null;
   }
 }
+
+/// 条件が 2 つ以上あるタグ TL で購読するタグ (#1277)。それ以外は null。
+///
+/// Mastodon の `hashtag` ストリームはタグ 1 つしか受けないので、**1 本の接続に
+/// タグごとの購読を載せる**（接続後に `{"type":"subscribe", …}` を送る・接続の
+/// 本数は増えない）。購読するのは、届く投稿が必ずそのタグを持つものだけ:
+///
+/// - 「いずれか」があれば、その全部（OR のどれかで届く）
+/// - 「すべて含む」だけなら、その先頭 1 つ（残りは端末側で確かめる）
+///
+/// ⚠ 残りの条件（「すべて含む」の残り・「含まない」）は**ここでは見ない。**
+/// タグ TL の provider が、ライブの投稿にも REST と同じ確かめ直し
+/// （`postKeptByHashtagQuery`）を掛けている。素朴なタグの比較はサーバーの正規化
+/// （全角 → 半角など）とずれるので、そちらの作法に任せる。⚠⚠ その確かめが
+/// 当てにならないタグを残りに含む条件には、張らない
+/// （`HashtagQuery.verifiableOnDevice`）。
+List<String>? mastodonHashtagSubscriptions(TabType tab) {
+  if (tab is! HashtagTab) return null;
+  final query = tab.query;
+  if (query.singleTag != null) return null; // 1 つなら接続の URL で張る
+  // ⚠⚠ 端末側で確かめられない条件には張らない。張ると、「すべて含む」の残りや
+  // 「含まない」を満たさない投稿が流れ込む（引っ張って更新で消えるが、それまで
+  // 条件の外の投稿が並ぶ）。
+  if (!query.verifiableOnDevice) return null;
+  if (query.any.isNotEmpty) return query.any;
+  if (query.all.isNotEmpty) return [query.all.first];
+  return null;
+}
+
+/// [tab] にライブ更新を張れるか。
+bool mastodonCanStream(TabType tab) =>
+    mastodonStreamTarget(tab) != null ||
+    mastodonHashtagSubscriptions(tab) != null;
 
 class MastodonStreaming {
   final String host;
@@ -79,6 +114,12 @@ class MastodonStreaming {
 
   WebSocketChannel? _channel;
   StreamController<Post>? _controller;
+
+  /// 流した投稿の id（新しい順に [_seenIdsLimit] 件まで）。複数のタグを購読した
+  /// ときの重複を落とす (#1277)。⚠ つなぎ直すたびに空にする（取りこぼしの補完は
+  /// provider 側の id での重複除去が受ける）。
+  final _seenIds = <String>{};
+  static const _seenIdsLimit = 500;
   Timer? _reconnectTimer;
   TabType? _currentTab;
   bool _disposed = false;
@@ -125,7 +166,7 @@ class MastodonStreaming {
   Stream<Post> connect(TabType tab) {
     // 対応する stream を持たないタブは購読しない (#793 / #1098)。既定の 'user'
     // へ落とすと、そのタブが裏でホームを購読することになる。
-    if (mastodonStreamTarget(tab) == null) return const Stream.empty();
+    if (!mastodonCanStream(tab)) return const Stream.empty();
     _currentTab = tab;
     _controller?.close();
     _controller = StreamController<Post>.broadcast(onCancel: dispose);
@@ -140,25 +181,42 @@ class MastodonStreaming {
 
     // connect() で対応しないタブは弾いてある。
     final target = mastodonStreamTarget(tab);
-    if (target == null) return;
+    final subscriptions = target == null
+        ? mastodonHashtagSubscriptions(tab)
+        : null;
+    if (target == null && subscriptions == null) return;
+    _seenIds.clear();
     final uri = Uri(
       scheme: 'wss',
       host: host,
       path: '/api/v1/streaming',
       queryParameters: {
         'access_token': accessToken,
-        'stream': target.stream,
-        if (target.tag != null) 'tag': target.tag!,
-        if (target.list != null) 'list': target.list!,
+        // ⚠ 複数タグは stream を付けずに接続し、繋がってから購読を送る (#1277)。
+        if (target != null) 'stream': target.stream,
+        if (target?.tag != null) 'tag': target!.tag!,
+        if (target?.list != null) 'list': target!.list!,
       },
     );
 
     final factory = channelFactory;
-    _channel = factory != null
+    final channel = factory != null
         ? factory(uri)
         : IOWebSocketChannel.connect(uri, pingInterval: _pingInterval);
-    _channel!.ready
+    _channel = channel;
+    channel.ready
         .then((_) {
+          if (subscriptions != null) {
+            for (final tag in subscriptions) {
+              channel.sink.add(
+                jsonEncode({
+                  'type': 'subscribe',
+                  'stream': 'hashtag',
+                  'tag': tag,
+                }),
+              );
+            }
+          }
           _reconnectAttempts = 0;
           _reconnectExhaustedNotified = false;
           _notifyConnectionState(StreamConnectionState.live);
@@ -214,6 +272,10 @@ class MastodonStreaming {
           ? jsonDecode(payload) as Map<String, dynamic>
           : payload as Map<String, dynamic>;
       final status = MastodonStatus.fromJson(statusJson);
+      // ⚠ 複数のタグを購読していると、両方のタグを持つ投稿が購読の数だけ届く
+      // (#1277)。同じ id は 1 回だけ流す。
+      if (!_seenIds.add(status.id)) return;
+      if (_seenIds.length > _seenIdsLimit) _seenIds.remove(_seenIds.first);
       _controller?.add(status.toCapsicum(host, adminRoleIds: adminRoleIds));
     } catch (e, st) {
       // raw payload を捨てる前に観測層へ流す。サーバー側 schema 変更や

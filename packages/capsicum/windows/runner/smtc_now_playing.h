@@ -14,6 +14,10 @@
 //   - "albumTitle"  : String
 //   - "sourceAppId" : String (SourceAppUserModelId)
 //   - "status"      : int (GlobalSystemMediaTransportControlsSessionPlaybackStatus)
+//   - "artworkPath" : String（任意・#1274）`Thumbnail` を一時ファイルへ書き出した
+//                     絶対パス
+//   - "artworkSkipped" : String（任意・#1274）書き出さなかった理由（no_artwork /
+//                     read_failed / unsupported_format / too_large / write_failed）
 // 再生中の曲が無い / 取得失敗時は null (std::monostate) の EncodableValue。
 //
 // WinRT の非同期 API を STA スレッドで blocking 待ちすると停止しうるため、

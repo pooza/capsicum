@@ -80,6 +80,21 @@ const int _compactLabelMaxLength = 5;
 /// 超えたときに残す文字数（残り 1 文字は `…` が使う）。
 const int _compactLabelKeepLength = 4;
 
+/// 投稿の言語の選択肢。投稿画面と、サーバー側の投稿の既定の画面 (#1210) が
+/// 共有する。⚠ この外の言語（`it` / `zh-TW` など）も保存されうるので、使う側は
+/// 現在値を必ず選択肢に含める。
+const composeLanguageOptions = {
+  'ja': '日本語',
+  'en': 'English',
+  'zh': '中文',
+  'ko': '한국어',
+  'fr': 'Français',
+  'de': 'Deutsch',
+  'es': 'Español',
+  'pt': 'Português',
+  'ru': 'Русский',
+};
+
 /// 引用の許可の選択肢と、その表示名。キーは Mastodon の
 /// `quote_approval_policy` の語彙。
 ///

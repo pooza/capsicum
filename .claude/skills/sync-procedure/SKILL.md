@@ -277,5 +277,12 @@ capsicum-relay の Issue・マイルストーンは、**capsicum 本体と同じ
   ```
 
   ⚠ **端末ラベル（`Windows` / `Linux`）の有無で並べ替えて出す** —— 付いていなければ**手元の Mac で見られる**、付いていればその実機が要る。⚠ **0 件でもその旨を 1 行書く**（「数え忘れ」と「本当に 0」を区別するため）。
+- **`observing` の Issue は、毎回その場で測って報告する**（2026-10-18 新設・capsicum / relay 両方・規約は `docs/CLAUDE.md`「運用ルール」）。測り方は各 Issue の本文かコメントに書いてある。条件を満たしていたら、値を添えて close する。⚠ **報告では作業の残件と分けて書く**（「v2.4 の relay は作業 0 件・観察 3 件」の形）:
+
+  ```sh
+  gh api 'repos/pooza/capsicum/issues?labels=observing&state=open&per_page=50' --jq '.[] | select(.pull_request == null) | "#\(.number) \(.milestone.title // "-") \(.title)"'
+  gh api 'repos/pooza/capsicum-relay/issues?labels=observing&state=open&per_page=50' --jq '.[] | select(.pull_request == null) | "relay#\(.number) \(.milestone.title // "-") \(.title)"'
+  ```
+
 - ⚠⚠ **実装済みなのに `verification-pending` が付いていない Issue を見つけたら、その場で付ける。**同期は Issue の状態を実測する唯一の定期作業なので、**ここで拾わないと札が腐る**。判定は「末尾のコメントが実装完了を報告していて、close されていない」。⚠ **検証困難なもの（race / fork 依存 / 再現条件が薄い）には付けない**（`docs/CLAUDE.md` の基準）。
 - ⚠ **今回の所要の内訳を書く**（#1228）。**定形ぶんと、今回だけの作業を分けて書く**（「定形 + Sentry の母数の作り直し 1 件 + メモリの畳み 1 件」の形）。⚠ 進捗が 0 件の回は、これが無いと「時間をかけて変化なし」に見える。

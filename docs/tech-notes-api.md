@@ -105,6 +105,17 @@ v1.63 で実際に踏んだ（#1043）:
 
 ⚠ 逆に、**カーソルの正体（関係レコードの内部 id か、投稿 / User の id か）はソースを引いて全件確認したぶんは 1 件も外していない**。引けば当たる。
 
+### `defaultTag` のサーバーでは、ローカル TL の REST と streaming で通す条件が違う
+
+ダイスキー（`misskey.delmulin.com`）は pooza/misskey フォークの `defaultTag` 運用（`tag: delmulin` / `append: false`）。**ローカル TL の「通す条件」が経路で食い違う**（2026-09-19 実測）:
+
+- **streaming**（`stream/channels/local-timeline.ts`）: `defaultTag` が非 null なら **`note.tags` にそのタグを含む投稿だけ**通す
+- **REST**（`notes/local-timeline`）: fanout キャッシュ経路が `visibility === 'public' && userHost == null` を**タグ無条件で** push するので、タグ無しのローカル投稿も返る
+
+→ **タグを持たない投稿は「引っぱって再読み込みすると出るが、ライブでは流れない」。**`append: false` なのでタグを付けているのはモロヘイヤ（`default_tag` ハンドラ）で、本文を持つ投稿には必ず付く。⚠ **例外は純粋なリノートだけ**（本文が無いものにタグを足すと引用リノートになるので、モロヘイヤが飛ばす）。⚠ フォークの分岐は**リノート先のタグを見ていない**ので、デルムリンの投稿をリノートしてもライブには流れない。ソーシャル TL（`hybrid-timeline.ts`）も同じ分岐を持つ。
+
+⚠ **「ローカル TL にライブで流れない」報告が来たら、capsicum の streaming を疑う前に、まず投稿の `tags` を実測する**（`POST /api/notes/local-timeline`）。⚠ モロヘイヤの `/mulukhiya/api/about` の `config.handlers` は設定漏れを拾わない（`disable: true` のキーしか見ていない）ので、**確認は実投稿の `tags` で行う**。サーバー側の扱い（リノート先のタグを見るか）は pooza/misskey 側で判断する。
+
 ### MiAuth パーミッション
 
 新しい Misskey API エンドポイントを利用する際は `MisskeyAdapter._permissions` リストに該当パーミッションを追加すること。追加漏れは 403 `PERMISSION_DENIED` になる。既存トークンには効かないため、ユーザーは再ログインが必要。v1.2 で `read:channels` / `write:channels` / `write:report-abuse` を追加した経緯がある。

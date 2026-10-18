@@ -12,9 +12,11 @@ void main() {
 
   group('TimelineType', () {
     test('has expected values', () {
-      expect(TimelineType.values, hasLength(5));
+      // remote（リモートのみの連合 TL）を #1278 で足した。
+      expect(TimelineType.values, hasLength(6));
       expect(TimelineType.values, contains(TimelineType.home));
       expect(TimelineType.values, contains(TimelineType.federated));
+      expect(TimelineType.values, contains(TimelineType.remote));
     });
   });
 

@@ -60,7 +60,7 @@ class _TestAccountNotifier extends AccountManagerNotifier {
       AccountManagerState(accounts: _accounts, current: _accounts.first);
 
   @override
-  Future<void> switchAccount(Account account) async {
+  void switchAccount(Account account, {bool clearUnread = true}) {
     switched.add(account.key);
   }
 }

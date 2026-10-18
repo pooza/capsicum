@@ -26,6 +26,19 @@ class ServerFilter {
   final DateTime? expiresAt;
   final List<FilterKeyword> keywords;
 
+  /// 投稿単位で登録された数（Web の「この投稿をフィルター」）。capsicum は
+  /// 中身を扱わないが、**キーワードが 0 件でも空のフィルターではない**ことを
+  /// 知るために数だけ持つ (#1293)。
+  final int statusCount;
+
+  /// capsicum が知らない `context` の値（上流で増えたもの）。⚠ 編集して保存する
+  /// ときに**そのまま送り返す**。読み捨てると、保存のたびにサーバー側で消える (#1293)。
+  final List<String> unknownContexts;
+
+  /// capsicum が知らない `filter_action` の値。[action] は warn として読むが、
+  /// 動作を変えずに保存するときはこちらを送り返す (#1293)。
+  final String? unknownAction;
+
   const ServerFilter({
     required this.id,
     required this.title,
@@ -33,6 +46,9 @@ class ServerFilter {
     required this.action,
     this.expiresAt,
     this.keywords = const [],
+    this.statusCount = 0,
+    this.unknownContexts = const [],
+    this.unknownAction,
   });
 
   bool isExpiredAt(DateTime now) =>
@@ -73,6 +89,13 @@ class FilterDraft {
   /// 消すキーワードの id（編集のときだけ）。
   final List<String> removedKeywordIds;
 
+  /// [ServerFilter.unknownContexts] をそのまま送り返す分 (#1293)。
+  final List<String> unknownContexts;
+
+  /// 非 null なら [action] の代わりにこれを送る（[ServerFilter.unknownAction] を
+  /// 変えずに保存するとき・#1293）。
+  final String? rawAction;
+
   const FilterDraft({
     required this.title,
     required this.contexts,
@@ -80,6 +103,8 @@ class FilterDraft {
     this.expiry = const NoFilterExpiry(),
     this.keywords = const [],
     this.removedKeywordIds = const [],
+    this.unknownContexts = const [],
+    this.rawAction,
   });
 }
 

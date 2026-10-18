@@ -96,16 +96,16 @@ grep -rhoE "\['[a-zA-Z_][a-zA-Z0-9_]*'\]" packages/capsicum_backends/lib/src/mis
 
 | 項目 | Issue |
 | --- | --- |
-| フィルタ（キーワードミュート）の管理 UI | [#1047](https://github.com/pooza/capsicum/issues/1047) |
-| 通知のグループ化 | [#1048](https://github.com/pooza/capsicum/issues/1048) |
+| フィルタ（キーワードミュート）の管理 UI | [#1047](https://github.com/pooza/capsicum/issues/1047)（✅ v2.3） |
+| 通知のグループ化 | [#1048](https://github.com/pooza/capsicum/issues/1048)（✅ v2.0） |
 | トレンド | [#1049](https://github.com/pooza/capsicum/issues/1049) |
 | Misskey クリップの操作 | [#1050](https://github.com/pooza/capsicum/issues/1050) |
 | Misskey チャンネルの操作 | [#1051](https://github.com/pooza/capsicum/issues/1051) |
 | Misskey アンテナの管理 | [#1052](https://github.com/pooza/capsicum/issues/1052) |
 | Misskey ギャラリー | [#1053](https://github.com/pooza/capsicum/issues/1053) |
-| 編集済み投稿の表示 | [#1054](https://github.com/pooza/capsicum/issues/1054) |
-| 引っ越し済みアカウントの表示 | [#1055](https://github.com/pooza/capsicum/issues/1055) |
-| タグの取得元（§7-2） | [#1056](https://github.com/pooza/capsicum/issues/1056) |
+| 編集済み投稿の表示 | [#1054](https://github.com/pooza/capsicum/issues/1054)（✅ v1.65） |
+| 引っ越し済みアカウントの表示 | [#1055](https://github.com/pooza/capsicum/issues/1055)（✅ v1.65） |
+| タグの取得元（§7-2） | [#1056](https://github.com/pooza/capsicum/issues/1056)（✅ v2.0） |
 
 ⚠ **#1050 / #1051 / #1052 は「保存済みショートカットの管理 UI をどこに置くか」という同じ設計問題を共有する。**バラバラに作ると UI の流儀が割れるので、**1 つ目を作るときに 3 つ分の型を決める**（各 Issue に相互リンク済み）。
 
@@ -113,15 +113,15 @@ grep -rhoE "\['[a-zA-Z_][a-zA-Z0-9_]*'\]" packages/capsicum_backends/lib/src/mis
 
 | 項目 | Mastodon | Misskey | 備考 |
 | --- | --- | --- | --- |
-| **フィルタ（キーワードミュート）** | `filters` v1/v2 + `filters/keywords` / `filters/statuses`、Status の `filtered` フィールド | `notes/thread-muting/*`、`renote-mute/*` | ⚠ **capsicum は Status の `filtered` を既に受け取っている**（`status.dart` に `filtered` あり）。つまり**サーバーが「これは伏せろ」と言ってきているのを読んでいる可能性がある**一方、フィルタの管理 UI が無い。CLAUDE.md の「見たくないものを見ないようにする道具は読む側に提供する」に真正面から合致する枠 |
+| **フィルタ（キーワードミュート）** | `filters` v1/v2 + `filters/keywords` / `filters/statuses`、Status の `filtered` フィールド | `notes/thread-muting/*`、`renote-mute/*` | ✅ **実装済み**（2026-10-15・v2.3・[#1047](https://github.com/pooza/capsicum/issues/1047) / [#1289](https://github.com/pooza/capsicum/issues/1289) / [#1290](https://github.com/pooza/capsicum/issues/1290)）。以下は棚卸し時点の記述: ⚠ **capsicum は Status の `filtered` を既に受け取っている**（`status.dart` に `filtered` あり）。つまり**サーバーが「これは伏せろ」と言ってきているのを読んでいる可能性がある**一方、フィルタの管理 UI が無い。CLAUDE.md の「見たくないものを見ないようにする道具は読む側に提供する」に真正面から合致する枠 |
 | **通知のグループ化** | `GET /api/v2/notifications`（`group_key` 単位） | `i/notifications-grouped` | ✅ **実装済み**（2026-09-27・v2.0）。⚠ **束ねる種別は揃っていない** — Mastodon は favourite / reblog / follow を履歴全体で、Misskey は reaction / renote を 1 ページ内の連続したものだけ。罠は `tech-notes-api.md`「`GET /api/v2/notifications`（束ねた通知）の 4 つの罠」が正本 |
 | **トレンド** | `trends/tags` / `trends/links` / `trends/statuses` | `hashtags/trend` | 新しい画面。実況文化圏との相性は要検討（トレンドは全体の話題であって、プリセットサーバーのデフォルトタグ文化とは別軸） |
 | **クリップへの投稿追加**（Misskey） | ― | `clips/create` / `clips/add-note` / `clips/remove-note` / `clips/update` / `clips/delete` / `clips/show` | capsicum は**クリップの閲覧だけ**（11 本中 2 本）。作成・追加ができないので「読める整理棚」で止まっている |
 | **チャンネルの操作**（Misskey） | ― | 16 本中 14 本未使用（`create` / `update` / `follow` / `favorite` / `search` / `show` / `mute/*` / `owned` ほか） | 同上。閲覧のみ |
 | **アンテナの管理**（Misskey） | ― | `antennas/create` / `update` / `delete` / `show` | 同上。閲覧のみ |
 | **ギャラリー**（Misskey） | ― | `gallery/*` 9 本中 8 本未使用 | 独立した機能。単独で 1 枠になる規模 |
-| **編集済み投稿の表示** | Status の `edited_at` / `GET /api/v1/statuses/:id/history` / `/source` | ― | ⚠ **CLAUDE.md の「実装しない機能: 投稿の更新」とは別物。**あちらは*書く*側の話で、これは**他人が編集した投稿に「編集済み」と分かる印を出す** *読む*側の話。混同しやすいので、起票時に本文へ明記する |
-| **アカウントの引っ越し追従** | Account の `moved` | `i/move` は除外だが受け側の表示は別 | 引っ越し済みアカウントの表示。capsicum の Account モデルは `moved` を持たない |
+| **編集済み投稿の表示** | Status の `edited_at` / `GET /api/v1/statuses/:id/history` / `/source` | ― | ✅ **実装済み**（v1.65・#1054）。⚠ **CLAUDE.md の「実装しない機能: 投稿の更新」とは別物。**あちらは*書く*側の話で、これは**他人が編集した投稿に「編集済み」と分かる印を出す** *読む*側の話。混同しやすいので、起票時に本文へ明記する |
+| **アカウントの引っ越し追従** | Account の `moved` | `i/move` は除外だが受け側の表示は別 | ✅ **実装済み**（v1.65・#1055）。棚卸し時点では、capsicum の Account モデルは `moved` を持たなかった |
 
 ## 5. 分類 C — 拾わない
 
@@ -160,6 +160,8 @@ grep -rhoE "\['[a-zA-Z_][a-zA-Z0-9_]*'\]" packages/capsicum_backends/lib/src/mis
 - ~~Status の `tags` / `mentions` を capsicum が読んでいない点~~ → 下記のとおり確定。**判断待ち**として §7-2 へ移した。
 
 ### 7-2. タグの取得元がサーバーの `tags` ではなく描画済み HTML / MFM のパース（→ [#1056](https://github.com/pooza/capsicum/issues/1056)・v2.0）
+
+✅ **実装済み**（2026-09-28・v2.0）。以下は判断時点の記述。
 
 **2026-08-31 決着。**「基本設計の見直しとしてはぜひやりたいが、**現行実装がバグというわけでもない**ので v2.0 へ割り当てる」（pooza の判断）。
 

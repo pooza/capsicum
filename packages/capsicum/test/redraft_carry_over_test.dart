@@ -346,8 +346,12 @@ void main() {
       // 壊れた（debug は赤画面・v1.64 のリリース前レビュー）。
       final masked = maskStrings(code);
       expect(masked, contains('items: _languageEntries'));
-      expect(masked, isNot(contains('items: _languageOptions')));
-      expect(masked, isNot(contains('in _languageOptions.entries')));
+      // ⚠ 表は #1210 で共有の `composeLanguageOptions` へ移した。旧名も見続ける
+      // （戻されたときに素通りしないため）。
+      for (final table in ['_languageOptions', 'composeLanguageOptions']) {
+        expect(masked, isNot(contains('items: $table')));
+        expect(masked, isNot(contains('in $table.entries')));
+      }
     });
 
     test('⚠⚠ _syncDriveDescriptions の中で ref.read しない', () {

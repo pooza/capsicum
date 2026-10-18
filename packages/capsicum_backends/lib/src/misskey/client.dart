@@ -695,12 +695,27 @@ class MisskeyClient {
   /// POST /api/notes/drafts/list — 予約投稿を、変換せずそのまま返す (#1212)。
   ///
   /// [ScheduledPost] に載らない項目（投票）を、更新のときに送り直すために引く。
+  ///
+  /// ⚠ **全件を辿る** (#1293)。`limit` を付けないと上流の既定（30 件）で切れ、
+  /// 31 件目以降の予約を時刻変更すると、投票を添えられずに期限が消えていた。
   Future<List<Map<String, dynamic>>> getScheduledNotesRaw() async {
-    final response = await dio.post(
-      '/api/notes/drafts/list',
-      data: createBody({'scheduled': true}),
-    );
-    return (response.data as List).cast<Map<String, dynamic>>();
+    const pageSize = 100; // 上流の上限
+    final all = <Map<String, dynamic>>[];
+    String? untilId;
+    while (true) {
+      final response = await dio.post(
+        '/api/notes/drafts/list',
+        data: createBody({
+          'scheduled': true,
+          'limit': pageSize,
+          'untilId': ?untilId,
+        }),
+      );
+      final page = (response.data as List).cast<Map<String, dynamic>>();
+      all.addAll(page);
+      if (page.length < pageSize) return all;
+      untilId = page.last['id'] as String;
+    }
   }
 
   /// POST /api/notes/drafts/update — 予約投稿の本文か時刻を変える。
@@ -1158,6 +1173,15 @@ class MisskeyClient {
     return (response.data as List)
         .map((e) => MisskeyNote.fromJson(e as Map<String, dynamic>))
         .toList();
+  }
+
+  /// POST /api/channels/show
+  Future<Map<String, dynamic>> showChannel(String channelId) async {
+    final response = await dio.post(
+      '/api/channels/show',
+      data: createBody({'channelId': channelId}),
+    );
+    return response.data as Map<String, dynamic>;
   }
 
   /// POST /api/channels/followed
@@ -1725,6 +1749,25 @@ class MisskeyClient {
         'untilId': ?untilId,
         'sinceId': ?sinceId,
         'limit': ?limit,
+      }),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/chat/messages/search (#1188)。ページングは無く、上限は 100 件。
+  Future<List<Map<String, dynamic>>> searchChatMessages({
+    required String query,
+    String? userId,
+    String? roomId,
+    int limit = 100,
+  }) async {
+    final response = await dio.post(
+      '/api/chat/messages/search',
+      data: createBody({
+        'query': query,
+        'limit': limit,
+        'userId': ?userId,
+        'roomId': ?roomId,
       }),
     );
     return (response.data as List).cast<Map<String, dynamic>>();

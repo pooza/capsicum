@@ -44,6 +44,47 @@ void main() {
       expect(filter.keywords, isEmpty);
     });
 
+    // #1293: 読み捨てると、編集して保存したときにサーバー側から消える。
+    test('⚠⚠ 知らない適用先と動作は、生の値で残す', () {
+      final filter = parseMastodonFilter({
+        'id': '1',
+        'title': 't',
+        'context': ['public', 'quotes'],
+        'filter_action': 'shout',
+      });
+      expect(filter.contexts, {FilterContext.public});
+      expect(filter.unknownContexts, ['quotes']);
+      expect(filter.unknownAction, 'shout');
+    });
+
+    test('知っている動作なら unknownAction は null', () {
+      final filter = parseMastodonFilter({
+        'id': '1',
+        'title': 't',
+        'context': ['public'],
+        'filter_action': 'blur',
+      });
+      expect(filter.unknownAction, isNull);
+      expect(filter.unknownContexts, isEmpty);
+    });
+
+    // #1293: Web の「この投稿をフィルター」で作ったものはキーワードを持たない。
+    test('投稿単位の登録の数を読む', () {
+      final filter = parseMastodonFilter({
+        'id': '1',
+        'title': 't',
+        'context': ['home'],
+        'filter_action': 'warn',
+        'keywords': <Object>[],
+        'statuses': [
+          {'id': 's1', 'status_id': '100'},
+          {'id': 's2', 'status_id': '101'},
+        ],
+      });
+      expect(filter.keywords, isEmpty);
+      expect(filter.statusCount, 2);
+    });
+
     test('期限切れの判定', () {
       final filter = parseMastodonFilter({
         'id': '1',
@@ -76,6 +117,20 @@ void main() {
       expect(body['title'], 'ネタバレ');
       expect(body['context'], unorderedEquals(['home', 'thread']));
       expect(body['filter_action'], 'hide');
+    });
+
+    test('⚠⚠ 知らない適用先と動作は送り返す（#1293）', () {
+      final body = mastodonFilterBody(
+        const FilterDraft(
+          title: 't',
+          contexts: {FilterContext.home},
+          action: FilterAction.warn,
+          unknownContexts: ['quotes'],
+          rawAction: 'shout',
+        ),
+      );
+      expect(body['context'], unorderedEquals(['home', 'quotes']));
+      expect(body['filter_action'], 'shout');
     });
 
     // ⚠⚠ 期限は 3 通り。取り違えると、編集のたびに期限が消える / 付く。

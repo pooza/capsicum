@@ -26,6 +26,11 @@ class _WordMuteScreenState extends ConsumerState<WordMuteScreen> {
   final _hard = TextEditingController();
   String _savedSoft = '';
   String _savedHard = '';
+
+  /// 読み込んだときの一覧。⚠ 保存のとき、触っていない行は元の要素のまま送る
+  /// （[parseWordMuteText] の `original`・#1293）。
+  List<Object> _loadedSoft = const [];
+  List<Object> _loadedHard = const [];
   bool _loading = true;
   bool _loadFailed = false;
   bool _saving = false;
@@ -55,6 +60,8 @@ class _WordMuteScreenState extends ConsumerState<WordMuteScreen> {
     try {
       final mutes = await support.getWordMutes();
       if (!mounted || loadingFor != _loadedFor) return;
+      _loadedSoft = mutes.soft;
+      _loadedHard = mutes.hard;
       _savedSoft = formatWordMuteText(mutes.soft);
       _savedHard = formatWordMuteText(mutes.hard);
       _soft.text = _savedSoft;
@@ -79,6 +86,9 @@ class _WordMuteScreenState extends ConsumerState<WordMuteScreen> {
   Future<void> _save() async {
     final support = _support;
     if (support == null || _saving) return;
+    // ⚠ 失敗の記録に使うアカウントは、保存を始めた時点で取る。await のあいだに
+    // アカウントを切り替えられると、`_account` は切替後になる (#1293)。
+    final account = _account;
     final messenger = ScaffoldMessenger.of(context);
     final softChanged = _soft.text != _savedSoft;
     final hardChanged = _hard.text != _savedHard;
@@ -86,8 +96,8 @@ class _WordMuteScreenState extends ConsumerState<WordMuteScreen> {
       Navigator.of(context).maybePop();
       return;
     }
-    final soft = parseWordMuteText(_soft.text);
-    final hard = parseWordMuteText(_hard.text);
+    final soft = parseWordMuteText(_soft.text, original: _loadedSoft);
+    final hard = parseWordMuteText(_hard.text, original: _loadedHard);
     final invalid = soft.invalidLine != null
         ? 'ワードミュートの ${soft.invalidLine} 行目の正規表現が読めません'
         : hard.invalidLine != null
@@ -118,7 +128,7 @@ class _WordMuteScreenState extends ConsumerState<WordMuteScreen> {
           operation: 'save',
           error: e,
           stackTrace: st,
-          account: _account,
+          account: account,
         );
       }
       if (!mounted) return;
@@ -146,6 +156,11 @@ class _WordMuteScreenState extends ConsumerState<WordMuteScreen> {
       _loadedFor = accountKey;
       _support = adapter is WordMuteSupport ? adapter as WordMuteSupport : null;
       _account = ref.read(currentAccountProvider);
+      // ⚠ 読み込みは次のフレームで始まるので、ここで読み込み中にしておく。
+      // しないと切替直後の 1 フレームだけ、前のアカウントの文面のまま保存
+      // ボタンが出る (#1293)。build の中なので setState は要らない。
+      _loading = true;
+      _loadFailed = false;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _load();
       });
@@ -196,6 +211,7 @@ class _WordMuteScreenState extends ConsumerState<WordMuteScreen> {
                       title: 'ワードミュート',
                       description: '指定した語句を含む投稿を畳みます。タップすると読めます。',
                       controller: _soft,
+                      loaded: _loadedSoft,
                     ),
                     const SizedBox(height: 24),
                     _section(
@@ -203,6 +219,7 @@ class _WordMuteScreenState extends ConsumerState<WordMuteScreen> {
                       title: 'ハードワードミュート',
                       description: '指定した語句を含む投稿を、一覧から消します。',
                       controller: _hard,
+                      loaded: _loadedHard,
                     ),
                     const SizedBox(height: 16),
                     Text(
@@ -221,28 +238,46 @@ class _WordMuteScreenState extends ConsumerState<WordMuteScreen> {
     required String title,
     required String description,
     required TextEditingController controller,
-  }) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Text(
-        title,
-        style: theme.textTheme.titleSmall?.copyWith(
-          color: theme.colorScheme.primary,
+    required List<Object> loaded,
+  }) {
+    // ⚠ サーバーと Web では効くが、capsicum の判定からは外れる行 (#1293)。
+    // 黙って外れると「capsicum でだけ伏せられない」理由が分からないので出す。
+    final unreadable = [
+      for (final line in unreadableWordMuteLines(loaded)) loaded[line - 1],
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: theme.textTheme.titleSmall?.copyWith(
+            color: theme.colorScheme.primary,
+          ),
         ),
-      ),
-      const SizedBox(height: 4),
-      Text(description, style: theme.textTheme.bodySmall),
-      const SizedBox(height: 8),
-      TextField(
-        controller: controller,
-        minLines: 4,
-        maxLines: 12,
-        keyboardType: TextInputType.multiline,
-        decoration: InputDecoration(
-          border: const OutlineInputBorder(),
-          hintText: title,
+        const SizedBox(height: 4),
+        Text(description, style: theme.textTheme.bodySmall),
+        const SizedBox(height: 8),
+        TextField(
+          controller: controller,
+          minLines: 4,
+          maxLines: 12,
+          keyboardType: TextInputType.multiline,
+          decoration: InputDecoration(
+            border: const OutlineInputBorder(),
+            hintText: title,
+          ),
         ),
-      ),
-    ],
-  );
+        if (unreadable.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(
+            '次の正規表現は capsicum では判定に使えません（サーバーと Web では効きます）: '
+            '${unreadable.join('、')}',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.error,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
 }

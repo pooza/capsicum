@@ -75,11 +75,10 @@ void main() {
 
     // ⚠ Swift が返す値と Dart の受け口がずれると、理由は黙って捨てられる
     // （上のテストは Dart 側しか見ていない）。ソースを突き合わせる。
-    test('⚠⚠ macOS のネイティブが返す理由は、すべて Dart が受け取る値', () {
-      final swift = File(
-        'macos/Runner/NowPlayingPlugin.swift',
-      ).readAsStringSync();
-      final returned = {
+    // ⚠ 以前は macOS だけを見ていた。iOS も同じ値を返すので両方を見る (#1293)。
+    Set<String> returnedBy(String path) {
+      final swift = File(path).readAsStringSync();
+      return {
         ...RegExp(
           r'\.skipped\("([a-z_]+)"\)',
         ).allMatches(swift).map((m) => m.group(1)!),
@@ -87,9 +86,27 @@ void main() {
           r'map\["artworkSkipped"\] = "([a-z_]+)"',
         ).allMatches(swift).map((m) => m.group(1)!),
       };
+    }
 
-      expect(returned, isNotEmpty, reason: '走査が空振りしていない');
-      expect(returned, kNowPlayingArtworkSkipReasons);
+    test('⚠⚠ iOS / macOS のネイティブが返す理由は、すべて Dart が受け取る値', () {
+      final macos = returnedBy('macos/Runner/NowPlayingPlugin.swift');
+      final ios = returnedBy('ios/Runner/NowPlayingPlugin.swift');
+
+      expect(macos, isNotEmpty, reason: '走査が空振りしていない（macOS）');
+      expect(ios, isNotEmpty, reason: '走査が空振りしていない（iOS）');
+      expect(
+        kNowPlayingArtworkSkipReasons.containsAll(macos.union(ios)),
+        isTrue,
+        reason:
+            'Dart が受け取らない値を返している: '
+            '${macos.union(ios).difference(kNowPlayingArtworkSkipReasons)}',
+      );
+      expect(
+        macos.union(ios),
+        kNowPlayingArtworkSkipReasons,
+        reason: 'どのネイティブも返さない値が受け口に残っている',
+      );
+      expect(ios, contains('read_failed'));
     });
 
     test('sourceAppName が無ければ Apple Music を既定にする', () {

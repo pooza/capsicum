@@ -68,6 +68,7 @@ class MastodonCapabilities extends AdapterCapabilities {
     TimelineType.home,
     TimelineType.local,
     TimelineType.federated,
+    TimelineType.remote,
     TimelineType.directMessages,
   };
 
@@ -120,6 +121,8 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         RepostMuteSupport,
         // 引用の一覧 (#1072)。Misskey には無いので Mastodon adapter だけが持つ。
         QuoteSupport,
+        // サーバー側の投稿の既定 (#1210)。Misskey には今回は作らない。
+        PostingDefaultsSupport,
         AnnouncementSupport,
         AnnouncementReactionSupport,
         FollowSupport,
@@ -242,6 +245,8 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       TimelineType.home,
       if (localEnabled) TimelineType.local,
       if (federatedEnabled) TimelineType.federated,
+      // リモートのみは連合と同じ設定（`live_feeds.remote`）に従う (#1278)。
+      if (federatedEnabled) TimelineType.remote,
       TimelineType.directMessages,
     };
   }
@@ -518,6 +523,12 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         limit: query?.limit,
       ),
       TimelineType.federated => await client.getPublicTimeline(
+        maxId: query?.maxId,
+        sinceId: query?.sinceId,
+        limit: query?.limit,
+      ),
+      TimelineType.remote => await client.getPublicTimeline(
+        remote: true,
         maxId: query?.maxId,
         sinceId: query?.sinceId,
         limit: query?.limit,
@@ -1815,9 +1826,9 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   }) {
     // 同じキーの前の購読だけを閉じる。他のキーには触らない (#1090)。
     _streamings.remove(key)?.dispose();
-    // 対応するストリームが無いタブ (DM / チャンネル / AND 指定のタグ) では
+    // 対応するストリームが無いタブ (DM / チャンネル) では
     // 接続そのものを作らない。'user' へ落とすと別の TL を隠れ購読する (#793)。
-    if (mastodonStreamTarget(tab) == null) return const Stream.empty();
+    if (!mastodonCanStream(tab)) return const Stream.empty();
     final token = client.accessToken;
     if (token == null) return const Stream.empty();
     final streaming = MastodonStreaming(
@@ -1904,6 +1915,8 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     bool removeHeader = false,
     bool? locked,
     bool? discoverable,
+    String? avatarDescription,
+    String? headerDescription,
   }) async {
     var account = await client.updateCredentials(
       displayName: displayName,
@@ -1915,6 +1928,8 @@ class MastodonAdapter extends DecentralizedBackendAdapter
           .toList(),
       locked: locked,
       discoverable: discoverable,
+      avatarDescription: avatarDescription,
+      headerDescription: headerDescription,
     );
     // 画像削除は update_credentials では表現できないため 4.6 の destroy
     // エンドポイントで行い、最新の account を返す（#736）。差し替えとは排他。
@@ -1955,6 +1970,35 @@ class MastodonAdapter extends DecentralizedBackendAdapter
 
   @override
   bool get supportsProfileImageRemoval => true;
+
+  /// 削除（[supportsProfileImageRemoval]）と同じく 4.6 の口。古いサーバーは
+  /// 知らない項目を permit で読み捨てるので、送っても害は無い (#1210)。
+  @override
+  bool get supportsProfileImageDescription => true;
+
+  /// Mastodon の `Account::Avatar` / `Header` の `MAX_DESCRIPTION_LENGTH`（定数で、
+  /// 運用者は変えられない）。超えると `update_credentials` 全体が 422 になり、
+  /// 表示名や画像の差し替えまで巻き添えで保存されない。
+  @override
+  int get maxProfileImageDescriptionLength => 150;
+
+  // PostingDefaultsSupport (#1210)
+
+  @override
+  Future<User> updatePostingDefaults({
+    PostScope? scope,
+    bool? sensitive,
+    String? language,
+    String? quotePolicy,
+  }) async {
+    final account = await client.updateCredentials(
+      sourcePrivacy: scope == null ? null : mastodonVisibilityFromScope(scope),
+      sourceSensitive: sensitive,
+      sourceLanguage: language,
+      sourceQuotePolicy: quotePolicy,
+    );
+    return account.toCapsicum(host, adminRoleIds: _adminRoleIds);
+  }
 
   // ReportSupport
 

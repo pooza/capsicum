@@ -2,9 +2,11 @@ import 'package:capsicum_core/capsicum_core.dart';
 
 /// `api/v2/filters` の Filter を読む (#1047)。
 ///
-/// - `filter_action` は `warn` / `hide` / `blur`。知らない値は warn
-/// - 知らない `context` は読み捨てる
-/// - `keywords` は index / show / create / update が返す（`rules_requested`）
+/// - `filter_action` は `warn` / `hide` / `blur`。知らない値は warn として読み、
+///   生の値を [ServerFilter.unknownAction] に残す
+/// - 知らない `context` は [ServerFilter.unknownContexts] に残す。⚠ 読み捨てると、
+///   編集して保存したときにサーバー側から消える (#1293)
+/// - `keywords` / `statuses` は index / show / create / update が返す（`rules_requested`）
 ServerFilter parseMastodonFilter(Map<String, dynamic> json) => ServerFilter(
   id: json['id'].toString(),
   title: json['title'] as String? ?? '',
@@ -12,11 +14,20 @@ ServerFilter parseMastodonFilter(Map<String, dynamic> json) => ServerFilter(
     for (final name in (json['context'] as List? ?? const []))
       if (name is String) ?FilterContext.fromName(name),
   },
+  unknownContexts: [
+    for (final name in (json['context'] as List? ?? const []))
+      if (name is String && FilterContext.fromName(name) == null) name,
+  ],
   action: switch (json['filter_action']) {
     'hide' => FilterAction.hide,
     'blur' => FilterAction.blur,
     _ => FilterAction.warn,
   },
+  unknownAction: switch (json['filter_action']) {
+    'warn' || 'hide' || 'blur' || null => null,
+    final Object value => value.toString(),
+  },
+  statusCount: (json['statuses'] as List?)?.length ?? 0,
   expiresAt: switch (json['expires_at']) {
     final String value => DateTime.tryParse(value),
     _ => null,
@@ -44,8 +55,11 @@ ServerFilter parseMastodonFilter(Map<String, dynamic> json) => ServerFilter(
 /// 状態を残さないため。
 Map<String, dynamic> mastodonFilterBody(FilterDraft draft) => {
   'title': draft.title,
-  'context': [for (final context in draft.contexts) context.name],
-  'filter_action': draft.action.name,
+  'context': [
+    for (final context in draft.contexts) context.name,
+    ...draft.unknownContexts,
+  ],
+  'filter_action': draft.rawAction ?? draft.action.name,
   ...switch (draft.expiry) {
     KeepFilterExpiry() => const <String, dynamic>{},
     NoFilterExpiry() => const {'expires_in': ''},

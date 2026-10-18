@@ -158,7 +158,7 @@ claude plugin install ginseng@ginseng-style
 ## Issue 管理
 
 - GitHub Issues + Milestones で管理（モロヘイヤと同じ体系）
-- **優先度のラベルは無い。**P1〜P3 はリリース前レビューと Codex の指摘に付ける分類で、Issue の優先度はマイルストーン（どの枠に入れるか）で表す。ラベルは種別（`bug` / `enhancement` / `documentation`）・対象（`Mastodon` / `Misskey` / `モロヘイヤ` / `desktop` / `flutter`）・状態（`on-hold` / `reproduction-needed` / `verification-pending`）・端末（`Windows` / `Linux`）の 4 系統
+- **優先度のラベルは無い。**P1〜P3 はリリース前レビューと Codex の指摘に付ける分類で、Issue の優先度はマイルストーン（どの枠に入れるか）で表す。ラベルは種別（`bug` / `enhancement` / `documentation`）・対象（`Mastodon` / `Misskey` / `モロヘイヤ` / `desktop` / `flutter`）・状態（`on-hold` / `reproduction-needed` / `verification-pending` / `observing`）・端末（`Windows` / `Linux`）の 4 系統
 - 1 マイルストーンの規模は「大更新の数」で測る（件数ではなく）。詳細は[マイルストーン運用](#マイルストーン運用)節を参照
 
 ### 正本ルール
@@ -323,11 +323,9 @@ dart analyze --fatal-infos > /tmp/analyze.log 2>&1; echo "ANALYZE_EXIT=$?"
 
 [GitHub Milestones](https://github.com/pooza/capsicum/milestones) が正本。各マイルストーンの概要・スコープはマイルストーンの description に記載し、CLAUDE.md には複写しない。個別 Issue の一覧・ステータスも同様。
 
-最新リリース: **v2.2.0**（2026-10-12 タグ、build 201、リリース PR [#1270](https://github.com/pooza/capsicum/pull/1270)、merge `958ccdc1`）。**大更新は [#1209](https://github.com/pooza/capsicum/issues/1209)（タグ TL の「いずれかを含む」「含まない」）の 1 件 — タイムラインを静かに保つ道具と、デッキの使い勝手の回**（会話のミュート [#1208](https://github.com/pooza/capsicum/issues/1208)・ブースト / リノートのミュート [#1245](https://github.com/pooza/capsicum/issues/1245)・デッキのドロワーとカラムのロック [#1272](https://github.com/pooza/capsicum/issues/1272) / [#1271](https://github.com/pooza/capsicum/issues/1271)・macOS のミュージックアプリからのアートワーク [#1273](https://github.com/pooza/capsicum/issues/1273)・デスクトップ通知の拾い直し [#1261](https://github.com/pooza/capsicum/issues/1261)・Flutter 3.47.7 [#1200](https://github.com/pooza/capsicum/issues/1200)）。**公開状況（2026-10-13 実測）**: Android は production 201 が `completed` / Linux AppImage は [GitHub Release v2.2.0](https://github.com/pooza/capsicum/releases/tag/v2.2.0)（Latest） / iOS / macOS は公開済み（`READY_FOR_SALE`） / Windows は公開済み（ストアが `2.2.201.0` を返す）＝ **全 5 プラットフォームで公開済み**。⚠ macOS は、審査待ちのままだった 2.1.0 を pooza が取り下げ、2.2.0 に差し替えた（＝ **macOS の 2.1.0 は公開されていない**。手順は `store-release` スキルの `submit-promote.md`「審査待ちの版を取り下げて、次の版に差し替える」）。relay の [v2.2](https://github.com/pooza/capsicum-relay/milestone/15) は残り 0 件（Ruby 4.0.7 を両機へデプロイ・待ちの 3 件は [v2.3](https://github.com/pooza/capsicum-relay/milestone/16) へ送った）。
+最新リリース: **v2.3.0**（2026-10-16 タグ、build 204、リリース PR [#1285](https://github.com/pooza/capsicum/pull/1285)、merge `c8807541`）。**大更新は [#1047](https://github.com/pooza/capsicum/issues/1047)（フィルター / ワードミュートの管理画面）の 1 件 — 3 本に分けた**（[#1289](https://github.com/pooza/capsicum/issues/1289) Mastodon のフィルターを適用先で効かせる・#1047 Mastodon の管理画面・[#1290](https://github.com/pooza/capsicum/issues/1290) Misskey のワードミュートの管理画面）。ほかに「すべての通知」のアカウントごとの既読 [#1291](https://github.com/pooza/capsicum/issues/1291)・実況を隠すモードの続き読み [#1292](https://github.com/pooza/capsicum/issues/1292)・デッキのドロワーのアカウント追従 [#1286](https://github.com/pooza/capsicum/issues/1286)・リストの設定 [#1211](https://github.com/pooza/capsicum/issues/1211)・予約の時刻変更 [#1212](https://github.com/pooza/capsicum/issues/1212)・引用の撤回 [#1213](https://github.com/pooza/capsicum/issues/1213)・ナウプレの iOS のジャケット [#1275](https://github.com/pooza/capsicum/issues/1275) / macOS の Spotify [#1276](https://github.com/pooza/capsicum/issues/1276)。**公開状況**: **全 5 プラットフォームで公開済み**（Linux は 10-16 に [GitHub Release v2.3.0](https://github.com/pooza/capsicum/releases/tag/v2.3.0)・Android / Windows は 10-16・macOS は 10-17・iOS は 10-17 に公開。Android 以降は pooza の確認）。⚠ **Play の API の `status=completed` は「トラックへの配置が済んだ」で、審査を通ったことではない**（公開の判定に使わない）。⚠⚠ **Misskey のワードミュートが大文字と小文字を区別するようになった**（本家に揃えた・いままで伏せていた投稿が出る）ので、リリースノートの冒頭に注意書きを置いた。ストア掲載文の機能一覧にフィルター / ワードミュートを 1 行足した（4 ストア）。relay の [v2.3](https://github.com/pooza/capsicum-relay/milestone/16) は残り 0 件（relay#105 プリセット特例の和集合を本番まで出した）。
 
-⚠ **リリース前レビュー（5 観点 + Codex）は赤 0 件。**黄のうちこの枠の差分に起因するものは `6b98f7b1` で直してからビルドした。送り分は [#1282](https://github.com/pooza/capsicum/issues/1282)（デスクトップの OS 通知が CW を見ていない・v2.1 以前から）と [#1283](https://github.com/pooza/capsicum/issues/1283)（小粒の消化 Issue）。⚠ **Codex の締めの 1 回をビルドのあとに回したので、そこで付いた P2（タグ TL の最初の読み込みの上限）は取り込めず #1283 へ送った** —— 締めはビルドの前に打つ（`store-release` スキル §4.0）。
-
-⚠ **内部ベータで確かめたのは pooza の普段遣いの範囲。**macOS のサンドボックス下でミュージックアプリからジャケットが取れることは、デバッグ版（サンドボックス無効）での確認にとどまる。「付かない」という報告が来たら、Sentry の breadcrumb（`compose.nowplaying` の `artwork: …`）で段を切り分ける。
+⚠ **リリース前レビューは 2 回（5 観点 + 差分）と Codex で赤 0 件。**黄は全部直してからビルドした（`2f713a7e`〜`b3ff7317`）。送り分は [#1293](https://github.com/pooza/capsicum/issues/1293)（v2.4）。⚠ **build 204 は内部ベータを挟まずに提出した**（修正は Dart だけでテストで押さえた・pooza 判断）。
 
 過去リリースの詳細ログは [archive/release-log.md](archive/release-log.md) に退避した（正本は [GitHub Releases](https://github.com/pooza/capsicum/releases) / Milestones）。マイルストーン移行時のログトリム手順は [milestone-transition スキル](../.claude/skills/milestone-transition/SKILL.md) の step 7。
 
@@ -365,6 +363,10 @@ dart analyze --fatal-infos > /tmp/analyze.log 2>&1; echo "ANALYZE_EXIT=$?"
 - **`verification-pending` は「実装は済んでいて、動作確認だけが残っている」の目印**（2026-10-01 新設）。⚠ **`reproduction-needed` と逆向き** —— あちらは情報が足りず**着手しない**側、こちらは**出来上がっていて見るだけ**の側。**手が空いたときにまとめて消化する**ための札なので、`gh issue list --label verification-pending` で引けること自体が目的。⚠ **動作確認が済んだら、ラベルを外すのではなく Issue を close する**（close し忘れるとラベルだけが残って数が合わなくなる）。⚠⚠ **`gh issue list --label` は検索インデックス経由で数十秒遅れる** —— 付けた直後に数えるなら `gh api 'repos/pooza/capsicum/issues?labels=verification-pending&state=open'` を使う
   - **付ける側の基準**: UI レイアウト / タップ挙動 / 画面遷移・設定画面の追加のように、**アプリを触れば分かるもの**。⚠ **検証困難なもの（race / fork 依存 / 認証エラーの類別 / 再現条件が薄いもの）には付けない** —— あれらは**動作確認なしで close してよい**側（修正コミットの hash を添えて閉じ、再発は Sentry で観察する）なので、札を付けると**永久に消えないキュー**になる
   - **実機が要るものは端末ラベルと併用する**（例: #1190 は `verification-pending` + `Windows`）。⚠ **`verification-pending` 単独なら「手元の Mac で見られる」**と読めるようにしておく
+- **`observing` は「実装は済んでいて、本番の値が閉じる条件を満たすのを待っている」の目印**（2026-10-18 新設・capsicum / relay 共通）。例: 修正を入れた端末が次に起動して登録が通るか（relay#101）、counter の水準を見て切り替えの時期を決める（relay#91）、最初の返金で状態が追随するか（relay#63）。⚠ **`verification-pending` と分ける** —— あちらは **pooza が手で触って確かめる**札、こちらは**同期のたびに Claude が測る**札。⚠ **`on-hold` にしない**（on-hold は確認そのものが忘れられる）
+  - **付けるときは、閉じる条件と測り方を Issue に書く**（測るコマンド・見る値・「満たした / 満たしていない / まだ分からない」の読み分け）。書いていないものには付けない
+  - **マイルストーンに載せたまま持ち越す。**移行時に条件を満たしていなければ次の枠へ移す（[milestone-transition](../.claude/skills/milestone-transition/SKILL.md) の 1.）。⚠ **枠の目安（大更新 0〜1 + 小中 5〜12）の件数には数えない**・**進捗報告でも作業の残件と分けて書く**（作業が残っているように見せない）
+  - 条件を満たしたら、測った値を添えて close する
 - Flutter framework 由来の不具合（capsicum 側で根治不能なもの、`flutter` ラベル付き）は [flutter-upstream-watch.md](flutter-upstream-watch.md) で集中管理し、**月初のセッションで手動 chase** して上流の進捗を巡回する。⚠ **クラウドの schedule routine は 2026-08-21 に廃止した**（4 か月連続で発火しても成果コミットが 1 件も残らず、実務はローカル頼みだった）。**資格情報の満了チェックがこの巡回に相乗りしている**点に注意
 
 ### 実装しない機能

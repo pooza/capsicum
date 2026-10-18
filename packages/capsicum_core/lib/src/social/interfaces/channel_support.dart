@@ -4,6 +4,12 @@ import '../../model/timeline_query.dart';
 
 abstract mixin class ChannelSupport {
   Future<List<Channel>> getFollowedChannels();
+
+  /// チャンネルを 1 件取る (#1296)。
+  ///
+  /// フォローしていないチャンネル（投稿から開いたデッキのカラム等）は
+  /// [getFollowedChannels] に無いので、名前を引き直すときはこちらを使う。
+  Future<Channel> getChannel(String channelId);
   Future<List<Post>> getChannelTimeline(
     String channelId, {
     TimelineQuery? query,

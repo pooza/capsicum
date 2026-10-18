@@ -40,6 +40,11 @@ class _FilterEditScreenState extends ConsumerState<FilterEditScreen> {
   late Set<FilterContext> _contexts;
   late FilterAction _action;
 
+  /// 動作を画面で選び直したか（PR #1303 の締めの Codex P2）。⚠ 値の比較では
+  /// 分からない —— 知らない値（`shout` など）は `warn` として出すので、利用者が
+  /// 改めて「警告」を選んでも元の値と同じに見え、知らない値を送り返してしまう。
+  var _actionEdited = false;
+
   /// [filterExpiryChoices] の添字。⚠ **-1 は「変えない」**（編集で期限が付いて
   /// いるときだけ選べる）。
   late int _expiryIndex;
@@ -101,10 +106,15 @@ class _FilterEditScreenState extends ConsumerState<FilterEditScreen> {
         FilterKeyword(id: row.id, keyword: text, wholeWord: row.wholeWord),
       );
     }
+    final filter = widget.filter;
     return FilterDraft(
       title: _title.text.trim(),
       contexts: _contexts,
       action: _action,
+      // ⚠ capsicum が知らない値は送り返す（読み捨てると保存のたびに消える・
+      // #1293）。動作は、画面で変えていなければ元の値のまま。
+      unknownContexts: filter?.unknownContexts ?? const [],
+      rawAction: _actionEdited ? null : filter?.unknownAction,
       expiry: switch (_expiryIndex) {
         -1 => const KeepFilterExpiry(),
         _ => switch (filterExpiryChoices[_expiryIndex].$2) {
@@ -119,8 +129,15 @@ class _FilterEditScreenState extends ConsumerState<FilterEditScreen> {
 
   String? _validate(FilterDraft draft) {
     if (draft.title.isEmpty) return '名前を入れてください';
-    if (draft.contexts.isEmpty) return '適用先を 1 つ以上選んでください';
-    if (draft.keywords.isEmpty) return 'キーワードを 1 つ以上入れてください';
+    if (draft.contexts.isEmpty && draft.unknownContexts.isEmpty) {
+      return '適用先を 1 つ以上選んでください';
+    }
+    // ⚠ 投稿単位のフィルター（Web の「この投稿をフィルター」）はキーワードを
+    // 持たない。名前や期限を変えられるように、投稿があれば通す (#1293)。
+    final hasStatuses = (widget.filter?.statusCount ?? 0) > 0;
+    if (draft.keywords.isEmpty && !hasStatuses) {
+      return 'キーワードを 1 つ以上入れてください';
+    }
     return null;
   }
 
@@ -244,7 +261,7 @@ class _FilterEditScreenState extends ConsumerState<FilterEditScreen> {
                 child: TextField(
                   controller: _title,
                   decoration: const InputDecoration(labelText: '名前'),
-                  maxLength: 256,
+                  maxLength: kFilterTitleMaxLength,
                 ),
               ),
               _SectionHeader('キーワード'),
@@ -275,7 +292,11 @@ class _FilterEditScreenState extends ConsumerState<FilterEditScreen> {
               RadioGroup<FilterAction>(
                 groupValue: _action,
                 onChanged: (value) {
-                  if (value != null) setState(() => _action = value);
+                  if (value == null) return;
+                  setState(() {
+                    _action = value;
+                    _actionEdited = true;
+                  });
                 },
                 child: Column(
                   children: [
@@ -335,7 +356,7 @@ class _FilterEditScreenState extends ConsumerState<FilterEditScreen> {
           child: TextField(
             controller: row.controller,
             decoration: const InputDecoration(hintText: 'キーワード'),
-            maxLength: 512,
+            maxLength: kFilterKeywordMaxLength,
           ),
         ),
         const SizedBox(width: 8),

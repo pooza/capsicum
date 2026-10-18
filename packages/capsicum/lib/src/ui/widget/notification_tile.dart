@@ -30,6 +30,7 @@ import 'content_parser.dart';
 import 'cross_account_boost.dart';
 import 'emoji_action_sheet.dart';
 import 'emoji_text.dart';
+import 'filter_notice_row.dart';
 import 'post_touch_action_row.dart';
 import 'reaction_picker_sheet.dart';
 import 'stacked_avatars.dart';
@@ -245,22 +246,7 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
                   _buildHeader(context, label),
                   if (content != null && contentFiltered) ...[
                     const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.filter_alt_outlined,
-                          size: 16,
-                          color: theme.textTheme.bodySmall?.color,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'フィルター: ${filterVerdict.title ?? "非表示"}',
-                            style: theme.textTheme.bodySmall,
-                          ),
-                        ),
-                      ],
-                    ),
+                    FilterNoticeRow(verdict: filterVerdict),
                   ] else if (content != null) ...[
                     const SizedBox(height: 4),
                     Text.rich(

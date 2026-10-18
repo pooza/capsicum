@@ -86,7 +86,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(await result, isNull);
-      expect(find.text('5分以上先の日時を指定してください'), findsOneWidget);
+      expect(find.text('5 分以上先の日時を指定してください'), findsOneWidget);
     });
 
     testWidgets('⚠⚠ 1 年より先の予約でも開ける（ほかのクライアントで作った予約）', (tester) async {

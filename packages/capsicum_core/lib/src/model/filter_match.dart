@@ -37,7 +37,19 @@ class FilterMatch {
   /// 適用先の概念が無い）。空集合は「どこにも適用しない」。
   final Set<FilterContext>? contexts;
 
-  const FilterMatch({required this.action, this.title, this.contexts});
+  /// Misskey のワードミュートか（Mastodon のフィルターなら false）。
+  ///
+  /// ⚠ 畳んだタイルの文言を SNS の本来の用語に揃えるため（Mastodon は
+  /// 「フィルター: …」、Misskey は「ワードミュート」・`docs/filter-management-plan.md`
+  /// 決定済み事項 4・#1293）。
+  final bool wordMute;
+
+  const FilterMatch({
+    required this.action,
+    this.title,
+    this.contexts,
+    this.wordMute = false,
+  });
 
   bool appliesTo(FilterContext? context) =>
       context == null || contexts == null || contexts!.contains(context);
@@ -51,7 +63,14 @@ class FilterVerdict {
   /// タイトルが 1 つも無ければ null。
   final String? title;
 
-  const FilterVerdict({required this.action, this.title});
+  /// 採ったものが**すべて** Misskey のワードミュートか（[FilterMatch.wordMute]）。
+  final bool wordMute;
+
+  const FilterVerdict({
+    required this.action,
+    this.title,
+    this.wordMute = false,
+  });
 }
 
 /// [matches] を [context] の画面について解決する。当たらなければ null。
@@ -88,5 +107,6 @@ FilterVerdict? resolveFilterMatches(
   return FilterVerdict(
     action: action,
     title: titles.isEmpty ? null : titles.join('、'),
+    wordMute: applied.every((m) => m.wordMute),
   );
 }

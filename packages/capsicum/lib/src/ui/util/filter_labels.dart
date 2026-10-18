@@ -15,7 +15,10 @@ String filterContextLabel(FilterContext context) => switch (context) {
 String filterContextHint(FilterContext context) => switch (context) {
   FilterContext.home => 'ホーム・リスト・ブックマーク・お気に入り',
   FilterContext.notifications => 'メンション・引用などの通知',
-  FilterContext.public => 'ローカル・連合・ハッシュタグ・検索',
+  // ⚠ DM も public に対応させている（Mastodon Web の `utils/filters.ts` と
+  // 同じ・`filterContextForTimeline`）。フィルターは Mastodon だけなので表記も
+  // Mastodon の「非公開の返信」(#1293)。
+  FilterContext.public => 'ローカル・連合・ハッシュタグ・検索・非公開の返信',
   FilterContext.thread => '投稿の詳細',
   FilterContext.account => 'ユーザーのプロフィールの投稿',
 };
@@ -31,6 +34,23 @@ String filterActionHint(FilterAction action) => switch (action) {
   FilterAction.hide => '一覧から消す。投稿の詳細などでは畳んで出す',
   FilterAction.blur => '本文は見せ、画像や動画だけをぼかす',
 };
+
+/// 投稿を畳んだ行に出す文言 (#1293)。
+///
+/// ⚠ **SNS の本来の用語に揃える**（`docs/filter-management-plan.md` 決定済み
+/// 事項 4）。Mastodon は「フィルター: 名前」、Misskey は題（「ワードミュート」
+/// 「ハードワードミュート」）だけ —— Misskey に「フィルター」の語は無い。
+///
+/// ⚠ 投稿・通知・「すべての通知」の 3 か所がここを通る。文言を直すのはここだけ。
+String filterNoticeLabel(FilterVerdict verdict) => verdict.wordMute
+    ? verdict.title ?? 'ワードミュート'
+    : 'フィルター: ${verdict.title ?? "非表示"}';
+
+/// フィルターの名前の上限（Mastodon の `CustomFilter` の検証と同じ）。
+const kFilterTitleMaxLength = 256;
+
+/// フィルターのキーワードの上限（Mastodon の `CustomFilterKeyword` の検証と同じ）。
+const kFilterKeywordMaxLength = 512;
 
 /// 期限の選択肢。Mastodon Web と同じ刻み（`CustomFilter::EXPIRATION_DURATIONS`）。
 const filterExpiryChoices = <(String, Duration?)>[

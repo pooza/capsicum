@@ -161,6 +161,8 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
     // ⚠ フレームの後（provider の書き換えなので `_shiftMountedDecks` と同じ理由）。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      // 通知から起動してデッキで始まった回は、ここで宛先を受ける (#1295)。
+      _consumePendingNotifications();
       _menuActions.state = DeckMenuActions(
         revealAndFocus: _revealAndFocus,
         openCompose: _openComposeForFocused,
@@ -266,6 +268,46 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _reveal(opened.id));
   }
 
+  /// 通知のタップで送られてきた宛先を受ける (#1295)。⚠ 受けたら下ろす。
+  ///
+  /// ⚠ provider の書き換えなので、フレームの後で呼ぶ（initState・listen から）。
+  void _consumePendingNotifications() {
+    if (!mounted) return;
+    final target = ref.read(pendingDeckNotificationsProvider);
+    if (target == null) return;
+    ref.read(pendingDeckNotificationsProvider.notifier).state = null;
+    unawaited(_openNotificationsFor(target));
+  }
+
+  /// [account] の通知をカラムで見せる (#1295・2026-10-18 pooza 判断)。
+  ///
+  /// 1. そのアカウントの通知カラムがあれば、そこへ送って点滅させる
+  /// 2. 無くて「すべての通知」のカラムがあれば、そこへ（宛先も含まれているので、
+  ///    別に 1 本足して列を汚さない）
+  /// 3. どちらも無ければ、フォーカス中のカラムの右隣に通知カラムを足す
+  ///
+  /// 1 と 3 は [DeckColumnsNotifier.insertAfter] の重複排除（#1182）がまとめて
+  /// 受ける。
+  Future<void> _openNotificationsFor(AccountKey account) async {
+    final columns = ref.read(deckColumnsProvider);
+    final own = columns.any(
+      (c) => c.tab is NotificationsTab && c.account == account,
+    );
+    final all = columns.where((c) => c.tab is AllNotificationsTab).firstOrNull;
+    if (!own && all != null) {
+      _revealAndFocus(all.id);
+      return;
+    }
+    final afterId =
+        ref.read(deckFocusProvider).columnId ?? columns.lastOrNull?.id ?? '';
+    final opened = await ref
+        .read(deckColumnsProvider.notifier)
+        .insertAfter(afterId, account, const NotificationsTab());
+    if (!mounted) return;
+    ref.read(deckFocusProvider.notifier).focusAndBlink(opened.id);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _reveal(opened.id));
+  }
+
   /// [columnId] まで横に送り、フォーカスを移す（表示 > カラム・#1170）。
   ///
   /// ⚠ 点滅させるのは、選んだのに画面がほとんど動かない（既に見えている）場合に
@@ -311,7 +353,11 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
       scaffold.openDrawer();
       return;
     }
-    ref.read(accountManagerProvider.notifier).switchAccount(account);
+    // ⚠ 未読の印は消さない (#1293)。ドロワーを開いただけで、利用者はまだ
+    // そのアカウントの通知を見ていない。
+    ref
+        .read(accountManagerProvider.notifier)
+        .switchAccount(account, clearUnread: false);
     // ⚠ 組み替えのフレームが済んでから開く。同じフレームで開くと、ドロワーの
     // 頭と項目が切り替える前のアカウントで組まれる。
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -558,6 +604,13 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // デッキを開いたまま通知をタップした回 (#1295)。⚠ 書き換えはフレームの後。
+    ref.listen<AccountKey?>(pendingDeckNotificationsProvider, (_, next) {
+      if (next == null) return;
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _consumePendingNotifications(),
+      );
+    });
     final currentKey = ref.watch(currentAccountKeyProvider);
     // ⚠⚠ **アカウントをまたぐカラム（「すべての通知」）は、現在のアカウントで
     // 動かす** (#1259)。保存されているアカウントは見ない —— 開いたときの

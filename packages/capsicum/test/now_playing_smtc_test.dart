@@ -68,6 +68,64 @@ void main() {
       expect(info!.sourceAppName, '');
     });
 
+    group('ジャケット (#1274)', () {
+      test('artworkPath（Windows の絶対パス）を file:// にする', () {
+        const path =
+            r'C:\Users\u\AppData\Local\Temp\nowplaying_native_0123456789abcdef'
+            r'\nowplaying-artwork.jpg';
+        final info = nowPlayingFromSmtcMetadata({
+          'title': 'Song',
+          'artworkPath': path,
+        });
+        expect(info!.artworkUrl, Uri.file(path, windows: true));
+        expect(info.artworkUrl!.scheme, 'file');
+        expect(info.artworkUrl!.toFilePath(windows: true), path);
+        expect(info.artworkSkipReason, isNull);
+      });
+
+      test('相対パス・UNC・POSIX の形・空は捨てる', () {
+        for (final path in [
+          r'nowplaying-artwork.jpg',
+          r'\\server\share\nowplaying-artwork.jpg',
+          '/tmp/nowplaying-artwork.jpg',
+          '   ',
+        ]) {
+          final info = nowPlayingFromSmtcMetadata({
+            'title': 'Song',
+            'artworkPath': path,
+          });
+          expect(info!.artworkUrl, isNull, reason: path);
+        }
+      });
+
+      test('artworkPath が無ければ artworkUrl は null（従来どおり）', () {
+        final info = nowPlayingFromSmtcMetadata({'title': 'Song'});
+        expect(info!.artworkUrl, isNull);
+        expect(info.artworkSkipReason, isNull);
+      });
+
+      test('書き出さなかった理由は、知っている値だけを通す', () {
+        for (final reason in [
+          'no_artwork',
+          'read_failed',
+          'unsupported_format',
+          'too_large',
+          'write_failed',
+        ]) {
+          final info = nowPlayingFromSmtcMetadata({
+            'title': 'Song',
+            'artworkSkipped': reason,
+          });
+          expect(info!.artworkSkipReason, reason);
+        }
+        final unknown = nowPlayingFromSmtcMetadata({
+          'title': 'Song',
+          'artworkSkipped': r'C:\secret\path',
+        });
+        expect(unknown!.artworkSkipReason, isNull);
+      });
+    });
+
     test('想定外の型（数値）の title は無視', () {
       final info = nowPlayingFromSmtcMetadata({
         'title': 123,

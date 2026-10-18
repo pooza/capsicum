@@ -9,6 +9,7 @@ import '../../provider/chat_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../util/oauth_scope_error.dart';
 import '../util/chat_error.dart';
+import '../util/chat_message_jump.dart';
 import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
 import '../util/op_error.dart';
@@ -20,6 +21,7 @@ import '../widget/content_parser.dart';
 import '../widget/oauth_scope_error_view.dart';
 import '../widget/retry_error_view.dart';
 import '../widget/user_avatar.dart';
+import 'chat_message_search_screen.dart';
 import 'chat_room_edit_screen.dart';
 
 enum _RoomMenuAction { members, toggleMute, edit, leave, delete }
@@ -37,8 +39,8 @@ class ChatRoomTimelineScreen extends ConsumerStatefulWidget {
       _ChatRoomTimelineScreenState();
 }
 
-class _ChatRoomTimelineScreenState
-    extends ConsumerState<ChatRoomTimelineScreen> {
+class _ChatRoomTimelineScreenState extends ConsumerState<ChatRoomTimelineScreen>
+    with ChatMessageJump {
   final _scrollController = ScrollController();
   final _textController = TextEditingController();
   bool _sending = false;
@@ -61,7 +63,37 @@ class _ChatRoomTimelineScreenState
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _textController.dispose();
+    disposeChatJump();
     super.dispose();
+  }
+
+  /// このルームのメッセージを検索し、選んだものの位置へ移る (#1188)。
+  /// ⚠ アダプタをこの画面のスコープから渡す理由は [ChatMessageSearchScreen]。
+  Future<void> _openSearch() async {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! ChatSupport) return;
+    final provider = chatRoomTimelineProvider(widget.room.id);
+    final id = await Navigator.of(context).push<String>(
+      MaterialPageRoute(
+        builder: (_) => ChatMessageSearchScreen(
+          support: adapter as ChatSupport,
+          title: _room.name,
+          roomId: widget.room.id,
+          account: ref.accountForReport,
+        ),
+      ),
+    );
+    if (id == null || !mounted) return;
+    final found = await jumpToMessage(
+      id: id,
+      controller: _scrollController,
+      read: () => ref.read(provider).valueOrNull,
+      loadMore: () => ref.read(provider.notifier).loadMore(),
+    );
+    if (found || !mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('このメッセージまで遡れませんでした')));
   }
 
   void _onScroll() {
@@ -355,6 +387,12 @@ class _ChatRoomTimelineScreenState
         ),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
+          if (adapter is ChatSupport)
+            IconButton(
+              icon: const Icon(Icons.search),
+              tooltip: 'メッセージを検索',
+              onPressed: _openSearch,
+            ),
           if (_room.isMuted)
             IconButton(
               icon: const Icon(Icons.notifications_off),
@@ -498,13 +536,16 @@ class _ChatRoomTimelineScreenState
                 final message = data.messages[index];
                 final isMine =
                     myUserId != null && message.fromUser.id == myUserId;
-                return _RoomMessageBubble(
-                  message: message,
-                  isMine: isMine,
-                  myUserId: myUserId,
-                  onLongPress: () => _showActions(message, isMine),
-                  onToggleReaction: (reaction) =>
-                      _toggleReaction(message.id, reaction),
+                return wrapForJump(
+                  message.id,
+                  _RoomMessageBubble(
+                    message: message,
+                    isMine: isMine,
+                    myUserId: myUserId,
+                    onLongPress: () => _showActions(message, isMine),
+                    onToggleReaction: (reaction) =>
+                        _toggleReaction(message.id, reaction),
+                  ),
                 );
               },
             ),

@@ -154,6 +154,8 @@ Uri? _httpsUri(Object? value) {
 /// iOS / macOS の `NowPlayingPlugin.swift` が返す値と揃える（どちらも返す）。
 const kNowPlayingArtworkSkipReasons = {
   'no_artwork',
+  // iOS: 曲のファイルの埋め込みを読み出せず、OS の画像も無かった (#1293)。
+  'read_failed',
   'unsupported_format',
   'too_large',
   'write_failed',

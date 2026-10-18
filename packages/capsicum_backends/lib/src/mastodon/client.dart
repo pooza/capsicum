@@ -1320,6 +1320,7 @@ class MastodonClient {
   /// GET /api/v1/timelines/public
   Future<List<MastodonStatus>> getPublicTimeline({
     bool? local,
+    bool? remote,
     String? maxId,
     String? sinceId,
     int? limit,
@@ -1328,6 +1329,7 @@ class MastodonClient {
       '/api/v1/timelines/public',
       queryParameters: {
         'local': ?local,
+        'remote': ?remote,
         'max_id': ?maxId,
         'since_id': ?sinceId,
         'limit': ?limit,
@@ -1570,6 +1572,12 @@ class MastodonClient {
     List<Map<String, String>>? fieldsAttributes,
     bool? locked,
     bool? discoverable,
+    String? avatarDescription,
+    String? headerDescription,
+    String? sourcePrivacy,
+    bool? sourceSensitive,
+    String? sourceLanguage,
+    String? sourceQuotePolicy,
   }) async {
     Future<FormData> buildFormData() async {
       final map = <String, dynamic>{};
@@ -1579,6 +1587,23 @@ class MastodonClient {
       // 「変更しない」でキー自体を送らない (#865)。
       if (locked != null) map['locked'] = locked.toString();
       if (discoverable != null) map['discoverable'] = discoverable.toString();
+      // アイコン・ヘッダーの ALT と、投稿の既定 (#1210)。⚠ 投稿の既定は
+      // `source[...]` の入れ子。上流は送らなかった項目を今の値のまま残す
+      // （`source_params.fetch(:privacy, 今の値)`）。
+      if (avatarDescription != null) {
+        map['avatar_description'] = avatarDescription;
+      }
+      if (headerDescription != null) {
+        map['header_description'] = headerDescription;
+      }
+      if (sourcePrivacy != null) map['source[privacy]'] = sourcePrivacy;
+      if (sourceSensitive != null) {
+        map['source[sensitive]'] = sourceSensitive.toString();
+      }
+      if (sourceLanguage != null) map['source[language]'] = sourceLanguage;
+      if (sourceQuotePolicy != null) {
+        map['source[quote_policy]'] = sourceQuotePolicy;
+      }
       if (avatarPath != null) {
         map['avatar'] = await MultipartFile.fromFile(avatarPath);
       }

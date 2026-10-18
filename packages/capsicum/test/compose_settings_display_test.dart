@@ -176,12 +176,30 @@ void main() {
     // ⚠ 上の比較は、投稿画面が共有の表を使っていることが前提。画面が自前の
     // 表を持ち直すと、上は緑のまま、画面の表と短縮の表がずれうる（集約の再発は
     // 「壊れること」ではなく「使わなくなること」として現れる）。
+    // ⚠ 以前は別名の行（`_quoteApprovalLabels = quoteApprovalLabels`）を見ていた。
+    // 別名をやめたので、共有の表を直接参照していることを見る (#1293)。
     test('⚠⚠ 投稿画面は共有の表を使っている（自前の表へ戻っていない）', () {
       expect(redefinesQuoteApprovalLabels(masked), isFalse);
       expect(
-        masked,
-        contains('_quoteApprovalLabels = quoteApprovalLabels'),
+        usesSharedQuoteApprovalLabels(masked),
+        isTrue,
         reason: '投稿画面が共有の表を参照していない',
+      );
+    });
+
+    test('⚠ 共有の表の参照の判定に合成ソースを食わせる', () {
+      expect(
+        usesSharedQuoteApprovalLabels('quoteApprovalLabels.containsKey(p)'),
+        isTrue,
+      );
+      expect(
+        usesSharedQuoteApprovalLabels('_quoteApprovalLabels.containsKey(p)'),
+        isFalse,
+        reason: '自前の表（_ 付き）は共有の表ではない',
+      );
+      expect(
+        usesSharedQuoteApprovalLabels('composeQuoteApprovalShortLabels[p]'),
+        isFalse,
       );
     });
 
@@ -213,6 +231,10 @@ void main() {
     });
   });
 }
+
+/// 共有の表 `quoteApprovalLabels` を直接参照しているか（`_` 付きや別名は除く）。
+bool usesSharedQuoteApprovalLabels(String masked) =>
+    RegExp(r'(?<![\w$])quoteApprovalLabels\b').hasMatch(masked);
 
 /// `…QuoteApprovalLabels` という名前の表を、その場で定義し直しているか。
 bool redefinesQuoteApprovalLabels(String masked) =>

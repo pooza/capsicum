@@ -317,6 +317,11 @@ extension CapsicumMisskeyDriveFileExtension on MisskeyDriveFile {
       previewUrl: thumbnailUrl,
       description: comment,
       name: name,
+      // ⚠ avgColor を先に見る（サーバーが画像から取った色）。無ければ blurhash の
+      // 平均色 (#1186)。
+      placeholderColor:
+          cssRgbColor(properties?['avgColor'] as String?) ??
+          blurhashAverageColor(blurhash),
     );
   }
 }

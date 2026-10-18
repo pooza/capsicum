@@ -115,7 +115,12 @@ class _FilterListScreenState extends ConsumerState<FilterListScreen> {
                   return RefreshIndicator(
                     onRefresh: () async {
                       _reload(support);
-                      await _filters;
+                      // ⚠ 失敗は [_load] が報告し、FutureBuilder が画面に出す。
+                      // ここで投げ直すと onRefresh の外へ漏れ、未処理エラーとして
+                      // もう 1 度送られる (#1293)。
+                      try {
+                        await _filters;
+                      } catch (_) {}
                     },
                     child: filters.isEmpty
                         ? ListView(

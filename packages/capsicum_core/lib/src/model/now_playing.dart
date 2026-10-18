@@ -18,9 +18,9 @@ class NowPlayingInfo {
   /// アルバム名。
   final String? album;
 
-  /// アートワーク。MPRIS / SMTC は byte stream を返すため、Uri 化できる源
-  /// のみ非 null。v1.33 では投稿添付はせず、モデルにフィールドだけ用意する
-  /// （添付 UX は将来検討。design §アートワーク）。
+  /// アートワーク。投稿フォームが自動で添付する (#1133)。`http(s)` の URL か、
+  /// ネイティブが一時ファイルへ書き出した絵の `file://`（macOS / iOS は
+  /// #1273 / #1275、Windows の SMTC は #1274）。源が持っていなければ null。
   final Uri? artworkUrl;
 
   /// 取得元アプリ名（"Spotify" / "VLC" / "Rhythmbox" 等）。表示・整形に使う。

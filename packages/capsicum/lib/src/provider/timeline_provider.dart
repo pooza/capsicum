@@ -158,6 +158,7 @@ FilterContext filterContextForTimeline(TimelineType type) => switch (type) {
   TimelineType.local ||
   TimelineType.social ||
   TimelineType.federated ||
+  TimelineType.remote ||
   TimelineType.directMessages => FilterContext.public,
 };
 
@@ -170,6 +171,8 @@ bool ownPostAppearsInTimeline(TimelineType type, Post post) {
       return post.scope == PostScope.public;
     case TimelineType.federated:
       return post.scope == PostScope.public && !post.localOnly;
+    // 自分の投稿はこのサーバーのものなので、リモートのみには出ない (#1278)。
+    case TimelineType.remote:
     case TimelineType.directMessages:
       return false;
   }
@@ -190,8 +193,9 @@ const int kMaxEmptyOlderPages = 5;
 /// ページ取得上限に達したことを Sentry breadcrumb に残す (#601 2 回目レビュー追従)。
 /// 「全件フィルタで空一覧になる」ユーザー報告を後から切り分けるための観測ライン。
 /// 同じ category を本線（build / fetchUntilVisible / loadMore）と、[OlderCursorPaging] の
-/// 続き読み（`hashtag.loadMore` / `list.loadMore` / `channel.loadMore`・#1292）で共有する。
-void _recordPageCapHit({
+/// 続き読み（`hashtag.loadMore` / `list.loadMore` / `channel.loadMore`・#1292）、
+/// 通知（`notification` / `notification.loadMore`・#1293）で共有する。
+void recordPageCapHit({
   required String site,
   required int visibleCollected,
   required bool hasMore,
@@ -557,7 +561,7 @@ Future<TimelineState> fetchUntilVisible({
   final pageCapHit =
       fetches >= kMaxVisibilityPageFetches && allVisible.isEmpty && hasMore;
   if (pageCapHit) {
-    _recordPageCapHit(
+    recordPageCapHit(
       site: 'fetchUntilVisible',
       visibleCollected: 0,
       hasMore: true,
@@ -685,6 +689,21 @@ mixin TimelineListMutations<Arg>
 ///   次の続き読みで間の投稿が抜ける
 /// - 上限まで引いても見える投稿が出なかったら `pageCapHit` を立て、Sentry に
 ///   残す（末尾の「さらに古い投稿を探す」の合図）
+///
+/// ## 集約で引き継いだ守り（`docs/CLAUDE.md`「集約するときの注意」・#1293）
+///
+/// 3 本がそれぞれ持っていたもの。⚠ **ここを書き換えるときに落とさない。**
+/// - **重複除去**（#909）: 既に一覧にある投稿は足さない。ページ境界の重複を
+///   そのまま足すと Duplicate keys で描画ごと落ちる
+/// - **再試行と `loadMoreError`**（#678）: [loadMoreMaxRetries] 回まで間を置いて
+///   引き直し、最後まで落ちたら `loadMoreError` を立てる。画面はこれを見て
+///   自動の続き読みを止める（リトライの嵐を防ぐ）
+/// - **Sentry の site**: 最終失敗は `site`（`hashtag.loadMore` など）を Hint に
+///   載せて送る。どの続き読みで落ちたかを分けるため
+///
+/// ⚠ 3 つの provider がこれに委譲していることは
+/// `older_cursor_paging_delegation_guard_test.dart` が見ている（自前の続き読みへ
+/// 戻ると、ここを直しても黙って効かなくなる）。
 mixin OlderCursorPaging<Arg>
     on
         AutoDisposeFamilyAsyncNotifier<TimelineState, Arg>,
@@ -746,7 +765,7 @@ mixin OlderCursorPaging<Arg>
 
         final pageCapHit = older.isEmpty && hasMore;
         if (pageCapHit) {
-          _recordPageCapHit(
+          recordPageCapHit(
             site: site,
             visibleCollected: 0,
             hasMore: true,
@@ -1655,7 +1674,7 @@ class TimelineNotifier
     final pageCapHit =
         fetches >= kMaxVisibilityPageFetches && allVisible.isEmpty && hasMore;
     if (pageCapHit) {
-      _recordPageCapHit(site: 'build', visibleCollected: 0, hasMore: true);
+      recordPageCapHit(site: 'build', visibleCollected: 0, hasMore: true);
     }
 
     // ここから先は副作用（streaming 接続・キャッシュ保存・enrich）に入る。以前は
@@ -2265,6 +2284,12 @@ class TimelineNotifier
       }
     }
 
+    // ⚠ 待っている間に build() がやり直された（引っ張って更新・文脈の切替）なら
+    // 書かない —— 新しい一覧の起点を、古い一覧の末尾で上書きしてしまう。
+    void advanceOlderCursor(String? maxId) {
+      if (generation == _buildGeneration) _olderCursor = maxId;
+    }
+
     for (var attempt = 0; attempt <= loadMoreMaxRetries; attempt++) {
       try {
         final adapter = _adapterFor(ref.read(currentAccountProvider));
@@ -2305,7 +2330,10 @@ class TimelineNotifier
               // Server had data but all conversions failed; advance cursor.
               hasMore = response.rawCount > 0;
               maxId = rawLast;
-              if (hasMore) continue;
+              if (hasMore) {
+                advanceOlderCursor(maxId);
+                continue;
+              }
             }
             hasMore = false;
             break;
@@ -2323,6 +2351,11 @@ class TimelineNotifier
 
           // Stop when visible posts are found or the server has no more data.
           if (allVisible.isNotEmpty || !hasMore) break;
+          // ⚠ 次のページへ進む前に起点を書く (#1293)。ここへ来るのは、このページに
+          // 見える投稿が 1 件も無かったときだけなので、飛ばしても失うものは無い。
+          // 書かないと、途中のページで失敗したときの再試行が 1 枚目から引き直す
+          // （[OlderCursorPaging] はページごとに進めている）。
+          advanceOlderCursor(maxId);
         }
 
         final pageCapHit =
@@ -2330,17 +2363,15 @@ class TimelineNotifier
             allVisible.isEmpty &&
             hasMore;
         if (pageCapHit) {
-          _recordPageCapHit(
+          recordPageCapHit(
             site: 'loadMore',
             visibleCollected: 0,
             hasMore: true,
           );
         }
 
-        // 次の続き読みは、ここまで引いた消す前の末尾から (#1292)。⚠ 待っている
-        // 間に build() がやり直された（引っ張って更新・文脈の切替）なら書かない
-        // —— 新しい一覧の起点を、古い一覧の末尾で上書きしてしまう。
-        if (generation == _buildGeneration) _olderCursor = maxId;
+        // 次の続き読みは、ここまで引いた消す前の末尾から (#1292)。
+        advanceOlderCursor(maxId);
 
         final enrichedMore = await _isCatEnricher.enrichPosts(allVisible);
         // ⚠⚠ 待っている間に build() がやり直されたら、古い一覧のページを新しい

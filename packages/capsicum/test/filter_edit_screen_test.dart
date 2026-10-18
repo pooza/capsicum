@@ -1,5 +1,6 @@
 import 'package:capsicum/src/provider/account_manager_provider.dart';
 import 'package:capsicum/src/ui/screen/filter_edit_screen.dart';
+import 'package:capsicum/src/ui/util/filter_labels.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -170,6 +171,57 @@ void main() {
       isA<KeepFilterExpiry>(),
       reason: '既定で「無期限」を送ると、編集のたびに期限が消える',
     );
+  });
+
+  group('知らない動作（PR #1303 の締めの Codex P2）', () {
+    const shout = ServerFilter(
+      id: '12',
+      title: 'ネタバレ',
+      contexts: {FilterContext.home},
+      action: FilterAction.warn,
+      unknownAction: 'shout',
+      keywords: [FilterKeyword(id: '3', keyword: 'ダイ')],
+    );
+
+    testWidgets('触らなければ、知らない動作を送り返す', (tester) async {
+      final adapter = _FakeAdapter();
+      await _pump(tester, adapter, filter: shout);
+
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+
+      expect(adapter.updated!.draft.rawAction, 'shout');
+    });
+
+    testWidgets('⚠⚠ 選び直して「警告付きで隠す」へ戻しても、選んだ動作を送る', (tester) async {
+      final adapter = _FakeAdapter();
+      await _pump(tester, adapter, filter: shout);
+
+      final hide = find.text(filterActionLabel(FilterAction.hide));
+      final warn = find.text(filterActionLabel(FilterAction.warn));
+      await tester.scrollUntilVisible(
+        hide,
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(hide);
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        warn,
+        -200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(warn);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+
+      final draft = adapter.updated!.draft;
+      expect(draft.action, FilterAction.warn);
+      expect(draft.rawAction, isNull, reason: '値の比較では元と同じに見える');
+    });
   });
 
   testWidgets('削除は確認してから消す', (tester) async {

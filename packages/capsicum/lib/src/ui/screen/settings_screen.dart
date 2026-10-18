@@ -56,6 +56,16 @@ class SettingsScreen extends ConsumerWidget {
               trailing: const Icon(Icons.chevron_right),
               onTap: () => context.push('/settings/moderation'),
             ),
+            // サーバー側の投稿の既定 (#1210・Mastodon)。投稿フォームはこれを
+            // 読んで使うので、端末側に別の既定は無い。
+            if (ref.watch(currentAdapterProvider) is PostingDefaultsSupport)
+              ListTile(
+                leading: const Icon(Icons.edit_note),
+                title: const Text('投稿の既定'),
+                subtitle: const Text('公開範囲・閲覧注意・言語・引用の許可'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => context.push('/settings/posting-defaults'),
+              ),
             // フィルター (#1047)。⚠ **名前は SNS の本来の用語**（Mastodon は
             // 「フィルター」・2026-10-15 pooza 判断）。Misskey のワードミュートは
             // #1290 で同じ位置に出す。

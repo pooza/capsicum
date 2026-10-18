@@ -154,8 +154,7 @@ Future<XFile?> _download(Uri uri, Directory tempDir, Dio dio) async {
   // ⚠ **一意にするのはディレクトリの側。**`XFile.name` は IO ではパスの末尾から
   // 決まる（引数の `name` は使われない）ので、ファイル名に時刻を混ぜると、
   // それがそのまま投稿先のファイル名になる。
-  final path =
-      '${tempDir.path}/nowplaying_${DateTime.now().microsecondsSinceEpoch}/$name';
+  final path = _uniqueArtworkPath(tempDir, name);
   final out = File(path);
   // macOS の一時ディレクトリは実体が未作成のことがあり、writeAsBytes は
   // 親ディレクトリを作らないため明示的に作成する。
@@ -184,10 +183,22 @@ Future<XFile?> _local(Uri uri, Directory tempDir) async {
   // では使われない・#1267）。そのまま渡すと、プレイヤーのキャッシュの名前
   // （ハッシュ等）が投稿先のファイル名になる。意図した名前の場所へ写す。
   final name = 'nowplaying-artwork.$extension';
-  if (path.endsWith('/$name')) return XFile(path, mimeType: mime);
-  final copied =
-      '${tempDir.path}/nowplaying_${DateTime.now().microsecondsSinceEpoch}/$name';
+  if (path.endsWith('${Platform.pathSeparator}$name')) {
+    return XFile(path, mimeType: mime);
+  }
+  final copied = _uniqueArtworkPath(tempDir, name);
   await File(copied).create(recursive: true);
   await file.copy(copied);
   return XFile(copied, mimeType: mime);
+}
+
+/// [tempDir] の下に、呼ぶたびに違うディレクトリを切って [name] を置くパス。
+///
+/// ⚠⚠ **区切りは `Platform.pathSeparator` で組む**（#1274）。`XFile.name` は
+/// その OS の区切りでパスの末尾を取るので、Windows で `/` を混ぜると
+/// `nowplaying_<時刻>/nowplaying-artwork.jpg` がそのまま投稿先のファイル名になる。
+String _uniqueArtworkPath(Directory tempDir, String name) {
+  final sep = Platform.pathSeparator;
+  return '${tempDir.path}$sep'
+      'nowplaying_${DateTime.now().microsecondsSinceEpoch}$sep$name';
 }

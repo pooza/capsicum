@@ -147,3 +147,36 @@ final followedChannelsProvider = FutureProvider<List<Channel>>((ref) async {
   if (adapter is! ChannelSupport) return const [];
   return (adapter as ChannelSupport).getFollowedChannels();
 }, dependencies: [currentAdapterProvider]);
+
+/// チャンネル 1 件 (#1296)。フォロー中の一覧に無いチャンネルの名前を引くため。
+///
+/// ⚠ 失敗はエラーのまま持つ（読む側は `valueOrNull` で ID に戻す）。消えた
+/// チャンネルも ID の表示になる。
+final channelProvider = FutureProvider.autoDispose.family<Channel?, String>((
+  ref,
+  id,
+) async {
+  final adapter = ref.watch(currentAdapterProvider);
+  if (adapter is! ChannelSupport) return null;
+  return (adapter as ChannelSupport).getChannel(id);
+}, dependencies: [currentAdapterProvider]);
+
+/// チャンネルのタブ / カラムに出す名前 (#1296)。
+///
+/// `name` → フォロー中の一覧 → 1 件取得 → ID の順で引く。
+///
+/// ⚠⚠ **`ChannelTab.name` は null のことが多い。**デッキのカラムは
+/// `toIdentityKey`（`channel:<id>`）で保存するので、読み戻すと必ず null になる。
+/// タブ UI も、名前なしで一度保存されると `==` が ID だけで比べるので、名前つきに
+/// 置き換わらない。以前は `name ?? id` で、どちらも ID が出ていた。
+///
+/// ⚠ 1 件取得は、フォロー中の一覧が**引けたうえで見当たらない**ときだけ行う
+/// （一覧の取得中に全カラムぶん取りに行かない）。一覧が失敗しているときも行う。
+String channelTabLabel(WidgetRef ref, String id, String? name) {
+  if (name != null) return name;
+  final followed = ref.watch(followedChannelsProvider);
+  if (followed.isLoading && !followed.hasValue) return id;
+  final hit = followed.valueOrNull?.where((c) => c.id == id).firstOrNull;
+  if (hit != null) return hit.name;
+  return ref.watch(channelProvider(id)).valueOrNull?.name ?? id;
+}

@@ -11,8 +11,11 @@ import '../../provider/preferences_provider.dart';
 import '../../url_helper.dart';
 import '../../util/exception_scrub.dart';
 import '../util/deck_navigation.dart';
+import '../util/notification_type_display.dart'
+    show contentWarningFallbackLabel;
 import '../util/provider_scope_carrier.dart';
 import '../util/scroll_thresholds.dart';
+import '../util/sensitive_media.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/emoji_text.dart';
 
@@ -317,7 +320,10 @@ class MediaCatalogThumbnail extends StatelessWidget {
       // 見せるときに no-op の filter を被せない（post_tile と同じ・#491）。
       if (hidden) {
         image = ImageFiltered(
-          imageFilter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+          imageFilter: ImageFilter.blur(
+            sigmaX: kSensitiveMediaBlurSigma,
+            sigmaY: kSensitiveMediaBlurSigma,
+          ),
           child: image,
         );
       }
@@ -357,7 +363,7 @@ class MediaCatalogThumbnail extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      item.spoilerText ?? '閲覧注意',
+                      item.spoilerText ?? contentWarningFallbackLabel,
                       style: const TextStyle(
                         color: Colors.white70,
                         fontSize: 12,

@@ -79,8 +79,15 @@ final class NowPlayingPlugin {
     if let artist = item.artist { map["artist"] = artist }
     if let album = item.albumTitle { map["albumTitle"] = album }
     if map.isEmpty { return nil }
-    guard let data = await artworkData(of: item), !data.isEmpty else {
-      map["artworkSkipped"] = "no_artwork"
+    let (artwork, readFailed) = await artworkData(of: item)
+    guard let data = artwork, !data.isEmpty else {
+      // ⚠ 本当に絵が無い曲と、埋め込みの読み出しに失敗した曲を分ける (#1293)。
+      // 以前は `try?` で失敗が no_artwork に丸まっていた。
+      if readFailed {
+        map["artworkSkipped"] = "read_failed"
+      } else {
+        map["artworkSkipped"] = "no_artwork"
+      }
       return map
     }
     switch writeArtwork(data) {
@@ -105,23 +112,33 @@ final class NowPlayingPlugin {
   /// 縮小・変換と重ねない）には触れない —— **縮小せず**、バイト列を得る手段が
   /// 他に無いから符号化するだけ。大きさの上限（10MB）と形式の判定は 1 と同じく
   /// [writeArtwork] が見る。
-  private static func artworkData(of item: MPMediaItem) async -> Data? {
+  ///
+  /// `readFailed` は、1 の読み出しが例外で落ちたか (#1293)。2 で絵が取れれば
+  /// 使われない（取れなかったときに「無い」と「読めなかった」を分けるため）。
+  private static func artworkData(of item: MPMediaItem) async -> (
+    data: Data?, readFailed: Bool
+  ) {
+    var readFailed = false
     if let url = item.assetURL {
       let asset = AVURLAsset(url: url)
-      if let metadata = try? await asset.load(.commonMetadata) {
+      do {
+        let metadata = try await asset.load(.commonMetadata)
         let artwork = AVMetadataItem.metadataItems(
           from: metadata, filteredByIdentifier: .commonIdentifierArtwork)
-        if let first = artwork.first, let data = try? await first.load(.dataValue) {
-          return data
+        if let first = artwork.first, let data = try await first.load(.dataValue) {
+          return (data, false)
         }
+      } catch {
+        readFailed = true
       }
     }
-    return await MainActor.run {
+    let image: Data? = await MainActor.run {
       guard let artwork = item.artwork else { return nil }
       let size = artwork.bounds.size
       guard size.width > 0, size.height > 0 else { return nil }
       return artwork.image(at: size)?.jpegData(compressionQuality: 0.9)
     }
+    return (image, readFailed)
   }
 
   // ⚠ 以下の書き出しと掃除は macOS（`macos/Runner/NowPlayingPlugin.swift`・#1273 /

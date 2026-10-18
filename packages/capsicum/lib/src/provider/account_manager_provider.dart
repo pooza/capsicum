@@ -117,6 +117,23 @@ Duration offlineRetryDelay(int attempt) => attempt < kOfflineRetryRampUp.length
 /// 回線が無い）だったときのコストが、そのまま起動の遅延になる。
 const kInitialProbeRetryDelay = Duration(milliseconds: 300);
 
+/// 起動時の復元で、1 アカウントの probe を待つ上限 (#1294)。
+///
+/// ⚠⚠ **[restoreSessions] は全アカウントの probe を待ってからスプラッシュを
+/// 抜ける。**1 本あたりの上限は接続 15 秒・受信 60 秒（`kAdapterReceiveTimeout`）
+/// なので、**接続は受けるが応答を返さないサーバーが 1 台でもあると、スプラッシュが
+/// 1 分以上回り続けた**（利用者にはハングと区別がつかない）。「断られた」「名前解決
+/// できない」は速く落ちてオフライン保持へ回るが、「繋がるが返さない」形だけが
+/// 受信タイムアウトまで全体を引きずっていた。
+///
+/// 締切を過ぎたアカウントは一時的な到達不能と同じ扱い（オフライン保持＋背景
+/// リトライ）にして、**復元できたアカウントで先にタイムラインを出す**。
+///
+/// 値の根拠: 正常な起動は 9 アカウントでも約 1.1 秒（2026-10-16 の Sentry）。
+/// 接続の上限（15 秒）より短くし、接続が遅いだけのサーバーも同じ扱いにする
+/// （背景リトライが 2 秒後から拾い直す）。
+const kRestoreStartupDeadline = Duration(seconds: 10);
+
 /// [newcomer] を先頭に置いた一覧を返す。⚠ **同じキーの既存 entry は落とす** (#1110)。
 ///
 /// ログイン済みのアカウントを「アカウントを追加」から足し直すと、落とさない限り
@@ -316,7 +333,12 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     );
   }
 
-  void switchAccount(Account account) {
+  /// [clearUnread] が false なら、切替先の未読の印を消さない。
+  ///
+  /// ⚠ デッキのドロワーを開くときの切り替え（#1286）がこれ。ドロワーを開いて
+  /// 閉じただけで未読の印が消えていた (#1293)。利用者がアカウントを選んだ
+  /// 切り替えは、従来どおり消す。
+  void switchAccount(Account account, {bool clearUnread = true}) {
     final reordered = [
       account,
       ...state.accounts.where((a) => a.key != account.key),
@@ -328,7 +350,11 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     storage.touchAccount(account.key.toStorageKey()).catchError((_) {});
 
     // Clear unread notification count for the account we're switching to.
-    BackgroundNotificationService.clearUnreadCount(account.key.toStorageKey());
+    if (clearUnread) {
+      BackgroundNotificationService.clearUnreadCount(
+        account.key.toStorageKey(),
+      );
+    }
 
     // Prefetch server metadata for badge display (non-blocking). Misskey
     // フォークの偽 Mastodon 互換版で name/icon が化けないよう型ヒントを渡す (#827)。
@@ -346,6 +372,16 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
         .map((a) => a.key == updated.key ? updated : a)
         .toList();
     state = state.copyWith(accounts: accounts, current: updated);
+  }
+
+  /// [key] がまだ現在のアカウントなら、[updateCurrentUser] する。
+  ///
+  /// ⚠ 画面の `ref` で現在のアカウントを確かめる形にしない（v2.4 リリース前
+  /// レビュー）。保存の応答を待つ間に画面が閉じられると、破棄済みの `ref` が
+  /// 例外を投げ、保存できたのに失敗として扱われる。
+  void updateCurrentUserIfCurrent(AccountKey? key, User user) {
+    if (key == null || state.current?.key != key) return;
+    updateCurrentUser(user);
   }
 
   Future<void> logout(Account account) async {
@@ -768,8 +804,26 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     // 全アカウントを同時に probe する (#716 段階2)。直列だと N アカウントで
     // probe 時間が累積していたのを、最長 1 アカウントぶんへ畳む。各 probe は
     // 例外を内部で分類して結果レコードに畳むため Future.wait は throw しない。
+    //
+    // ⚠⚠ **1 本ずつに締切を付ける** (#1294・[kRestoreStartupDeadline])。付けない
+    // と、応答しないサーバーが 1 台あるだけで全体が受信タイムアウトまで待つ。
+    // 締切を過ぎた probe は捨てる（走り続けるが結果は使わない）。拾い直すのは
+    // 背景リトライで、storage から secret を読み直して probe し直す。
     final results = await Future.wait(
-      entries.map((e) => _probeForRestore(e.keyStr, e.secrets)),
+      entries.map(
+        (e) => _probeForRestore(e.keyStr, e.secrets).timeout(
+          kRestoreStartupDeadline,
+          onTimeout: () {
+            debugPrint(
+              'capsicum: restoreSessions: ${sentrySafeAccountKey(e.keyStr)} '
+              'did not answer within ${kRestoreStartupDeadline.inSeconds}s; '
+              'kept offline and will retry in background',
+            );
+            _reportRestoreDeadlineOnce(e.keyStr);
+            return (account: null, outcome: RestoreOutcome.retriable);
+          },
+        ),
+      ),
     );
 
     // 完了順ではなく entries（＝MRU 順）の並びで結果を確定し、並び・current の
@@ -930,6 +984,8 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     String keyStr,
     Map<String, String> secrets,
   ) async {
+    final override = debugProbeAccountOverride;
+    if (override != null) return override(keyStr, secrets);
     final accountKey = AccountKey.fromStorageKey(keyStr);
     final adapter = await accountKey.type.createAdapter(accountKey.host);
 
@@ -1020,6 +1076,20 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
 
     await _persistNotificationLabels(account);
     await _syncWindowsPushLabels();
+
+    // ⚠⚠ **後から戻ったアカウントも、プッシュに登録し直す**（v2.4 リリース前
+    // レビュー）。起動時の登録（splash の `registerAllAccounts`）は、その時点で
+    // 戻っていたアカウントしか見ない。#1294 の締切で「遅いだけ」のサーバーも
+    // ここへ回るようになったので、デバイストークンが変わった起動と重なると、
+    // そのアカウントの通知がこのセッションの間ずっと止まる。⚠ 起動時の登録と
+    // 重なっても、`registerAccount` は進行中のものを重ねない（済んだ後なら
+    // 起動 1 回分の登録し直しと同じ）。⚠ プリセットの判定は届かないアカウントも
+    // 数える（[hasPresetAccountProvider]）。
+    unawaited(
+      PushRegistrationService.registerAccounts([
+        account,
+      ], eligible: ref.read(hasPresetAccountProvider)),
+    );
 
     // Prefetch server metadata for badge display (non-blocking). Misskey
     // フォークの偽 Mastodon 互換版で name/icon が化けないよう型ヒントを渡す (#827)。
@@ -1387,6 +1457,12 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
   @visibleForTesting
   static void resetReportedRestoreErrors() => _reportedRestoreErrors.clear();
 
+  /// テストで probe（アダプタの生成と `getMyself` 等）を差し替える (#1294)。
+  /// 応答しないサーバーを、ネットワークなしで作るため。
+  @visibleForTesting
+  static Future<Account> Function(String keyStr, Map<String, String> secrets)?
+  debugProbeAccountOverride;
+
   /// [removeOfflineAccount] が投げっぱなしにした端末側の掃除 (#1024)。
   ///
   /// ⚠⚠ **テストが完了を待つためだけに置いてある。**本番経路は待たない
@@ -1482,6 +1558,42 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
             scope.setTag('account_restore.key_parse', 'failed');
           }
           scope.fingerprint = ['account_restore', 'null_secret'];
+        },
+      );
+    } catch (_) {
+      // Sentry 自体が起動前 / 失敗するケースでも本筋を止めない。
+    }
+  }
+
+  /// 起動時の復元が締切（[kRestoreStartupDeadline]）までに返らなかった (#1294)。
+  ///
+  /// 「繋がるが返さない」サーバーの記録。⚠ **これだけでは不具合ではない**（締切で
+  /// 切ったので起動は進んでいる）。どのサーバーで出ているか・頻度を見るためのもの。
+  static void _reportRestoreDeadlineOnce(String accountKey) {
+    final dedupKey = '$accountKey:startup_deadline';
+    if (!_reportedRestoreErrors.add(dedupKey)) return;
+    try {
+      AccountKey? parsed;
+      try {
+        parsed = AccountKey.fromStorageKey(accountKey);
+      } catch (_) {
+        parsed = null;
+      }
+      Sentry.captureMessage(
+        'account_restore: no answer before startup deadline',
+        level: SentryLevel.warning,
+        withScope: (scope) {
+          scope.setTag('account_restore.path', 'startup_deadline');
+          if (parsed != null) {
+            scope.setTag('account_restore.host', parsed.host);
+            scope.setTag(
+              'account_restore.user_hash',
+              hashForSentryTag(parsed.username),
+            );
+          } else {
+            scope.setTag('account_restore.key_parse', 'failed');
+          }
+          scope.fingerprint = ['account_restore', 'startup_deadline'];
         },
       );
     } catch (_) {

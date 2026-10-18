@@ -8,6 +8,7 @@ import 'package:window_manager/window_manager.dart';
 import '../../model/account.dart';
 import '../../model/deck_column.dart';
 import '../../provider/account_manager_provider.dart';
+import '../../provider/channel_provider.dart';
 import '../../provider/deck_provider.dart';
 import '../../provider/hashtag_provider.dart';
 import '../../provider/list_provider.dart';
@@ -67,6 +68,10 @@ const timelineLabels = {
   TimelineType.local: 'ローカル',
   TimelineType.social: 'ソーシャル',
   TimelineType.federated: 'グローバル',
+  // Mastodon だけ (#1278)。本家の列設定の「リモートのみ表示」と、capsicum の
+  // 「連合」を合わせた語（本家の Web の「ほかのサーバー」は「連合」と並べると
+  // 何の一部か読めない）。
+  TimelineType.remote: '連合（リモートのみ）',
 };
 
 /// Mastodon uses "連合" instead of "グローバル".
@@ -93,7 +98,7 @@ String tabLabel(
     ListTab(:final id, :final name) =>
       name ?? allLists.where((l) => l.id == id).firstOrNull?.title ?? id,
     HashtagTab(:final tag) => hashtagSpecLabel(tag),
-    ChannelTab(:final id, :final name) => name ?? id,
+    ChannelTab(:final id, :final name) => channelTabLabel(ref, id, name),
     NotificationsTab() => '通知',
     AnnouncementsTab() => 'お知らせ',
     MessagesTab() => 'メッセージ',
@@ -111,7 +116,8 @@ String tabLabel(
 /// `tabLabel` が読む設定系 provider は**現在のアカウントのもの**になる。
 /// 別アカウントのリストのカラムは名前が引けず id になる —— 見出し（カラムの中は
 /// 正しいスコープ）とは食い違うが、**メニューの 1 行のために全アカウントのリストを
-/// 取りに行くほうが高い**ので、ここは割り切る。
+/// 取りに行くほうが高い**ので、ここは割り切る。チャンネルも同じで、別アカウントの
+/// カラムは現在のアカウントのサーバーへ引きに行って見つからず、id になる (#1296)。
 String deckColumnMenuLabel(
   WidgetRef ref,
   DeckColumn column,
