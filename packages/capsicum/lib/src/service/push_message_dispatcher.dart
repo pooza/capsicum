@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../ui/util/notification_type_display.dart';
+import '../util/chat_attachment_label.dart';
 import '../util/exception_scrub.dart';
 import '../util/sentry_tag_hash.dart';
 import 'notification_init.dart';
@@ -436,15 +437,8 @@ class PushMessageDispatcher {
     if (text != null && text.isNotEmpty) {
       content = text;
     } else if (fileMime != null) {
-      if (fileMime.startsWith('image/')) {
-        content = '[画像]';
-      } else if (fileMime.startsWith('video/')) {
-        content = '[動画]';
-      } else if (fileMime.startsWith('audio/')) {
-        content = '[音声]';
-      } else {
-        content = '[ファイル]';
-      }
+      // 表記の正本は chat_attachment_label.dart (#1304)。
+      content = chatAttachmentLabel(chatAttachmentTypeFromMime(fileMime));
     } else {
       content = '';
     }

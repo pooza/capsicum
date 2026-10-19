@@ -190,13 +190,11 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
       // ⚠ 名前なしで保存されたタブは一覧から引く (#1296)。この画面はフォロー中の
       // チャンネルしか出さないので、1 件取得は要らない。
       ChannelTab(:final name, :final id) =>
-        name ??
-            ref
-                .watch(followedChannelsProvider)
-                .valueOrNull
-                ?.where((c) => c.id == id)
-                .firstOrNull
-                ?.name ??
+        channelNameFromFollowed(
+              id,
+              name,
+              ref.watch(followedChannelsProvider).valueOrNull,
+            ) ??
             id,
       NotificationsTab() => '通知',
       AnnouncementsTab() => 'お知らせ',

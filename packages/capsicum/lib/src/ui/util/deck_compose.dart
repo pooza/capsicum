@@ -80,8 +80,7 @@ Map<String, dynamic> deckComposeExtra(
       'channelId': id,
       // ⚠ 読み戻したカラムの `name` は null（保存キーが [TabType.toIdentityKey]
       // なので表示名を含まない・決定済み事項 4-1）。
-      'channelName':
-          name ?? channels.where((c) => c.id == id).firstOrNull?.name,
+      'channelName': channelNameFromFollowed(id, name, channels),
     },
     _ => const <String, dynamic>{},
   };

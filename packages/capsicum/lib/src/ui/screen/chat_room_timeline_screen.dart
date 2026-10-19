@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/chat_provider.dart';
 import '../../provider/preferences_provider.dart';
+import '../../util/chat_attachment_label.dart';
 import '../../util/oauth_scope_error.dart';
 import '../util/chat_error.dart';
 import '../util/chat_message_jump.dart';
@@ -21,7 +22,6 @@ import '../widget/content_parser.dart';
 import '../widget/oauth_scope_error_view.dart';
 import '../widget/retry_error_view.dart';
 import '../widget/user_avatar.dart';
-import 'chat_message_search_screen.dart';
 import 'chat_room_edit_screen.dart';
 
 enum _RoomMenuAction { members, toggleMute, edit, leave, delete }
@@ -73,27 +73,15 @@ class _ChatRoomTimelineScreenState extends ConsumerState<ChatRoomTimelineScreen>
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! ChatSupport) return;
     final provider = chatRoomTimelineProvider(widget.room.id);
-    final id = await Navigator.of(context).push<String>(
-      MaterialPageRoute(
-        builder: (_) => ChatMessageSearchScreen(
-          support: adapter as ChatSupport,
-          title: _room.name,
-          roomId: widget.room.id,
-          account: ref.accountForReport,
-        ),
-      ),
-    );
-    if (id == null || !mounted) return;
-    final found = await jumpToMessage(
-      id: id,
+    await openChatSearchAndJump(
+      support: adapter as ChatSupport,
+      account: ref.accountForReport,
+      title: _room.name,
+      roomId: widget.room.id,
       controller: _scrollController,
       read: () => ref.read(provider).valueOrNull,
       loadMore: () => ref.read(provider.notifier).loadMore(),
     );
-    if (found || !mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('このメッセージまで遡れませんでした')));
   }
 
   void _onScroll() {
@@ -770,7 +758,10 @@ class _FilePreview extends StatelessWidget {
         const SizedBox(width: 4),
         Flexible(
           child: Text(
-            file.name?.isNotEmpty == true ? file.name! : '[ファイル]',
+            // 名前が無ければ種類の表記（正本は chat_attachment_label.dart・#1304）。
+            file.name?.isNotEmpty == true
+                ? file.name!
+                : chatAttachmentLabel(file.type),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
