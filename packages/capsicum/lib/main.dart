@@ -1332,8 +1332,17 @@ class _CapsicumAppState extends ConsumerState<CapsicumApp>
 
   void _navigateToCompose(String sharedText) {
     final context = rootNavigatorKey.currentContext;
-    if (context != null) {
-      GoRouter.of(context).go('/compose', extra: {'sharedText': sharedText});
+    if (context == null) return;
+    final router = GoRouter.of(context);
+    final extra = {'sharedText': sharedText};
+    // ⚠ ホームとデッキの上には積む。`go` で置き換えると、デッキを開いていた
+    // ときに /deck ごと消え、投稿の後もタブ表示に落ちる (#1319)。積んでおけば
+    // 投稿フォームは閉じる先を持つので、投稿の後はデッキへ戻る。判定は
+    // 通知タップの経路と同じ [_canPushOver]。
+    if (_canPushOver(router.state.matchedLocation)) {
+      router.push('/compose', extra: extra);
+    } else {
+      router.go('/compose', extra: extra);
     }
   }
 

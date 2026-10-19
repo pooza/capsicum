@@ -100,7 +100,7 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
       final justLinked = await runAnnictLinkFlow(context, ref);
       if (!justLinked || !mounted) return;
     }
-    context.push(
+    final result = await context.push<Object?>(
       '/annict/record',
       extra: extraWithProviderScope(context, {
         'args': AnnictRecordScreenArgs(
@@ -110,6 +110,7 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
         ),
       }),
     );
+    if (result is AnnictPosted && mounted) popAnnictPosted(context);
   }
 
   /// 作品全体感想 (review) 画面へ遷移する (#592)。review は作品単位なので
@@ -120,7 +121,7 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
       final justLinked = await runAnnictLinkFlow(context, ref);
       if (!justLinked || !mounted) return;
     }
-    context.push(
+    final result = await context.push<Object?>(
       '/annict/review',
       extra: extraWithProviderScope(context, {
         'args': AnnictReviewScreenArgs(
@@ -129,6 +130,8 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
         ),
       }),
     );
+    // 投稿し終えたら自分も閉じて、投稿フォームへ同じ値を返す (#1319)。
+    if (result is AnnictPosted && mounted) popAnnictPosted(context);
   }
 
   Future<void> _selectWork(AnnictWork work) async {

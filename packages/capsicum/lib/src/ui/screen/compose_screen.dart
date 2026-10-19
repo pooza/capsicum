@@ -2884,11 +2884,17 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   }
 
   Future<void> _openEpisodeBrowser() async {
-    final result = await context.push<String>(
+    // 返るのは、選んだエピソードの本文（String）か、エピソードブラウザから
+    // Annict へ投稿し終えた印（AnnictPosted）。
+    final result = await context.push<Object?>(
       '/episodes',
       extra: extraWithProviderScope(context),
     );
-    if (result != null && mounted) {
+    if (result is AnnictPosted && mounted) {
+      _closeAfterAnnictPosted();
+      return;
+    }
+    if (result is String && mounted) {
       _controller.text = result.replaceFirst(RegExp(r'^---\n'), '');
       _controller.selection = TextSelection.collapsed(
         offset: _controller.text.length,
@@ -2913,7 +2919,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         '${program.episode}${program.episodeSuffix?.isNotEmpty == true ? program.episodeSuffix! : '話'}',
       if (program.subtitle != null) program.subtitle!,
     ].join(' ');
-    context.push(
+    final result = await context.push<Object?>(
       '/annict/record',
       extra: extraWithProviderScope(context, {
         'args': AnnictRecordScreenArgs(
@@ -2923,6 +2929,20 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         ),
       }),
     );
+    if (result is AnnictPosted && mounted) _closeAfterAnnictPosted();
+  }
+
+  /// Annict へ投稿し終えたら、投稿フォームも閉じて開く前の画面へ戻る (#584)。
+  ///
+  /// ⚠ `go('/home')` で畳まない。デッキから開いた投稿フォームなら /deck ごと
+  /// 消えてタブ表示に落ちる (#1319)。入力中の本文は離脱時保存 (#966) が拾う。
+  /// 投稿フォームは投稿していないので、開いた側へは何も返さない。
+  void _closeAfterAnnictPosted() {
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/home');
+    }
   }
 
   /// ナウプレ挿入 (#466)。優先順位リゾルバで現在再生中の曲を取得し、本文末尾に

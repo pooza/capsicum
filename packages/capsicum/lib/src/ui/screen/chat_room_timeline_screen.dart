@@ -197,6 +197,19 @@ class _ChatRoomTimelineScreenState extends ConsumerState<ChatRoomTimelineScreen>
     }
   }
 
+  /// 抜けた・消したルームを閉じて、開く前の画面（メッセージ一覧・デッキ・
+  /// 通知を開いた先）へ戻る。閉じる先が無いときだけメッセージ一覧へ出す。
+  ///
+  /// ⚠ `go('/chat')` で置き換えない。デッキから開いたルームだと /deck ごと
+  /// 消えてタブ表示に落ちる (#1319)。一覧は直前の invalidate で読み直される。
+  void _closeRoom() {
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/chat');
+    }
+  }
+
   Future<void> _confirmLeave() async {
     final ok = await showDialog<bool>(
       context: context,
@@ -223,7 +236,7 @@ class _ChatRoomTimelineScreenState extends ConsumerState<ChatRoomTimelineScreen>
       ref.invalidate(joiningChatRoomsProvider);
       ref.invalidate(chatThreadListProvider);
       if (!mounted) return;
-      context.go('/chat');
+      _closeRoom();
     } catch (e, st) {
       reportChatOpFailure('leave_room', e, st, account: ref.accountForReport);
       if (!mounted) return;
@@ -259,7 +272,7 @@ class _ChatRoomTimelineScreenState extends ConsumerState<ChatRoomTimelineScreen>
       ref.invalidate(joiningChatRoomsProvider);
       ref.invalidate(chatThreadListProvider);
       if (!mounted) return;
-      context.go('/chat');
+      _closeRoom();
     } catch (e, st) {
       reportChatOpFailure('delete_room', e, st, account: ref.accountForReport);
       if (!mounted) return;

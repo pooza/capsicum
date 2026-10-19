@@ -18,6 +18,25 @@ import '../util/compose_text_style.dart';
 /// SNS アカウントの access_token を渡すだけでよい。エピソード ID と
 /// 表示用ラベルを呼び出し側 (エピソードブラウザ / 番組タグセット) から
 /// extra で受け取る。
+/// Annict の記録・感想を投稿し終えたことを、開いた側へ返す pop の結果 (#1319)。
+///
+/// 受け取った側（エピソードブラウザ・投稿フォーム）は自分も閉じて、同じ値を
+/// さらに下へ返す。投稿フォームを開く前の画面（ホーム・デッキ・投稿の詳細）まで
+/// 一度に戻るので、#584 の「何度も戻らせない」を保ったまま、デッキを消さない。
+class AnnictPosted {
+  const AnnictPosted();
+}
+
+/// [AnnictPosted] を返して閉じる。閉じる先が無いとき（深いリンクで直接開いた
+/// など）だけタイムラインへ出す。
+void popAnnictPosted(BuildContext context) {
+  if (context.canPop()) {
+    context.pop(const AnnictPosted());
+  } else {
+    context.go('/home');
+  }
+}
+
 class AnnictRecordScreenArgs {
   final int episodeId;
 
@@ -119,12 +138,12 @@ class _AnnictRecordScreenState extends ConsumerState<AnnictRecordScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Annict に感想を投稿しました')));
-      // pop だと エピソードブラウザ (home→compose→/episodes→/annict/record)
-      // まで戻り、タイムラインに辿り着くのに何度も戻る必要がある (#584)。
-      // 感想投稿の終着点はタイムラインなので stack を畳んで /home へ。
-      // compose_screen の投稿後 (go('/home')) と同じ扱い。EULA/認証通過済みの
-      // 深い画面からの遷移なので #562 の gate bypass には当たらない。
-      context.go('/home');
+      // 1 枚 pop するだけだとエピソードブラウザ (home→compose→/episodes→
+      // /annict/record) まで戻り、タイムラインに辿り着くのに何度も戻る必要が
+      // ある (#584)。開いた側が順に閉じて、投稿フォームの下の画面まで戻る。
+      // ⚠ `go('/home')` で畳まない。デッキから開くと /deck ごと消えてタブ表示に
+      // 落ちる (#1319)。
+      popAnnictPosted(context);
     } on DioException catch (e, st) {
       if (!mounted) return;
       final status = e.response?.statusCode;

@@ -2,7 +2,6 @@ import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../provider/account_manager_provider.dart';
@@ -10,6 +9,7 @@ import '../../util/exception_scrub.dart';
 import '../../util/mulukhiya_conflict.dart';
 import '../util/annict_link.dart';
 import '../util/compose_text_style.dart';
+import 'annict_record_screen.dart';
 
 /// Annict の作品全体感想 (review) を投稿する画面 (#592)。
 ///
@@ -101,9 +101,9 @@ class _AnnictReviewScreenState extends ConsumerState<AnnictReviewScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Annict に感想を投稿しました')));
-      // record 画面と同じく、感想投稿の終着点はタイムラインなので stack を
-      // 畳んで /home へ (深い導線から何度も戻らせない、#584)。
-      context.go('/home');
+      // record 画面と同じく、開いた側が順に閉じて投稿フォームの下の画面まで
+      // 戻る (深い導線から何度も戻らせない #584・デッキを消さない #1319)。
+      popAnnictPosted(context);
     } on DioException catch (e, st) {
       if (!mounted) return;
       final status = e.response?.statusCode;
