@@ -2,6 +2,7 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/services.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
+import 'now_playing_artwork_skip.dart';
 import 'now_playing_provider.dart';
 
 /// iOS / macOS の Apple Music（ミュージック.app）から「現在再生中の曲」を取得する
@@ -123,7 +124,7 @@ NowPlayingInfo? nowPlayingFromAppleMusicMetadata(Map<String, Object?> data) {
     // URL を返す。http(s) の取得の経路にそのまま乗る。
     artworkUrl:
         _artworkFileUri(data['artworkPath']) ?? _httpsUri(data['artworkUrl']),
-    artworkSkipReason: _artworkSkipReason(data['artworkSkipped']),
+    artworkSkipReason: nowPlayingArtworkSkipReason(data['artworkSkipped']),
     // ミュージックは文字情報源（共有 URL を持たない）。Spotify のデスクトップ
     // アプリは共有 URI を返すので、本文の URL 行に使う (#1276)。
     url: spotifyShareUrl(data['shareUri']),
@@ -149,24 +150,6 @@ Uri? _httpsUri(Object? value) {
       ? uri
       : null;
 }
-
-/// ネイティブがジャケットを書き出さなかった理由として受け取る値 (#1283)。
-/// iOS / macOS の `NowPlayingPlugin.swift` が返す値と揃える（どちらも返す）。
-const kNowPlayingArtworkSkipReasons = {
-  'no_artwork',
-  // iOS: 曲のファイルの埋め込みを読み出せず、OS の画像も無かった (#1293)。
-  'read_failed',
-  'unsupported_format',
-  'too_large',
-  'write_failed',
-};
-
-/// ⚠ **知っている値だけを通す。**この値はそのまま Sentry の breadcrumb に載る
-/// ので、ネイティブが返した任意の文字列を素通しにしない。
-String? _artworkSkipReason(Object? value) =>
-    value is String && kNowPlayingArtworkSkipReasons.contains(value)
-    ? value
-    : null;
 
 /// ネイティブが返した絶対パスを `file://` にする。相対パスや空は捨てる
 /// （行き先の分からないファイルを添付の候補にしない）。

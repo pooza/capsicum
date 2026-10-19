@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:capsicum/src/platform/now_playing/apple_music_now_playing_provider.dart';
+import 'package:capsicum/src/platform/now_playing/now_playing_artwork_skip.dart';
 import 'package:capsicum/src/platform/now_playing/now_playing_provider.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -73,40 +74,63 @@ void main() {
       }
     });
 
-    // ⚠ Swift が返す値と Dart の受け口がずれると、理由は黙って捨てられる
+    // ⚠ ネイティブが返す値と Dart の受け口がずれると、理由は黙って捨てられる
     // （上のテストは Dart 側しか見ていない）。ソースを突き合わせる。
     // ⚠ 以前は macOS だけを見ていた。iOS も同じ値を返すので両方を見る (#1293)。
+    // ⚠ Windows（SMTC・#1274）も同じ受け口を使うので C++ も見る (#1304)。
     Set<String> returnedBy(String path) {
-      final swift = File(path).readAsStringSync();
+      final source = File(path).readAsStringSync();
       return {
+        // Swift
         ...RegExp(
           r'\.skipped\("([a-z_]+)"\)',
-        ).allMatches(swift).map((m) => m.group(1)!),
+        ).allMatches(source).map((m) => m.group(1)!),
         ...RegExp(
           r'map\["artworkSkipped"\] = "([a-z_]+)"',
-        ).allMatches(swift).map((m) => m.group(1)!),
+        ).allMatches(source).map((m) => m.group(1)!),
+        // C++（`return {"", "no_artwork"};`）
+        ...RegExp(
+          r'return \{"", "([a-z_]+)"\}',
+        ).allMatches(source).map((m) => m.group(1)!),
       };
     }
 
-    test('⚠⚠ iOS / macOS のネイティブが返す理由は、すべて Dart が受け取る値', () {
+    test('⚠⚠ iOS / macOS / Windows のネイティブが返す理由は、すべて Dart が受け取る値', () {
       final macos = returnedBy('macos/Runner/NowPlayingPlugin.swift');
       final ios = returnedBy('ios/Runner/NowPlayingPlugin.swift');
+      final windows = returnedBy('windows/runner/smtc_now_playing.cpp');
+      final all = {...macos, ...ios, ...windows};
 
       expect(macos, isNotEmpty, reason: '走査が空振りしていない（macOS）');
       expect(ios, isNotEmpty, reason: '走査が空振りしていない（iOS）');
+      expect(windows, isNotEmpty, reason: '走査が空振りしていない（Windows）');
       expect(
-        kNowPlayingArtworkSkipReasons.containsAll(macos.union(ios)),
+        kNowPlayingArtworkSkipReasons.containsAll(all),
         isTrue,
         reason:
             'Dart が受け取らない値を返している: '
-            '${macos.union(ios).difference(kNowPlayingArtworkSkipReasons)}',
+            '${all.difference(kNowPlayingArtworkSkipReasons)}',
       );
       expect(
-        macos.union(ios),
+        all,
         kNowPlayingArtworkSkipReasons,
         reason: 'どのネイティブも返さない値が受け口に残っている',
       );
       expect(ios, contains('read_failed'));
+      expect(windows, containsAll(['no_artwork', 'too_large', 'write_failed']));
+    });
+
+    test('⚠ 判定に合成ソースを食わせる（C++ の返し方）', () {
+      final dir = Directory.systemTemp.createTempSync('np_skip');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final file = File('${dir.path}/a.cpp')
+        ..writeAsStringSync(
+          'if (x) return {"", "no_artwork"};\n'
+          'return {path, ""};\n'
+          '// return {"", "commented"}; はコメントだが拾ってよい（害が無い）\n',
+        );
+      expect(returnedBy(file.path), containsAll(['no_artwork']));
+      expect(returnedBy(file.path), isNot(contains('')));
     });
 
     test('sourceAppName が無ければ Apple Music を既定にする', () {

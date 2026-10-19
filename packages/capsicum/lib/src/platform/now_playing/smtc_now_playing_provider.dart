@@ -1,8 +1,7 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/services.dart';
 
-import 'apple_music_now_playing_provider.dart'
-    show kNowPlayingArtworkSkipReasons;
+import 'now_playing_artwork_skip.dart';
 import 'now_playing_provider.dart';
 
 /// Windows の System Media Transport Controls (SMTC) から「現在再生中の曲」を
@@ -65,18 +64,12 @@ NowPlayingInfo? nowPlayingFromSmtcMetadata(Map<String, Object?> data) {
     // ジャケット (#1274)。`file://` にすると、MPRIS / macOS と同じ添付の経路
     // （`fetchNowPlayingArtwork`）にそのまま乗る。
     artworkUrl: _artworkFileUri(data['artworkPath']),
-    artworkSkipReason: _artworkSkipReason(data['artworkSkipped']),
+    // ⚠ 受け口は iOS / macOS と共通（now_playing_artwork_skip.dart・#1304）。
+    artworkSkipReason: nowPlayingArtworkSkipReason(data['artworkSkipped']),
     // SMTC は文字情報源（URL 源は Spotify provider が担う）。
     url: null,
   );
 }
-
-/// ⚠ **知っている値だけを通す**（macOS / iOS と同じ表）。この値はそのまま
-/// Sentry の breadcrumb に載るので、ネイティブが返した任意の文字列を素通しにしない。
-String? _artworkSkipReason(Object? value) =>
-    value is String && kNowPlayingArtworkSkipReasons.contains(value)
-    ? value
-    : null;
 
 /// ネイティブが返した Windows の絶対パス（`C:\…`）を `file://` にする。
 /// 相対パスや空・UNC は捨てる（行き先の分からないファイルを添付の候補にしない）。
