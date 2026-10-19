@@ -800,7 +800,12 @@ mixin OlderCursorPaging<Arg>
           Sentry.captureException(
             scrubException(e),
             stackTrace: st,
-            hint: Hint.withMap({'site': site, 'attempts': '${attempt + 1}'}),
+            // ⚠ hint は送られない（プロセス内だけ）。ハッシュタグ・リスト・
+            // チャンネルの続き読みを Sentry で見分けるため、tag に載せる (#1304)。
+            withScope: (scope) {
+              scope.setTag('site', site);
+              scope.setContexts('load_more', {'attempts': attempt + 1});
+            },
           );
         } catch (_) {
           // Sentry の失敗で state の回復を止めない。
@@ -2413,10 +2418,14 @@ class TimelineNotifier
           Sentry.captureException(
             scrubException(e),
             stackTrace: st,
-            hint: Hint.withMap({
-              'maxId': failedMaxId ?? 'null',
-              'attempts': '${attempt + 1}',
-            }),
+            // ⚠ hint は送られない（プロセス内だけ）。contexts に載せる (#1304)。
+            withScope: (scope) {
+              scope.setTag('site', 'timeline.loadMore');
+              scope.setContexts('load_more', {
+                'maxId': failedMaxId ?? 'null',
+                'attempts': attempt + 1,
+              });
+            },
           );
         } catch (_) {
           // Sentry failure must not block state recovery.

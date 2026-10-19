@@ -98,7 +98,11 @@ class DriveContentsNotifier
         Sentry.captureException(
           scrubException(e),
           stackTrace: st,
-          hint: Hint.withMap({'folderId': arg ?? 'root'}),
+          // ⚠ hint は送られない（プロセス内だけ）。contexts に載せる (#1304)。
+          withScope: (scope) {
+            scope.setTag('site', 'drive.load');
+            scope.setContexts('drive', {'folderId': arg ?? 'root'});
+          },
         );
       } catch (_) {
         // Sentry failure must not block the AsyncError path.
@@ -243,11 +247,15 @@ class DriveContentsNotifier
           Sentry.captureException(
             scrubException(e),
             stackTrace: st,
-            hint: Hint.withMap({
-              'folderId': arg ?? 'root',
-              'maxId': failedMaxId ?? 'null',
-              'attempts': '${attempt + 1}',
-            }),
+            // ⚠ hint は送られない（プロセス内だけ）。contexts に載せる (#1304)。
+            withScope: (scope) {
+              scope.setTag('site', 'drive.loadMore');
+              scope.setContexts('drive', {
+                'folderId': arg ?? 'root',
+                'maxId': failedMaxId ?? 'null',
+                'attempts': attempt + 1,
+              });
+            },
           );
         } catch (_) {
           // Sentry failure must not block state recovery.

@@ -86,7 +86,8 @@ class FlutterLocalNotificationSubsystem implements NotificationSubsystem {
         await Sentry.captureException(
           scrubException(e),
           stackTrace: st,
-          hint: Hint.withMap({'subsystem': 'notification'}),
+          // ⚠ hint は送られない（プロセス内だけ）。tag に載せる (#1304)。
+          withScope: (scope) => scope.setTag('subsystem', 'notification'),
         );
       } catch (_) {
         // ignore
