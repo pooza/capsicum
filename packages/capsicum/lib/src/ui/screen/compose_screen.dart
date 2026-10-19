@@ -4659,7 +4659,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       // メニュー側も 3 択のみ・未指定はどれにもチェックが付かない状態で表す。
       if (adapter is MastodonAdapter)
         MenuSubmenuEntry(
-          label: '引用許可',
+          // ⚠ 表記は「引用の許可」（投稿の既定・投稿後の変更と揃える・
+          // 2026-10-20 pooza・#1304）。
+          label: '引用の許可',
           children: [
             for (final entry in quoteApprovalLabels.entries)
               MenuActionEntry(
@@ -5009,12 +5011,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       if (adapter is MastodonAdapter)
         if (compact)
           // ⚠⚠ **未設定のときはアイコンだけ。**未設定＝サーバーの既定に任せる＝
-          // 何も効いていない状態なので、「引用許可」の 4 文字ぶん（約 100pt）を
+          // 何も効いていない状態なので、「引用の許可」の 5 文字ぶん（約 120pt）を
           // 常時確保するのは高すぎる。⚠ 効いているときは値を出す（short label）。
           _compactMenu<String>(
             tooltip: _quoteApprovalPolicy == null
-                ? '引用許可'
-                : '引用許可: ${quoteApprovalLabels[_quoteApprovalPolicy]}',
+                ? '引用の許可'
+                : '引用の許可: ${quoteApprovalLabels[_quoteApprovalPolicy]}',
             child: _quoteApprovalPolicy == null
                 ? const Icon(Icons.format_quote, size: 16)
                 : _compactSetting(
@@ -5045,7 +5047,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
               children: [
                 Icon(Icons.format_quote, size: 16),
                 SizedBox(width: 4),
-                Text('引用許可', style: TextStyle(fontSize: 13)),
+                Text('引用の許可', style: TextStyle(fontSize: 13)),
               ],
             ),
             onChanged: _sending
