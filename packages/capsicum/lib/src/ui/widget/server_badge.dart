@@ -3,6 +3,13 @@ import 'package:flutter/material.dart';
 import '../../provider/server_config_provider.dart';
 import '../../service/server_metadata_cache.dart';
 
+/// 画面に出すサーバーの名前（サーバーが名乗る名前。まだ取れていなければホスト名）。
+///
+/// ⚠ 上部のバーのバッジ（[ServerBadge]）と簡易投稿バーのヒント (#1313) で
+/// 同じものを出すため、出どころをここ 1 つにする。
+String serverDisplayName(String host) =>
+    ServerMetadataCache.instance.getCached(host)?.name ?? host;
+
 /// テーマカラー背景のサーバー名バッジ。
 /// インスタンスティッカーと同じスタイル。
 class ServerBadge extends StatelessWidget {
@@ -26,8 +33,7 @@ class ServerBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cached = ServerMetadataCache.instance.getCached(host);
-    final label = cached?.name ?? host;
+    final label = serverDisplayName(host);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
