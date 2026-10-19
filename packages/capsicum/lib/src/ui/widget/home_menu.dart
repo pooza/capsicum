@@ -21,8 +21,8 @@ import '../../url_helper.dart';
 import '../util/about_dialog.dart';
 import '../util/deck_navigation.dart';
 import '../util/deck_tabs.dart';
-import '../util/post_scope_display.dart';
 import '../util/provider_scope_carrier.dart';
+import '../util/timeline_type_label.dart';
 import 'desktop_menu_model.dart';
 import 'notification_filter_button.dart';
 
@@ -63,20 +63,6 @@ class HomeNavItem {
   });
 }
 
-const timelineLabels = {
-  TimelineType.home: 'ホーム',
-  TimelineType.local: 'ローカル',
-  TimelineType.social: 'ソーシャル',
-  TimelineType.federated: 'グローバル',
-  // Mastodon だけ (#1278)。本家の列設定の「リモートのみ表示」と、capsicum の
-  // 「連合」を合わせた語（本家の Web の「ほかのサーバー」は「連合」と並べると
-  // 何の一部か読めない）。
-  TimelineType.remote: '連合（リモートのみ）',
-};
-
-/// Mastodon uses "連合" instead of "グローバル".
-const mastodonLabelOverrides = {TimelineType.federated: '連合'};
-
 String tabLabel(
   WidgetRef ref,
   TabType tab,
@@ -85,16 +71,12 @@ String tabLabel(
   List<PostList> allLists,
 ) {
   return switch (tab) {
-    TimelineTab(:final type) => () {
-      if (type == TimelineType.local) {
-        return ref.watch(localTimelineNameProvider);
-      }
-      return (isMastodon ? mastodonLabelOverrides[type] : null) ??
-          timelineLabels[type] ??
-          (type == TimelineType.directMessages
-              ? postScopeLabel(PostScope.direct, adapter)
-              : type.name);
-    }(),
+    TimelineTab(:final type) => timelineTypeLabel(
+      ref,
+      type,
+      isMastodon: isMastodon,
+      adapter: adapter,
+    ),
     ListTab(:final id, :final name) =>
       name ?? allLists.where((l) => l.id == id).firstOrNull?.title ?? id,
     HashtagTab(:final tag) => hashtagSpecLabel(tag),

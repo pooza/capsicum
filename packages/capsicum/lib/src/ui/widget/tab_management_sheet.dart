@@ -8,8 +8,7 @@ import '../../provider/channel_provider.dart';
 import '../../provider/hashtag_provider.dart';
 import '../../provider/list_provider.dart';
 import '../../provider/preferences_provider.dart';
-import '../../provider/server_config_provider.dart';
-import '../util/post_scope_display.dart';
+import '../util/timeline_type_label.dart';
 import 'hashtag_condition_dialog.dart';
 
 class TabManagementSheet extends ConsumerStatefulWidget {
@@ -178,32 +177,14 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
     );
   }
 
-  static const _timelineLabels = {
-    TimelineType.home: 'ホーム',
-    TimelineType.local: 'ローカル',
-    TimelineType.social: 'ソーシャル',
-    TimelineType.federated: 'グローバル',
-    TimelineType.remote: '連合（リモートのみ）',
-  };
-
-  static const _mastodonLabelOverrides = {TimelineType.federated: '連合'};
-
   String _tabEntryLabel(TabType tab) {
     return switch (tab) {
-      TimelineTab(:final type) => () {
-        if (type == TimelineType.local) {
-          return ref.watch(localTimelineNameProvider);
-        }
-        if (type == TimelineType.directMessages) {
-          return postScopeLabel(PostScope.direct, null);
-        }
-        if (widget.isMastodon) {
-          return _mastodonLabelOverrides[type] ??
-              _timelineLabels[type] ??
-              type.name;
-        }
-        return _timelineLabels[type] ?? type.name;
-      }(),
+      // 表の正本は timeline_type_label.dart (#1304)。
+      TimelineTab(:final type) => timelineTypeLabel(
+        ref,
+        type,
+        isMastodon: widget.isMastodon,
+      ),
       ListTab(:final name, :final id) => name ?? id,
       HashtagTab(:final tag) => hashtagSpecLabel(tag),
       // ⚠ 名前なしで保存されたタブは一覧から引く (#1296)。この画面はフォロー中の
