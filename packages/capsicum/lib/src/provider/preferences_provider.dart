@@ -433,7 +433,11 @@ class TabConfigNotifier extends FamilyNotifier<List<TabConfigEntry>, String> {
       return withMissingTimelineTabs(_deserialize(saved));
     }
     // Migrate from legacy providers (synchronous).
-    final entries = _migrate(prefs);
+    // ⚠ 移行の経路にも足りない種類を足す (#1304・PR #1303 の Codex P2)。
+    // `_migrate` は `defaultTabOrder` しか見ないので、既定で並べない種類
+    // （#1278 のリモートのみの連合 TL）が、新しくインストールした最初の
+    // セッションだけタブ管理に出てこなかった。
+    final entries = withMissingTimelineTabs(_migrate(prefs));
     // 永続化は fire-and-forget。失敗しても次回起動で再度 migrate するだけで
     // ユーザー影響なし (idempotent)。await すると build() が async 化して
     // race が復活するため意図的に unawaited。

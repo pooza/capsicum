@@ -1,6 +1,9 @@
 import 'package:capsicum/src/provider/preferences_provider.dart';
+import 'package:capsicum/src/util/shared_preferences_cache.dart';
 import 'package:capsicum_core/capsicum_core.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// #1278: タイムラインの種類を増やしたとき、保存済みのタブ設定にも載せる。
 ///
@@ -33,6 +36,26 @@ void main() {
         TabConfigEntry(tab: TimelineTab(type), visible: true),
     ];
     expect(withMissingTimelineTabs(full), full);
+  });
+
+  test('⚠⚠ 保存済みの設定が無い（新しくインストールした最初のセッション）ときも、'
+      '移行の経路で隠して足す (#1304)', () async {
+    // `_migrate` は既定の並び（defaultTabOrder）しか見ないので、既定で並べない
+    // リモートのみが落ちていた（PR #1303 の Codex P2）。
+    SharedPreferences.setMockInitialValues({});
+    initSharedPreferencesCache(await SharedPreferences.getInstance());
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    final entries = container.read(
+      tabConfigProvider('mastodon://alice@mstdn.example'),
+    );
+
+    final remote = entries.where(
+      (e) => e.tab == const TimelineTab(TimelineType.remote),
+    );
+    expect(remote, hasLength(1));
+    expect(remote.single.visible, isFalse, reason: '頼んでいないタブを増やさない');
   });
 
   test('新規の既定ではリモートのみは隠してある', () {
