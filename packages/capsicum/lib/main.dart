@@ -17,6 +17,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'src/constants.dart';
 import 'src/model/account.dart';
+import 'src/model/account_key.dart';
+import 'src/model/offline_account.dart';
 import 'src/platform/paths.dart';
 import 'src/platform/platform_info.dart';
 import 'src/provider/account_manager_provider.dart';
@@ -42,6 +44,7 @@ import 'src/service/share_intent_service.dart';
 import 'src/service/timeline_cache.dart';
 import 'src/service/window_state_service.dart';
 import 'src/service/wns_service.dart';
+import 'src/ui/util/deck_notification_fallback.dart';
 import 'src/util/action_labels.dart';
 import 'src/util/exception_scrub.dart';
 import 'src/util/sensitive_fields.dart';
@@ -985,6 +988,20 @@ void _routeToNotificationsTab(String? accountString, {int attempt = 0}) {
       ? null
       : _findAccountByString(accounts, accountString);
 
+  // 宛先のアカウントが、起動の締切（#1294）で「遅いだけ」なのにオフライン扱いに
+  // なっている間は待つ (#1304)。待たずに進むと、今のアカウントの通知が開く。
+  // ⚠ 待つのは再スケジュールの上限まで。戻らなければ従来どおり今のアカウント。
+  if (matched == null &&
+      accountString != null &&
+      attempt < maxAttempts &&
+      notificationTargetIsRecovering(
+        container.read(accountManagerProvider).offlineAccounts,
+        accountString,
+      )) {
+    _rescheduleNotificationRoute(accountString, attempt, maxAttempts);
+    return;
+  }
+
   // デッキで使っているときは、タブ UI へ行かずデッキの通知カラムへ送る (#1295・
   // 2026-10-18 pooza 判断)。⚠ アカウントは切り替えない —— デッキでは、現在の
   // アカウントが変わると前後 2 アカウントのカラムが組み替わり読み直しになる
@@ -992,6 +1009,7 @@ void _routeToNotificationsTab(String? accountString, {int attempt = 0}) {
   // 必要が無い。
   if (notificationTapGoesToDeck(
     deckOpen: container.read(mountedDeckCountProvider) > 0,
+    startupPending: container.read(deckStartupPendingProvider),
     lastMode: readLastViewMode(),
     hasColumns: container.read(deckColumnsProvider).isNotEmpty,
   )) {
@@ -1001,7 +1019,11 @@ void _routeToNotificationsTab(String? accountString, {int attempt = 0}) {
       container.read(pendingDeckNotificationsProvider.notifier).state = target;
       // デッキが開いていればそこで受ける。起動の途中なら、HomeScreen が
       // デッキを開き（pendingInitialTab を立てていないので）、開いた
-      // DeckScreen が受ける。
+      // DeckScreen が受ける。HomeScreen がデッキで始めなかったときは、
+      // HomeScreen がタブ表示へ振り替える (#1304)。
+      if (!container.read(deckStartupPendingProvider)) {
+        _releaseUnreceivedDeckNotification(target);
+      }
       return;
     }
   }
@@ -1027,6 +1049,35 @@ void _routeToNotificationsTab(String? accountString, {int attempt = 0}) {
       currentLocation != '/eula') {
     router.go('/home');
   }
+}
+
+/// デッキが開いている前提で立てた通知のタップを、デッキが受けなかったら
+/// タブ表示へ振り替える (#1304)。
+///
+/// ⚠ 開いているデッキの数は、デッキを閉じたフレームの**後で**減る
+/// （`mountedDeckCountProvider` の doc）。閉じた直後の 1 フレームにタップすると、
+/// もう居ないデッキ宛てに立ってしまう。デッキが居れば、印は次のフレームの後で
+/// 受けて下ろされる（`DeckScreen` の listen）ので、2 フレーム待ってまだ [target] の
+/// 印が残り、デッキも数えられていなければ、受け手は居ない。
+void _releaseUnreceivedDeckNotification(AccountKey target) {
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final context = rootNavigatorKey.currentContext;
+      if (context == null) return;
+      final container = ProviderScope.containerOf(context);
+      if (container.read(pendingDeckNotificationsProvider) != target) return;
+      if (container.read(mountedDeckCountProvider) > 0) return;
+      if (!releasePendingDeckNotification(container.read)) return;
+      final router = GoRouter.of(context);
+      final location = router.state.matchedLocation;
+      if (location != '/home' && location != '/splash' && location != '/eula') {
+        router.go('/home');
+      }
+    });
+    // 次のフレームを確実に起こす（タップの直後は描画が止まっていることがある）。
+    WidgetsBinding.instance.scheduleFrame();
+  });
+  WidgetsBinding.instance.scheduleFrame();
 }
 
 /// [_routeToNotificationsTab] の再スケジュール。attempt 上限超過で諦める。

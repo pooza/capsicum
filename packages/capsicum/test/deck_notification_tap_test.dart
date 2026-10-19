@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:capsicum/src/model/account.dart';
 import 'package:capsicum/src/model/account_key.dart';
 import 'package:capsicum/src/provider/account_manager_provider.dart';
 import 'package:capsicum/src/provider/deck_provider.dart';
 import 'package:capsicum/src/provider/preferences_provider.dart';
+import 'package:capsicum/src/provider/timeline_provider.dart';
 import 'package:capsicum/src/ui/screen/deck_screen.dart';
+import 'package:capsicum/src/ui/util/deck_notification_fallback.dart';
 import 'package:capsicum/src/util/shared_preferences_cache.dart';
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
@@ -53,6 +57,7 @@ void main() {
       expect(
         notificationTapGoesToDeck(
           deckOpen: true,
+          startupPending: false,
           lastMode: LastViewMode.tabs,
           hasColumns: false,
         ),
@@ -60,10 +65,11 @@ void main() {
       );
     });
 
-    test('⚠ 閉じていても、前回デッキで終えていて列があればデッキ（起動時）', () {
+    test('⚠ 閉じていても、起動の途中で前回デッキで終えていて列があればデッキ', () {
       expect(
         notificationTapGoesToDeck(
           deckOpen: false,
+          startupPending: true,
           lastMode: LastViewMode.deck,
           hasColumns: true,
         ),
@@ -71,10 +77,26 @@ void main() {
       );
     });
 
+    test('⚠⚠ 起動時の判定が済んだあとは、前回デッキで終えていてもデッキが閉じていればタブ UI '
+        '(#1304)', () {
+      // 共有やディープリンクから起動してデッキで始めなかった回。以前はここが
+      // 真になり、タップしても何も起きなかった。
+      expect(
+        notificationTapGoesToDeck(
+          deckOpen: false,
+          startupPending: false,
+          lastMode: LastViewMode.deck,
+          hasColumns: true,
+        ),
+        isFalse,
+      );
+    });
+
     test('タブ UI で使っていればタブ UI（従来どおり）', () {
       expect(
         notificationTapGoesToDeck(
           deckOpen: false,
+          startupPending: true,
           lastMode: LastViewMode.tabs,
           hasColumns: true,
         ),
@@ -86,11 +108,50 @@ void main() {
       expect(
         notificationTapGoesToDeck(
           deckOpen: false,
+          startupPending: true,
           lastMode: LastViewMode.deck,
           hasColumns: false,
         ),
         isFalse,
       );
+    });
+  });
+
+  group('releasePendingDeckNotification (#1304)', () {
+    test('⚠⚠ デッキが受けなかった印を、宛先へ切り替えてタブ UI の通知タブへ振り替える', () async {
+      // 切り替えは MRU の並びを保存する（失敗しても進む）。
+      SharedPreferences.setMockInitialValues({});
+      initSharedPreferencesCache(await SharedPreferences.getInstance());
+      final container = ProviderContainer(
+        overrides: [
+          accountManagerProvider.overrideWith(_TestAccountNotifier.new),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.read(pendingDeckNotificationsProvider.notifier).state = _other;
+
+      expect(releasePendingDeckNotification(container.read), isTrue);
+
+      // 印が残ると、後で手でデッキを開いたときに頼んでいない通知カラムが足される。
+      expect(container.read(pendingDeckNotificationsProvider), isNull);
+      expect(container.read(accountManagerProvider).current?.key, _other);
+      expect(
+        container.read(pendingInitialTabProvider),
+        const NotificationsTab(),
+      );
+    });
+
+    test('印が無ければ何もしない', () {
+      final container = ProviderContainer(
+        overrides: [
+          accountManagerProvider.overrideWith(_TestAccountNotifier.new),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      expect(releasePendingDeckNotification(container.read), isFalse);
+      expect(container.read(accountManagerProvider).current?.key, _me);
+      expect(container.read(pendingInitialTabProvider), isNull);
     });
   });
 
@@ -133,6 +194,30 @@ void main() {
     container.read(pendingDeckNotificationsProvider.notifier).state = account;
     await tester.pumpAndSettle();
   }
+
+  testWidgets('⚠ デッキの上に全画面の画面が積まれていたら、閉じてデッキを見せる (#1304)', (tester) async {
+    final container = await pumpDeck(tester, [
+      'n|misskey://other@misskey.example|notifications',
+    ]);
+    // 投稿の詳細・プロフィールなどを開いている状態。
+    unawaited(
+      tester
+          .state<NavigatorState>(find.byType(Navigator).first)
+          .push(
+            MaterialPageRoute<void>(
+              builder: (_) => const Scaffold(body: Text('above')),
+            ),
+          ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('above'), findsOneWidget);
+
+    await tap(tester, container, _other);
+
+    // 閉じないと、通知カラムへ送っても上の画面に隠れて見えない。
+    expect(find.text('above'), findsNothing);
+    expect(container.read(deckFocusProvider).columnId, 'n');
+  });
 
   testWidgets('⚠⚠ 宛先の通知カラムがあれば、足さずにそこへフォーカスする', (tester) async {
     final container = await pumpDeck(tester, [

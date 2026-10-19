@@ -276,7 +276,29 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
     final target = ref.read(pendingDeckNotificationsProvider);
     if (target == null) return;
     ref.read(pendingDeckNotificationsProvider.notifier).state = null;
+    _closeScreensAboveDeck();
     unawaited(_openNotificationsFor(target));
+  }
+
+  /// デッキの上に積まれた全画面の画面を閉じて、デッキを見せる (#1304)。
+  ///
+  /// ⚠ 閉じないと、通知カラムへ送って点滅させても上の画面に隠れて見えない
+  /// （タップしたのに何も起きないと見える）。shell の中（投稿の詳細・
+  /// プロフィールなど）と、shell の外の root（画像ビューア）の両方を見る。
+  void _closeScreensAboveDeck() {
+    final deckRoute = ModalRoute.of(context);
+    if (deckRoute == null) return;
+    final shellContext = Navigator.of(context).context;
+    final shellPage = ModalRoute.of(shellContext);
+    if (shellPage != null && !shellPage.isCurrent) {
+      Navigator.of(
+        context,
+        rootNavigator: true,
+      ).popUntil((r) => r == shellPage);
+    }
+    if (!deckRoute.isCurrent) {
+      Navigator.of(context).popUntil((r) => r == deckRoute);
+    }
   }
 
   /// [account] の通知をカラムで見せる (#1295・2026-10-18 pooza 判断)。
