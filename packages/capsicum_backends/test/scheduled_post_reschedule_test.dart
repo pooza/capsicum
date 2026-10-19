@@ -170,6 +170,43 @@ void main() {
       expect(_body(update())['poll'], isNotNull, reason: '101 件目の投票を送り直す');
     });
 
+    test('⚠⚠ サーバーが同じページを返し続けても、辿るのをやめる (#1304)', () async {
+      // untilId を無視して、毎回同じ 100 件を返すサーバー。以前は while (true)
+      // で終わらなかった。
+      final page = [
+        for (var i = 0; i < 100; i++)
+          {'id': 'd$i', 'text': '予約 $i', 'scheduledAt': 1, 'poll': null},
+      ];
+      http = _Recorder(
+        (options) =>
+            options.path.contains('drafts/list') ? page : <String, dynamic>{},
+      );
+      adapter.client.dio.httpClientAdapter = http;
+
+      final all = await adapter.client.getScheduledNotesRaw();
+
+      final lists = http.requests.where((r) => r.path.contains('drafts/list'));
+      expect(lists.length, 2, reason: '2 ページ目で進んでいないと分かったら止める');
+      expect(all, hasLength(200));
+    });
+
+    test('⚠ 進み続けるサーバーでも、決めたページ数で打ち切る (#1304)', () async {
+      var n = 0;
+      http = _Recorder((options) {
+        if (!options.path.contains('drafts/list')) return <String, dynamic>{};
+        return [
+          for (var i = 0; i < 100; i++)
+            {'id': 'd${n++}', 'scheduledAt': 1, 'poll': null},
+        ];
+      });
+      adapter.client.dio.httpClientAdapter = http;
+
+      await adapter.client.getScheduledNotesRaw(maxPages: 3);
+
+      final lists = http.requests.where((r) => r.path.contains('drafts/list'));
+      expect(lists.length, 3);
+    });
+
     test('本文を変える回（タグ編集）も同じ口を通り、投票を送り直す', () async {
       drafts = [
         {
