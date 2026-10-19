@@ -253,6 +253,16 @@ Widget buildHomeDrawer(
                       ),
                     ],
                   ),
+                  // 切り替えずにこの端末から外す (#1297)。以前は外したいアカウントへ
+                  // 一度切り替えてから「ログアウト」するしかなく、応答の遅い
+                  // サーバー（#1294）だと切り替えた先の読み込みでも待たされた。
+                  // 未接続の行のゴミ箱と同じ形。
+                  trailing: IconButton(
+                    icon: const Icon(Icons.delete_outline),
+                    tooltip: 'このアカウントを削除',
+                    onPressed: () =>
+                        confirmRemoveAccount(context, ref, account),
+                  ),
                   onTap: () {
                     ref
                         .read(accountManagerProvider.notifier)
@@ -364,12 +374,12 @@ Widget buildHomeDrawer(
             ),
             const Divider(),
             ListTile(
-              leading: const Icon(Icons.logout),
-              title: const Text('ログアウト'),
+              leading: const Icon(Icons.delete_outline),
+              title: const Text('このアカウントをこの端末から削除'),
               onTap: () {
                 dismiss();
                 if (current == null) return;
-                confirmLogout(context, ref, current);
+                confirmRemoveAccount(context, ref, current);
               },
             ),
             // 投げ銭（サポート）導線 (#853)。以前は「設定」内にあったが投げ銭は
