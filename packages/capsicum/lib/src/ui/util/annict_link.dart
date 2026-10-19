@@ -5,6 +5,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../url_helper.dart';
 import '../../util/exception_scrub.dart';
 import 'launch_url_toast.dart';
+import 'link_target_account.dart';
 
 /// Annict OAuth 連携フロー (確認 → ブラウザ認可 → コード入力 → トークン交換)。
 ///
@@ -20,7 +21,10 @@ Future<bool> runAnnictLinkFlow(BuildContext context, WidgetRef ref) async {
     context: context,
     builder: (context) => AlertDialog(
       title: const Text('Annict 連携'),
-      content: const Text(
+      // ⚠ どのアカウントを連携するかを出す (#1312)。取り違えると、別のサーバーが
+      // 以後ずっと感想を投稿し続ける。
+      content: linkTargetDialogContent(
+        account.key,
         'Annict アカウントとの連携が必要です。\n\n'
         'ブラウザで Annict の認可画面を開き、表示されるコードを入力してください。',
       ),
