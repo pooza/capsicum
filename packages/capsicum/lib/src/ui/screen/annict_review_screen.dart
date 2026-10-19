@@ -2,11 +2,10 @@ import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../provider/account_manager_provider.dart';
-import '../../util/exception_scrub.dart';
 import '../../util/mulukhiya_conflict.dart';
+import '../util/annict_error.dart';
 import '../util/annict_link.dart';
 import '../util/compose_text_style.dart';
 import 'annict_record_screen.dart';
@@ -105,6 +104,9 @@ class _AnnictReviewScreenState extends ConsumerState<AnnictReviewScreen> {
       // 戻る (深い導線から何度も戻らせない #584・デッキを消さない #1319)。
       popAnnictPosted(context);
     } on DioException catch (e, st) {
+      // 状態コードと行き先を release でも残す (#1310)。イベントにするかは
+      // ヘルパーが決める（401 / 403 / 409 と回線の失敗はしない）。
+      reportAnnictFailure('post_review', e, st, account: account);
       if (!mounted) return;
       final status = e.response?.statusCode;
       if (status == 401 || status == 403) {
@@ -135,18 +137,13 @@ class _AnnictReviewScreenState extends ConsumerState<AnnictReviewScreen> {
         });
         return;
       }
-      // 5xx はサーバ起因の異常。成功率を観測するため Sentry に上げる
-      // (401/403/連携不足は通常運用なのでノイズとして送らない)。
-      if (status != null && status >= 500) {
-        Sentry.captureException(scrubException(e), stackTrace: st);
-      }
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(annictConflictMessage(conflict))));
       setState(() => _submitting = false);
     } catch (e, st) {
+      reportAnnictFailure('post_review', e, st, account: account);
       if (!mounted) return;
-      Sentry.captureException(scrubException(e), stackTrace: st);
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Annict への投稿に失敗しました')));

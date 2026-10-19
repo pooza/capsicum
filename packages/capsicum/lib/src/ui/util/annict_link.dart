@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../url_helper.dart';
 import '../../util/exception_scrub.dart';
+import 'annict_error.dart';
 import 'launch_url_toast.dart';
 import 'link_target_account.dart';
 
@@ -71,8 +72,9 @@ Future<bool> runAnnictLinkFlow(BuildContext context, WidgetRef ref) async {
       ).showSnackBar(const SnackBar(content: Text('Annict 連携が完了しました')));
     }
     return true;
-  } catch (e) {
+  } catch (e, st) {
     debugLogException('Annict auth error', e);
+    reportAnnictFailure('link', e, st, account: account);
     if (context.mounted) {
       ScaffoldMessenger.of(
         context,
