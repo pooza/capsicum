@@ -248,15 +248,22 @@ void main() {
       );
     });
 
-    test('⚠ 通信の失敗は持たず、次は引き直す（見つからないは持つ）', () async {
+    test('⚠⚠ 通信の失敗はしばらく持ち、過ぎたら引き直す（見つからないは持つ）(#1304)', () async {
+      // 以前は失敗を持たず、429 / 5xx が続く間スクロールのたびに引き直していた。
+      var now = DateTime(2026, 10, 20, 12);
       final search = _Search();
-      final resolver = QuoteFallbackResolver();
+      final resolver = QuoteFallbackResolver(clock: () => now);
 
       final failed = resolver.resolve('me', search, 'u1');
       await Future<void>.delayed(Duration.zero);
       search.answer('u1', error: Exception('network'));
       expect(await failed, isNull);
 
+      now = now.add(const Duration(seconds: 29));
+      expect(await resolver.resolve('me', search, 'u1'), isNull);
+      expect(search.calls, ['u1'], reason: '失敗を持っている間は引かない');
+
+      now = now.add(const Duration(seconds: 2));
       final retried = resolver.resolve('me', search, 'u1');
       await Future<void>.delayed(Duration.zero);
       search.answer('u1');
@@ -265,5 +272,83 @@ void main() {
       await resolver.resolve('me', search, 'u1');
       expect(search.calls, ['u1', 'u1'], reason: '見つからないは持つ');
     });
+
+    test('⚠⚠ 待っている間に画面から外れたら引かない (#1304)', () async {
+      final search = _Search();
+      final resolver = QuoteFallbackResolver(concurrency: 1);
+      final first = resolver.resolve('me', search, 'u1');
+      final gone = resolver.resolve('me', search, 'u2');
+      await Future<void>.delayed(Duration.zero);
+      // u2 のタイルが流れて消えた。
+      resolver.release('me', 'u2');
+      search.answer('u1', post: _post('q1'));
+
+      expect((await first)?.id, 'q1');
+      expect(await gone, isNull);
+      expect(search.calls, ['u1'], reason: '流れたタイルのぶんは引かない');
+
+      // 取り消しは失敗ではないので、次に表示したら引く。
+      final again = resolver.resolve('me', search, 'u2');
+      await Future<void>.delayed(Duration.zero);
+      search.answer('u2', post: _post('q2'));
+      expect((await again)?.id, 'q2');
+    });
+
+    test('⚠ 同じ URL を見ているタイルが残っていれば引く', () async {
+      final search = _Search();
+      final resolver = QuoteFallbackResolver(concurrency: 1);
+      final first = resolver.resolve('me', search, 'u1');
+      final a = resolver.resolve('me', search, 'u2');
+      final b = resolver.resolve('me', search, 'u2'); // 同じ引用の別のタイル
+      await Future<void>.delayed(Duration.zero);
+      resolver.release('me', 'u2'); // 片方だけ流れた
+      search.answer('u1', post: _post('q1'));
+      await first;
+      await Future<void>.delayed(Duration.zero);
+      search.answer('u2', post: _post('q2'));
+
+      expect((await a)?.id, 'q2');
+      expect((await b)?.id, 'q2');
+    });
+
+    test('⚠⚠ 枠を渡す瞬間に来た呼び出しで、決めた本数を超えない (#1304)', () async {
+      // 以前は終わった側が数を下げてから待っている側を起こしていたので、
+      // 起きるまでの間に来た呼び出しが空いた枠を取り、一瞬 +1 本になっていた。
+      final search = _Search();
+      final resolver = QuoteFallbackResolver(concurrency: 1);
+      final first = resolver.resolve('me', search, 'u1');
+      final queued = resolver.resolve('me', search, 'u2');
+      await Future<void>.delayed(Duration.zero);
+
+      search.answer('u1', post: _post('q1'));
+      await first;
+      // u1 が終わった直後（u2 が起きる前）に新しい呼び出し。
+      final late = resolver.resolve('me', search, 'u3');
+      await Future<void>.delayed(Duration.zero);
+
+      expect(search.running, 1);
+      expect(search.maxRunning, 1);
+      search.answer(search.pending.keys.first, post: _post('q'));
+      await Future<void>.delayed(Duration.zero);
+      search.answer(search.pending.keys.first, post: _post('q'));
+      await Future.wait([queued, late]);
+      expect(search.maxRunning, 1);
+    });
+  });
+
+  test('⚠⚠ <br> が大量に並んだ本文でも、引用の行を外すのが二乗にならない (#1304)', () {
+    final brs = '<br>' * 20000;
+    final body =
+        '<p>x$brs y$brs<span class="quote-inline">RE: '
+        '<a href="https://misskey.example/notes/a">…</a></span></p>';
+    final watch = Stopwatch()..start();
+    final stripped = stripQuoteFallback(body);
+    final url = quoteFallbackUrl(body);
+    watch.stop();
+
+    expect(url, 'https://misskey.example/notes/a');
+    expect(stripped, '<p>x$brs y</p>', reason: '直前の <br> だけを外す');
+    // 二乗だと 20000 × 20000 の手間で数秒以上かかる。
+    expect(watch.elapsedMilliseconds, lessThan(1000));
   });
 }
