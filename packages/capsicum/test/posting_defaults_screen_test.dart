@@ -116,6 +116,65 @@ void main() {
     );
   });
 
+  testWidgets('⚠⚠ フォロワーのみなら、引用は「許可しない」に寄せて保存する（Web と同じ・#1304）', (tester) async {
+    final (_, adapter) = await pump(
+      tester,
+      user: const User(
+        id: 'me',
+        username: 'me',
+        defaultScope: PostScope.public,
+        defaultQuotePolicy: 'public',
+      ),
+    );
+
+    await tester.tap(find.text('フォロワー'));
+    await tester.pumpAndSettle();
+    expect(find.text('フォロワーのみの投稿は、引用を許可できません。'), findsOneWidget);
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+
+    expect(adapter.sent?.scope, PostScope.followersOnly);
+    expect(adapter.sent?.quote, 'nobody', reason: '「誰でも」のまま送らない');
+  });
+
+  testWidgets('公開範囲を戻したら、選んでいた引用の許可に戻る', (tester) async {
+    final (_, adapter) = await pump(
+      tester,
+      user: const User(
+        id: 'me',
+        username: 'me',
+        defaultScope: PostScope.public,
+        defaultQuotePolicy: 'followers',
+      ),
+    );
+
+    await tester.tap(find.text('フォロワー'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('公開'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+
+    expect(adapter.sent?.quote, 'followers');
+  });
+
+  test('effectiveDefaultQuotePolicy', () {
+    expect(
+      effectiveDefaultQuotePolicy(PostScope.followersOnly, 'public'),
+      'nobody',
+    );
+    expect(effectiveDefaultQuotePolicy(PostScope.public, 'public'), 'public');
+    expect(
+      effectiveDefaultQuotePolicy(PostScope.unlisted, 'followers'),
+      'followers',
+    );
+    expect(
+      effectiveDefaultQuotePolicy(PostScope.followersOnly, null),
+      isNull,
+      reason: '引用の許可を返さないサーバーには送らない',
+    );
+  });
+
   testWidgets('⚠ 9 言語の外の既定（it）も、選択肢から消さずにそのまま送る', (tester) async {
     final (_, adapter) = await pump(
       tester,

@@ -31,6 +31,21 @@ const _scopes = [PostScope.public, PostScope.unlisted, PostScope.followersOnly];
 /// 言語を「指定しない」（端末・Web の表示言語に任せる）の値。上流は空文字で外す。
 const _noLanguage = '';
 
+/// 保存する引用の許可 (#1304・2026-10-20 pooza 判断: Web と同じく寄せる)。
+///
+/// ⚠ **公開範囲がフォロワーのみなら、引用は「許可しない」にする。**Mastodon の
+/// Web（`Settings::Preferences::PostingDefaultsController#user_params`）は
+/// `default_privacy == 'private'` のとき `default_quote_policy` を `nobody` へ
+/// 書き換えて保存する。API は強制しないので、capsicum からは「フォロワーのみ・
+/// 誰でも」をそのまま保存でき、Web で開くと値がずれて見えていた。
+///
+/// [policy] が null（サーバーが引用の許可を返さない・4.5 より前）なら null のまま。
+@visibleForTesting
+String? effectiveDefaultQuotePolicy(PostScope scope, String? policy) {
+  if (policy == null) return null;
+  return scope == PostScope.followersOnly ? 'nobody' : policy;
+}
+
 class _PostingDefaultsScreenState extends ConsumerState<PostingDefaultsScreen> {
   late PostScope _scope;
   late bool _sensitive;
@@ -77,7 +92,7 @@ class _PostingDefaultsScreenState extends ConsumerState<PostingDefaultsScreen> {
         scope: _scope,
         sensitive: _sensitive,
         language: _language,
-        quotePolicy: _quotePolicy,
+        quotePolicy: effectiveDefaultQuotePolicy(_scope, _quotePolicy),
       );
       // ⚠ 開いたアカウントがまだ現在のアカウントなら、手元の `User` を差し替える。
       // 差し替えないと、次の取り直し（#1185 の TTL）まで投稿フォームが古い既定で
@@ -186,10 +201,25 @@ class _PostingDefaultsScreenState extends ConsumerState<PostingDefaultsScreen> {
                     ),
                     if (_quotePolicy != null) ...[
                       const _Header('引用の許可'),
+                      // ⚠ フォロワーのみの間は「許可しない」で固定する（Web と
+                      // 同じ・[effectiveDefaultQuotePolicy]）。選んでいた値は
+                      // 持っておき、公開範囲を戻したら戻す。
+                      if (_scope == PostScope.followersOnly)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                          child: Text(
+                            'フォロワーのみの投稿は、引用を許可できません。',
+                            style: theme.textTheme.bodySmall,
+                          ),
+                        ),
                       RadioGroup<String>(
-                        groupValue: _quotePolicy,
+                        groupValue: effectiveDefaultQuotePolicy(
+                          _scope,
+                          _quotePolicy,
+                        ),
                         onChanged: (value) {
-                          if (value != null) {
+                          if (value != null &&
+                              _scope != PostScope.followersOnly) {
                             setState(() => _quotePolicy = value);
                           }
                         },
@@ -199,6 +229,7 @@ class _PostingDefaultsScreenState extends ConsumerState<PostingDefaultsScreen> {
                               RadioListTile<String>(
                                 value: entry.key,
                                 title: Text(entry.value),
+                                enabled: _scope != PostScope.followersOnly,
                               ),
                           ],
                         ),
