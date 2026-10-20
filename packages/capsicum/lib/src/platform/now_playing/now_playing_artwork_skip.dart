@@ -12,6 +12,9 @@ const kNowPlayingArtworkSkipReasons = {
   'unsupported_format',
   'too_large',
   'write_failed',
+  // Windows: 曲名までは取れたが、ジャケットの読み出しが 3 秒の打ち切りに掛かった
+  // (#1324)。以前はこの回に曲名ごと消えていた。
+  'timed_out',
 };
 
 /// ⚠ **知っている値だけを通す。**この値はそのまま Sentry の breadcrumb に載る

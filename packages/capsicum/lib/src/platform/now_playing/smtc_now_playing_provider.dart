@@ -1,5 +1,6 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/services.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import 'now_playing_artwork_skip.dart';
 import 'now_playing_provider.dart';
@@ -32,18 +33,42 @@ class SmtcNowPlayingProvider implements NowPlayingProvider {
 
   @override
   Future<NowPlayingInfo?> currentlyPlaying() async {
+    final Map<String, Object?>? raw;
     try {
-      final raw = await _channel.invokeMapMethod<String, Object?>(
-        'getNowPlaying',
-      );
-      if (raw == null) return null;
-      return nowPlayingFromSmtcMetadata(raw);
+      raw = await _channel.invokeMapMethod<String, Object?>('getNowPlaying');
     } catch (_) {
       // チャンネル未登録（非 Windows）/ ネイティブ例外は null に倒す。
       return null;
     }
+    if (raw == null) return null;
+    if (isSmtcQueryTimeout(raw)) {
+      // 曲名すら取れないまま 3 秒の打ち切りに掛かった (#1324)。利用者には
+      // 「再生中の曲なし」と同じに見えるが、以前は記録が何も残らず、曲が無い回と
+      // 区別できなかった。
+      try {
+        Sentry.captureMessage(
+          'nowplaying: smtc query timed out',
+          level: SentryLevel.warning,
+          withScope: (scope) {
+            scope.setTag('nowplaying.source', 'smtc');
+            scope.fingerprint = ['nowplaying', 'smtc_query_timeout'];
+          },
+        );
+      } catch (_) {
+        // 記録の失敗で「曲なし」を返し損ねない。
+      }
+      return null;
+    }
+    return nowPlayingFromSmtcMetadata(raw);
   }
 }
+
+/// ネイティブが「曲名すら取れないまま 3 秒で打ち切った」と返したか (#1324)。
+///
+/// 曲名まで取れていた回は、ネイティブが曲名を返してジャケットだけを
+/// `timed_out` にするので、ここには来ない。
+bool isSmtcQueryTimeout(Map<String, Object?> data) =>
+    data['__nowPlayingError'] == 'query_timeout';
 
 /// SMTC メソッドチャンネルの戻り値マップから [NowPlayingInfo] を組む純関数。
 ///
