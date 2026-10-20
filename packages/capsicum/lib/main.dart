@@ -19,6 +19,7 @@ import 'src/constants.dart';
 import 'src/model/account.dart';
 import 'src/model/account_key.dart';
 import 'src/model/offline_account.dart';
+import 'src/platform/extra_trusted_roots.dart';
 import 'src/platform/paths.dart';
 import 'src/platform/platform_info.dart';
 import 'src/provider/account_manager_provider.dart';
@@ -132,6 +133,10 @@ final Stopwatch appLaunchStopwatch = Stopwatch();
 Future<void> main() async {
   appLaunchStopwatch.start();
   WidgetsFlutterBinding.ensureInitialized();
+
+  // ⚠ **どの通信よりも前に置く (#1298)。**入れたばかりの Windows はルート証明書の
+  // ストアに ISRG が無く、プリセットサーバーにも Sentry にもつながらない。
+  final extraTrustedRoots = installExtraTrustedRoots();
 
   // media_kit (libmpv) のネイティブバックエンドを初期化する (#492)。
   // メディアビューアの動画 / 音声再生に使う。runApp() より前の単一ポイントで
@@ -252,6 +257,18 @@ Future<void> main() async {
           message: 'database_path resolved',
           data: {'path': sentryNativeDbPath},
           level: SentryLevel.info,
+        ),
+      );
+    }
+    // 足せなかった回を後から見分けられるようにする (#1298)。
+    if (extraTrustedRoots != ExtraTrustedRootsStatus.skipped) {
+      Sentry.addBreadcrumb(
+        Breadcrumb(
+          category: 'tls.extra_roots',
+          message: extraTrustedRoots.name,
+          level: extraTrustedRoots == ExtraTrustedRootsStatus.failed
+              ? SentryLevel.warning
+              : SentryLevel.info,
         ),
       );
     }
