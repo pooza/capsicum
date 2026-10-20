@@ -230,4 +230,85 @@ void main() {
       expect(classifyRestoreFailure(StateError('boom')), RestoreOutcome.giveUp);
     });
   });
+
+  group('classifyServerProbeFailure (#1298)', () {
+    DioException dio(DioExceptionType type, [Object? cause]) => DioException(
+      requestOptions: RequestOptions(path: '/.well-known/nodeinfo'),
+      type: type,
+      error: cause,
+    );
+
+    test('ルート証明書が足りない Windows の形（connectionError に Handshake）→ tls', () {
+      // 入れたばかりの Windows で実際に出る形。dio は TLS の失敗を
+      // connectionError に入れ、中身に HandshakeException を持たせる。
+      final r = classifyServerProbeFailure(
+        dio(
+          DioExceptionType.connectionError,
+          const HandshakeException('CERTIFICATE_VERIFY_FAILED'),
+        ),
+      );
+      expect(r.kind, ServerProbeFailureKind.tls);
+      expect(r.message, contains('証明書'));
+    });
+
+    test('badCertificate → tls', () {
+      expect(
+        classifyServerProbeFailure(dio(DioExceptionType.badCertificate)).kind,
+        ServerProbeFailureKind.tls,
+      );
+    });
+
+    test('名前を引けない → hostLookup', () {
+      final r = classifyServerProbeFailure(
+        dio(
+          DioExceptionType.connectionError,
+          const SocketException("Failed host lookup: 'mstdn.example'"),
+        ),
+      );
+      expect(r.kind, ServerProbeFailureKind.hostLookup);
+      expect(r.message, contains('サーバー名'));
+    });
+
+    test('タイムアウト → timeout', () {
+      for (final type in [
+        DioExceptionType.connectionTimeout,
+        DioExceptionType.receiveTimeout,
+        DioExceptionType.sendTimeout,
+      ]) {
+        expect(
+          classifyServerProbeFailure(dio(type)).kind,
+          ServerProbeFailureKind.timeout,
+          reason: '$type',
+        );
+      }
+    });
+
+    test('当ててはいけない形: 名前は引けたが拒否された接続 → other', () {
+      final r = classifyServerProbeFailure(
+        dio(
+          DioExceptionType.connectionError,
+          const SocketException('Connection refused'),
+        ),
+      );
+      expect(r.kind, ServerProbeFailureKind.other);
+      expect(r.message, '接続に失敗しました');
+    });
+
+    test('dio に包まれていない TLS / 名前の解決も拾う', () {
+      expect(
+        classifyServerProbeFailure(const HandshakeException('x')).kind,
+        ServerProbeFailureKind.tls,
+      );
+      expect(
+        classifyServerProbeFailure(
+          const SocketException("Failed host lookup: 'a'"),
+        ).kind,
+        ServerProbeFailureKind.hostLookup,
+      );
+      expect(
+        classifyServerProbeFailure(StateError('boom')).kind,
+        ServerProbeFailureKind.other,
+      );
+    });
+  });
 }
