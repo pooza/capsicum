@@ -12,14 +12,14 @@ void main() {
     // サーバー名がまだ取れていないときはホスト名。
     expect(
       postTargetHint(postLabel: '投稿', host: 'mstdn.example'),
-      'mstdn.exampleに投稿...',
+      'mstdn.exampleで投稿...',
     );
   });
 
   test('投稿ラベルはサーバーの呼び方に従う（Misskey のノートなど）', () {
     expect(
       postTargetHint(postLabel: 'ノート', host: 'misskey.example'),
-      'misskey.exampleにノート...',
+      'misskey.exampleでノート...',
     );
   });
 

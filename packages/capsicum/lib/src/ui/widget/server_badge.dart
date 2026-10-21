@@ -10,7 +10,7 @@ import '../../service/server_metadata_cache.dart';
 String serverDisplayName(String host) =>
     ServerMetadataCache.instance.getCached(host)?.name ?? host;
 
-/// 入力欄のヒント。**どのサーバーへ投稿するか**を出す（「美食丼に投稿...」）。
+/// 入力欄のヒント。**どのサーバーへ投稿するか**を出す（「美食丼で投稿...」）。
 /// 簡易投稿バー (#1313) と投稿画面 (#1328) が同じものを使う。
 ///
 /// ⚠ 同じアバター・同じ表示名を複数のサーバーで使っていると、アイコンや
@@ -23,7 +23,7 @@ String serverDisplayName(String host) =>
 /// ⚠ [host] には**実際に投稿するアカウント**を渡す。デッキでは開いたカラムの
 /// アカウントになる（`currentAccountProvider` がカラムのスコープを返す）。
 String postTargetHint({required String postLabel, required String? host}) =>
-    host == null ? '$postLabel...' : '${serverDisplayName(host)}に$postLabel...';
+    host == null ? '$postLabel...' : '${serverDisplayName(host)}で$postLabel...';
 
 /// テーマカラー背景のサーバー名バッジ。
 /// インスタンスティッカーと同じスタイル。
