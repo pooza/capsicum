@@ -115,7 +115,7 @@ tool/screenshot/mac.sh shot m01
 ```
 
 - ⚠ **debug 版とストア版は、バンドル ID もデータの置き場も同じ。**debug 版で撮影用にアカウントやデッキを組み替えると、ストア版にも反映される。Mac のストア版・TestFlight 版は書き換えてよい（pooza）。⚠ **普段遣いの miki の Linux 版と Pixel 8 は書き換え禁止**
-- **ログインは既定のブラウザ（Vivaldi）で開く。**pooza のブラウザに `@test` のログイン情報を打つので、⚠ **auto モードでは拒否される**（手動モードに切り替えてもらう）。撮り終えたら、Vivaldi で 4 台とも `@test` をログアウトする
+- **ログインは既定のブラウザ（Vivaldi）で開く。**pooza のブラウザに `@test` のログイン情報を打つので、⚠ **auto モードでは拒否される**（手動モードに切り替えてもらう）。⚠ **撮り終えても Vivaldi の `@test` のログインは残す**（2026-10-22 pooza・次の撮影でログインし直さずに済む）
 - 日本語は `paste`（クリップボード経由）で入れる。⚠ pooza のクリップボードを上書きする
 - ファイルを選ぶダイアログ: Cmd+Shift+G → パスを打って Return 2 回
 - ⚠ `osascript` で Safari を `tell` すると、macOS が「VS Code が Safari を制御する」許可を求める。URL を開くのは `open -a Safari <url>`、窓の位置は System Events で動かす（Safari の許可は要らない）
@@ -190,8 +190,7 @@ tool/screenshot/android.sh demo off     # 撮り終えたら戻す
 
 - ⚠ **撮影用の投稿・リアクションは消さない**（2026-10-21 pooza）。利用者には「スルーするなりミュートするなりしてください」と伝えてある。`fedi.sh cleanup`（`posted.log` の投稿を消し、`reacted.log` のリアクションを外す）は、消す必要が出たときのために残してある
 - bot の印を戻す（承認を取ってから）: `fedi.sh bot <KEY> true` を 4 台
-- Mac で撮ったなら、Vivaldi の `@test` のログインを外す
-- ⚠ ミュート・相互フォロー・表示名・アイコン・Annict の連携は**残す**（次の撮影でも使う）
+- ⚠ ミュート・相互フォロー・表示名・アイコン・Annict の連携・Mac の Vivaldi の `@test` のログインは**残す**（次の撮影でも使う）
 
 ## Windows
 
