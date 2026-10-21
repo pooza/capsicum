@@ -65,6 +65,14 @@ curl -s https://relay.capsicum.shrieker.net/health   # revision が origin/main 
 
 規約の背景と `## relay` 節の書式は `milestone-transition` スキル §3-2、同期時の点検は `sync-procedure` スキルのステップ 5。
 
+### 4.0-2 スクリーンショットの見直し（2026-10-21 追加）
+
+**リリース前レビューと同じ時期に、ストアのスクリーンショットを撮り直す必要があるかを判断する**（2026-10-21 pooza）。⚠ App Store は版の提出のときにしか差し替えられないので、§4.5 の提出直前の「ストア掲載文の見直し」で気付いても、**撮り直す時間が無い**。
+
+- 判断の基準・撮り方・後始末は [docs/screenshot-procedure.md](../../../docs/screenshot-procedure.md)。並び順は [docs/store-listing.md](../../../docs/store-listing.md)
+- その版の変更が**撮っている画面**か、**どの画面にも写る部品**（入力欄のヒント・バー・ボタン）に効くなら、その画面だけを撮り直す
+- 「不要」と判断した場合も、そう判断したことをリリース PR の本文に 1 行残す
+
 ### 4.0 リリース前レビュー
 
 ⚠⚠ **本文はスキルへ移した（#1114）→ [.claude/skills/release-review/SKILL.md](../release-review/SKILL.md)（`/release-review`）。**5 観点の並列レビュー・赤黄緑の分類と緑の送り先・2 回目を回す条件はそちらが正本。

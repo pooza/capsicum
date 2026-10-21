@@ -103,7 +103,7 @@ https://github.com/pooza/capsicum/issues
 
 ## スクリーンショット（#1311）
 
-2026-10-20 に pooza と相談して決めた。経緯と撮影の段取りは [#1311](https://github.com/pooza/capsicum/issues/1311) が正本。
+2026-10-20 に pooza と相談して決めた。経緯は [#1311](https://github.com/pooza/capsicum/issues/1311)。**撮り方（道具・下準備・落とし穴・後始末）は [screenshot-procedure.md](screenshot-procedure.md)**。リリースのたびに撮り直しが要るかを見直す（[store-release スキル](../.claude/skills/store-release/SKILL.md) §4.0-2）。
 
 ### 方針
 

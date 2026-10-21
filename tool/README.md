@@ -6,6 +6,7 @@
 | --- | --- |
 | [`dev-run.sh`](dev-run.sh) | debug で capsicum を動かす（macOS / Linux） |
 | [`dev-run.ps1`](dev-run.ps1) | 同上の Windows 版 |
+| [`screenshot/`](screenshot/) | ストア用スクリーンショットの撮影（手順は [docs/screenshot-procedure.md](../docs/screenshot-procedure.md)） |
 
 ## dev-run（debug で動かす）
 
