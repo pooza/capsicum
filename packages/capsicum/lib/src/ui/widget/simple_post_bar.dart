@@ -19,19 +19,6 @@ import 'insert_picker_sheet.dart';
 import 'screen_menu.dart';
 import 'server_badge.dart';
 
-/// 簡易投稿バーの入力欄のヒント (#1313)。**どのサーバーへ投稿するか**を出す
-/// （「美食丼に投稿...」）。
-///
-/// ⚠ 同じアバター・同じ表示名を複数のサーバーで使っていると、デッキのバーの
-/// アイコン（#1172）だけでは見分けられず、タブ表示のバーには何も出ていなかった。
-/// 取り違えたまま「詳細な投稿画面」→ エピソードブラウザ → Annict の連携まで
-/// 進むと、別のサーバーと連携してしまう（#1312）。
-///
-/// ⚠ サーバー名を先に置く。デスクトップの狭幅運用ではヒントの後ろが切れる。
-/// 打ち始めると消えるが、気付きたいのは打つ前なので足りる（2026-10-19 pooza）。
-String simplePostBarHint({required String postLabel, required String? host}) =>
-    host == null ? '$postLabel...' : '${serverDisplayName(host)}に$postLabel...';
-
 class SimplePostBar extends ConsumerStatefulWidget {
   /// Channel ID to post into (Misskey channels).
   final String? channelId;
@@ -394,7 +381,11 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar>
                     textInputAction: TextInputAction.send,
                     onSubmitted: (_) => _submit(),
                     decoration: InputDecoration(
-                      hintText: simplePostBarHint(
+                      // どのサーバーへ投稿するかを出す (#1313)。デッキのバーの
+                      // アイコン（#1172）だけでは、同じアバターを複数のサーバーで
+                      // 使っていると見分けられず、取り違えたまま「詳細な投稿画面」→
+                      // Annict の連携まで進むと別のサーバーと連携してしまう（#1312）。
+                      hintText: postTargetHint(
                         postLabel: postLabel,
                         host: ref.watch(currentAccountProvider)?.key.host,
                       ),

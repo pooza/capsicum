@@ -69,6 +69,7 @@ import '../widget/insert_picker_sheet.dart';
 import '../widget/overflow_icon_row.dart';
 import '../widget/quick_chooser_sheet.dart';
 import '../widget/screen_menu.dart';
+import '../widget/server_badge.dart';
 import 'annict_record_screen.dart';
 import 'drive_picker_screen.dart';
 import 'image_crop_screen.dart';
@@ -5400,8 +5401,17 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                             // #892: デスクトップで等幅フォント名が設定されていれば
                             // 本文入力に適用（空なら null = 既定フォント）。
                             style: composeStyle,
-                            decoration: const InputDecoration(
-                              hintText: '今なにしてる？',
+                            decoration: InputDecoration(
+                              // どのサーバーへ投稿するかを出す (#1328)。
+                              // 「今なにしてる？」では何も分からず、投稿する
+                              // アカウントを相当な頻度で取り違えていた。
+                              hintText: postTargetHint(
+                                postLabel: ref.watch(postLabelProvider),
+                                host: ref
+                                    .watch(currentAccountProvider)
+                                    ?.key
+                                    .host,
+                              ),
                               border: InputBorder.none,
                             ),
                           ),
