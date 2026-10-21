@@ -162,10 +162,7 @@ tool/screenshot/mac.sh shot m01
 
 ## 後始末
 
-```sh
-tool/screenshot/fedi.sh cleanup     # posted.log の投稿を消し、reacted.log のリアクションを外す
-```
-
+- ⚠ **撮影用の投稿・リアクションは消さない**（2026-10-21 pooza）。利用者には「スルーするなりミュートするなりしてください」と伝えてある。`fedi.sh cleanup`（`posted.log` の投稿を消し、`reacted.log` のリアクションを外す）は、消す必要が出たときのために残してある
 - bot の印を戻す（承認を取ってから）: `fedi.sh bot <KEY> true` を 4 台
 - Mac で撮ったなら、Vivaldi の `@test` のログインを外す
 - ⚠ ミュート・相互フォロー・表示名・アイコン・Annict の連携は**残す**（次の撮影でも使う）
