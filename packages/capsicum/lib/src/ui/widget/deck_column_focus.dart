@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/deck_provider.dart';
@@ -24,10 +25,23 @@ Key deckFocusBlinkKey(String columnId) =>
 /// 中身が 2px ずつ狭くなり、投稿タイルが読める下限（375px・未決事項 8）の計算が
 /// 狂う。
 ///
-/// ⚠⚠ **スクロールではフォーカスを移さない。**ホイールやトラックパッドで読むだけの
-/// ことが多く、読んでいたカラムのアカウントで ⌘N が開いてしまう。`onPointerDown`
-/// だけを見るのは、ポインタスクロールが `PointerScrollEvent`（signal）として届き
-/// ここに来ないため。
+/// ⚠⚠ **カラムの中を縦にスクロールしても移す**（#1330・2026-10-22 pooza）。
+/// ホイールとトラックパッドの 2 本指は pointer down を伴わないので、
+/// `onPointerDown` だけでは**読み進めたカラムにフォーカスが来ず**、前に触った
+/// カラムのアカウントで簡易投稿バー・⌘N が動いていた（投稿するアカウントの
+/// 取り違え・#1328）。⚠ 以前は「読むだけで ⌘N の宛先が変わる」ことを嫌って
+/// 移さなかったが、実際の使い方では**読んでいたカラムに書きたい**ほうだった。
+///
+/// ⚠ **見るのはカラムの中の `Scrollable` が出す [UserScrollNotification] だけ。**
+/// - デッキの横送り（カラムの並びの `Scrollable`）はこの枠の**外**にあるので、
+///   通知がここを通らない ＝ 横送りでは移らない
+/// - プログラムからのスクロール（新着で位置を保つ等）は利用者の向きを変えないので
+///   通知が出ない
+/// - ホイールは 1 回ごとに向きが idle → forward / reverse と変わるので毎回届く
+///   （`ScrollPositionWithSingleContext.pointerScroll`）
+/// - ⚠ 横向きの `Scrollable`（カラムの中のタグの列など）では移さない。移す条件は
+///   「縦に読み進めた」で決めた（#1330）
+/// - ⚠ 点滅（`focusAndBlink`）はさせない。スクロールのたびに光ると煩い
 class DeckColumnFocusRing extends ConsumerStatefulWidget {
   const DeckColumnFocusRing({
     super.key,
@@ -101,59 +115,71 @@ class _DeckColumnFocusRingState extends ConsumerState<DeckColumnFocusRing>
       // ⚠ 消費しない。カラムの中のタップ・スクロールはそのまま通す。
       onPointerDown: (_) =>
           ref.read(deckFocusProvider.notifier).focus(widget.columnId),
-      child: Stack(
-        children: [
-          widget.child,
-          if (widget.showRing && focused)
-            Positioned.fill(
-              // ⚠ 枠が出ているかを検査から指せるようにする（`deck_focus_ring_test`）。
-              key: deckFocusRingKey(widget.columnId),
-              child: IgnorePointer(
-                child: AnimatedBuilder(
-                  animation: _blink,
-                  builder: (context, _) {
-                    // 三角波（0 → 1 → 0）。止まっているときは 0 なので、常時の枠は
-                    // 下の 2px がそのまま出る。
-                    final t = _blink.value;
-                    final flash = 1 - (t * 2 - 1).abs();
-                    return DecoratedBox(
-                      decoration: BoxDecoration(
-                        border: Border.all(
-                          color: accent.withValues(alpha: 0.85 + 0.15 * flash),
-                          width: 2 + 2 * flash,
+      child: NotificationListener<UserScrollNotification>(
+        // ⚠ 消費しない（false）。上の `RefreshIndicator` 等にもそのまま届ける。
+        onNotification: (notification) {
+          if (notification.direction != ScrollDirection.idle &&
+              notification.metrics.axis == Axis.vertical) {
+            ref.read(deckFocusProvider.notifier).focus(widget.columnId);
+          }
+          return false;
+        },
+        child: Stack(
+          children: [
+            widget.child,
+            if (widget.showRing && focused)
+              Positioned.fill(
+                // ⚠ 枠が出ているかを検査から指せるようにする（`deck_focus_ring_test`）。
+                key: deckFocusRingKey(widget.columnId),
+                child: IgnorePointer(
+                  child: AnimatedBuilder(
+                    animation: _blink,
+                    builder: (context, _) {
+                      // 三角波（0 → 1 → 0）。止まっているときは 0 なので、常時の枠は
+                      // 下の 2px がそのまま出る。
+                      final t = _blink.value;
+                      final flash = 1 - (t * 2 - 1).abs();
+                      return DecoratedBox(
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: accent.withValues(
+                              alpha: 0.85 + 0.15 * flash,
+                            ),
+                            width: 2 + 2 * flash,
+                          ),
                         ),
-                      ),
-                    );
-                  },
+                      );
+                    },
+                  ),
+                ),
+              )
+            else if (focused)
+              // ⚠ 常時の枠が無い幅では、点滅している間だけ描く（止まれば何も無い）。
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: AnimatedBuilder(
+                    animation: _blink,
+                    builder: (context, _) {
+                      final t = _blink.value;
+                      final flash = 1 - (t * 2 - 1).abs();
+                      if (!_blink.isAnimating || flash <= 0) {
+                        return const SizedBox.shrink();
+                      }
+                      return DecoratedBox(
+                        key: deckFocusBlinkKey(widget.columnId),
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: accent.withValues(alpha: flash),
+                            width: 4 * flash,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
                 ),
               ),
-            )
-          else if (focused)
-            // ⚠ 常時の枠が無い幅では、点滅している間だけ描く（止まれば何も無い）。
-            Positioned.fill(
-              child: IgnorePointer(
-                child: AnimatedBuilder(
-                  animation: _blink,
-                  builder: (context, _) {
-                    final t = _blink.value;
-                    final flash = 1 - (t * 2 - 1).abs();
-                    if (!_blink.isAnimating || flash <= 0) {
-                      return const SizedBox.shrink();
-                    }
-                    return DecoratedBox(
-                      key: deckFocusBlinkKey(widget.columnId),
-                      decoration: BoxDecoration(
-                        border: Border.all(
-                          color: accent.withValues(alpha: flash),
-                          width: 4 * flash,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }

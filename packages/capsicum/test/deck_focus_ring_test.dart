@@ -19,8 +19,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// #1172: フォーカス中のカラムの見せ方と、フォーカスが移る契機
 /// （`docs/deck-ui-plan.md` 決定済み事項 10）。
 ///
-/// ⚠⚠ **スクロールでは移さないことが肝。**ホイールやトラックパッドで読むだけの
-/// ことが多いので、そこで移すと**読んでいたカラムのアカウントで ⌘N が開く**。
+/// ⚠⚠ **カラムの中を縦にスクロールしたら移す・デッキの横送りでは移さない**
+/// （#1330・2026-10-22 pooza）。ホイール・トラックパッドは pointer down を
+/// 伴わないので、以前は読み進めたカラムにフォーカスが来ず、前に触ったカラムの
+/// アカウントで投稿していた（#1328 の取り違え）。
 class _Adapter extends Mock implements DecentralizedBackendAdapter {}
 
 Account _account(String username) => Account(
@@ -52,6 +54,7 @@ void main() {
     WidgetTester tester, {
     required Size size,
     required List<String> columnIds,
+    Axis? listAxis,
   }) async {
     SharedPreferences.setMockInitialValues({
       'deck_columns': [
@@ -81,7 +84,16 @@ void main() {
             columnBuilder: (column) => ColoredBox(
               key: ValueKey('stub-${column.id}'),
               color: const Color(0xFF202020),
-              child: const SizedBox.expand(),
+              // [listAxis] を渡すと、中身を読み進められる一覧にする（#1330）。
+              child: listAxis == null
+                  ? const SizedBox.expand()
+                  : ListView.builder(
+                      key: ValueKey('list-${column.id}'),
+                      scrollDirection: listAxis,
+                      itemExtent: 50,
+                      itemCount: 100,
+                      itemBuilder: (_, i) => Text('${column.id}-$i'),
+                    ),
             ),
           ),
         ),
@@ -149,7 +161,7 @@ void main() {
     expect(find.byKey(deckFocusRingKey('a')), findsNothing);
   });
 
-  testWidgets('⚠⚠ ポインタスクロール（ホイール / トラックパッド）では移らない', (tester) async {
+  testWidgets('⚠⚠ デッキの横送り（ホイール / トラックパッド）では移らない', (tester) async {
     final container = await pumpDeck(
       tester,
       size: const Size(800, 600),
@@ -175,8 +187,123 @@ void main() {
     expect(
       focusedId(container),
       'a',
-      reason: '⚠⚠ 読むだけでフォーカスが移ると、⌘N の宛先が勝手に変わる',
+      reason: '⚠⚠ カラムの並びを送っただけで宛先が変わると、⌘N の宛先が勝手に変わる',
     );
+  });
+
+  group('#1330: カラムの中を縦にスクロールしたら移る', () {
+    ScrollPosition listPosition(WidgetTester tester, String id) => tester
+        .state<ScrollableState>(
+          find.descendant(
+            of: find.byKey(ValueKey('list-$id')),
+            matching: find.byType(Scrollable),
+          ),
+        )
+        .position;
+
+    testWidgets('⚠⚠ ホイールで縦に送ると、そのカラムへ移る（点滅はしない）', (tester) async {
+      final container = await pumpDeck(
+        tester,
+        size: const Size(800, 600),
+        columnIds: const ['a', 'b'],
+        listAxis: Axis.vertical,
+      );
+      expect(focusedId(container), 'a');
+      final blinkBefore = container.read(deckFocusProvider).blinkToken;
+
+      final pointer = TestPointer(1, PointerDeviceKind.mouse);
+      final center = tester.getCenter(find.byKey(const ValueKey('list-b')));
+      await tester.sendEventToBinding(pointer.hover(center));
+      await tester.sendEventToBinding(pointer.scroll(const Offset(0, 300)));
+      await tester.pumpAndSettle();
+
+      // ⚠⚠ **空振りしていないことを先に見る。**
+      expect(
+        listPosition(tester, 'b').pixels,
+        greaterThan(0),
+        reason: '⚠ カラム b の中が実際に縦へ送れていること',
+      );
+      expect(focusedId(container), 'b', reason: '⚠⚠ 読み進めたカラムが投稿の宛先になる');
+      expect(
+        container.read(deckFocusProvider).blinkToken,
+        blinkBefore,
+        reason: '⚠ スクロールのたびに枠が点滅すると煩い',
+      );
+    });
+
+    testWidgets('⚠⚠ トラックパッドの 2 本指で縦に送ると、そのカラムへ移る', (tester) async {
+      final container = await pumpDeck(
+        tester,
+        size: const Size(800, 600),
+        columnIds: const ['a', 'b'],
+        listAxis: Axis.vertical,
+      );
+      expect(focusedId(container), 'a');
+
+      // ⚠ トラックパッドは PointerPanZoom* で届く（pointer down も
+      // PointerScrollEvent も起きない）。pooza の環境はこちら。
+      final pointer = TestPointer(2, PointerDeviceKind.trackpad);
+      final center = tester.getCenter(find.byKey(const ValueKey('list-b')));
+      await tester.sendEventToBinding(pointer.panZoomStart(center));
+      await tester.sendEventToBinding(
+        pointer.panZoomUpdate(center, pan: const Offset(0, -200)),
+      );
+      await tester.sendEventToBinding(pointer.panZoomEnd());
+      await tester.pumpAndSettle();
+
+      expect(
+        listPosition(tester, 'b').pixels,
+        greaterThan(0),
+        reason: '⚠ カラム b の中が実際に縦へ送れていること',
+      );
+      expect(focusedId(container), 'b');
+    });
+
+    testWidgets('⚠ カラムの中の横向きの一覧を送っても移らない', (tester) async {
+      final container = await pumpDeck(
+        tester,
+        size: const Size(800, 600),
+        columnIds: const ['a', 'b'],
+        listAxis: Axis.horizontal,
+      );
+      expect(focusedId(container), 'a');
+
+      final pointer = TestPointer(3, PointerDeviceKind.mouse);
+      final center = tester.getCenter(find.byKey(const ValueKey('list-b')));
+      await tester.sendEventToBinding(pointer.hover(center));
+      await tester.sendEventToBinding(pointer.scroll(const Offset(300, 0)));
+      await tester.pumpAndSettle();
+
+      expect(
+        listPosition(tester, 'b').pixels,
+        greaterThan(0),
+        reason: '⚠ 横の一覧が実際に送れていること（デッキの横送りに取られていない）',
+      );
+      expect(focusedId(container), 'a', reason: '移す条件は「縦に読み進めた」');
+    });
+
+    testWidgets('⚠⚠ 中身が縦の一覧でも、デッキの横送りでは移らない', (tester) async {
+      final container = await pumpDeck(
+        tester,
+        size: const Size(800, 600),
+        columnIds: const ['a', 'b', 'c', 'd'],
+        listAxis: Axis.vertical,
+      );
+      expect(focusedId(container), 'a');
+
+      final pointer = TestPointer(4, PointerDeviceKind.mouse);
+      final center = tester.getCenter(find.byKey(const ValueKey('list-b')));
+      await tester.sendEventToBinding(pointer.hover(center));
+      await tester.sendEventToBinding(pointer.scroll(const Offset(600, 0)));
+      await tester.pumpAndSettle();
+
+      expect(
+        tester.state<ScrollableState>(pager).position.pixels,
+        greaterThan(0),
+        reason: '⚠ デッキが実際に横へ送れていること',
+      );
+      expect(focusedId(container), 'a');
+    });
   });
 
   testWidgets('⚠ 狭幅（1 本ずつ）では、横に送るとフォーカスが移る', (tester) async {
