@@ -22,6 +22,7 @@
 | [`fedi.sh`](../tool/screenshot/fedi.sh) | 撮影用の `@test` を API で操作する（トークン・プロフィール・フォロー・投稿・リアクション・後始末） |
 | [`sim.sh`](../tool/screenshot/sim.sh) | iOS シミュレータを操作して撮る（`SIM=iphone` / `SIM=ipad`） |
 | [`mac.sh`](../tool/screenshot/mac.sh) | macOS の capsicum を操作して撮る・矩形をぼかす |
+| [`android.sh`](../tool/screenshot/android.sh) | Android の実機を adb で操作して撮る |
 | [`simtap.swift`](../tool/screenshot/simtap.swift) / [`blur.swift`](../tool/screenshot/blur.swift) | クリック・キー送出 / 矩形のぼかし。初回に `$SHOT_DIR/bin` へ自動でビルドされる |
 
 作業用の置き場は `$SHOT_DIR`（既定 `~/.cache/capsicum-screenshot`）。トークン・撮影ログ（`posted.log` / `reacted.log`）・撮った画像・アイコン（`avatar.png`）を置く。⚠ トークンを置くので**リポジトリの外**にしてある。
@@ -120,6 +121,28 @@ tool/screenshot/mac.sh shot m01
 - 動画の横の実況: Safari（幅 800）と capsicum（幅 640・これより細くならない）を並べ、画面の範囲を `screencapture -R 240,60,1440,900` で撮る。⚠ YouTube は予告が終わると**次の動画へ自動で進む**ので、再生中に撮る
 - ナウプレ: ミュージックで曲を再生してもらい、♪ボタンで入れる（ジャケット付き）。URL は iOS と同じく撮る前に短くする
 
+## Play（Android の実機）
+
+**検証機の Pixel 6a で、Play から入れた製品版のまま撮る**（2026-10-21 pooza）。⚠ 普段遣いの **Pixel 8 は使わない**（書き換え禁止）。
+
+```sh
+export ANDROID_SERIAL=<serial>          # adb devices
+tool/screenshot/android.sh demo on      # ステータスバーを 10:00・電池満タン・通知なしに
+tool/screenshot/android.sh app          # capsicum（net.shrieker.capsicum）を前面に
+tool/screenshot/android.sh tap 540 1187 # 画素座標
+tool/screenshot/android.sh shot a01
+tool/screenshot/android.sh demo off     # 撮り終えたら戻す
+```
+
+- 1080×2400（9:20）。⚠ 縮小版（高さ 900）の座標は **2.667 倍**して画素にする（係数を間違えて別の項目を押したことがある）
+- ⚠ **手元でビルドした release は入らない。**Play の版は Play の鍵で署名されていて上書きできない（消すとアカウントと設定が消える）。v2.5 との違いが撮る画面に効くときは、Play の内部テストに上がってから撮る
+- **入力**: `adb shell input text` は ASCII だけ。⚠ 長い文字列は途中で落ちることがあるので、パスワードは **4〜6 文字ずつ**区切って送り、件数を伏せ字の数で確かめる。⚠ Gboard の Ctrl+A は効かない。消すときは Delete（`keyevent 67`）を並べる
+- **日本語**: Gboard を「あ」にして、ローマ字を `type` → `key SPACE` で変換 → `key ENTER`。⚠ 長く打つと変な区切りで変換されるので、**言葉ごとに**変換・確定する
+- **ログイン**: Chrome で開く。Bitwarden の保存は「いいえ」。戻り先は「capsicum」と「capsicum (debug)」の両方が出るので、**capsicum を「1 回のみ」**で選ぶ。ダイスキーは Chrome に @pooza のログインが残っているので「アカウントを追加 → 既存のアカウント」で `@test` に入る
+- **プッシュ通知**: ダイスキーの `@test` を入れ、設定 → プッシュ通知で「登録済み」を確かめる。別のサーバーの `@test` から `fedi.sh react <KEY> fav <ダイスキーのノートの URL>` で送り、`adb shell cmd statusbar expand-notifications` で引き下ろす。⚠ 引き下ろすとデモ表示が外れて**実機の時刻と日付が写る**（pooza の端末なので構わない）。他のアプリの通知は消してよい（検証機）
+- **添付画像**: `adb push` で `/sdcard/Pictures/` に置くと、写真の選択の先頭に出る
+- **共有から作るナウプレ**: YouTube Music の曲の「⋮ → 共有 → 他のアプリと共有 → capsicum」。⚠ 渡るのは URL だけなので、本文は `#nowplaying <URL>` の 1 行になる（曲名はモロヘイヤが投稿時に足す）
+
 ## 撮影用の投稿
 
 ⚠ **他の人の投稿・アイコンを写さない。アニメのキャプチャや公式の絵を写さない**（store-listing.md）。
@@ -169,5 +192,4 @@ tool/screenshot/mac.sh shot m01
 
 ## 未着手の枠
 
-- **Play のスマホ**: エミュレータで **release ビルド**を動かして撮る（debug は別のアプリ扱い）。Misskey のプッシュ通知を撮れるかは未検証
 - **Windows**: Windows 機で撮る（画面の撮り方と操作は、Windows 機のセッションのメモリ `reference_windows_screen_capture`）
