@@ -23,6 +23,7 @@
 | [`sim.sh`](../tool/screenshot/sim.sh) | iOS シミュレータを操作して撮る（`SIM=iphone` / `SIM=ipad`） |
 | [`mac.sh`](../tool/screenshot/mac.sh) | macOS の capsicum を操作して撮る・矩形をぼかす |
 | [`android.sh`](../tool/screenshot/android.sh) | Android の実機を adb で操作して撮る |
+| [`win.ps1`](../tool/screenshot/win.ps1) | Windows の capsicum を操作して撮る・矩形をぼかす（PowerShell） |
 | [`simtap.swift`](../tool/screenshot/simtap.swift) / [`blur.swift`](../tool/screenshot/blur.swift) | クリック・キー送出 / 矩形のぼかし。初回に `$SHOT_DIR/bin` へ自動でビルドされる |
 
 作業用の置き場は `$SHOT_DIR`（既定 `~/.cache/capsicum-screenshot`）。トークン・撮影ログ（`posted.log` / `reacted.log`）・撮った画像・アイコン（`avatar.png`）を置く。⚠ トークンを置くので**リポジトリの外**にしてある。
@@ -190,6 +191,24 @@ tool/screenshot/android.sh demo off     # 撮り終えたら戻す
 - Mac で撮ったなら、Vivaldi の `@test` のログインを外す
 - ⚠ ミュート・相互フォロー・表示名・アイコン・Annict の連携は**残す**（次の撮影でも使う）
 
-## 未着手の枠
+## Windows
 
-- **Windows**: Windows 機で撮る（画面の撮り方と操作は、Windows 機のセッションのメモリ `reference_windows_screen_capture`）
+x64 の Windows 機で、develop の debug ビルドを撮る（2026-10-21 が初回）。道具は [`win.ps1`](../tool/screenshot/win.ps1)（PowerShell。撮る・クリック・キー・日本語入力・窓の配置・ぼかし）。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tool\dev-run.ps1 -d windows         # 初回だけ。以後は build の Debug\capsicum.exe を直接起動してよい
+powershell -ExecutionPolicy Bypass -File tool\screenshot\win.ps1 place '@app' 240 100 1440 810
+powershell -ExecutionPolicy Bypass -File tool\screenshot\win.ps1 shot w01 240 100 1440 810
+```
+
+- 寸法は 1440×810（16:9・Store の下限 1366×768 より大きい）。窓をこの大きさに置き、その矩形を撮る
+- ⚠ **`@app` で capsicum の窓を指す。**VS Code にも「capsicum」という題の窓があり、題で探すと取り違える
+- **ログイン**: Vivaldi のプライベートウィンドウで `@test` に入る（Ctrl+Shift+N に OAuth の URL を貼る）。打つのは `win.ps1 typesecret TEST_<KEY>_EMAIL` / `_PASSWORD`（値を画面に出さない）。ダイスキーの MiAuth は時間が経つと戻り先に届かないので、止まったらやり直す
+- ⚠ **実況を隠す設定（ヘッダーのマイクのボタン）が ON だと、実況の投稿がタグの TL に出ない。**撮るあいだだけ OFF にして、撮り終えたら戻す
+- 入力: 日本語は `win.ps1 type <UTF-8 のファイル>` で入る。⚠ **Ctrl+A・Ctrl+Home は capsicum の入力欄に効かない。**消すときは本文の下の空白をクリックして末尾に置き、`key '{BS 50}'` を並べる
+- 投稿画面を開くのは簡易投稿バーの右の展開ボタン（Ctrl+N はタブ表示では効かなかった）。タイムラインの更新は Ctrl+R
+- 動画の横の実況: Vivaldi（幅 800）と capsicum（幅 640）を並べて 1440×810 を撮り、`win.ps1 blur` で左の 800 を窓ごとぼかす。YouTube は `k` で止める
+- ナウプレ: Spotify で、**ジャケットがアニメの絵でない曲**を流す（2026-10-21 は久石譲「ENCORE」）。曲送りは `win.ps1 vk 176`。⚠ **同じプロセスで ♪ を続けて押すとジャケットが付かなくなる**（[#1329](https://github.com/pooza/capsicum/issues/1329)）ので、付かなければアプリを起動し直して 1 回で入れる。下書きが残っていると「前回の入力を復元しました」の帯が写るので、本文を空にしてから起動し直す
+- 添付画像の編集: 下地は手元で描いた絵を使う（権利の心配が無い）。スタンプは他社のロゴを避ける
+- Vivaldi は窓を閉じると確認ダイアログを出す（`closeat` のあとに OK を押す）
+- 撮影前に「ファイル → 設定のバックアップ」で控えを取っておく（デッキに `@test` のカラムを足すため）
