@@ -129,7 +129,7 @@ https://github.com/pooza/capsicum/issues
 
 - スマホの枠は「見ながら書き、見終わったら記録する」流れ（実況 → エピソードブラウザ → 劇中ワード → Annict）を先頭の 4 枚で見せる。デッキは画面の幅が足りないと出せないので入れない
 - 横長の枠は 1 枚目をデッキにする（Windows で比べられる相手は TheDesk）
-- iPhone の枠にプッシュ通知が無いのは、シミュレータで動く debug ビルドがアプリの名前を「capsicum (debug)」と出すため（実機なら撮れるが、端末の操作が pooza の手になる）。Play は release ビルドをエミュレータで動かして撮る
+- iPhone の枠にプッシュ通知が無いのは、シミュレータで動く debug ビルドがアプリの名前を「capsicum (debug)」と出すため（実機なら撮れるが、端末の操作が pooza の手になる）。Play は検証機（Pixel 6a）に Play から入れた版で撮る（撮り方は [screenshot-procedure.md](screenshot-procedure.md)）
 
 ### 撮るときの注意
 
