@@ -16,11 +16,11 @@ v2.0 はメジャーリリースで、次の 3 本を束ねている。**構造�
 
 | | 何か | 設計書 |
 | --- | --- | --- |
-| **デッキ表示**（[#720](https://github.com/pooza/capsicum/issues/720)） | タイムラインなどを横に並べるマルチカラム。カラムごとにアカウントを違えられる | [deck-ui-plan.md](deck-ui-plan.md)（入口）/ [deck-ui-decisions.md](deck-ui-decisions.md)（決定の本文） |
+| **デッキ表示**（[#720](https://github.com/pooza/capsicum/issues/720)） | タイムラインなどを横に並べるマルチカラム。カラムごとにアカウントを違えられる | [deck-ui-plan.md](deck-ui-plan.md)（入口）/ [deck-ui-decisions.md](deck-ui-decisions.md) / [deck-ui-decisions-2.md](deck-ui-decisions-2.md)（決定の本文） |
 | **有償プッシュ通知リレー**（[#597](https://github.com/pooza/capsicum/issues/597)） | プリセットサーバーの利用者は無償のまま、それ以外の利用者へアプリ内課金で開放する | [paid-relay-plan.md](paid-relay-plan.md) |
 | **添付画像のレイヤ編集**（[#884](https://github.com/pooza/capsicum/issues/884)） | 投稿する画像に文字・スタンプ・画像を重ね、後から編集し直せる | 設計書なし（Issue とコードが正本） |
 
-⚠⚠ **デッキを触る回は deck-ui-decisions.md を、課金・利用権を触る回は paid-relay-plan.md と [product-policy.md](product-policy.md) の「課金の方向性」を先に読む。**どちらも「再判定しない」と明記した決定を持っており、コードのコメントが節番号で参照している。
+⚠⚠ **デッキを触る回は deck-ui-decisions.md と deck-ui-decisions-2.md を、課金・利用権を触る回は paid-relay-plan.md と [product-policy.md](product-policy.md) の「課金の方向性」を先に読む。**どちらも「再判定しない」と明記した決定を持っており、コードのコメントが節番号で参照している。
 
 ## モロヘイヤ連携
 
