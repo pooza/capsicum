@@ -703,6 +703,11 @@ class MisskeyClient {
   /// 同じページ（`untilId` を無視した応答）を返し続けると終わらなかった。
   /// [maxPages] ページ（5,000 件）で打ち切り、末尾の id が前のページと同じなら
   /// その場で止める。
+  ///
+  /// ⚠⚠ **打ち切った回は [StateError] を投げる**（途中までを返さない・v2.5
+  /// リリース前レビュー）。呼び出し元（`MisskeyAdapter.updateScheduledNote`）は
+  /// 「見つからない＝投票なし」として更新を送るので、途中までを返すと、読めなかった
+  /// 側の投票つき予約の期限を消す（#1293 の再発）。
   Future<List<Map<String, dynamic>>> getScheduledNotesRaw({
     int maxPages = 50,
   }) async {
@@ -723,10 +728,12 @@ class MisskeyClient {
       if (page.length < pageSize) return all;
       final last = page.last['id'] as String;
       // 進んでいない（同じページが返ってきた）。辿り直しても同じものしか来ない。
-      if (last == untilId) return all;
+      if (last == untilId) {
+        throw StateError('notes/drafts/list が先へ進まない（untilId=$untilId）');
+      }
       untilId = last;
     }
-    return all;
+    throw StateError('notes/drafts/list を $maxPages ページで打ち切った');
   }
 
   /// POST /api/notes/drafts/update — 予約投稿の本文か時刻を変える。

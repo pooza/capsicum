@@ -48,8 +48,17 @@ class ProviderScopeCarrier extends InheritedTheme {
 }
 
 /// [container] のスコープで [child] を描き、そこから開くシート等にも持ち込む。
+///
+/// ⚠⚠ **`key` をコンテナで付ける**（v2.5 リリース前レビュー）。
+/// `UncontrolledProviderScope` の element は、mount したときのコンテナへ vsync を
+/// 登録し、unmount するときは**その時点の**コンテナから外す（`update` で付け替え
+/// ない・flutter_riverpod 2.6.1）。同じ element のままコンテナが差し替わると
+/// （デッキで、現在でないアカウント B のカラムから C のカラムへフォーカスが移る）、
+/// 登録が B に残り、debug では B の次の予約で `Only one task can be scheduled at
+/// a time` になる。コンテナが変わったら element ごと作り直させる。
 Widget carryProviderScope(ProviderContainer container, Widget child) =>
     UncontrolledProviderScope(
+      key: ObjectKey(container),
       container: container,
       child: ProviderScopeCarrier(container: container, child: child),
     );

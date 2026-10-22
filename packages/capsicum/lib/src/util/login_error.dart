@@ -146,7 +146,7 @@ ServerProbeFailureInfo classifyServerProbeFailure(Object error) {
       case DioExceptionType.sendTimeout:
         return (
           kind: ServerProbeFailureKind.timeout,
-          message: 'サーバーが応答しませんでした。しばらくしてからお試しください',
+          message: 'サーバーが応答しませんでした。しばらくしてからお試しください。',
         );
       default:
         break;
@@ -158,7 +158,7 @@ ServerProbeFailureInfo classifyServerProbeFailure(Object error) {
   if (cause is SocketException && cause.message.contains('host lookup')) {
     return (
       kind: ServerProbeFailureKind.hostLookup,
-      message: 'サーバーが見つかりませんでした。サーバー名を確かめてください',
+      message: 'サーバーが見つかりませんでした。サーバー名を確かめてください。',
     );
   }
   return (kind: ServerProbeFailureKind.other, message: '接続に失敗しました');

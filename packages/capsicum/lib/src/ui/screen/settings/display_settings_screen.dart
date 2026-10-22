@@ -39,9 +39,7 @@ class DisplaySettingsScreen extends ConsumerWidget {
           ),
           SwitchListTile(
             title: const Text('投稿元サーバー帯を隠す'),
-            subtitle: const Text(
-              'リモート投稿に表示される投稿元サーバー名／テーマカラー帯（インスタンスティッカー）を非表示にします',
-            ),
+            subtitle: const Text('リモート投稿に表示される投稿元サーバー名／テーマカラー帯を非表示にします'),
             value: hideInstanceTicker,
             onChanged: (_) =>
                 ref.read(hideInstanceTickerProvider.notifier).toggle(),

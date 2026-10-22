@@ -183,11 +183,38 @@ void main() {
       );
       adapter.client.dio.httpClientAdapter = http;
 
-      final all = await adapter.client.getScheduledNotesRaw();
+      // ⚠⚠ 途中までを返さず投げる（v2.5 リリース前レビュー）。返すと、
+      // 読めなかった側の投票つき予約を「投票なし」で更新して期限を消す。
+      await expectLater(
+        adapter.client.getScheduledNotesRaw(),
+        throwsA(isA<StateError>()),
+      );
 
       final lists = http.requests.where((r) => r.path.contains('drafts/list'));
       expect(lists.length, 2, reason: '2 ページ目で進んでいないと分かったら止める');
-      expect(all, hasLength(200));
+    });
+
+    test('⚠⚠ 辿るのをやめた回は、時刻を変える更新を送らない', () async {
+      // 対象の d1 は 1 ページ目に居るが、2 ページ目が進まない。途中までの一覧で
+      // 判断させない（どこまで読めたかで結果が変わる形にしない）。
+      final page = [
+        for (var i = 0; i < 100; i++)
+          {'id': 'd$i', 'text': '予約 $i', 'scheduledAt': 1, 'poll': null},
+      ];
+      http = _Recorder(
+        (options) =>
+            options.path.contains('drafts/list') ? page : <String, dynamic>{},
+      );
+      adapter.client.dio.httpClientAdapter = http;
+
+      await expectLater(
+        (adapter as ScheduleSupport).rescheduleScheduledPost('d1', newTime),
+        throwsA(isA<StateError>()),
+      );
+      expect(
+        http.requests.where((r) => r.path.contains('drafts/update')),
+        isEmpty,
+      );
     });
 
     test('⚠ 進み続けるサーバーでも、決めたページ数で打ち切る (#1304)', () async {
@@ -201,7 +228,10 @@ void main() {
       });
       adapter.client.dio.httpClientAdapter = http;
 
-      await adapter.client.getScheduledNotesRaw(maxPages: 3);
+      await expectLater(
+        adapter.client.getScheduledNotesRaw(maxPages: 3),
+        throwsA(isA<StateError>()),
+      );
 
       final lists = http.requests.where((r) => r.path.contains('drafts/list'));
       expect(lists.length, 3);
