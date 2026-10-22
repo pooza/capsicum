@@ -72,6 +72,15 @@ tool/dev-run.sh -s -d <UDID>             # 初回だけ debug ビルドを入れ
 | iPhone | iPhone 18 Pro Max | 1320×2868（6.9 インチ） |
 | iPad | iPad Pro 13-inch (M5)・横 | 2752×2064 |
 
+⚠⚠ **App Store Connect の iPhone の枠は、2026-10 の時点で「Dynamic Island 搭載 iPhone（中型ディスプレイ）」の 1 つだけ**になっていて、受け付けるのは **1179×2556 / 1206×2622**（6.1 / 6.3 インチ）。⚠ **6.9 インチの 1320×2868 は「サイズが無効です」で弾かれる**（v2.5 の提出で踏んだ）。撮るのは 6.9 インチのままにして、貼る前に縮める（縦横比はほぼ同じで、横が 1 画素はみ出すだけ）:
+
+```sh
+sips --resampleHeight 2622 iphone-6.3/*.png
+sips --cropToHeightWidth 2622 1206 iphone-6.3/*.png
+```
+
+⚠ **画面から消えた 6.5 インチの枠も、API の上では版に残る**（v2.5 では 2026-03 の古い 4 枚が載ったままだった）。貼ったあとは `.claude/scripts/asc-status.rb screenshots` で、版に載っている枠と枚数を確かめる。⚠ 画面に無い枠の画像は App Store Connect の画面から消せないので、API（`DELETE /v1/appScreenshotSets/{id}`）で消す。
+
 ⚠ **debug ビルドで撮る**（シミュレータでは release が動かない）。画面に「debug」は出ないが、**通知のバナーにはアプリ名「capsicum (debug)」が出る**ので、プッシュ通知は iPhone の枠から外してある。
 
 ### 操作のしかた
