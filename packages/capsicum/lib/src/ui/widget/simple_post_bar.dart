@@ -43,6 +43,16 @@ class SimplePostBar extends ConsumerStatefulWidget {
   /// ⚠ タブ UI では渡さない。常に現在のアカウントなので、狭い横幅を食うだけになる。
   final Widget? leading;
 
+  /// バーの外に置く打ちかけの控え。渡すと、バーが作り直されても本文・カーソル・
+  /// 入力欄のフォーカスを引き継ぐ。
+  ///
+  /// ⚠⚠ デッキはフォーカスが移るたびにバーを作り直す（アカウントごとの状態を
+  /// 持ち越さないため）が、**打ちかけの本文は移った先のカラムへ引き継ぐ**
+  /// （2026-10-22 pooza「カラムが変わった時に、入力中の投稿を空にしたりもしない」）。
+  /// #1330 でスクロールでもフォーカスが移るようになり、読みながら書く途中で消えていた。
+  /// ⚠ タブ UI では渡さない（バーは作り直されない）。
+  final PostBarDraft? draft;
+
   const SimplePostBar({
     super.key,
     this.channelId,
@@ -50,6 +60,7 @@ class SimplePostBar extends ConsumerStatefulWidget {
     this.hashtags = const [],
     this.onPosted,
     this.leading,
+    this.draft,
   });
 
   @override
@@ -73,11 +84,34 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar>
     // の _onTextChanged と同等)。IME 変換中は controller 側の guard で警告
     // 装飾が抑えられるので、ここでは値が変わるたび無条件に流す。
     _controller.addListener(_updateShortcodeWarnings);
+    final draft = widget.draft;
+    if (draft != null) {
+      _controller.value = draft.value;
+      _controller.addListener(_saveDraft);
+      _focusNode.addListener(_saveDraft);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        // 引き継いだ本文にも、移った先のサーバーの絵文字で警告を当て直す。
+        _updateShortcodeWarnings();
+        if (draft.hasFocus) _focusNode.requestFocus();
+      });
+    }
+  }
+
+  void _saveDraft() {
+    final draft = widget.draft;
+    if (draft == null || !mounted) return;
+    draft.value = _controller.value;
+    draft.hasFocus = _focusNode.hasFocus;
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    // ⚠ 控えへ書くのを先に外す。破棄の途中で入力欄がフォーカスを失った通知を
+    // 書き込むと、移った先のバーが引き継ぐ「フォーカスがあった」を消す。
+    _controller.removeListener(_saveDraft);
+    _focusNode.removeListener(_saveDraft);
     _controller.removeListener(_updateShortcodeWarnings);
     _controller.dispose();
     _focusNode.dispose();
@@ -516,4 +550,13 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar>
       child: Padding(padding: const EdgeInsets.all(6), child: child),
     );
   }
+}
+
+/// 簡易投稿バーの外に置く、打ちかけの控え（[SimplePostBar.draft]）。
+///
+/// 作り直したバーが [value] と [hasFocus] を引き継ぐ。送信して本文が空になれば、
+/// 控えも空になる（入力欄の変化をそのまま写している）。
+class PostBarDraft {
+  TextEditingValue value = TextEditingValue.empty;
+  bool hasFocus = false;
 }
