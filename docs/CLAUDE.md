@@ -367,7 +367,7 @@ dart analyze --fatal-infos > /tmp/analyze.log 2>&1; echo "ANALYZE_EXIT=$?"
   - **付けるときは、閉じる条件と測り方を Issue に書く**（測るコマンド・見る値・「満たした / 満たしていない / まだ分からない」の読み分け）。書いていないものには付けない
   - **マイルストーンに載せたまま持ち越す。**移行時に条件を満たしていなければ次の枠へ移す（[milestone-transition](../.claude/skills/milestone-transition/SKILL.md) の 1.）。⚠ **枠の目安（大更新 0〜1 + 小中 5〜12）の件数には数えない**・**進捗報告でも作業の残件と分けて書く**（作業が残っているように見せない）
   - 条件を満たしたら、測った値を添えて close する
-- Flutter framework 由来の不具合（capsicum 側で根治不能なもの、`flutter` ラベル付き）は [flutter-upstream-watch.md](flutter-upstream-watch.md) で集中管理し、**月初のセッションで手動 chase** して上流の進捗を巡回する。⚠ **クラウドの schedule routine は 2026-08-21 に廃止した**（4 か月連続で発火しても成果コミットが 1 件も残らず、実務はローカル頼みだった）。**資格情報の満了チェックがこの巡回に相乗りしている**点に注意
+- Flutter framework 由来の不具合（capsicum 側で根治不能なもの、`flutter` ラベル付き）は [flutter-upstream-watch.md](flutter-upstream-watch.md) で集中管理し、**月初のセッションで手動 chase** して上流の進捗を巡回する。⚠⚠ **`flutter` ラベルを付けたら、同じ作業で同 doc の表に行を足す**（外すときも同じ・規約は同 doc の冒頭）。⚠ **クラウドの schedule routine は 2026-08-21 に廃止した**（4 か月連続で発火しても成果コミットが 1 件も残らず、実務はローカル頼みだった）。**資格情報の満了チェックがこの巡回に相乗りしている**点に注意
 
 ### 実装しない機能
 
