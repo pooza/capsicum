@@ -709,17 +709,30 @@ class PushRegistrationService {
           'capsicum: push.registration: relay unregister failed',
           e,
         );
-        _reportUnregisterFailure(e, st, '(device)', 'relay');
+        _reportUnregisterFailure(
+          e,
+          st,
+          '(device)',
+          'relay',
+          deviceIdSent: deviceId != null && deviceId.isNotEmpty,
+        );
       }
     }
   }
 
+  /// [deviceIdSent] は relay への登録解除で端末の ID（`X-Device-Id`）を送ったか
+  /// (#1304)。relay の段だけ渡す。
+  ///
+  /// ⚠ relay は ID が行と食い違うと 404 を返して解除を拒む（capsicum-relay#91）。
+  /// 行が無いだけの 404 と同じ形なので、送ったかどうかで群を分けないと、
+  /// 「拒まれて登録が残った」回が「もう無かった」回に埋もれる。
   static void _reportUnregisterFailure(
     Object e,
     StackTrace st,
     String host,
-    String stage,
-  ) {
+    String stage, {
+    bool? deviceIdSent,
+  }) {
     if (_isTransient(e)) return;
     Sentry.captureException(
       scrubException(e),
@@ -729,6 +742,9 @@ class PushRegistrationService {
         scope.setTag('phase', 'unregister');
         scope.setTag('stage', stage);
         scope.setTag('push.host', host);
+        if (deviceIdSent != null) {
+          scope.setTag('device_id_sent', '$deviceIdSent');
+        }
         // status / path 毎の grouping 分散を避けるため runtimeType + stage で
         // 集約する (#526)。
         scope.fingerprint = [
@@ -736,6 +752,7 @@ class PushRegistrationService {
           'unregister',
           stage,
           e.runtimeType.toString(),
+          if (deviceIdSent != null) 'device_id_sent=$deviceIdSent',
         ];
       },
     );

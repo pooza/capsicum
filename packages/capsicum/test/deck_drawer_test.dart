@@ -112,7 +112,8 @@ void main() {
     // どのサーバーでも出る項目で、デッキの AppBar には入口が無いもの。
     expect(find.text('サーバー情報'), findsOneWidget);
     expect(find.text('アカウントを追加'), findsOneWidget);
-    expect(find.text('ログアウト'), findsOneWidget);
+    // 「ログアウト」から言い換えた (#1297)。
+    expect(find.text('このアカウントをこの端末から削除'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

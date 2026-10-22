@@ -698,11 +698,23 @@ class MisskeyClient {
   ///
   /// ⚠ **全件を辿る** (#1293)。`limit` を付けないと上流の既定（30 件）で切れ、
   /// 31 件目以降の予約を時刻変更すると、投票を添えられずに期限が消えていた。
-  Future<List<Map<String, dynamic>>> getScheduledNotesRaw() async {
+  ///
+  /// ⚠⚠ **辿る回数に上限を置く** (#1304)。以前は `while (true)` で、サーバーが
+  /// 同じページ（`untilId` を無視した応答）を返し続けると終わらなかった。
+  /// [maxPages] ページ（5,000 件）で打ち切り、末尾の id が前のページと同じなら
+  /// その場で止める。
+  ///
+  /// ⚠⚠ **打ち切った回は [StateError] を投げる**（途中までを返さない・v2.5
+  /// リリース前レビュー）。呼び出し元（`MisskeyAdapter.updateScheduledNote`）は
+  /// 「見つからない＝投票なし」として更新を送るので、途中までを返すと、読めなかった
+  /// 側の投票つき予約の期限を消す（#1293 の再発）。
+  Future<List<Map<String, dynamic>>> getScheduledNotesRaw({
+    int maxPages = 50,
+  }) async {
     const pageSize = 100; // 上流の上限
     final all = <Map<String, dynamic>>[];
     String? untilId;
-    while (true) {
+    for (var i = 0; i < maxPages; i++) {
       final response = await dio.post(
         '/api/notes/drafts/list',
         data: createBody({
@@ -714,8 +726,14 @@ class MisskeyClient {
       final page = (response.data as List).cast<Map<String, dynamic>>();
       all.addAll(page);
       if (page.length < pageSize) return all;
-      untilId = page.last['id'] as String;
+      final last = page.last['id'] as String;
+      // 進んでいない（同じページが返ってきた）。辿り直しても同じものしか来ない。
+      if (last == untilId) {
+        throw StateError('notes/drafts/list が先へ進まない（untilId=$untilId）');
+      }
+      untilId = last;
     }
+    throw StateError('notes/drafts/list を $maxPages ページで打ち切った');
   }
 
   /// POST /api/notes/drafts/update — 予約投稿の本文か時刻を変える。

@@ -14,6 +14,8 @@
 #include <future>
 #include <initializer_list>
 #include <memory>
+#include <mutex>
+#include <optional>
 #include <string>
 #include <system_error>
 #include <thread>
@@ -52,6 +54,34 @@ constexpr wchar_t kArtworkDirPrefix[] = L"nowplaying_native_";
 struct ArtworkResult {
   std::string path;     // 書き出したファイルの絶対パス（UTF-8）
   std::string skipped;  // 書き出さなかった理由（Dart の kNowPlayingArtworkSkipReasons）
+};
+
+// 曲名まで取れたところで、ジャケットの読み出しが 3 秒（kQueryTimeout）に掛かった
+// とき (#1324)。曲名は返し、ジャケットだけ諦めたことにする。
+ArtworkResult ArtworkTimedOut() { return {"", "timed_out"}; }
+
+// ジャケットの結果を、Dart へ返すマップに載せる。
+// ⚠ 書き出さなかった理由も返す (#1283)。返さないと Dart 側の breadcrumb はどれも
+// 「源が絵を持っていない」に見え、「付かない」という報告を切り分けられない。
+void PutArtwork(flutter::EncodableMap& map, const ArtworkResult& artwork) {
+  if (!artwork.path.empty()) {
+    map[flutter::EncodableValue("artworkPath")] =
+        flutter::EncodableValue(artwork.path);
+  } else if (!artwork.skipped.empty()) {
+    map[flutter::EncodableValue("artworkSkipped")] =
+        flutter::EncodableValue(artwork.skipped);
+  }
+}
+
+// ワーカーと呼び出し側が分け持つ途中経過 (#1324)。
+//
+// ⚠⚠ **打ち切ったときに曲名まで捨てないためのもの。**以前は 3 秒を超えると
+// 何が取れていても null（再生中の曲なし）を返しており、ジャケットの取得が
+// 長引いただけで曲名ごと消えていた。ワーカーは曲名まで取れた時点でここへ置き、
+// それからジャケットに進む。
+struct QueryProgress {
+  std::mutex mutex;
+  std::optional<flutter::EncodableMap> text;  // 曲名まで取れた時点のマップ
 };
 
 // 先頭のバイトから拡張子を決める。画像でなければ空。
@@ -208,7 +238,7 @@ ArtworkResult ReadArtwork(
 
 // 実 WinRT 取得。MTA スレッド上で呼ばれる前提（IAsyncOperation::get() を
 // STA でブロックしないため）。
-flutter::EncodableValue QueryNowPlaying() {
+flutter::EncodableValue QueryNowPlaying(QueryProgress& progress) {
   auto manager =
       GlobalSystemMediaTransportControlsSessionManager::RequestAsync().get();
   if (!manager) {
@@ -244,18 +274,31 @@ flutter::EncodableValue QueryNowPlaying() {
       flutter::EncodableValue(winrt::to_string(session.SourceAppUserModelId()));
   map[flutter::EncodableValue("status")] =
       flutter::EncodableValue(static_cast<int32_t>(status));
-  // ジャケット (#1274)。⚠ 書き出さなかった理由も返す (#1283)。返さないと Dart
-  // 側の breadcrumb はどれも「源が絵を持っていない」に見え、「付かない」という
-  // 報告を切り分けられない。
-  const auto artwork = ReadArtwork(props);
-  if (!artwork.path.empty()) {
-    map[flutter::EncodableValue("artworkPath")] =
-        flutter::EncodableValue(artwork.path);
-  } else if (!artwork.skipped.empty()) {
-    map[flutter::EncodableValue("artworkSkipped")] =
-        flutter::EncodableValue(artwork.skipped);
+  {
+    std::lock_guard<std::mutex> lock(progress.mutex);
+    progress.text = map;
   }
+  // ジャケット (#1274)。
+  PutArtwork(map, ReadArtwork(props));
   return flutter::EncodableValue(map);
+}
+
+// 打ち切ったときに返す値 (#1324)。
+//
+// - 曲名まで取れていれば、それを返す（ジャケットは timed_out）
+// - 取れていなければ、打ち切った印を返す。Dart は「再生中の曲なし」と同じに
+//   扱うが、印を見て Sentry に残す（以前は null で、曲が無い回と区別できなかった）
+flutter::EncodableValue TimedOutValue(QueryProgress& progress) {
+  std::lock_guard<std::mutex> lock(progress.mutex);
+  if (progress.text) {
+    flutter::EncodableMap map = *progress.text;
+    PutArtwork(map, ArtworkTimedOut());
+    return flutter::EncodableValue(map);
+  }
+  flutter::EncodableMap marker;
+  marker[flutter::EncodableValue("__nowPlayingError")] =
+      flutter::EncodableValue("query_timeout");
+  return flutter::EncodableValue(marker);
 }
 
 }  // namespace
@@ -277,12 +320,14 @@ flutter::EncodableValue GetCurrentNowPlaying() {
   // use-after-scope を避ける）。
   auto promise = std::make_shared<std::promise<flutter::EncodableValue>>();
   std::future<flutter::EncodableValue> future = promise->get_future();
+  // 途中経過も promise と同じく shared で持つ（打ち切り後もワーカーが書きうる）。
+  auto progress = std::make_shared<QueryProgress>();
 
-  std::thread worker([promise]() {
+  std::thread worker([promise, progress]() {
     flutter::EncodableValue value;  // 既定は null (std::monostate)
     try {
       winrt::init_apartment(winrt::apartment_type::multi_threaded);
-      value = QueryNowPlaying();
+      value = QueryNowPlaying(*progress);
       winrt::uninit_apartment();
     } catch (...) {
       // セッションマネージャ取得不可 / 例外時は null のまま。
@@ -299,7 +344,7 @@ flutter::EncodableValue GetCurrentNowPlaying() {
     return future.get();
   }
 
-  // タイムアウト: ワーカーは放置し、UI には null（再生中の曲なし扱い）を返す。
+  // タイムアウト: ワーカーは放置し、取れたところまでを返す (#1324)。
   worker.detach();
-  return flutter::EncodableValue();
+  return TimedOutValue(*progress);
 }

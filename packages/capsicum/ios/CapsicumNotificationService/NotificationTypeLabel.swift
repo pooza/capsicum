@@ -70,7 +70,7 @@ enum NotificationTypeLabel {
             return "ロールが付与されました"
         // ⚠ newChatMessage（メッセージが来た）とは別物。
         case "chatRoomInvitationReceived":
-            return "チャットに招待"
+            return "メッセージのルームに招待"
         case "exportCompleted":
             return "エクスポートが完了"
         default:

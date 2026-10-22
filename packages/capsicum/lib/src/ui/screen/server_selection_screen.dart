@@ -15,6 +15,7 @@ import '../../service/sentry_op_failure.dart';
 import '../../service/settings_backup.dart';
 import '../../url_helper.dart';
 import '../../util/exception_scrub.dart';
+import '../../util/login_error.dart';
 import '../util/launch_url_toast.dart';
 import '../util/settings_backup_apply.dart';
 import '../util/settings_backup_file_type.dart';
@@ -189,11 +190,21 @@ class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
           ),
         ),
       );
-    } catch (e) {
+    } catch (e, st) {
       debugLogException('Server probe error', e);
+      // ⚠ **リリース版でも残す (#1298)。**`debugLogException` だけでは捨てられ、
+      // 入れたばかりの Windows で TLS が落ちていたことを外から当てるしかなかった。
+      final failure = classifyServerProbeFailure(e);
+      reportOpFailure(
+        tagKey: 'server_probe.op',
+        operation: 'connect',
+        error: e,
+        stackTrace: st,
+        tags: {'host': host, 'probe.failure_kind': failure.kind.name},
+      );
       if (!mounted) return;
       setState(() {
-        _error = '接続に失敗しました';
+        _error = failure.message;
       });
     } finally {
       if (mounted) setState(() => _isProbing = false);

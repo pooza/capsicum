@@ -37,6 +37,22 @@ void main() {
       reason: 'キー定義を拾えていない。正規表現が実装とずれた可能性がある',
     );
 
+    // ⚠ `preferences_provider.dart` の外に置かれた設定 (#1317)。お知らせの
+    // プッシュ通知を切った印は、ユーザーが意図して付けた印なのに、ここが
+    // 見ていなかったので仕分けの外に居た。
+    final announcement = File(
+      'lib/src/service/announcement_subscription_service.dart',
+    ).readAsStringSync();
+    final announcementKeys = RegExp(
+      r"static const prefsKey[A-Za-z]* = '([^']+)';",
+    ).allMatches(announcement).map((m) => m.group(1)!).toSet();
+    expect(
+      announcementKeys,
+      hasLength(2),
+      reason: '購読 id と、明示的に切った印の 2 つを拾えていること',
+    );
+    keys.addAll(announcementKeys);
+
     final covered = {
       ...exportableSettings.map((s) => s.key),
       ...deviceLocalKeys,
@@ -49,6 +65,9 @@ void main() {
       // ⚠ `settings:` ではなくトップレベル節なので、`exportableSettings` には
       // 入らない（アカウント参照の照合が要るため・doc を参照）。
       deckColumnsBackupKey,
+      // ロックしたカラムは #1317 で「端末固有」から含める側へ移った。カラム列と
+      // 組でしか意味を持たないので、同じくトップレベル節。
+      deckLockedColumnsBackupKey,
       // 判断待ち。書き出さないが「漏れ」ではないことを明示する。
       ...pendingBackupDecisionKeys,
     };

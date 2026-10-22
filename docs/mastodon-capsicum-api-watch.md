@@ -151,6 +151,37 @@ minor 内の patch 更新（自前 3 鯖は pooza が本番へリリース日に
 
 実測（2026-10-02）: 美食丼 / デルムリン丼 / キュアスタ！の `/api/v2/instance` はいずれも `4.7.3`。
 
+## 5.0 先読み（v4.7.3 → upstream main `5.0.0-alpha.1`・2026-10-20）
+
+**まだタグが無い**（RC 前）。upstream main `5204e8ab94` との tree diff で見た（718 コミット）。⚠ **RC が出たら同じ手順で引き直す**（フォーク側の試しマージ pooza/mastodon#996 と同じ時期）。5.0 の目玉は Web UI の全面刷新で、フォークの 5.0 対応（pooza/mastodon の `5.0.0` マイルストーン）もほぼそちら。
+
+**破壊的変更なし。**`config/routes/api.rb` の diff は空で、新規エンドポイントも無い。`app/serializers/rest/` と `app/controllers/api/` は 20 ファイル・+135 / -43 行。
+
+### 🟡 actionable（小粒・additive な拾い物）
+
+| API 変化 | 内容 | Issue |
+|---|---|---|
+| `verify_credentials?allow_nonfunctional=true` + credential account の `state`（`functional` / `confirmed` / `approved` / `error_code` / `error`） | メール未確認・承認待ち・無効化を見分けて出す。プリセットは招待制・承認制（pooza/mastodon#970 / #971）なので、承認前にログインした人に直接効く | [#1320](https://github.com/pooza/capsicum/issues/1320)（v2.6） |
+| announcement `reactions_allowed` + 無効時の 400 | サーバーがお知らせのリアクションを無効にできる。今の capsicum は無効なサーバーでもボタンを出して 400 になる | [#1321](https://github.com/pooza/capsicum/issues/1321)（v2.6） |
+| `source.spoiler_field` / preferences `posting:default:spoiler_field`（`update_credentials` で書ける） | CW 欄を最初から開く利用者設定 | [#1322](https://github.com/pooza/capsicum/issues/1322) |
+| `timelines/home` の `exclude_direct` / `exclude_reblogs` / `exclude_quotes` / `exclude_replies` | ホームのサーバー側の絞り込み。4.7 以前は黙って無視される | [#1323](https://github.com/pooza/capsicum/issues/1323)（要調査） |
+
+### ⚪ passive / none（対応不要）
+
+- **passive（挙動の変化・形は不変）**: ⚠ **自分のブーストが、既定でホームに入らなくなる。**`FeedManager#push_to_home` が `display_own_boosts`（**既定 false**）/ `display_own_posts`（既定 true）を見るようになった。preferences に `displaying:own:boosts` / `displaying:own:posts` が増えたが**読み取り専用**で、変更は Web の設定画面だけ。⚠ **serializers / routes の diff には出ず、`app/lib/feed_manager.rb` まで引いて初めて見えた**（4.7.2 の `dismiss_bulk` と同じ穴）。capsicum で直すものではないが、**「ブーストしたのにホームに出ない」の問い合わせが来たらこれ**。
+- **passive（応答の文言は不変）**: `Api::BaseController#require_user!` が `nonfunctional_reason` で分岐する形へ。403 の 3 種の文言は 4.7 と同じ。
+- **passive**: instance の `registrations.oauth: true`（ブラウザ経由の新規登録ができる目印）。プリセットは招待制なので今は出番なし。
+- **none（server 内部）**: media attachment の代理配信の条件が `discarded?` → `on_hold?`。`api/v2/search` の `Mastodon::SyntaxError` の rescue 撤去・admin の domain block 更新・FASP・`config/routes/admin.rb`。
+- **none（Web 専用）**: `/@user@domain` が `remote_accounts#index` へ。WebUI のルート定義（`features/ui/index.jsx`）は `/pinned` と `/getting-started` の撤去、`/domain_blocks` → `/blocks/domains` の移設だけで、**新しい画面は無い**。
+- **none（streaming）**: `index.js` は JSDoc の 1 行、ほかは依存の更新だけ。プロトコル不変。
+
+### 棚卸しの母数（未使用の経路）
+
+- `POST /api/v1/accounts`（アプリ内での新規登録）に `deprecate_api '2026-10-01'`。capsicum は OAuth のブラウザ経路なので呼ばない。
+- `accounts/:id/follow` の `ref`（フォローの出どころ）。capsicum は送っていない。
+
+⚠ **フォーク固有のオペ変更（nginx / rc.d / モロヘイヤ連携）は、`-bshockdon` タグが切られてから見る。**
+
 ## 関連
 
 - [#721](https://github.com/pooza/capsicum/issues/721) Mastodon 4.6 互換性確認（受動・closed）

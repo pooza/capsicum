@@ -1,8 +1,11 @@
 import 'dart:async';
 
+import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 
+import '../../model/account.dart';
 import '../../provider/chat_provider.dart';
+import '../screen/chat_message_search_screen.dart';
 
 /// 検索で選んだメッセージまで遡るとき、続きを引く上限（1 ページ 30 件）(#1188)。
 ///
@@ -45,6 +48,50 @@ mixin ChatMessageJump<T extends StatefulWidget> on State<T> {
   }
 
   void disposeChatJump() => _highlightTimer?.cancel();
+
+  /// メッセージの検索を開き、選んだものの位置へ移る (#1188)。届かなかったら
+  /// 「遡れませんでした」と知らせる。
+  ///
+  /// ⚠⚠ **DM のスレッドとルームの画面は、これ 1 本を呼ぶ** (#1304)。以前は
+  /// 2 画面にほぼ同じ `_openSearch` があった。
+  ///
+  /// ⚠ [support] と [account] は**呼ぶ画面のスコープから**取って渡す（デッキの
+  /// カラムの中では、カラムのアカウントのもの）。検索画面はルートに積まれるので、
+  /// 自分で読むと現在のアカウントで検索してしまう（[ChatMessageSearchScreen]）。
+  /// [userId] と [roomId] はどちらか一方。
+  Future<void> openChatSearchAndJump({
+    required ChatSupport support,
+    required Account? account,
+    required String title,
+    String? userId,
+    String? roomId,
+    required ScrollController controller,
+    required ChatThreadState? Function() read,
+    required Future<void> Function() loadMore,
+  }) async {
+    final id = await Navigator.of(context).push<String>(
+      MaterialPageRoute(
+        builder: (_) => ChatMessageSearchScreen(
+          support: support,
+          title: title,
+          userId: userId,
+          roomId: roomId,
+          account: account,
+        ),
+      ),
+    );
+    if (id == null || !mounted) return;
+    final found = await jumpToMessage(
+      id: id,
+      controller: controller,
+      read: read,
+      loadMore: loadMore,
+    );
+    if (found || !mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('このメッセージまで遡れませんでした')));
+  }
 
   /// [id] のメッセージへ移る。届かなかったら false。
   Future<bool> jumpToMessage({

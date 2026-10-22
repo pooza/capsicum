@@ -52,8 +52,8 @@ const _notificationGroupingKey = 'notification_grouping';
 /// 通知一覧に出さない種別 (#1042)。`NotificationType` の `name` を並べる。
 const _notificationExcludedTypesKey = 'notification_excluded_types';
 
-/// デッキのカラム列 (#1091)。⚠ バックアップに含めるかは #1101 で決める
-/// （`settings_backup.dart` の `pendingBackupDecisionKeys`）。
+/// デッキのカラム列 (#1091)。バックアップに含める（#1101・`settings_backup.dart`
+/// の `deckColumnsBackupKey`）。
 const _deckColumnsKey = 'deck_columns';
 
 /// デッキのカラム幅の下限（ユーザー設定・#1092）。
@@ -433,7 +433,11 @@ class TabConfigNotifier extends FamilyNotifier<List<TabConfigEntry>, String> {
       return withMissingTimelineTabs(_deserialize(saved));
     }
     // Migrate from legacy providers (synchronous).
-    final entries = _migrate(prefs);
+    // ⚠ 移行の経路にも足りない種類を足す (#1304・PR #1303 の Codex P2)。
+    // `_migrate` は `defaultTabOrder` しか見ないので、既定で並べない種類
+    // （#1278 のリモートのみの連合 TL）が、新しくインストールした最初の
+    // セッションだけタブ管理に出てこなかった。
+    final entries = withMissingTimelineTabs(_migrate(prefs));
     // 永続化は fire-and-forget。失敗しても次回起動で再度 migrate するだけで
     // ユーザー影響なし (idempotent)。await すると build() が async 化して
     // race が復活するため意図的に unawaited。
@@ -2451,7 +2455,8 @@ class DarkTextColorNotifier extends PersistedNotifier<DarkTextColor> {
 ///
 /// **`exportableSettings` と 1:1 で対応させること。**ここに足し忘れると、値は
 /// 書き込まれているのに次の起動まで画面へ出ない。件数の一致は
-/// `test/settings_backup_providers_test.dart` が見張る。
+/// `test/settings_backup_providers_test.dart` が見張る（provider を持たない
+/// 設定は [backedUpSettingsWithoutProvider] で明示して数から引く）。
 final backedUpPreferenceProviders = <ProviderOrFamily>[
   // 表示
   themeModeProvider,
@@ -2490,6 +2495,16 @@ final backedUpPreferenceProviders = <ProviderOrFamily>[
   composeTemplateHistoryProvider,
 ];
 
+/// バックアップ対象のうち、**読み直す provider が無い**設定 (#1317)。
+///
+/// ⚠ ここに入れてよいのは「読み手が provider ではなく、決まった時点で
+/// SharedPreferences を直接読む」ものだけ。値は書き込めば次にその時点が来たときに
+/// 効く。⚠ provider があるのにここへ入れると、取り込んでも画面が変わらない。
+///
+/// - `last_view_mode` … デッキとタブのどちらで開くか。読むのは起動時の判定
+///   （[readLastViewMode]）だけ
+const backedUpSettingsWithoutProvider = <String>{_lastViewModeKey};
+
 /// 取り込んだ**アカウント別設定**を画面へ反映するための provider (#1144)。
 ///
 /// ⚠⚠ **[backedUpPreferenceProviders] だけだとアカウント別設定が反映されない。**
@@ -2512,4 +2527,8 @@ final backedUpAccountScopedProviders = <String, List<ProviderOrFamily>>{
   // ⚠ リアクション用パレットは、未設定なら通常のパレットへ戻る。
   _emojiPalettePrefix: [emojiPaletteProvider, emojiReactionPaletteProvider],
   _emojiReactionPalettePrefix: [emojiReactionPaletteProvider],
+  // お知らせのプッシュ通知を明示的に切った印 (#1317)。⚠ 読み直す provider は無い
+  // —— 読むのは `AnnouncementSubscriptionService` で、使うたびに
+  // SharedPreferences を引く（プッシュ通知の設定画面も開くたびに読む）。
+  'capsicum_announcement_optout_': [],
 };

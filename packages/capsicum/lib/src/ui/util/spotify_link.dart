@@ -5,6 +5,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../url_helper.dart';
 import '../../util/exception_scrub.dart';
 import 'launch_url_toast.dart';
+import 'link_target_account.dart';
 
 /// Spotify OAuth 連携フロー (確認 → ブラウザ認可 → コード入力 → トークン交換)
 /// (#570)。Annict 連携 ([runAnnictLinkFlow]) と同じ「サーバー保管型 OAuth」UX。
@@ -20,7 +21,9 @@ Future<bool> runSpotifyLinkFlow(BuildContext context, WidgetRef ref) async {
     context: context,
     builder: (context) => AlertDialog(
       title: const Text('Spotify 連携'),
-      content: const Text(
+      // ⚠ どのアカウントを連携するかを出す (#1312・Annict と同じ)。
+      content: linkTargetDialogContent(
+        account.key,
         'Spotify アカウントとの連携が必要です。\n\n'
         'ブラウザで Spotify の認可画面を開き、表示されるコードを入力してください。',
       ),
@@ -88,7 +91,11 @@ Future<bool> runSpotifyUnlinkFlow(BuildContext context, WidgetRef ref) async {
     context: context,
     builder: (context) => AlertDialog(
       title: const Text('Spotify 連携解除'),
-      content: const Text('Spotify との連携を解除します。よろしいですか？'),
+      content: linkTargetDialogContent(
+        account.key,
+        'Spotify との連携を解除します。よろしいですか？',
+        heading: '連携を解除するアカウント',
+      ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context, false),

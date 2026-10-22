@@ -131,6 +131,13 @@ const exportableSettings = <BackupSetting>[
   BackupSetting('update_check_enabled', BackupValueType.boolean),
   BackupSetting('nowplaying_url_provider', BackupValueType.text),
   BackupSetting('post_touch_actions', BackupValueType.textList),
+  // デッキとタブ表示のどちらで開くか (#1239 / #1317)。名前は「前回の状態」だが、
+  // 実質は使い方の選択なので含める側（#1317 の線）。⚠ 外していると、カラムを
+  // 取り込んでも取り込み先はタブ表示で開き、デッキが戻ったように見えない。
+  // ⚠ 値を持ち込むだけ。デッキを出せない幅のときの扱いは起動時の判定に任せる。
+  // ⚠ 読み手は起動時の判定だけで provider が無い
+  // （`backedUpSettingsWithoutProvider`）。
+  BackupSetting('last_view_mode', BackupValueType.text),
   // 通知 (#1042 / #1048)。⚠ 種別名は `NotificationType` の `name`。読み込み側で
   // 未知の名前は落ちる（`NotificationExcludedTypesNotifier.readSaved`）ので、
   // 版が違う端末へ持っていっても設定が丸ごと既定へ戻ることはない。
@@ -146,21 +153,27 @@ const exportableSettings = <BackupSetting>[
 /// 新しい設定が増えたときに「対象に入れ忘れた」のか「意図的に外した」のかを
 /// 区別できるよう、外した側も明示する。カバレッジテストがこの 2 つの和集合で
 /// 突き合わせる。
+///
+/// ⚠⚠ **構成まわりの線（#1317・2026-10-19 pooza）。**タブとデッキで一貫させる:
+///
+/// - **含める** … 何をどう並べるか（構成）と、**ユーザーが意図して付けた印**
+///   （隠す・ピン留め・ロック・明示的に切った）。デッキとタブのどちらで開くかも
+///   使い方の選択なので含める
+/// - **外す** … 画面の寸法と、「最後にどこにいたか」
+///
+/// 新しい設定を足すときも、この線のどちらに当たるかで決める。
 const deviceLocalKeys = <String>{
   // ローカルファイルパス。他端末には存在しない。
   'background_image_path',
   // 画面サイズとキーボードに依存する。他端末へ持ち込む意味がない。
   // デッキのカラム幅も画面幅に対する好みなので同じ扱い (#1092)。
+  // ⚠ #1317 の線では「寸法」＝外す側。
   'deck_column_width',
-  // 最後に見ていたカラムと、最後に開いていた側 (#1239)。設定ではなく「前回
-  // どこで終えたか」という端末ごとの状態で、他端末へ持ち込む意味がない。
-  // ⚠ カラムの id は列の中だけで通じる番号なので、取り込み先の列では別の
-  // カラムを指しうる。
+  // 最後に見ていたカラム (#1239)。設定ではなく「前回どこで終えたか」という
+  // 端末ごとの状態。⚠ #1317 の線では「最後にどこにいたか」＝外す側（タブ側の
+  // `last_tab_` と同じ）。
   'deck_last_column',
-  'last_view_mode',
-  // ロック中のカラム (#1271)。同じく列の中だけで通じる id で持っているので、
-  // 取り込み先の列では別のカラムを指しうる。
-  'deck_locked_columns',
+  // ⚠ 各ピッカーの高さは #1317 の線では「寸法」＝外す側。
   'insert_picker_height',
   'reaction_picker_height',
   'sticker_picker_height',
@@ -183,8 +196,17 @@ const deviceLocalKeys = <String>{
 ///   へは入れていない —— 背景**画像**が端末固有（ファイルパス・[deviceLocalKeys]）で
 ///   移らないので、不透明度だけ移しても効く相手が居ない。
 /// - `last_tab_` … 「最後に見ていたタブ」で、設定ではなく一時状態。移行先で復元
-///   する意味が無く、`addAccount` がログイン直後に上書きする（#1057）。
-const accountScopedKeys = <String>{'background_opacity', 'last_tab_'};
+///   する意味が無く、`addAccount` がログイン直後に上書きする（#1057）。⚠ #1317 の
+///   線では「最後にどこにいたか」＝外す側
+/// - `capsicum_announcement_sub_` … お知らせのプッシュ通知の relay 上の購読 id
+///   （`AnnouncementSubscriptionService`）。端末の登録ごとに relay が振る番号で、
+///   取り込み先の端末では誰の購読も指さない。⚠ 明示的に切った印
+///   （`capsicum_announcement_optout_`）のほうは含める（[accountScopedSettings]）
+const accountScopedKeys = <String>{
+  'background_opacity',
+  'last_tab_',
+  'capsicum_announcement_sub_',
+};
 
 /// 書き出すかどうかが**まだ決まっていない**設定。今は書き出さない。
 ///
@@ -204,6 +226,18 @@ const pendingBackupDecisionKeys = <String>{};
 /// 経路は型しか見ないので、そこへ混ぜると照合が抜ける。`accounts:` /
 /// `account_settings:` と同じ階層に置く。
 const deckColumnsBackupKey = 'deck_columns';
+
+/// ロックしたカラムの id の保存キー (#1271 / #1317)。`preferences_provider.dart`
+/// の `_deckLockedColumnsKey` と一致させる。YAML 上の節の名前も同じ。
+///
+/// ⚠⚠ **[deckColumnsBackupKey] と組でしか意味を持たない。**id は列の中でだけ
+/// 通じる番号なので、以前は「取り込み先の列では別のカラムを指しうる」として
+/// 外していた。ところが取り込みは**列を丸ごと置き換え、各カラムの id もそのまま
+/// 書く**（`column.serialize()`）ので、**取り込んだ列の中では id が通じる**。
+/// そこで、書き出すのは書き出した列に居る id だけ、取り込むのは取り込んだ列に
+/// 実在する id だけにする（索引に無いアカウントのカラムを落としたぶん、ロックも
+/// 落ちる）。列を取り込まなかったときはロックも取り込まない。
+const deckLockedColumnsBackupKey = 'deck_locked_columns';
 
 /// 取り込むカラムの上限 (#1101)。
 ///
@@ -280,6 +314,14 @@ const accountScopedSettings = <AccountScopedSetting>[
     'emoji_reaction_palette_',
     BackupValueType.textList,
     keyedBy: SettingKeyedBy.host,
+  ),
+  // お知らせのプッシュ通知を明示的に切った印 (#1317)。ユーザーが意図して付けた
+  // 印なので含める。⚠ `AnnouncementSubscriptionService.prefsKeyOptOutPrefix` と
+  // 一致させる（`settings_backup_coverage_test` が見ている）。値は `true` だけ
+  // （在る＝切った）。取り込み先では、接続し直したときの自動の購読を止める。
+  AccountScopedSetting(
+    'capsicum_announcement_optout_',
+    BackupValueType.boolean,
   ),
 ];
 
@@ -457,26 +499,54 @@ void _writeAccountSettings(StringBuffer buffer, SharedPreferences prefs) {
 ///
 /// ⚠ **行はそのまま写さず、読み直した形で書く。**`DeckColumn.deserialize` を
 /// 通して、読めない行（旧版・手編集・未知の種別）をここで落とす。
-void _writeDeckColumns(StringBuffer buffer, SharedPreferences prefs) {
+///
+/// 返り値は書き出したカラムの id（[_writeDeckLockedColumns] が使う）。
+Set<String> _writeDeckColumns(StringBuffer buffer, SharedPreferences prefs) {
   final saved = prefs.getStringList(deckColumnsBackupKey);
-  if (saved == null || saved.isEmpty) return;
+  if (saved == null || saved.isEmpty) return const {};
 
   final known = readAccountKeysForBackup(
     prefs,
   ).map(_canonicalAccountKey).whereType<String>().toSet();
 
   final lines = <String>[];
+  final ids = <String>{};
   for (final raw in saved) {
     final column = DeckColumn.deserialize(raw);
     if (column == null) continue;
     if (!known.contains(column.account.toStorageKey())) continue;
     lines.add(column.serialize());
+    ids.add(column.id);
   }
-  if (lines.isEmpty) return;
+  if (lines.isEmpty) return const {};
 
   buffer.writeln('$deckColumnsBackupKey:');
   for (final line in lines) {
     buffer.writeln('  - ${_yamlString(line)}');
+  }
+  return ids;
+}
+
+/// ロックしたカラムを `deck_locked_columns:` へ書く (#1317)。
+///
+/// ⚠ **書き出した列（[columnIds]）に居る id だけ書く。**列に居ない id を書くと、
+/// 取り込み先で別のカラムを指しうる（[deckLockedColumnsBackupKey] の doc）。
+void _writeDeckLockedColumns(
+  StringBuffer buffer,
+  SharedPreferences prefs,
+  Set<String> columnIds,
+) {
+  final saved = prefs.getStringList(deckLockedColumnsBackupKey);
+  if (saved == null) return;
+  final ids = [
+    for (final id in saved)
+      if (columnIds.contains(id)) id,
+  ];
+  if (ids.isEmpty) return;
+
+  buffer.writeln('$deckLockedColumnsBackupKey:');
+  for (final id in ids) {
+    buffer.writeln('  - ${_yamlString(id)}');
   }
 }
 
@@ -497,7 +567,8 @@ String buildSettingsBackupYaml(
 
   _writeAccounts(buffer, prefs);
   _writeAccountSettings(buffer, prefs);
-  _writeDeckColumns(buffer, prefs);
+  final columnIds = _writeDeckColumns(buffer, prefs);
+  _writeDeckLockedColumns(buffer, prefs, columnIds);
 
   // ⚠⚠ **本文を先に組んでから見出しを書く (#1119)。**以前は `settings:` を先に
   // 書き、1 件も書かなかったときだけ `replaceFirst('settings:\n', …)` で空マップに
@@ -767,8 +838,21 @@ Future<SettingsImportResult> applySettingsBackupYaml(
   );
   // ⚠ これもアカウントのマージより後 (#1101)。カラムが指すアカウントの照合に、
   // このファイルで足したぶんを含める必要がある。
+  final columnIds = await _mergeDeckColumns(
+    prefs,
+    parsed[deckColumnsBackupKey],
+    skipped,
+  );
+  if (columnIds != null) applied.add(deckColumnsBackupKey);
+  // ⚠ カラムの取り込みより後 (#1317)。ロックの id は、取り込んだ列に実在する
+  // ものだけを残す。
   applied.addAll(
-    await _mergeDeckColumns(prefs, parsed[deckColumnsBackupKey], skipped),
+    await _mergeDeckLockedColumns(
+      prefs,
+      parsed[deckLockedColumnsBackupKey],
+      columnIds,
+      skipped,
+    ),
   );
 
   for (final entry in settings.nodes.entries) {
@@ -801,8 +885,8 @@ Future<SettingsImportResult> applySettingsBackupYaml(
   );
 }
 
-/// バックアップの `deck_columns:` を取り込む (#1101)。返り値は書き込んだ
-/// SharedPreferences キー（[SettingsImportResult.applied] へ積む）。
+/// バックアップの `deck_columns:` を取り込む (#1101)。返り値は**書き込んだ列の
+/// カラムの id**で、書き込まなかったら null（ロックの取り込みが使う・#1317）。
 ///
 /// ⚠⚠ **索引にあるアカウントを指すカラムだけ取り込む**（`docs/deck-ui-plan.md`
 /// 未決事項 5-1 の決着）。索引にあるアカウントは、トークンが無くても
@@ -818,19 +902,19 @@ Future<SettingsImportResult> applySettingsBackupYaml(
 ///
 /// ⚠⚠ **1 行も残らなければ何も書かない。**手元の列を空にしてしまうと、
 /// 「取り込んだら自分のデッキが消えた」になる。取り込めなかったことは理由で伝える。
-Future<List<String>> _mergeDeckColumns(
+Future<Set<String>?> _mergeDeckColumns(
   SharedPreferences prefs,
   Object? node,
   Map<String, String> skipped,
 ) async {
-  if (node == null) return const [];
+  if (node == null) return null;
   if (node is! YamlList) {
     skipped[deckColumnsBackupKey] = 'デッキの構成が読めませんでした';
-    return const [];
+    return null;
   }
   if (node.length > maxBackupDeckColumns) {
     skipped[deckColumnsBackupKey] = 'デッキのカラムが多すぎます（$maxBackupDeckColumns 件まで）';
-    return const [];
+    return null;
   }
 
   // ⚠ 索引は _mergeAccounts のマージ後を読む。突き合わせは正規形どうしで。
@@ -872,11 +956,66 @@ Future<List<String>> _mergeDeckColumns(
   ];
   if (lines.isEmpty) {
     if (reasons.isNotEmpty) skipped[deckColumnsBackupKey] = reasons.join(' / ');
-    return const [];
+    return null;
   }
   if (reasons.isNotEmpty) skipped[deckColumnsBackupKey] = reasons.join(' / ');
-  await prefs.setStringList(deckColumnsBackupKey, lines);
-  return [deckColumnsBackupKey];
+  // ⚠ setter の戻り値を捨てない（[_writeValue] と同じ理由）。書けていないのに
+  // ロックだけ取り込むと、手元の列に無い id を書くことになる。
+  if (!await prefs.setStringList(deckColumnsBackupKey, lines)) {
+    skipped[deckColumnsBackupKey] = 'デッキの構成を保存できませんでした';
+    return null;
+  }
+  return seenIds;
+}
+
+/// バックアップの `deck_locked_columns:` を取り込む (#1317)。返り値は書き込んだ
+/// SharedPreferences キー。
+///
+/// [columnIds] は**このファイルから取り込んだ列**の id（[_mergeDeckColumns] の
+/// 返り値）。null なら列を取り込んでいないので、ロックも取り込まない。
+///
+/// ⚠⚠ **列を取り込んだら、ロックは必ずファイルの内容で置き換える**（節が無ければ
+/// 消す）。列は丸ごと置き換わったので、手元に残っているロックは前の列の id を
+/// 指している。
+Future<List<String>> _mergeDeckLockedColumns(
+  SharedPreferences prefs,
+  Object? node,
+  Set<String>? columnIds,
+  Map<String, String> skipped,
+) async {
+  if (columnIds == null) {
+    if (node != null) {
+      skipped[deckLockedColumnsBackupKey] = 'デッキの構成を取り込まなかったため、ロックも取り込みません';
+    }
+    return const [];
+  }
+  final ids = <String>[];
+  if (node != null) {
+    if (node is! YamlList) {
+      skipped[deckLockedColumnsBackupKey] = 'ロックしたカラムが読めませんでした';
+    } else {
+      var dropped = 0;
+      for (final raw in node) {
+        if (raw is String && columnIds.contains(raw) && !ids.contains(raw)) {
+          ids.add(raw);
+        } else {
+          dropped++;
+        }
+      }
+      if (dropped > 0) {
+        skipped[deckLockedColumnsBackupKey] = '$dropped 件は取り込んだカラムに無いロックでした';
+      }
+    }
+  }
+  if (ids.isEmpty) {
+    await prefs.remove(deckLockedColumnsBackupKey);
+    return const [];
+  }
+  if (!await prefs.setStringList(deckLockedColumnsBackupKey, ids)) {
+    skipped[deckLockedColumnsBackupKey] = 'ロックしたカラムを保存できませんでした';
+    return const [];
+  }
+  return [deckLockedColumnsBackupKey];
 }
 
 /// バックアップの `account_settings:` を取り込む (#1119)。返り値は書き込んだ

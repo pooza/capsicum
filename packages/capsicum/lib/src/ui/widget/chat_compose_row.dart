@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../provider/platform_providers.dart';
+import '../../util/chat_attachment_label.dart';
 import '../screen/drive_picker_screen.dart';
 import '../util/compose_text_style.dart';
 import 'bottom_safe_area.dart';
@@ -258,7 +259,10 @@ class _AttachmentPreview extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              file.name?.isNotEmpty == true ? file.name! : '[ファイル]',
+              // 名前が無ければ種類の表記（正本は chat_attachment_label.dart・#1304）。
+              file.name?.isNotEmpty == true
+                  ? file.name!
+                  : chatAttachmentLabel(file.type),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.bodySmall,

@@ -21,9 +21,12 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 /// pooza 判断: 表示したときに自動で・結果は端末のメモリに持つ・同時に引く本数を
 /// 絞る・扱いはリンクのプレビューと同じ）。
 
-final _quoteInline = RegExp(
-  r'(?:<br\s*/?>\s*)*<(p|span) class="quote-inline">([\s\S]*?)</\1>',
-);
+/// ⚠⚠ **手前の `<br>` を正規表現に含めない**（#1304）。以前は先頭に
+/// `(?:<br\s*/?>\s*)*` を付けていたので、`<br>` が大量に並んだ本文では、
+/// 各位置から `<br>` の列を食べ直しては外れる**二乗の手間**になっていた（表示の
+/// たびに UI スレッドで走る）。手前の `<br>` は [_brTag] で後ろ向きにたどる。
+final _quoteInline = RegExp(r'<(p|span) class="quote-inline">([\s\S]*?)</\1>');
+final _brTag = RegExp(r'^<br\s*/?>$');
 
 /// `quote-inline` の span だけを包んだ段落（Misskey の今の形）。段落ごと外さないと
 /// 空の `<p></p>` が残り、本文の下に空行が出る。
@@ -59,8 +62,31 @@ String stripQuoteFallback(String html) {
   if (_quoteInlineParagraph.hasMatch(html)) {
     return html.replaceFirst(_quoteInlineParagraph, '');
   }
-  return html.replaceFirst(_quoteInline, '');
+  final inline = _quoteInline.firstMatch(html);
+  if (inline == null) return html;
+  final start = _startOfLeadingBreaks(html, inline.start);
+  return html.replaceRange(start, inline.end, '');
 }
+
+/// [end] の手前に続く `<br>`（と、その後ろの空白）の先頭の位置。無ければ [end]。
+///
+/// ⚠ 後ろ向きに 1 回だけたどる（線形）。正規表現で書くと二乗になる（[_quoteInline]）。
+/// 空白を外すのは `<br>` の後ろにあるものだけ（以前の `(?:<br\s*/?>\s*)*` と同じ）。
+int _startOfLeadingBreaks(String html, int end) {
+  var start = end;
+  while (true) {
+    var t = start;
+    while (t > 0 && _isSpace(html.codeUnitAt(t - 1))) {
+      t--;
+    }
+    if (t == 0 || html.codeUnitAt(t - 1) != 0x3E /* > */ ) return start;
+    final lt = html.lastIndexOf('<', t - 1);
+    if (lt < 0 || !_brTag.hasMatch(html.substring(lt, t))) return start;
+    start = lt;
+  }
+}
+
+bool _isSpace(int c) => c == 0x20 || c == 0x09 || c == 0x0A || c == 0x0D;
 
 /// [post] が、引用元を補って見せる対象か。
 ///
@@ -86,30 +112,58 @@ String? quoteFallbackTarget(Post post) {
 /// ⚠ **キーにアカウントを含める。**解決した投稿の id はそのアカウントのサーバーの
 /// もので、見える範囲もアカウントで違う。
 /// ⚠ 「見つからない」（null）は持つ（同じ URL を何度も引かない）。通信の失敗は
-/// 持たない（次に表示したときに引き直す）。
+/// [failureTtl] の間だけ持つ (#1304)。持たないと、429 / 5xx が続く間スクロールの
+/// たびに同じ URL を引き直す。過ぎたら次に表示したときに引き直す。
+///
+/// ⚠ **画面から外れたタイルのぶんは引かない** (#1304)。タイルは [resolve] で
+/// 関心を上げ、外れたら [release] で下ろす。待ち行列に居る間に関心が 0 になった
+/// ものは、順番が来ても引かない（以前は流れたタイルのぶんも順番どおり引いていた）。
 class QuoteFallbackResolver {
-  QuoteFallbackResolver({this.limit = 300, this.concurrency = 2});
+  QuoteFallbackResolver({
+    this.limit = 300,
+    this.concurrency = 2,
+    this.failureTtl = const Duration(seconds: 30),
+    DateTime Function()? clock,
+  }) : _now = clock ?? DateTime.now;
 
   static final instance = QuoteFallbackResolver();
 
   final int limit;
   final int concurrency;
+  final Duration failureTtl;
+  final DateTime Function() _now;
 
   final _cache = <String, Future<Post?>>{};
+  final _failedUntil = <String, DateTime>{};
+  final _interest = <String, int>{};
   final _waiting = Queue<Completer<void>>();
   int _running = 0;
 
+  static String _keyOf(String accountKey, String url) => '$accountKey|$url';
+
   Future<Post?> resolve(String accountKey, SearchSupport search, String url) {
-    final key = '$accountKey|$url';
+    final key = _keyOf(accountKey, url);
+    _interest[key] = (_interest[key] ?? 0) + 1;
     final hit = _cache.remove(key);
     if (hit != null) {
       _cache[key] = hit; // 新しい側へ
       return hit;
     }
-    final future = _throttled(() => _lookup(search, url)).catchError((
+    final failedUntil = _failedUntil[key];
+    if (failedUntil != null) {
+      if (_now().isBefore(failedUntil)) return Future.value(null);
+      _failedUntil.remove(key);
+    }
+    final future = _throttled(key, () => _lookup(search, url)).catchError((
       Object error,
     ) {
       _cache.remove(key);
+      // 取り消し（画面から外れた）は失敗ではない。次に表示したら引く。
+      if (error is _Cancelled) return null;
+      _failedUntil[key] = _now().add(failureTtl);
+      if (_failedUntil.length > limit) {
+        _failedUntil.remove(_failedUntil.keys.first);
+      }
       Sentry.addBreadcrumb(
         Breadcrumb(
           category: 'quote.fallback',
@@ -124,6 +178,17 @@ class QuoteFallbackResolver {
     return future;
   }
 
+  /// [resolve] で上げた関心を下ろす（タイルが画面から外れた・別の投稿になった）。
+  void release(String accountKey, String url) {
+    final key = _keyOf(accountKey, url);
+    final remaining = (_interest[key] ?? 0) - 1;
+    if (remaining <= 0) {
+      _interest.remove(key);
+    } else {
+      _interest[key] = remaining;
+    }
+  }
+
   static Future<Post?> _lookup(SearchSupport search, String url) async {
     final results = await search.search(url);
     // URL が一致しないときは、解決した 1 件だけを採る。複数あるのは URL として
@@ -132,18 +197,35 @@ class QuoteFallbackResolver {
         (results.posts.length == 1 ? results.posts.single : null);
   }
 
-  Future<T> _throttled<T>(Future<T> Function() task) async {
+  /// 同時に [concurrency] 本までにして [task] を走らせる。
+  ///
+  /// ⚠⚠ **枠は終わった側から待っている側へ直接渡す** (#1304)。以前は終わった側が
+  /// `_running--` してから待っている側を起こし、起きた側が `_running++` していた。
+  /// 起きるのは次のマイクロタスクなので、その間に来た新しい呼び出しが空いた枠を
+  /// 取り、一瞬 `concurrency + 1` 本になっていた。渡すときは数を動かさない。
+  Future<T> _throttled<T>(String key, Future<T> Function() task) async {
     if (_running >= concurrency) {
       final slot = Completer<void>();
       _waiting.add(slot);
-      await slot.future;
+      await slot.future; // 枠は渡されている（_running はそのまま）
+    } else {
+      _running++;
     }
-    _running++;
     try {
+      // 待っている間に画面から外れていたら引かない。
+      if (!_interest.containsKey(key)) throw const _Cancelled();
       return await task();
     } finally {
-      _running--;
-      if (_waiting.isNotEmpty) _waiting.removeFirst().complete();
+      if (_waiting.isNotEmpty) {
+        _waiting.removeFirst().complete();
+      } else {
+        _running--;
+      }
     }
   }
+}
+
+/// 待っている間に関心が 0 になった（画面から外れた）印。
+class _Cancelled implements Exception {
+  const _Cancelled();
 }

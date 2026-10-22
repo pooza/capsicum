@@ -176,7 +176,20 @@ String channelTabLabel(WidgetRef ref, String id, String? name) {
   if (name != null) return name;
   final followed = ref.watch(followedChannelsProvider);
   if (followed.isLoading && !followed.hasValue) return id;
-  final hit = followed.valueOrNull?.where((c) => c.id == id).firstOrNull;
-  if (hit != null) return hit.name;
+  final hit = channelNameFromFollowed(id, null, followed.valueOrNull);
+  if (hit != null) return hit;
   return ref.watch(channelProvider(id)).valueOrNull?.name ?? id;
 }
+
+/// 保存されたチャンネルの名前。無ければ [followed]（フォロー中の一覧）から引く。
+/// どちらにも無ければ null。
+///
+/// ⚠⚠ **引き直しはこれ 1 本** (#1304)。以前はタブの見出し（[channelTabLabel]）・
+/// タブ管理・デッキの投稿の 3 か所に同じ処理があった。⚠ 見当たらなかったときの
+/// 扱いは呼ぶ側で違う（見出しは 1 件取得まで行う・タブ管理は ID を出す・投稿は
+/// 名前なしで開く）ので、そこは呼ぶ側に残す。
+String? channelNameFromFollowed(
+  String id,
+  String? name,
+  List<Channel>? followed,
+) => name ?? followed?.where((c) => c.id == id).firstOrNull?.name;

@@ -68,7 +68,7 @@ void main() {
   /// 送信時の設定が「畳まれる側」に混ざっていないか。
   ///
   /// ⚠ 混ざると狭い幅で「…」の中へ入り、**送る前に確かめられなくなる**。
-  const sendTimeSettings = ['PostScope', 'ローカルのみ', '引用許可'];
+  const sendTimeSettings = ['PostScope', 'ローカルのみ', '引用の許可'];
 
   List<String> settingsInActions(String source) {
     final body = maskComments(actionsBody(source));
@@ -170,7 +170,7 @@ void main() {
         '送信時の設定が `_toolbarActions`（畳まれる側）に混ざっている: '
         '${leaked.join(' / ')}\n'
         '⚠ 狭い幅で「…」の中へ入り、送る前に確かめられなくなる (#1167)。'
-        '公開範囲・ローカル限定・引用許可は下の `Wrap` の行へ置くこと。',
+        '公開範囲・ローカル限定・引用の許可は下の `Wrap` の行へ置くこと。',
       );
     }
   });

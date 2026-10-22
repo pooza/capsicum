@@ -378,7 +378,7 @@ void main() {
       expect(actionNamed(account, '@other@misskey.example'), isNull);
     });
 
-    testWidgets('⚠ プロフィール・追加・ログアウトは残す', (tester) async {
+    testWidgets('⚠ プロフィール・追加・この端末から削除は残す', (tester) async {
       final account = childrenOf(
         await buildModel(tester, inDeck: true),
         'アカウント',
@@ -386,7 +386,8 @@ void main() {
 
       expect(actionNamed(account, 'プロフィール'), isNotNull);
       expect(actionNamed(account, 'アカウントを追加'), isNotNull);
-      expect(actionNamed(account, 'ログアウト'), isNotNull);
+      // 「ログアウト」から言い換えた (#1297)。
+      expect(actionNamed(account, 'このアカウントをこの端末から削除…'), isNotNull);
     });
   });
 

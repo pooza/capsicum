@@ -77,6 +77,7 @@ import 'ui/screen/user_list_screen.dart';
 import 'ui/screen/word_mute_screen.dart';
 import 'ui/util/provider_scope_carrier.dart';
 import 'ui/widget/desktop_menu_bar.dart';
+import 'ui/widget/shell_back_gesture_scope.dart';
 
 /// Navigator key exposed for navigation from notification taps.
 final rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -290,7 +291,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       // してもメニューが保持される。/media だけは没入のため上の root 側に残す。
       ShellRoute(
         navigatorKey: shellNavigatorKey,
-        builder: (context, state, child) => DesktopMenuBar(child: child),
+        // ⚠ `/media` などを上に載せている間、shell の中のルートに予測型バックを
+        // 受けさせない (#1318)。受けると、画像を閉じる「戻る」で下の /deck も閉じる。
+        builder: (context, state, child) =>
+            DesktopMenuBar(child: ShellBackGestureScope(child: child)),
         routes: [
           GoRoute(
             path: '/home',

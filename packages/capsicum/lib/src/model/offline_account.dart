@@ -75,3 +75,28 @@ class OfflineAccount {
   /// 切替 UI 用の `@username@host` ラベル（profile 不在でも表示できる）。
   String get handle => '@${key.username}@${key.host}';
 }
+
+/// プッシュ通知の宛先（relay の `username@host`）が、**まだ戻っていないが再試行で
+/// 戻りうる**アカウントか (#1304)。
+///
+/// ⚠⚠ 起動の締切（#1294）で、応答が「遅いだけ」のサーバーのアカウントも一旦
+/// オフライン保持に入る。その間に通知をタップすると、宛先がオンラインの一覧に
+/// 居ないので今のアカウントの通知が開いていた（別のアカウントの通知を見せる）。
+/// 通知の経路はこれが真の間は待ち、戻ってから宛先で開く。
+///
+/// ⚠ secret が消えた（ログインし直しが要る）アカウントは待っても戻らないので偽。
+bool notificationTargetIsRecovering(
+  List<OfflineAccount> offlineAccounts,
+  String accountString,
+) {
+  final at = accountString.indexOf('@');
+  if (at <= 0) return false;
+  final username = accountString.substring(0, at);
+  final host = accountString.substring(at + 1);
+  return offlineAccounts.any(
+    (o) =>
+        o.recoverableByRetry &&
+        o.key.username == username &&
+        o.key.host == host,
+  );
+}

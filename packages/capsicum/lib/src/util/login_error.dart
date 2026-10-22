@@ -110,6 +110,65 @@ LoginFailureInfo classifyLoginFailure(Object error) {
   return (kind: LoginFailureKind.unknown, message: 'ログインに失敗しました');
 }
 
+/// サーバーの接続確認（サーバー選択画面）が失敗した理由の分類 (#1298)。
+enum ServerProbeFailureKind {
+  /// TLS の検証で落ちた（証明書を確かめられない）。
+  tls,
+
+  /// サーバーの名前を引けなかった。
+  hostLookup,
+
+  /// 時間内に応答が無かった。
+  timeout,
+
+  /// 上記以外。
+  other,
+}
+
+typedef ServerProbeFailureInfo = ({
+  ServerProbeFailureKind kind,
+  String message,
+});
+
+/// 接続確認の例外 [error] を分類し、表示文言を返す (#1298)。
+///
+/// 以前は何が起きても「接続に失敗しました」だけで、**入れたばかりの Windows で
+/// ルート証明書が足りない**（TLS で即座に落ちる）のと、サーバー名の打ち間違い・
+/// サーバーが落ちているのとを利用者が区別できなかった。
+ServerProbeFailureInfo classifyServerProbeFailure(Object error) {
+  final cause = error is DioException ? error.error : error;
+  if (error is DioException) {
+    switch (error.type) {
+      case DioExceptionType.badCertificate:
+        return _probeTls;
+      case DioExceptionType.connectionTimeout:
+      case DioExceptionType.receiveTimeout:
+      case DioExceptionType.sendTimeout:
+        return (
+          kind: ServerProbeFailureKind.timeout,
+          message: 'サーバーが応答しませんでした。しばらくしてからお試しください。',
+        );
+      default:
+        break;
+    }
+  }
+  if (cause is TlsException) return _probeTls;
+  // dart:io は名前を引けなかった回を `Failed host lookup` で投げる（OS を問わず
+  // 同じ文面・型は SocketException のまま）。
+  if (cause is SocketException && cause.message.contains('host lookup')) {
+    return (
+      kind: ServerProbeFailureKind.hostLookup,
+      message: 'サーバーが見つかりませんでした。サーバー名を確かめてください。',
+    );
+  }
+  return (kind: ServerProbeFailureKind.other, message: '接続に失敗しました');
+}
+
+const ServerProbeFailureInfo _probeTls = (
+  kind: ServerProbeFailureKind.tls,
+  message: 'サーバーの証明書を確かめられず、接続できませんでした',
+);
+
 /// Linux のキーリングに保存できなかったときの文言 (#1141)。
 const _keyringMessage =
     'この端末のパスワード保管庫（キーリング / Secret Service）に'

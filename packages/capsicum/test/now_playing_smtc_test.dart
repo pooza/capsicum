@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:capsicum/src/platform/now_playing/smtc_now_playing_provider.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -111,6 +113,7 @@ void main() {
           'unsupported_format',
           'too_large',
           'write_failed',
+          'timed_out',
         ]) {
           final info = nowPlayingFromSmtcMetadata({
             'title': 'Song',
@@ -123,6 +126,56 @@ void main() {
           'artworkSkipped': r'C:\secret\path',
         });
         expect(unknown!.artworkSkipReason, isNull);
+      });
+    });
+
+    group('3 秒の打ち切り (#1324)', () {
+      test('曲名まで取れていた回は曲名を出し、ジャケットだけ timed_out にする', () {
+        final info = nowPlayingFromSmtcMetadata({
+          'title': 'Song',
+          'artist': 'Artist',
+          'artworkSkipped': 'timed_out',
+        });
+        expect(info!.title, 'Song');
+        expect(info.artworkUrl, isNull);
+        expect(info.artworkSkipReason, 'timed_out');
+      });
+
+      test('曲名すら取れなかった印を見分ける', () {
+        final marker = {'__nowPlayingError': 'query_timeout'};
+        expect(isSmtcQueryTimeout(marker), isTrue);
+        // 印だけのマップは曲として組まれない（「再生中の曲なし」と同じ）
+        expect(nowPlayingFromSmtcMetadata(marker), isNull);
+      });
+
+      test('当ててはいけない形: 通常の結果・別の印', () {
+        expect(isSmtcQueryTimeout({'title': 'Song'}), isFalse);
+        expect(isSmtcQueryTimeout({'__nowPlayingError': 'no_track'}), isFalse);
+        expect(isSmtcQueryTimeout({'__nowPlayingError': true}), isFalse);
+      });
+
+      // ⚠ ネイティブ側の形はここでしか見られない（C++ は CI で走らない）。
+      // 打ち切りの経路が「曲名を捨てて null」に戻っていないことをソースで見る。
+      test('⚠⚠ C++ は打ち切ったとき、取れた曲名か打ち切りの印を返す', () {
+        final source = File(
+          'windows/runner/smtc_now_playing.cpp',
+        ).readAsStringSync();
+        expect(source, contains('return TimedOutValue(*progress);'));
+        expect(source, contains('ArtworkTimedOut()'));
+        expect(source, contains('"query_timeout"'));
+        // 曲名を置いてからジャケットへ進む順になっている
+        final stash = source.indexOf('progress.text = map;');
+        final artwork = source.indexOf('PutArtwork(map, ReadArtwork(props));');
+        expect(stash, isNonNegative, reason: '曲名を途中経過へ置いていない');
+        expect(artwork, isNonNegative, reason: 'ジャケットの読み出しが見つからない');
+        expect(stash, lessThan(artwork), reason: '曲名より先にジャケットを読んでいる');
+        // 以前の形（打ち切りで null を返す）が残っていない
+        expect(
+          RegExp(
+            r'worker\.detach\(\);\s*return flutter::EncodableValue\(\);',
+          ).hasMatch(source),
+          isFalse,
+        );
       });
     });
 

@@ -8,6 +8,31 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../service/settings_backup.dart';
 
+/// バックアップの節ごとに、取り込んだ後に読み直す provider (#1317)。
+///
+/// ⚠⚠ **`settings:` の外の節も漏らさない。**以前は `settings:` と
+/// `account_settings:` のぶんしか読み直しておらず、`deck_columns:` を取り込んでも
+/// **デッキは起動時の列（新しい端末なら空）のまま**だった。その状態でカラムを
+/// 1 本足すと、画面が持っている列で保存し直すので**取り込んだ構成が消える**。
+///
+/// ⚠ **取り込み処理が読む節（`applySettingsBackupYaml` の `parsed[...]`）は全部ここに
+/// 並べる**（`settings_backup_sections_refresh_test` が突き合わせる）。読み直す
+/// provider が無い節は、空の一覧と理由を書く。
+@visibleForTesting
+final backedUpSectionProviders = <String, List<ProviderOrFamily>>{
+  'settings': backedUpPreferenceProviders,
+  // アカウント別設定 (#1144)。
+  'account_settings': backedUpAccountScopedProviders.values
+      .expand((p) => p)
+      .toList(),
+  // 索引は provider ではなく、足したぶんを `addDisconnectedAccounts` で一覧へ
+  // 積む（[applyImportedSettingsBackup] の後半）。
+  'accounts': const [],
+  // ⚠ ロックは列を見て居ない id を落とすので、列と一緒に読み直す。
+  deckColumnsBackupKey: [deckColumnsProvider, deckLockedColumnsProvider],
+  deckLockedColumnsBackupKey: [deckLockedColumnsProvider],
+};
+
 /// 取り込んだバックアップを**実行中のアプリへ反映する** (#1001)。
 ///
 /// ⚠ **呼び出し側が 2 つあるので、ここに寄せる**（Codex P2 / PR #1002）。設定画面
@@ -20,18 +45,16 @@ import '../../service/settings_backup.dart';
 ///
 /// 1. **設定の反映** … 各 Notifier は `build()` で prefs を読み直すので、
 ///    invalidate すれば画面が新しい設定で組み直される（再起動を求めない）。
+///    どの provider を読み直すかは [backedUpSectionProviders]。
 ///    ⚠ ログイン前でも要る — `themeModeProvider` / `fontScaleProvider` は
 ///    `main.dart` が既に読んでおり、放っておくとプロセスが終わるまで古い値のまま。
 /// 2. **アカウントの反映** … 索引を書いただけでは画面に出ない。`restoreSessions`
 ///    は起動時に 1 度しか索引を読まないので、足したぶんを「未接続」として積む
 ///    （[AccountManagerNotifier.addDisconnectedAccounts]）。
 void applyImportedSettingsBackup(WidgetRef ref, SettingsImportResult result) {
-  for (final provider in backedUpPreferenceProviders) {
-    ref.invalidate(provider);
-  }
-  // ⚠ アカウント別設定 (#1144)。同じ family が複数の prefix に出てくるので畳む。
+  // ⚠ 同じ provider が複数の節に出てくるので畳む。
   for (final provider
-      in backedUpAccountScopedProviders.values.expand((p) => p).toSet()) {
+      in backedUpSectionProviders.values.expand((p) => p).toSet()) {
     ref.invalidate(provider);
   }
 
@@ -180,6 +203,9 @@ final Set<String> _knownBackupKeys = {
   // アカウント別設定の取り込み結果 (#1119)。⚠ **理由は件数だけの定数文字列で、
   // アカウント名は入らない**（`_mergeAccountSettings` が 1 行にまとめている）。
   'account_settings',
+  // デッキの構成とロック (#1101 / #1317)。理由は同じく件数だけの定数文字列。
+  deckColumnsBackupKey,
+  deckLockedColumnsBackupKey,
 };
 
 /// 取り込めなかった件数の但し書き。何も落ちていなければ空文字 (#1010)。

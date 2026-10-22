@@ -21,8 +21,8 @@ import '../../url_helper.dart';
 import '../util/about_dialog.dart';
 import '../util/deck_navigation.dart';
 import '../util/deck_tabs.dart';
-import '../util/post_scope_display.dart';
 import '../util/provider_scope_carrier.dart';
+import '../util/timeline_type_label.dart';
 import 'desktop_menu_model.dart';
 import 'notification_filter_button.dart';
 
@@ -63,20 +63,6 @@ class HomeNavItem {
   });
 }
 
-const timelineLabels = {
-  TimelineType.home: 'ホーム',
-  TimelineType.local: 'ローカル',
-  TimelineType.social: 'ソーシャル',
-  TimelineType.federated: 'グローバル',
-  // Mastodon だけ (#1278)。本家の列設定の「リモートのみ表示」と、capsicum の
-  // 「連合」を合わせた語（本家の Web の「ほかのサーバー」は「連合」と並べると
-  // 何の一部か読めない）。
-  TimelineType.remote: '連合（リモートのみ）',
-};
-
-/// Mastodon uses "連合" instead of "グローバル".
-const mastodonLabelOverrides = {TimelineType.federated: '連合'};
-
 String tabLabel(
   WidgetRef ref,
   TabType tab,
@@ -85,16 +71,12 @@ String tabLabel(
   List<PostList> allLists,
 ) {
   return switch (tab) {
-    TimelineTab(:final type) => () {
-      if (type == TimelineType.local) {
-        return ref.watch(localTimelineNameProvider);
-      }
-      return (isMastodon ? mastodonLabelOverrides[type] : null) ??
-          timelineLabels[type] ??
-          (type == TimelineType.directMessages
-              ? postScopeLabel(PostScope.direct, adapter)
-              : type.name);
-    }(),
+    TimelineTab(:final type) => timelineTypeLabel(
+      ref,
+      type,
+      isMastodon: isMastodon,
+      adapter: adapter,
+    ),
     ListTab(:final id, :final name) =>
       name ?? allLists.where((l) => l.id == id).firstOrNull?.title ?? id,
     HashtagTab(:final tag) => hashtagSpecLabel(tag),
@@ -400,36 +382,44 @@ List<HomeNavItem> buildHomeNavItems(
   ];
 }
 
-/// ログアウト確認ダイアログ。ドロワーと macOS メニュー (#712) の両方から
-/// 呼ぶため切り出す。
-Future<void> confirmLogout(
+/// 接続済みのアカウントを、確認ダイアログ付きでこの端末から削除する (#1297)。
+/// ドロワー（各アカウントの行・今のアカウント）とデスクトップのメニュー (#712)
+/// から呼ぶ。
+///
+/// ⚠⚠ **文言は「削除」に揃える**（2026-10-20 pooza 判断）。以前は「ログアウト」で、
+/// サーバー側のセッションを切るだけと読めた。未接続のアカウントの
+/// 「アカウントを削除」（`confirmRemoveOfflineAccount`）と同じ言い方にする。
+/// ⚠ 今のアカウント以外も外せる（切り替えなくてよい）。今のアカウントを外したら
+/// 次のアカウントへ移る（[AccountManagerNotifier.logout]）。
+Future<void> confirmRemoveAccount(
   BuildContext context,
   WidgetRef ref,
-  Account current,
+  Account account,
 ) async {
   final confirmed = await showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
-      title: const Text('ログアウト'),
+      title: const Text('アカウントを削除'),
       content: Text(
-        '@${current.user.username}@${current.key.host} '
-        'からログアウトしますか？',
+        '@${account.user.username}@${account.key.host} をこの端末から削除します。'
+        'サーバー上のアカウントと投稿は消えません。'
+        'もう一度使うときは、ログインし直してください。',
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(false),
           child: const Text('キャンセル'),
         ),
-        TextButton(
+        FilledButton(
           onPressed: () => Navigator.of(context).pop(true),
-          child: const Text('ログアウト'),
+          child: const Text('削除'),
         ),
       ],
     ),
   );
 
   if (confirmed == true) {
-    await ref.read(accountManagerProvider.notifier).logout(current);
+    await ref.read(accountManagerProvider.notifier).logout(account);
   }
 }
 
@@ -701,9 +691,9 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
           ),
           if (current != null)
             MenuActionEntry(
-              label: 'ログアウト',
-              icon: Icons.logout,
-              onSelected: () => confirmLogout(context, ref, current),
+              label: 'このアカウントをこの端末から削除…',
+              icon: Icons.delete_outline,
+              onSelected: () => confirmRemoveAccount(context, ref, current),
             ),
         ],
       ),

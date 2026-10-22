@@ -120,7 +120,7 @@ ls -l /etc/sysctl.d/99-inotify.conf                # サイズが 0 でないこ
 Windows では Claude Code の Bash ツールが Git Bash、PowerShell ツールが Windows PowerShell 5.1 になる。**手順書は macOS の書き方なので、次の 6 つだけ読み替える。**
 
 - **`gh` は Bash ツールから叩く。**⚠ PowerShell から `gh ... --jq '...'` を呼ぶと、jq 式が空白で割られて `accepts 1 arg(s), received 4` / `unknown shorthand flag` になる（PS 5.1 のネイティブ実行ファイルへの引数の渡し方）。`curl` / `git` / `awk` / `sed` / `jq` も Bash 側でそのまま動く
-- **`.claude/scripts/sentry-api.sh` は Bash ツールから動く**（使えないのは PowerShell から）。⚠ `cli issues list` には **`--org <slug>` を足す**（`~/.sentryclirc` に org が無い端末では省けない）。⚠⚠ **`post` に日本語の JSON をそのまま渡すと `'utf-8' codec can't decode` で落ちる**（Windows の curl が引数を CP932 にする）。JSON をファイルに書き、`"$(jq -c -a . file.json)"` で ASCII エスケープしてから渡す
+- **`.claude/scripts/sentry-api.sh` は Bash ツールから動く**（使えないのは PowerShell から）。⚠ `cli issues list` には **`--org b-shock-co-ltd` を足す**（`~/.sentryclirc` に org が無い端末では省けない・slug の出どころは `packages/capsicum/pubspec.yaml` の `sentry:` 節。⚠ `get /organizations/` は調査用トークンでは空の配列を返すので、slug を引く手段にならない）。⚠⚠ **`post` に日本語の JSON をそのまま渡すと `'utf-8' codec can't decode` で落ちる**（Windows の curl が引数を CP932 にする）。JSON をファイルに書き、`"$(jq -c -a . file.json)"` で ASCII エスケープしてから渡す
 - **PS 5.1 の `Invoke-RestMethod` は、`charset` の無い応答の日本語が化ける。**Mastodon / Misskey の API は charset 付きなので読めるが、Sentry の API は化ける。日本語を含む応答は Bash 側の `curl` で扱う
 - **素の `python` / `python3` は Microsoft Store のアプリ実行エイリアスを先に掴む**（何もせず終わる）。実体を入れてあっても同じなので、`py` ランチャーかフルパスで呼ぶ
 - **`.ps1` は実行ポリシーで止まる。**`powershell -ExecutionPolicy Bypass -File <script>` で 1 回だけ通す（ポリシーそのものは変えない）

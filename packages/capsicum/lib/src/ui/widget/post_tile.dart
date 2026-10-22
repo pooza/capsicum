@@ -111,6 +111,17 @@ class _PostTileState extends ConsumerState<PostTile> {
   Post? _fallbackQuote;
   String? _fallbackQuoteFor;
 
+  /// いま引いてもらっている引用元（アカウントと URL）。画面から外れたら下ろす
+  /// (#1304・[QuoteFallbackResolver.release])。
+  (String, String)? _fallbackQuoteRequest;
+
+  void _releaseQuoteFallback() {
+    final request = _fallbackQuoteRequest;
+    if (request == null) return;
+    _fallbackQuoteRequest = null;
+    QuoteFallbackResolver.instance.release(request.$1, request.$2);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -123,6 +134,7 @@ class _PostTileState extends ConsumerState<PostTile> {
   /// 本文の `RE:` の URL から引く (#1269・`quote_fallback.dart`)。
   void _resolveQuoteFallback() {
     final displayPost = post.reblog ?? post;
+    _releaseQuoteFallback();
     _fallbackQuote = null;
     _fallbackQuoteFor = null;
     final url = quoteFallbackTarget(displayPost);
@@ -133,6 +145,7 @@ class _PostTileState extends ConsumerState<PostTile> {
     final account = ref.read(currentAccountProvider)?.key.toStorageKey();
     if (account == null) return;
     final postId = displayPost.id;
+    _fallbackQuoteRequest = (account, url);
     QuoteFallbackResolver.instance
         .resolve(account, adapter as SearchSupport, url)
         .then((quote) {
@@ -371,6 +384,8 @@ class _PostTileState extends ConsumerState<PostTile> {
   @override
   void dispose() {
     _cardFetchDebounce?.cancel();
+    // 画面から外れたタイルのぶんの引用元は引かせない (#1304)。
+    _releaseQuoteFallback();
     _contentRenderer?.dispose();
     _cwRenderer?.dispose();
     super.dispose();

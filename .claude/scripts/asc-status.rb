@@ -209,11 +209,47 @@ def print_builds
   end
 end
 
+# 公開前の版（提出準備中・取り下げ・審査待ち）に載っているスクリーンショット。
+# ⚠ ASC の画面で貼ったものが**保存されて版に載ったか**を確かめるためのもの
+# （2026-10-22・v2.5 の提出で、貼った後に「保存」が要るのかが分からなかった）。
+# ファイル名・寸法・処理の状態（`assetDeliveryState`）を枠ごとに出す。
+EDITABLE_STATES = [
+  'PREPARE_FOR_SUBMISSION', 'DEVELOPER_REJECTED', 'REJECTED',
+  'METADATA_REJECTED', 'WAITING_FOR_REVIEW', 'INVALID_BINARY'
+].freeze
+
+def print_screenshots
+  puts '== 公開前の版のスクリーンショット =='
+  ['IOS', 'MAC_OS'].each do |platform|
+    versions = get(
+      "/v1/apps/#{app_id}/appStoreVersions?filter[platform]=#{platform}&limit=5",
+    )['data'].select {|v| EDITABLE_STATES.include?(v['attributes']['appStoreState'])}
+    puts "  #{platform}: 公開前の版なし" if versions.empty?
+    versions.each do |version|
+      attrs = version['attributes']
+      puts "  #{platform} #{attrs['versionString']}  #{attrs['appStoreState']}"
+      get("/v1/appStoreVersions/#{version['id']}/appStoreVersionLocalizations")['data'].each do |loc|
+        puts "    [#{loc['attributes']['locale']}]"
+        get("/v1/appStoreVersionLocalizations/#{loc['id']}/appScreenshotSets")['data'].each do |set|
+          shots = get("/v1/appScreenshotSets/#{set['id']}/appScreenshots")['data']
+          puts "      #{set['attributes']['screenshotDisplayType']}: #{shots.size} 枚"
+          shots.each do |shot|
+            a = shot['attributes']
+            size = a['imageAsset'] ? "#{a['imageAsset']['width']}x#{a['imageAsset']['height']}" : '-'
+            puts "        #{a['fileName']}  #{size}  #{a.dig('assetDeliveryState', 'state')}"
+          end
+        end
+      end
+    end
+  end
+end
+
 case ARGV[0]
 when 'versions' then print_versions
 when 'products' then print_products
 when 'builds' then print_builds
 when 'parts' then print_subscription_parts
+when 'screenshots' then print_screenshots
 when nil then (print_versions; print_products)
-else abort "使い方: #{File.basename($PROGRAM_NAME)} [versions|products|builds|parts]"
+else abort "使い方: #{File.basename($PROGRAM_NAME)} [versions|products|builds|parts|screenshots]"
 end

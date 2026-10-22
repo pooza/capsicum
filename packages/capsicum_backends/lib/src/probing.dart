@@ -122,7 +122,10 @@ Future<InstanceProbe?> _probeViaNodeInfo(Dio dio, String host) async {
 /// あえて null にする（本家名の完全一致を要する latest 追従判定 #816 のゲートを
 /// フォークで誤って点けない）。version は各 API の `version` から拾う。
 Future<InstanceProbe?> _probeViaEndpoints(Dio dio, String host) async {
-  var unreachable = false;
+  // ⚠ **到達できなかった回は、元の例外をそのまま投げ直す (#1298)。**以前は
+  // `Exception('サーバーに接続できません')` に包み直しており、TLS・名前の解決・
+  // タイムアウトの区別が画面からも Sentry からも消えていた。
+  DioException? unreachable;
 
   try {
     final res = await dio.post('https://$host/api/meta', data: {});
@@ -134,7 +137,7 @@ Future<InstanceProbe?> _probeViaEndpoints(Dio dio, String host) async {
       );
     }
   } on DioException catch (e) {
-    if (_isUnreachable(e)) unreachable = true;
+    if (_isUnreachable(e)) unreachable = e;
   } catch (_) {
     // JSON でない等。Misskey ではないとみなし次へ。
   }
@@ -149,16 +152,14 @@ Future<InstanceProbe?> _probeViaEndpoints(Dio dio, String host) async {
       );
     }
   } on DioException catch (e) {
-    if (_isUnreachable(e)) unreachable = true;
+    if (_isUnreachable(e)) unreachable = e;
   } catch (_) {
     // Mastodon でもない。
   }
 
   // 応答はあったが両方とも該当せず＝未対応サーバー（null）。どちらも接続自体に
   // 失敗＝到達不能なら「接続失敗」を surface する。
-  if (unreachable) {
-    throw Exception('サーバーに接続できません');
-  }
+  if (unreachable != null) throw unreachable;
   return null;
 }
 

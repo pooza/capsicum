@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../util/exception_scrub.dart';
+import '../util/annict_error.dart';
 import '../util/annict_link.dart';
 import '../util/deck_navigation.dart';
 import '../util/provider_scope_carrier.dart';
@@ -57,6 +58,9 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
   Future<void> _searchWorks() async {
     final mulukhiya = _mulukhiya;
     if (mulukhiya == null) return;
+    // 失敗の記録に使う (#1310)。⚠ catch の中で読まない（画面が破棄済みだと
+    // StateError が元の例外を潰す・#1064）。
+    final account = ref.read(currentAccountProvider);
 
     setState(() {
       _loading = true;
@@ -69,8 +73,9 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
         keyword: keyword.isEmpty ? null : keyword,
       );
       if (mounted) setState(() => _works = works);
-    } catch (e) {
+    } catch (e, st) {
       debugLogException('Episode browser search error', e);
+      reportAnnictFailure('search_works', e, st, account: account);
       if (mounted) {
         final status = e is DioException ? e.response?.statusCode : null;
         final isAuthError = status == 401 || status == 403;
@@ -100,7 +105,7 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
       final justLinked = await runAnnictLinkFlow(context, ref);
       if (!justLinked || !mounted) return;
     }
-    context.push(
+    final result = await context.push<Object?>(
       '/annict/record',
       extra: extraWithProviderScope(context, {
         'args': AnnictRecordScreenArgs(
@@ -110,6 +115,7 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
         ),
       }),
     );
+    if (result is AnnictPosted && mounted) popAnnictPosted(context);
   }
 
   /// 作品全体感想 (review) 画面へ遷移する (#592)。review は作品単位なので
@@ -120,7 +126,7 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
       final justLinked = await runAnnictLinkFlow(context, ref);
       if (!justLinked || !mounted) return;
     }
-    context.push(
+    final result = await context.push<Object?>(
       '/annict/review',
       extra: extraWithProviderScope(context, {
         'args': AnnictReviewScreenArgs(
@@ -129,11 +135,14 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
         ),
       }),
     );
+    // 投稿し終えたら自分も閉じて、投稿フォームへ同じ値を返す (#1319)。
+    if (result is AnnictPosted && mounted) popAnnictPosted(context);
   }
 
   Future<void> _selectWork(AnnictWork work) async {
     final mulukhiya = _mulukhiya;
     if (mulukhiya == null) return;
+    final account = ref.read(currentAccountProvider);
 
     setState(() {
       _selectedWork = work;
@@ -144,8 +153,9 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
     try {
       final episodes = await mulukhiya.getEpisodes(work.annictId);
       if (mounted) setState(() => _episodes = episodes);
-    } catch (e) {
+    } catch (e, st) {
       debugLogException('Episode load error', e);
+      reportAnnictFailure('load_episodes', e, st, account: account);
       if (mounted) setState(() => _episodesError = 'エピソードの取得に失敗しました');
     } finally {
       if (mounted) setState(() => _episodesLoading = false);

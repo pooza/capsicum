@@ -69,6 +69,7 @@ import '../widget/insert_picker_sheet.dart';
 import '../widget/overflow_icon_row.dart';
 import '../widget/quick_chooser_sheet.dart';
 import '../widget/screen_menu.dart';
+import '../widget/server_badge.dart';
 import 'annict_record_screen.dart';
 import 'drive_picker_screen.dart';
 import 'image_crop_screen.dart';
@@ -2884,11 +2885,17 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   }
 
   Future<void> _openEpisodeBrowser() async {
-    final result = await context.push<String>(
+    // 返るのは、選んだエピソードの本文（String）か、エピソードブラウザから
+    // Annict へ投稿し終えた印（AnnictPosted）。
+    final result = await context.push<Object?>(
       '/episodes',
       extra: extraWithProviderScope(context),
     );
-    if (result != null && mounted) {
+    if (result is AnnictPosted && mounted) {
+      _closeAfterAnnictPosted();
+      return;
+    }
+    if (result is String && mounted) {
       _controller.text = result.replaceFirst(RegExp(r'^---\n'), '');
       _controller.selection = TextSelection.collapsed(
         offset: _controller.text.length,
@@ -2913,7 +2920,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         '${program.episode}${program.episodeSuffix?.isNotEmpty == true ? program.episodeSuffix! : '話'}',
       if (program.subtitle != null) program.subtitle!,
     ].join(' ');
-    context.push(
+    final result = await context.push<Object?>(
       '/annict/record',
       extra: extraWithProviderScope(context, {
         'args': AnnictRecordScreenArgs(
@@ -2923,6 +2930,20 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         ),
       }),
     );
+    if (result is AnnictPosted && mounted) _closeAfterAnnictPosted();
+  }
+
+  /// Annict へ投稿し終えたら、投稿フォームも閉じて開く前の画面へ戻る (#584)。
+  ///
+  /// ⚠ `go('/home')` で畳まない。デッキから開いた投稿フォームなら /deck ごと
+  /// 消えてタブ表示に落ちる (#1319)。入力中の本文は離脱時保存 (#966) が拾う。
+  /// 投稿フォームは投稿していないので、開いた側へは何も返さない。
+  void _closeAfterAnnictPosted() {
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/home');
+    }
   }
 
   /// ナウプレ挿入 (#466)。優先順位リゾルバで現在再生中の曲を取得し、本文末尾に
@@ -4639,7 +4660,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       // メニュー側も 3 択のみ・未指定はどれにもチェックが付かない状態で表す。
       if (adapter is MastodonAdapter)
         MenuSubmenuEntry(
-          label: '引用許可',
+          // ⚠ 表記は「引用の許可」（投稿の既定・投稿後の変更と揃える・
+          // 2026-10-20 pooza・#1304）。
+          label: '引用の許可',
           children: [
             for (final entry in quoteApprovalLabels.entries)
               MenuActionEntry(
@@ -4989,12 +5012,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       if (adapter is MastodonAdapter)
         if (compact)
           // ⚠⚠ **未設定のときはアイコンだけ。**未設定＝サーバーの既定に任せる＝
-          // 何も効いていない状態なので、「引用許可」の 4 文字ぶん（約 100pt）を
+          // 何も効いていない状態なので、「引用の許可」の 5 文字ぶん（約 120pt）を
           // 常時確保するのは高すぎる。⚠ 効いているときは値を出す（short label）。
           _compactMenu<String>(
             tooltip: _quoteApprovalPolicy == null
-                ? '引用許可'
-                : '引用許可: ${quoteApprovalLabels[_quoteApprovalPolicy]}',
+                ? '引用の許可'
+                : '引用の許可: ${quoteApprovalLabels[_quoteApprovalPolicy]}',
             child: _quoteApprovalPolicy == null
                 ? const Icon(Icons.format_quote, size: 16)
                 : _compactSetting(
@@ -5025,7 +5048,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
               children: [
                 Icon(Icons.format_quote, size: 16),
                 SizedBox(width: 4),
-                Text('引用許可', style: TextStyle(fontSize: 13)),
+                Text('引用の許可', style: TextStyle(fontSize: 13)),
               ],
             ),
             onChanged: _sending
@@ -5378,8 +5401,17 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                             // #892: デスクトップで等幅フォント名が設定されていれば
                             // 本文入力に適用（空なら null = 既定フォント）。
                             style: composeStyle,
-                            decoration: const InputDecoration(
-                              hintText: '今なにしてる？',
+                            decoration: InputDecoration(
+                              // どのサーバーへ投稿するかを出す (#1328)。
+                              // 「今なにしてる？」では何も分からず、投稿する
+                              // アカウントを相当な頻度で取り違えていた。
+                              hintText: postTargetHint(
+                                postLabel: ref.watch(postLabelProvider),
+                                host: ref
+                                    .watch(currentAccountProvider)
+                                    ?.key
+                                    .host,
+                              ),
                               border: InputBorder.none,
                             ),
                           ),

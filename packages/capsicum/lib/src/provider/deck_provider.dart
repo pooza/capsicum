@@ -62,15 +62,31 @@ final pendingDeckNotificationsProvider = StateProvider<AccountKey?>(
   (ref) => null,
 );
 
-/// 通知のタップをデッキで受けるか (#1295)。
+/// 起動時に「デッキで始めるか」の判定（[shouldStartInDeck]）がまだ済んでいないか
+/// (#1304)。**プロセスの最初は true**で、`HomeScreen` が判定を済ませたら下ろす。
 ///
-/// デッキが開いている（[deckOpen]）か、前回デッキで終えていてカラムがある（＝
-/// 起動するとデッキで始まる）とき。
+/// ⚠⚠ **「前回デッキで終えた」だけで通知のタップをデッキ宛てにしない。**判定が
+/// 済んだあとは、デッキが閉じていればデッキは現れない。以前は
+/// [notificationTapGoesToDeck] が `lastMode == deck && hasColumns` だけで真になり、
+/// 共有やディープリンクから起動した回（[shouldStartInDeck] が見送る）にタップすると
+/// 何も起きず、後で手でデッキを開くと頼んでいない通知カラムが足された。
+final deckStartupPendingProvider = StateProvider<bool>((ref) => true);
+
+/// 通知のタップをデッキで受けるか (#1295 / #1304)。
+///
+/// - デッキが開いている（[deckOpen]）
+/// - 起動の途中（[startupPending]）で、前回デッキで終えていてカラムがある（＝
+///   これから [shouldStartInDeck] がデッキを開く見込み）
+///
+/// ⚠ 見込みが外れたとき（起動時に見送った・閉じた直後の 1 フレーム）の取りこぼしは
+/// `releasePendingDeckNotification` がタブ表示の通知タブへ振り替える。
 bool notificationTapGoesToDeck({
   required bool deckOpen,
+  required bool startupPending,
   required LastViewMode lastMode,
   required bool hasColumns,
-}) => deckOpen || (lastMode == LastViewMode.deck && hasColumns);
+}) =>
+    deckOpen || (startupPending && lastMode == LastViewMode.deck && hasColumns);
 
 /// この `ref` がデッキのカラムのスコープにあるか (#1099)。**ルートでは false**。
 ///

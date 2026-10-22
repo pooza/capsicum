@@ -378,10 +378,12 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
           Sentry.captureException(
             scrubException(e),
             stackTrace: st,
-            hint: Hint.withMap({
-              'site': 'notification.loadMore',
-              'attempts': '${attempt + 1}',
-            }),
+            // ⚠ hint は送られない（プロセス内だけ）。tag と contexts に載せる
+            // (#1304)。
+            withScope: (scope) {
+              scope.setTag('site', 'notification.loadMore');
+              scope.setContexts('load_more', {'attempts': attempt + 1});
+            },
           );
         } catch (_) {
           // Sentry の失敗で state の回復を止めない。

@@ -1,3 +1,5 @@
+import 'dart:io' show HandshakeException;
+
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:dio/dio.dart';
 import 'package:mocktail/mocktail.dart';
@@ -120,6 +122,31 @@ void main() {
     ).thenThrow(_err(_instanceUrl, type: DioExceptionType.connectionError));
 
     expect(() => probeInstance(dio, _host), throwsA(isA<Exception>()));
+  });
+
+  test('到達不能のときは元の DioException を投げ直す（中身を捨てない・#1298）', () async {
+    // 入れたばかりの Windows で TLS が落ちる形。原因（HandshakeException）が
+    // 画面の文言と Sentry まで届くこと。
+    const cause = HandshakeException('CERTIFICATE_VERIFY_FAILED');
+    DioException tls(String path) => DioException(
+      requestOptions: RequestOptions(path: path),
+      type: DioExceptionType.connectionError,
+      error: cause,
+    );
+    when(() => dio.get<dynamic>(_nodeInfoUrl)).thenThrow(tls(_nodeInfoUrl));
+    when(
+      () => dio.post<dynamic>(_metaUrl, data: any(named: 'data')),
+    ).thenThrow(tls(_metaUrl));
+    when(() => dio.get<dynamic>(_instanceUrl)).thenThrow(tls(_instanceUrl));
+
+    await expectLater(
+      probeInstance(dio, _host),
+      throwsA(
+        isA<DioException>()
+            .having((e) => e.type, 'type', DioExceptionType.connectionError)
+            .having((e) => e.error, 'error', same(cause)),
+      ),
+    );
   });
 
   test('TLS 証明書エラーも到達不能として例外を投げる（未対応と誤判定しない）', () async {

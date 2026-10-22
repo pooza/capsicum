@@ -77,6 +77,10 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
 
   final _scrollController = ScrollController();
 
+  /// 簡易投稿バーの打ちかけの控え。フォーカスが移ってバーが作り直されても、
+  /// 移った先のバーへ引き継ぐ（[SimplePostBar.draft]・2026-10-22 pooza）。
+  final _postBarDraft = PostBarDraft();
+
   /// 直近の割り付け。足したカラムを見える位置まで送るのに使う。
   DeckLayout? _layout;
 
@@ -276,7 +280,29 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
     final target = ref.read(pendingDeckNotificationsProvider);
     if (target == null) return;
     ref.read(pendingDeckNotificationsProvider.notifier).state = null;
+    _closeScreensAboveDeck();
     unawaited(_openNotificationsFor(target));
+  }
+
+  /// デッキの上に積まれた全画面の画面を閉じて、デッキを見せる (#1304)。
+  ///
+  /// ⚠ 閉じないと、通知カラムへ送って点滅させても上の画面に隠れて見えない
+  /// （タップしたのに何も起きないと見える）。shell の中（投稿の詳細・
+  /// プロフィールなど）と、shell の外の root（画像ビューア）の両方を見る。
+  void _closeScreensAboveDeck() {
+    final deckRoute = ModalRoute.of(context);
+    if (deckRoute == null) return;
+    final shellContext = Navigator.of(context).context;
+    final shellPage = ModalRoute.of(shellContext);
+    if (shellPage != null && !shellPage.isCurrent) {
+      Navigator.of(
+        context,
+        rootNavigator: true,
+      ).popUntil((r) => r == shellPage);
+    }
+    if (!deckRoute.isCurrent) {
+      Navigator.of(context).popUntil((r) => r == deckRoute);
+    }
   }
 
   /// [account] の通知をカラムで見せる (#1295・2026-10-18 pooza 判断)。
@@ -578,7 +604,7 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
     Set<AccountKey> used,
   ) {
     if (column == null) return null;
-    final bar = _DeckPostBar(column: column);
+    final bar = _DeckPostBar(column: column, draft: _postBarDraft);
     if (column.account == currentKey) return bar;
     final account = accounts.where((a) => a.key == column.account).firstOrNull;
     if (account == null) return null;
@@ -923,9 +949,10 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
 /// （`_DeckScreenState._postBar` が包む）ので、ここの `ref` はそのカラムの
 /// アカウントを指している。
 class _DeckPostBar extends ConsumerWidget {
-  const _DeckPostBar({required this.column});
+  const _DeckPostBar({required this.column, required this.draft});
 
   final DeckColumn column;
+  final PostBarDraft draft;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -942,9 +969,11 @@ class _DeckPostBar extends ConsumerWidget {
     final current = ref.watch(currentAccountProvider);
     final user = current?.key == column.account ? current!.user : null;
     return SimplePostBar(
-      // ⚠ フォーカスが移ったら別のバーとして作り直す。同じ State を使い回すと
-      // 打ちかけの本文が別のアカウント宛に持ち越される。
+      // ⚠ フォーカスが移ったら別のバーとして作り直す（アカウントごとの状態を
+      // 持ち越さない）。⚠⚠ ただし打ちかけの本文は [draft] で移った先へ引き継ぐ
+      // （2026-10-22 pooza・消さない。宛先はヒントと左のアイコンで分かる・#1328）。
       key: ValueKey(column.id),
+      draft: draft,
       channelId: extra['channelId'] as String?,
       channelName: extra['channelName'] as String?,
       hashtags: (extra['hashtags'] as List<String>?) ?? const [],

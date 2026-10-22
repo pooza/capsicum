@@ -25,6 +25,7 @@ import '../../service/update_checker.dart';
 import '../../url_helper.dart';
 import '../../util/startup_trace.dart';
 import '../util/deck_navigation.dart';
+import '../util/deck_notification_fallback.dart';
 import '../util/keyboard_list_navigation.dart';
 import '../util/mouse_drag_scroll_behavior.dart';
 import '../util/offline_account_display.dart';
@@ -168,17 +169,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   void _restoreLastViewModeOnce() {
     if (_lastViewModeRestored) return;
     _lastViewModeRestored = true;
-    if (readLastViewMode() != LastViewMode.deck) return;
+    // ⚠ 判定は provider の書き換えを伴うので、どの枝もフレームの後で済ませる。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final router = GoRouter.of(context);
       // 条件の正本は [shouldStartInDeck]。
-      if (!shouldStartInDeck(
+      final startInDeck = shouldStartInDeck(
         lastMode: readLastViewMode(),
         hasPendingTab: ref.read(pendingInitialTabProvider) != null,
         location: router.routerDelegate.currentConfiguration.uri.path,
         hasColumns: ref.read(deckColumnsProvider).isNotEmpty,
-      )) {
+      );
+      // 起動時の判定はこれで済んだ (#1304)。以降の通知のタップは、デッキが
+      // 開いているときだけデッキ宛てになる。
+      ref.read(deckStartupPendingProvider.notifier).state = false;
+      if (!startInDeck) {
+        // デッキで始める見込みで立てられた通知のタップは、タブ表示の通知タブへ
+        // 振り替える (#1304)。放っておくと、後で手でデッキを開いたときに
+        // 頼んでいない通知カラムが足される。
+        releasePendingDeckNotification(ref.read);
         return;
       }
       router.push('/deck');
