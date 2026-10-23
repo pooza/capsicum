@@ -246,7 +246,8 @@ capsicum-relay の Issue・マイルストーンは、**capsicum 本体と同じ
   - 版が違えば、relay に版上げの Issue があるかを見る: `gh issue list --repo pooza/capsicum-relay --state open --search 'Ruby in:title'`
   - ⚠⚠ **無ければその場で起票する。**書式は relay#98 / relay#108（やること・前提・手順の 3 節）。稼働中の relay の枠に載せ、**同じ作業で capsicum 側 description の `## relay` 節も直す**（step 5）
   - ⚠ 起票の前に、**ステージング・本番の両機の rbenv に新しい版が入っているか**を読み取りで確かめ、前提の節に書く（入れるのは chubo2 側の作業・接続先は chubo2 の `docs/infra-servers.md`）。入っていなければ「chubo2 側が先」と書く
-  - ⚠ **起票までで止める。**版上げに着手するのは言われてから
+  - ⚠⚠ **すぐ作業するかは、直前の版からの差分で決める**（2026-10-24 pooza）。リリースノート（`gh api repos/ruby/ruby/releases --jq '.[] | select(.tag_name=="vX.Y.Z") | .body'`）を読み、**修正が relay の通る経路に効くか**を確かめて Issue のコメントに書く。例: 4.0.9 は「巨大な正規表現のコンパイル」の修正で、relay は外部入力から正規表現を組み立てないので急がない（relay#108）
+  - ⚠ **急ぐと判断しない限り、起票までで止める。**版上げに着手するのは言われてから
 - **Mastodon / Misskey の現行バージョン確認**: 自前サーバーのソフトウェアは pooza フォークがリリース追従しているため、ローカルの fork を pull すれば現行バージョンを正確に確認できる（推測しない）。
   - Mastodon: `git -C ~/repos/mastodon pull --ff-only` → `lib/mastodon/version.rb` の major/minor/patch（または `git -C ~/repos/mastodon tag --sort=-creatordate | head` で `vX.Y.Z-bshockdon`）
   - Misskey: `git -C ~/repos/misskey pull --ff-only` → `package.json` の `version`（`jq -r .version ~/repos/misskey/package.json`）
