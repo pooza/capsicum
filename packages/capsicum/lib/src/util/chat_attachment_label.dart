@@ -5,6 +5,11 @@ import 'package:capsicum_core/capsicum_core.dart';
 /// ⚠⚠ **表記はここ 1 本。**以前はメッセージの一覧と検索（`chat_message_preview`）・
 /// プッシュ通知の本文（`push_message_dispatcher`）・DM のスレッドの添付の行
 /// （`chat_thread_screen`）がそれぞれ書いていた。
+///
+/// ⚠ **ネイティブには写しがあり、手で合わせる。**アプリが動いていないときの
+/// プッシュ通知の本文は Dart を通らないため、iOS / macOS の Notification Service
+/// Extension と Windows の `web_push_payload.cpp` が同じ表記を持っている。
+/// ここを変えたら、そちらも直す。
 String chatAttachmentLabel(AttachmentType type) => switch (type) {
   AttachmentType.image => '[画像]',
   AttachmentType.video => '[動画]',

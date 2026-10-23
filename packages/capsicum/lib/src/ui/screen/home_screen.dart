@@ -1758,8 +1758,8 @@ class _OfflineHomeScaffold extends ConsumerWidget {
                           ? null
                           : () => context.push(reconnectRouteFor(o.key)),
                       trailing: IconButton(
-                        // 削除操作は delete_outline に統一する (#828)。logout は
-                        // 実ログアウト (ドロワー) と紛れるため使わない。
+                        // 削除操作は delete_outline に統一する (#828)。ドロワーの
+                        // 「このアカウントを削除」(#1297) と同じアイコンに揃える。
                         icon: const Icon(Icons.delete_outline),
                         tooltip: 'このアカウントを削除',
                         onPressed: () =>

@@ -666,7 +666,7 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
           // 切り替えると `go('/home')` で**デッキを抜ける**うえ、デッキは各カラムが
           // それぞれのアカウントで動くので「現在のアカウント」を替える意味も薄い
           // （替えるとコンテナの割り当てが組み替わる・決定済み事項 8）。
-          // ⚠ プロフィール・追加・ログアウトは残す。
+          // ⚠ プロフィール・追加・削除（この端末から外す・#1297）は残す。
           if (!inDeck && current != null && otherAccounts.isNotEmpty)
             const MenuGroupSeparator(),
           if (!inDeck)
