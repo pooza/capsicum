@@ -14,6 +14,10 @@ class MastodonAnnouncement {
   final bool read;
   final List<MastodonAnnouncementReaction> reactions;
 
+  /// サーバーがお知らせのリアクションを受け付けるか（Mastodon 5.0〜・#1321）。
+  /// 4.7 以前はフィールドが無いので、許可として扱う。
+  final bool reactionsAllowed;
+
   const MastodonAnnouncement({
     required this.id,
     required this.content,
@@ -24,6 +28,7 @@ class MastodonAnnouncement {
     this.updatedAt,
     this.read = false,
     this.reactions = const [],
+    this.reactionsAllowed = true,
   });
 
   factory MastodonAnnouncement.fromJson(Map<String, dynamic> json) =>

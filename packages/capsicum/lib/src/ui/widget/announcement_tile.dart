@@ -164,9 +164,17 @@ class _AnnouncementTileState extends ConsumerState<AnnouncementTile> {
 
   /// お知らせのリアクション行 (#819)。リアクション対応アダプタ（Mastodon）でのみ
   /// 表示する。既存チップはタップで付け外し、末尾の「+」で絵文字ピッカーを開く。
+  ///
+  /// サーバーがリアクションを無効にしているお知らせ（[Announcement.reactionsAllowed]
+  /// が false・#1321）では「+」を出さず、既存チップも押せなくする（付け外しは
+  /// 400 になる）。既に付いているリアクションの表示はそのまま残す。
   Widget _buildReactions(BuildContext context, ThemeData theme) {
     final adapter = ref.watch(currentAdapterProvider);
     if (adapter is! AnnouncementReactionSupport) return const SizedBox.shrink();
+    final allowed = announcement.reactionsAllowed;
+    if (!allowed && announcement.reactions.isEmpty) {
+      return const SizedBox.shrink();
+    }
 
     return Padding(
       padding: const EdgeInsets.only(top: 8),
@@ -178,9 +186,10 @@ class _AnnouncementTileState extends ConsumerState<AnnouncementTile> {
             _AnnouncementReactionChip(
               reaction: r,
               emojiSize: ref.watch(emojiSizeProvider),
-              onTap: () => _toggle(r.name, add: !r.me),
+              onTap: allowed ? () => _toggle(r.name, add: !r.me) : null,
             ),
-          _AddReactionButton(onTap: () => _openReactionPicker(context)),
+          if (allowed)
+            _AddReactionButton(onTap: () => _openReactionPicker(context)),
         ],
       ),
     );
@@ -227,7 +236,9 @@ class _AnnouncementReactionChip extends StatelessWidget {
 
   /// カスタム絵文字サイズ設定を流用する (#852 / #819)。
   final double emojiSize;
-  final VoidCallback onTap;
+
+  /// null のときは押せない（サーバーがリアクションを無効にしている・#1321）。
+  final VoidCallback? onTap;
 
   const _AnnouncementReactionChip({
     required this.reaction,
