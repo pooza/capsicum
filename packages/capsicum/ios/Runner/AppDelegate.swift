@@ -39,6 +39,11 @@ import UserNotifications
       NowPlayingPlugin.register(with: registrar)
     }
 
+    // iPad のメニューバー (#1268)。capsicum/menu_bar チャンネル。
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "MenuBarPlugin") {
+      MenuBarPlugin.shared.register(with: registrar)
+    }
+
     // Set up the APNs MethodChannel after the Flutter engine is ready.
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "ApnsPlugin") {
       apnsChannel = FlutterMethodChannel(
@@ -133,6 +138,19 @@ import UserNotifications
     super.userNotificationCenter(center, willPresent: notification, withCompletionHandler: completionHandler)
   }
 
+  // MARK: - iPad のメニューバー (#1268)
+
+  override func buildMenu(with builder: UIMenuBuilder) {
+    super.buildMenu(with: builder)
+    MenuBarPlugin.shared.build(with: builder)
+  }
+
+  // メニューの項目が選ばれた。⚠ AppDelegate はレスポンダチェーンの終端なので、
+  // どこにフォーカスがあってもここまで届く。
+  @objc func capsicumMenuSelected(_ sender: UICommand) {
+    MenuBarPlugin.shared.select(sender.propertyList)
+  }
+
   // UNNotificationResponse.userInfo is [AnyHashable: Any], but the Flutter
   // method channel marshaller only handles [String: Any]. Convert keys and
   // drop non-string-keyed entries (there shouldn't be any, but be defensive).
@@ -144,5 +162,127 @@ import UserNotifications
       }
     }
     return out
+  }
+}
+
+/// iPad のメニューバー（iPadOS 26〜）に、Dart のデスクトップメニューのモデルを
+/// 載せる (#1268)。
+///
+/// ⚠⚠ Flutter の `PlatformMenuBar` は iOS のエンジンに実装が無い（`flutter/menu`
+/// を受けるのは macOS だけ）。Dart（`ios_menu_bar.dart`）がモデルを JSON にして
+/// 送り、ここで `UIMenuBuilder` に組む。選ばれた項目は id で Dart へ返す。
+/// ⚠ どのメニューへ置くか（App / File / View / Edit の後ろ）は Dart が決める。
+final class MenuBarPlugin: NSObject {
+  static let shared = MenuBarPlugin()
+
+  private var channel: FlutterMethodChannel?
+  private var menus: [[String: Any]] = []
+
+  func register(with registrar: FlutterPluginRegistrar) {
+    let channel = FlutterMethodChannel(
+      name: "capsicum/menu_bar",
+      binaryMessenger: registrar.messenger()
+    )
+    self.channel = channel
+    channel.setMethodCallHandler { [weak self] call, result in
+      guard call.method == "setMenus" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      self?.menus = call.arguments as? [[String: Any]] ?? []
+      UIMenuSystem.main.setNeedsRebuild()
+      result(nil)
+    }
+  }
+
+  func select(_ propertyList: Any?) {
+    guard let id = propertyList as? Int else { return }
+    channel?.invokeMethod("menuSelected", arguments: id)
+  }
+
+  func build(with builder: UIMenuBuilder) {
+    guard builder.system == .main, !menus.isEmpty else { return }
+    // 書式（フォント・揃え）は使わない。
+    builder.remove(menu: .format)
+    // ⚠⚠ 同じキーの組み合わせを 2 つ載せない。2 つ目は文字だけの項目にする。
+    var usedKeys = Set<String>()
+    var anchor: UIMenu.Identifier = .edit
+    for (index, menu) in menus.enumerated() {
+      let children = makeChildren(menu["children"], usedKeys: &usedKeys)
+      if children.isEmpty { continue }
+      let parent: UIMenu.Identifier?
+      switch menu["placement"] as? String {
+      case "application": parent = .application
+      case "file": parent = .file
+      case "view": parent = .view
+      default: parent = nil
+      }
+      if let parent, builder.menu(for: parent) != nil {
+        builder.insertChild(
+          UIMenu(title: "", options: .displayInline, children: children),
+          atStartOfMenu: parent
+        )
+        continue
+      }
+      let identifier = UIMenu.Identifier("net.shrieker.capsicum.menu.\(index)")
+      builder.insertSibling(
+        UIMenu(title: menu["title"] as? String ?? "", identifier: identifier, children: children),
+        afterMenu: anchor
+      )
+      anchor = identifier
+    }
+  }
+
+  /// 区切り（separator）ごとに、境界線つきのまとまりにする。
+  private func makeChildren(_ raw: Any?, usedKeys: inout Set<String>) -> [UIMenuElement] {
+    let items = raw as? [[String: Any]] ?? []
+    var groups: [[UIMenuElement]] = [[]]
+    for item in items {
+      switch item["type"] as? String {
+      case "separator":
+        if !(groups.last?.isEmpty ?? true) { groups.append([]) }
+      case "submenu":
+        let children = makeChildren(item["children"], usedKeys: &usedKeys)
+        if !children.isEmpty {
+          groups[groups.count - 1].append(
+            UIMenu(title: item["title"] as? String ?? "", children: children)
+          )
+        }
+      case "action":
+        groups[groups.count - 1].append(makeCommand(item, usedKeys: &usedKeys))
+      default:
+        break
+      }
+    }
+    let nonEmpty = groups.filter { !$0.isEmpty }
+    if nonEmpty.count <= 1 { return nonEmpty.first ?? [] }
+    return nonEmpty.map { UIMenu(title: "", options: .displayInline, children: $0) }
+  }
+
+  private func makeCommand(_ item: [String: Any], usedKeys: inout Set<String>) -> UICommand {
+    let title = item["title"] as? String ?? ""
+    let id = item["id"] as? Int ?? 0
+    let action = #selector(AppDelegate.capsicumMenuSelected(_:))
+    let command: UICommand
+    if let input = item["input"] as? String, !input.isEmpty {
+      var flags: UIKeyModifierFlags = .command
+      if item["shift"] as? Bool == true { flags.insert(.shift) }
+      if usedKeys.insert("\(input)|\(flags.rawValue)").inserted {
+        command = UIKeyCommand(
+          title: title,
+          action: action,
+          input: input,
+          modifierFlags: flags,
+          propertyList: id
+        )
+      } else {
+        command = UICommand(title: title, action: action, propertyList: id)
+      }
+    } else {
+      command = UICommand(title: title, action: action, propertyList: id)
+    }
+    if item["enabled"] as? Bool == false { command.attributes = .disabled }
+    if item["checked"] as? Bool == true { command.state = .on }
+    return command
   }
 }
