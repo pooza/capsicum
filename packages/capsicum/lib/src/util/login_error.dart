@@ -164,6 +164,26 @@ ServerProbeFailureInfo classifyServerProbeFailure(Object error) {
   return (kind: ServerProbeFailureKind.other, message: '接続に失敗しました');
 }
 
+/// 接続確認の失敗を Sentry のイベントにするか (#1332)。
+///
+/// ⚠ 打ち間違い（hostLookup）・圏外やサーバー停止（timeout）は利用者の側で
+/// 毎日起きるので、イベントにすると #1298 で見たかった TLS の回が埋もれる。
+/// こちらは breadcrumb だけ残す。
+bool serverProbeFailureIsEvent(ServerProbeFailureKind kind) => switch (kind) {
+  ServerProbeFailureKind.tls || ServerProbeFailureKind.other => true,
+  ServerProbeFailureKind.hostLookup || ServerProbeFailureKind.timeout => false,
+};
+
+/// 接続確認の入力欄の文字列を、Sentry の `host` に載せる形にする (#1332)。
+///
+/// ⚠⚠ **入力欄はアカウントの識別子の形（`user@example.social`）でも打たれる。**
+/// イベントの `beforeSend` はタグを伏せないので、`@` までを落としてサーバー名
+/// だけにする。
+String serverProbeHostTag(String input) {
+  final at = input.lastIndexOf('@');
+  return at < 0 ? input : input.substring(at + 1);
+}
+
 const ServerProbeFailureInfo _probeTls = (
   kind: ServerProbeFailureKind.tls,
   message: 'サーバーの証明書を確かめられず、接続できませんでした',

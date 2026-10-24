@@ -4,6 +4,7 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../constants.dart';
@@ -195,13 +196,29 @@ class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
       // ⚠ **リリース版でも残す (#1298)。**`debugLogException` だけでは捨てられ、
       // 入れたばかりの Windows で TLS が落ちていたことを外から当てるしかなかった。
       final failure = classifyServerProbeFailure(e);
-      reportOpFailure(
-        tagKey: 'server_probe.op',
-        operation: 'connect',
-        error: e,
-        stackTrace: st,
-        tags: {'host': host, 'probe.failure_kind': failure.kind.name},
-      );
+      final hostTag = serverProbeHostTag(host);
+      // breadcrumb は必ず残し、イベントにするのは TLS と不明の回だけ (#1332)。
+      try {
+        Sentry.addBreadcrumb(
+          Breadcrumb(
+            category: 'server_probe.op',
+            message: 'connect',
+            level: SentryLevel.warning,
+            data: {'host': hostTag, 'failure_kind': failure.kind.name},
+          ),
+        );
+      } catch (_) {
+        // Sentry 失敗で UI を止めない。
+      }
+      if (serverProbeFailureIsEvent(failure.kind)) {
+        reportOpFailure(
+          tagKey: 'server_probe.op',
+          operation: 'connect',
+          error: e,
+          stackTrace: st,
+          tags: {'host': hostTag, 'probe.failure_kind': failure.kind.name},
+        );
+      }
       if (!mounted) return;
       setState(() {
         _error = failure.message;
