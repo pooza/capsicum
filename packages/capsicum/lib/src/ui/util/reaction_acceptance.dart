@@ -74,7 +74,7 @@ ReactionPickerMode reactionPickerMode(Post post, {String? myHost}) {
 ///
 /// | 条件 | 中身 |
 /// | --- | --- |
-/// | [CustomEmoji.localOnly] | ローカル限定の絵文字は、**リモートの投稿**には使えない |
+/// | [CustomEmoji.localOnly] | ローカル限定の絵文字は、**リモートの投稿**と、**リモートの投稿を引用した投稿**には使えない（[localOnlyEmojiAllowedOn]） |
 /// | [CustomEmoji.isSensitive] | センシティブな絵文字は `nonSensitiveOnly` 系の投稿に使えない |
 /// | [CustomEmoji.reactionRoleIds] | 空でなければ、[myRoleIds] のどれかと一致が要る |
 ///
@@ -96,9 +96,9 @@ bool canReactWith(
   String? myHost,
   Set<String>? myRoleIds,
 }) {
-  final authorHost = post.author.host;
-  final isRemote = myHost != null && authorHost != null && authorHost != myHost;
-  if (emoji.localOnly && isRemote) return false;
+  if (emoji.localOnly && !localOnlyEmojiAllowedOn(post, myHost: myHost)) {
+    return false;
+  }
 
   final acceptance = post.reactionAcceptance;
   final nonSensitiveOnly =
@@ -110,6 +110,25 @@ bool canReactWith(
   if (emoji.reactionRoleIds.isEmpty) return true;
   if (myRoleIds == null) return true;
   return emoji.reactionRoleIds.any(myRoleIds.contains);
+}
+
+/// ローカル限定の絵文字を [post] へのリアクションに使えるか (#1334)。
+///
+/// 投稿の作者がローカルで、かつ**引用先があればその作者もローカル**のときだけ
+/// 使える。⚠ 引用先の条件は Misskey 2026.10.1 で入った（misskey-dev/misskey#17406・
+/// サーバーの `ReactionService` と WebUI の `check-reaction-permissions.ts` の
+/// 両方）。それより前のサーバーでは引用でも使えたが、版で分岐せず上流に揃える。
+///
+/// ⚠ **リノートは見なくてよい。**リアクション先は呼び出し側で
+/// `post.reblog ?? post` に外してあり、中の投稿が [post] として来る。
+///
+/// [myHost] が不明（null）なら**制限しない側に倒す**（[canReactWith] と同じ方針）。
+bool localOnlyEmojiAllowedOn(Post post, {String? myHost}) {
+  if (myHost == null) return true;
+  bool isRemote(Post p) => p.author.host != null && p.author.host != myHost;
+  if (isRemote(post)) return false;
+  final quote = post.quote;
+  return quote == null || !isRemote(quote);
 }
 
 /// [canReactWith] に渡す自分のロール ID 集合を作る (#1081)。
