@@ -12,6 +12,12 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 /// 3 回数える）がそのまま残っていた**。同じ穴を 2 か所で塞がなくて済むよう、
 /// 数え方と予約をここへ寄せる。
 ///
+/// 載っているのは 4 本: 通知（`NotificationStreamingBase`）・チャット
+/// （`MisskeyChatStreamingBase`）・タイムライン（`MastodonStreaming` /
+/// `MisskeyStreaming`・#1265）。⚠ タイムラインの 2 本は v2.6 まで自前の再接続の
+/// ままで、握手の上限が無く（宙づりになると起動し直すまで更新が来ない）、1 回の
+/// 失敗を最大 3 回数えていた。
+///
 /// ## 守っていること
 ///
 /// - **諦めない** (#1249)。上限に達したら [onReconnectExhausted] を 1 度だけ
@@ -30,11 +36,13 @@ class ReconnectingSocket {
   ReconnectingSocket({
     required this.buildUri,
     required this.onMessage,
-    required this.subscribeMessage,
+    required this.subscribeMessages,
     required this.delayFor,
     this.onStreamError,
     this.onReconnectExhausted,
     this.onConnectionEvent,
+    this.onConnecting,
+    this.onClosed,
     this.channelFactory,
     this.pingInterval = const Duration(seconds: 60),
     this.connectTimeout = const Duration(seconds: 30),
@@ -47,9 +55,12 @@ class ReconnectingSocket {
   /// 受け取った 1 通。
   final void Function(dynamic message) onMessage;
 
-  /// 握手が通ったあとに送る購読の文面。要らなければ null を返す。接続のたびに呼ぶ
+  /// 握手が通ったあとに送る購読の文面。要らなければ空を返す。接続のたびに呼ぶ
   /// （Misskey は接続ごとに購読の id を作り直す）。
-  final String? Function() subscribeMessage;
+  ///
+  /// ⚠ 複数あるのは Mastodon の複数タグの購読 (#1277)。`hashtag` ストリームは
+  /// タグ 1 つしか受けないので、1 本の接続にタグごとの購読を載せる。
+  final List<String> Function() subscribeMessages;
 
   /// [attempt] 回目（0 始まり）の再接続までの待ち時間。
   final Duration Function(int attempt) delayFor;
@@ -64,6 +75,14 @@ class ReconnectingSocket {
   /// 最中に送るので届かず、「この接続は生きているのか」を外から確かめる手段が
   /// 無かった（#1249 の切り分けに 1 時間以上かかった）。
   final void Function(String event)? onConnectionEvent;
+
+  /// 接続を始める直前（張り直しも含む）。タイムラインの「接続中」の表示と、
+  /// 接続ごとに空にする状態のため (#1265)。
+  final void Function()? onConnecting;
+
+  /// 相手から閉じられた（エラーではない切断）。WebSocket の closeCode /
+  /// closeReason を渡す (#788 / #1265)。同じ接続については 1 度だけ。
+  final void Function(int? closeCode, String? closeReason)? onClosed;
 
   /// WebSocket を開く手段。null なら実際に接続する。テストの差し替え口。
   final WebSocketChannel Function(Uri uri)? channelFactory;
@@ -99,6 +118,11 @@ class ReconnectingSocket {
     if (_disposed) return;
     _stableTimer?.cancel();
     _channel?.sink.close();
+    try {
+      onConnecting?.call();
+    } catch (_) {
+      // 観測経路の失敗で本筋を止めない。
+    }
 
     final uri = buildUri();
     final factory = channelFactory;
@@ -137,11 +161,11 @@ class ReconnectingSocket {
             _attempts = 0;
             _exhaustedNotified = false;
           });
-          final subscribe = subscribeMessage();
-          if (subscribe != null) {
+          final subscribes = subscribeMessages();
+          for (final subscribe in subscribes) {
             channel.sink.add(subscribe);
-            _notifyEvent(subscribed);
           }
+          if (subscribes.isNotEmpty) _notifyEvent(subscribed);
         })
         .catchError((Object error, StackTrace stack) {
           _failed(channel, error, stack);
@@ -156,12 +180,15 @@ class ReconnectingSocket {
     _handledFailureOf = channel;
     _stableTimer?.cancel();
 
-    if (error != null) {
-      try {
+    try {
+      if (error != null) {
         onStreamError?.call(error, stack ?? StackTrace.current);
-      } catch (_) {
-        // 観測経路の失敗で本筋を止めない。
+      } else {
+        // エラーが無いのは onDone（相手から閉じられた）だけ。
+        onClosed?.call(channel.closeCode, channel.closeReason);
       }
+    } catch (_) {
+      // 観測経路の失敗で本筋を止めない。
     }
     _notifyEvent(disconnected);
 

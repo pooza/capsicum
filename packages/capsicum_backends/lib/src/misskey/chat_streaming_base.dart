@@ -81,10 +81,12 @@ abstract class MisskeyChatStreamingBase {
       ),
       onMessage: _onMessage,
       // 購読の id は接続ごとに作り直す。
-      subscribeMessage: () => jsonEncode({
-        'type': 'connect',
-        'body': buildConnectBody(const Uuid().v4()),
-      }),
+      subscribeMessages: () => [
+        jsonEncode({
+          'type': 'connect',
+          'body': buildConnectBody(const Uuid().v4()),
+        }),
+      ],
       delayFor: reconnectDelayFor,
       onStreamError: onStreamError,
       onReconnectExhausted: onReconnectExhausted,
