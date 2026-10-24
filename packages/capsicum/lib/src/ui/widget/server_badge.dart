@@ -51,6 +51,14 @@ class ServerFavicon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 後からキャッシュが埋まったら描き直す（[ServerMetadataCache.updates]）。
+    return ValueListenableBuilder<int>(
+      valueListenable: ServerMetadataCache.instance.updates,
+      builder: (context, _, _) => _buildIcon(),
+    );
+  }
+
+  Widget _buildIcon() {
     final url = ServerMetadataCache.instance.getCached(host)?.iconUrl;
     if (url == null || url.isEmpty) return const SizedBox.shrink();
     return ClipRRect(

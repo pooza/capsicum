@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:capsicum/src/service/server_metadata_cache.dart';
 import 'package:capsicum/src/ui/widget/server_badge.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -71,6 +72,28 @@ void main() {
         tester.getTopLeft(find.byType(ServerFavicon)).dx,
         lessThan(tester.getTopLeft(find.text('badge.example')).dx),
       );
+    });
+
+    // ⚠ 2026-10-24 に macOS で実測: デッキの簡易投稿バーは先読みより先に
+    // 組み立てられ、後からキャッシュが埋まっても favicon が出なかった。
+    testWidgets('⚠ 後からキャッシュが埋まったら描き直して出す', (tester) async {
+      addTearDown(ServerMetadataCache.instance.clear);
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(body: ServerFavicon(host: 'late.example')),
+        ),
+      );
+      expect(find.byType(Image), findsNothing);
+
+      ServerMetadataCache.instance.debugPut(
+        'late.example',
+        const ServerMetadata(
+          name: 'Late',
+          iconUrl: 'https://late.example/icon.png',
+        ),
+      );
+      await tester.pump();
+      expect(find.byType(Image), findsOneWidget);
     });
 
     testWidgets('⚠ アイコンが取れないときは何も描かない（代わりの絵を出さない）', (tester) async {
