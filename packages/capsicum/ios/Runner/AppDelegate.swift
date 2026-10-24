@@ -204,8 +204,17 @@ final class MenuBarPlugin: NSObject {
     guard builder.system == .main, !menus.isEmpty else { return }
     // 書式（フォント・揃え）は使わない。
     builder.remove(menu: .format)
-    // ⚠⚠ 同じキーの組み合わせを 2 つ載せない。2 つ目は文字だけの項目にする。
+    // ⚠ システムの「設定…」（⌘,・iOS の設定アプリを開く）と「検索」（⌘F・
+    // Flutter の入力欄は対応していない）は外し、キーを capsicum の「設定」と
+    // 「検索」へ譲る（2026-10-25 にシミュレータで衝突を確かめた）。
+    builder.remove(menu: .preferences)
+    builder.remove(menu: .find)
+    // ⚠⚠ 同じキーの組み合わせを 2 つ載せない（UIKit が衝突として扱う）。システムの
+    // メニューに既にあるキーを先に数え、ぶつかる項目は文字だけにする。
     var usedKeys = Set<String>()
+    if let root = builder.menu(for: .root) {
+      collectKeys(root, into: &usedKeys)
+    }
     var anchor: UIMenu.Identifier = .edit
     for (index, menu) in menus.enumerated() {
       let children = makeChildren(menu["children"], usedKeys: &usedKeys)
@@ -230,6 +239,20 @@ final class MenuBarPlugin: NSObject {
         afterMenu: anchor
       )
       anchor = identifier
+    }
+  }
+
+  private func keyOf(_ input: String, _ flags: UIKeyModifierFlags) -> String {
+    "\(input.lowercased())|\(flags.rawValue)"
+  }
+
+  private func collectKeys(_ menu: UIMenu, into keys: inout Set<String>) {
+    for child in menu.children {
+      if let command = child as? UIKeyCommand, let input = command.input {
+        keys.insert(keyOf(input, command.modifierFlags))
+      } else if let submenu = child as? UIMenu {
+        collectKeys(submenu, into: &keys)
+      }
     }
   }
 
@@ -267,7 +290,7 @@ final class MenuBarPlugin: NSObject {
     if let input = item["input"] as? String, !input.isEmpty {
       var flags: UIKeyModifierFlags = .command
       if item["shift"] as? Bool == true { flags.insert(.shift) }
-      if usedKeys.insert("\(input)|\(flags.rawValue)").inserted {
+      if usedKeys.insert(keyOf(input, flags)).inserted {
         command = UIKeyCommand(
           title: title,
           action: action,
