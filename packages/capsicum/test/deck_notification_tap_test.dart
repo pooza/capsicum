@@ -259,6 +259,61 @@ void main() {
     expect(container.read(deckFocusProvider).columnId, 'all');
   });
 
+  testWidgets('⚠⚠ 閉じかけのデッキは通知のタップを受けず、開いている数からも抜けている (#1332)', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'deck_columns': ['a|misskey://me@misskey.example|hashtag:a'],
+    });
+    initSharedPreferencesCache(await SharedPreferences.getInstance());
+    tester.view.physicalSize = const Size(1200, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final container = ProviderContainer(
+      overrides: [
+        accountManagerProvider.overrideWith(_TestAccountNotifier.new),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: Scaffold(body: Text('home'))),
+      ),
+    );
+    // デッキは /home の上に push した画面（決定済み事項 8）。
+    final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+    unawaited(
+      navigator.push(
+        MaterialPageRoute<void>(
+          builder: (_) => DeckScreen(
+            columnBuilder: (column) =>
+                SizedBox.expand(key: ValueKey('stub-${column.id}')),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(container.read(mountedDeckCountProvider), 1);
+
+    // 閉じるアニメーションの途中。
+    navigator.pop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(find.byType(DeckScreen), findsOneWidget, reason: 'まだマウントされている');
+    expect(
+      container.read(mountedDeckCountProvider),
+      0,
+      reason: 'dispose を待たずに抜ける（通知の経路が振り替えられるように）',
+    );
+
+    container.read(pendingDeckNotificationsProvider.notifier).state = _other;
+    await tester.pumpAndSettle();
+
+    expect(container.read(pendingDeckNotificationsProvider), _other);
+    expect(container.read(deckColumnsProvider), hasLength(1), reason: '足さない');
+    expect(find.byType(DeckScreen), findsNothing);
+    expect(container.read(mountedDeckCountProvider), 0, reason: '二重に減らさない');
+  });
+
   testWidgets('⚠ アカウントは切り替えない（デッキでは読み直しを起こす）', (tester) async {
     final container = await pumpDeck(tester, [
       'a|misskey://me@misskey.example|hashtag:a',

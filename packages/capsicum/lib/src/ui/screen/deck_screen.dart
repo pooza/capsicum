@@ -98,6 +98,24 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
   /// ⚠ **`mounted` で握り潰さない。**開いた直後に閉じた場合でも、増やす側が
   /// 飛んで減らす側だけが走ると数が負に振り切れる。予約の順は保たれるので、
   /// 対称に投げておけば辻褄が合う。
+  /// 開いている数に入っているか。[_leaveMountedDecks] を 2 回走らせないための印。
+  bool _countedAsMounted = false;
+
+  /// 開いている数から抜ける (#1332)。
+  ///
+  /// ⚠⚠ **dispose を待たず、route が pop され始めた時点で抜ける。**閉じる
+  /// アニメーションの間（約 300ms）も DeckScreen はマウントされているので、
+  /// dispose で減らすと、その間の通知タップが消えていくデッキ宛てになる
+  /// （`_releaseUnreceivedDeckNotification` が「デッキが居る」と見て振り替えない）。
+  void _leaveMountedDecks() {
+    if (!_countedAsMounted) return;
+    _countedAsMounted = false;
+    _shiftMountedDecks(-1);
+  }
+
+  /// route の pop を見張り始めたか。
+  bool _watchingRoutePop = false;
+
   void _shiftMountedDecks(int delta) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       try {
@@ -159,6 +177,7 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
     // ⚠ 投稿・ブロックの反映先がカラム列から解決されるようになる (#1099)。
     // 閉じている間に列を読むと、片づいたはずの TL provider を起こしてしまう。
     _shiftMountedDecks(1);
+    _countedAsMounted = true;
     // 最後に開いていた側を覚える (#1239)。開き直したとき、前回の側で始める。
     unawaited(writeLastViewMode(LastViewMode.deck));
     _scrollController.addListener(_syncFocusToVisibleColumn);
@@ -182,8 +201,19 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_watchingRoutePop) return;
+    final route = ModalRoute.of(context);
+    if (route == null) return;
+    _watchingRoutePop = true;
+    // pop の始まりで完了する（閉じるアニメーションより前）。
+    unawaited(route.popped.then((_) => _leaveMountedDecks()));
+  }
+
+  @override
   void dispose() {
-    _shiftMountedDecks(-1);
+    _leaveMountedDecks();
     _liveScreens--;
     // タブ UI へ戻った (#1239)。⚠⚠ **アプリが前面に居るときだけ書く。**画面が
     // 捨てられるのは利用者が戻ったときだけではなく、アプリが終了へ向かうときにも
@@ -278,6 +308,9 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
   /// ⚠ provider の書き換えなので、フレームの後で呼ぶ（initState・listen から）。
   void _consumePendingNotifications() {
     if (!mounted) return;
+    // 閉じかけのデッキは受けずに残す (#1332)。開いている数からは pop の始まりで
+    // 抜けているので、通知の経路がタブ表示へ振り替える。
+    if (ModalRoute.of(context)?.isActive == false) return;
     final target = ref.read(pendingDeckNotificationsProvider);
     if (target == null) return;
     ref.read(pendingDeckNotificationsProvider.notifier).state = null;

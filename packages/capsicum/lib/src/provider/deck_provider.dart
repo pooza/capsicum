@@ -45,7 +45,8 @@ bool shouldStartInDeck({
 /// （`visible_timeline.dart` が `mainTimelineIsVisible` の doc で警告している穴と
 /// 同じもの）。投稿・ブロックのたびにこれが走るので、フラグで切る。
 ///
-/// 書き換えるのは `DeckScreen` の initState / dispose だけ。
+/// 書き換えるのは `DeckScreen` だけ。initState で増やし、**route の pop の
+/// 始まり**（閉じるアニメーションより前）か dispose の早いほうで減らす (#1332)。
 final mountedDeckCountProvider = StateProvider<int>((ref) => 0);
 
 /// 通知のタップで、デッキの通知カラムへ送ってほしいアカウント (#1295)。
