@@ -132,6 +132,14 @@ class _MediaEntry {
   /// [overlaySource] に重ねたレイヤ列（先頭が最背面）(#1129)。
   List<OverlayLayerSpec> overlayLayers = const [];
 
+  /// ナウプレのジャケットとして足したときの出どころ（#1133）。それ以外は null。
+  ///
+  /// ⚠⚠ **「同じジャケットを 2 枚添付しない」は、いま並んでいる添付だけで見る**
+  /// （#1329）。以前はフォームが別に集合を持っていて、**添付を外しても印が
+  /// 残った**ので、外してから同じ曲で押し直すとジャケットが付かなかった。
+  /// 添付そのものに持たせれば、外したときに印ごと消える。
+  Uri? nowPlayingArtwork;
+
   _MediaEntry.local(XFile this.file) : driveFile = null;
 
   _MediaEntry.drive(Attachment this.driveFile)
@@ -3163,9 +3171,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     );
   }
 
-  /// このフォームで既に添付したナウプレのアートワーク (#1133)。⚠ 「ナウプレを
-  /// 挿入」を続けて押したとき、同じジャケットを 2 枚添付しない。
-  final Set<Uri> _attachedNowPlayingArtwork = {};
+  /// [uri] のジャケットが、いま添付に並んでいるか (#1133)。⚠ 「ナウプレを
+  /// 挿入」を続けて押したとき、同じジャケットを 2 枚添付しない。⚠ 外した
+  /// ものは数えない（#1329・[_MediaEntry.nowPlayingArtwork]）。
+  bool _hasNowPlayingArtwork(Uri uri) =>
+      _attachments.any((entry) => entry.nowPlayingArtwork == uri);
 
   /// ナウプレのアートワーク（ジャケット画像）を添付に足す (#1133)。
   ///
@@ -3188,7 +3198,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       _noteNowPlayingArtwork(nowPlayingArtworkNoSourceOutcome(info));
       return;
     }
-    if (_attachedNowPlayingArtwork.contains(uri)) {
+    if (_hasNowPlayingArtwork(uri)) {
       _noteNowPlayingArtwork('already_attached', uri);
       return;
     }
@@ -3233,11 +3243,14 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       _noteNowPlayingArtwork('not_added', uri);
       return;
     }
-    _attachedNowPlayingArtwork.add(uri);
     _noteNowPlayingArtwork('attached', uri);
     // 読み上げに何も出ない添付にしない。⚠ 利用者が書いた ALT は上書きしない
     // （ここで足した直後の 1 枚にだけ入れる）。
-    setState(() => _attachments.last.description = nowPlayingArtworkAlt(info));
+    setState(() {
+      _attachments.last
+        ..nowPlayingArtwork = uri
+        ..description = nowPlayingArtworkAlt(info);
+    });
     _scheduleDraftSave();
   }
 
