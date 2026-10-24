@@ -193,6 +193,8 @@ Widget buildHomeDrawer(
                               child: ServerBadge.fromHost(
                                 current.key.host,
                                 themeColors: ref.watch(hostThemeColorProvider),
+                                // 取り違えの手当て (#1331)。
+                                showIcon: true,
                               ),
                             ),
                         ],
@@ -249,6 +251,7 @@ Widget buildHomeDrawer(
                         child: ServerBadge.fromHost(
                           account.key.host,
                           themeColors: themeColors,
+                          showIcon: true,
                         ),
                       ),
                     ],

@@ -5219,16 +5219,39 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
             }
           },
         ),
-        title: Text(
-          // ⚠ 元投稿の取得を待たずに「返信」と出す (#1113)。取得が返る前でも
-          // 返信として送られることは確定している。
-          _isReply
-              ? (_effectiveChannelName != null
-                    ? '返信：$_effectiveChannelName'
-                    : '返信')
-              : _effectiveChannelName != null
-              ? '${ref.watch(postLabelProvider)}：$_effectiveChannelName'
-              : ref.watch(postLabelProvider),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Text(
+                // ⚠ 元投稿の取得を待たずに「返信」と出す (#1113)。取得が返る前でも
+                // 返信として送られることは確定している。
+                _isReply
+                    ? (_effectiveChannelName != null
+                          ? '返信：$_effectiveChannelName'
+                          : '返信')
+                    : _effectiveChannelName != null
+                    ? '${ref.watch(postLabelProvider)}：$_effectiveChannelName'
+                    : ref.watch(postLabelProvider),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            // どのサーバーへ投稿するか (#1331)。⚠ 入力欄のヒント (#1328) は
+            // 打ち始めると消えるので、書いている間も出たままの手がかりをここに
+            // 置く。⚠ デッキでは開いたカラムのアカウント（[postTargetHint] と同じ）。
+            if (ref.watch(currentAccountProvider)?.key.host
+                case final host?) ...[
+              const SizedBox(width: 8),
+              Flexible(
+                child: ServerBadge.fromHost(
+                  host,
+                  themeColors: ref.watch(hostThemeColorProvider),
+                  showIcon: true,
+                ),
+              ),
+            ],
+          ],
         ),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [

@@ -1493,7 +1493,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
   Widget _buildServerBadge(BuildContext context, WidgetRef ref, String host) {
     final themeColors = ref.watch(hostThemeColorProvider);
-    return ServerBadge.fromHost(host, themeColors: themeColors);
+    // 取り違えの手当て (#1331)。
+    return ServerBadge.fromHost(host, themeColors: themeColors, showIcon: true);
   }
 }
 
