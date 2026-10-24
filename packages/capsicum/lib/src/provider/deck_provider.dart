@@ -251,6 +251,7 @@ class DeckMenuActions {
   const DeckMenuActions({
     required this.revealAndFocus,
     required this.openCompose,
+    required this.openNowPlayingCompose,
     required this.openColumnsSheet,
   });
 
@@ -259,6 +260,9 @@ class DeckMenuActions {
 
   /// フォーカス中のカラムのアカウントで新規投稿を開く（⌘N / Ctrl+N）。
   final VoidCallback openCompose;
+
+  /// 同じく、再生中の曲を入れた新規投稿を開く（⇧⌘N / Ctrl+Shift+N・#1300）。
+  final VoidCallback openNowPlayingCompose;
 
   /// カラム編集のシートを開く（表示 > カラム > カラムを編集…）。
   final VoidCallback openColumnsSheet;

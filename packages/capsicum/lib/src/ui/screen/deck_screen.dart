@@ -194,6 +194,7 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
       _menuActions.state = DeckMenuActions(
         revealAndFocus: _revealAndFocus,
         openCompose: _openComposeForFocused,
+        openNowPlayingCompose: _openNowPlayingComposeForFocused,
         // ⚠ AppBar のボタンと同じ経路にする (#1229)。メニューから開いた
         // シートでも、一覧を押せばそのカラムへ送る。
         openColumnsSheet: () async {
@@ -435,7 +436,12 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
   /// ShellRoute に常駐していてルートのスコープで動くので、**別アカウントのカラムを
   /// 見ながら ⌘N を打つと現在のアカウントから投稿される**（#1149 と同じ穴）。
   /// ここでカラムのコンテナを載せてから開く。
-  void _openComposeForFocused() {
+  /// 「ナウプレで新規投稿」(#1300)。⚠ メニューの等価判定のため、テアオフで渡す
+  /// （`DeckMenuActions` は開いたときに 1 度だけ作る）。
+  void _openNowPlayingComposeForFocused() =>
+      _openComposeForFocused(insertNowPlaying: true);
+
+  void _openComposeForFocused({bool insertNowPlaying = false}) {
     final id = ref.read(deckFocusProvider).columnId;
     final column = ref
         .read(deckColumnsProvider)
@@ -455,14 +461,14 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
       '/compose',
       // ⚠ `extraWithProviderScope(context)` ではない。ここの `context` は
       // デッキ画面（ルートのスコープ）なので、それだと現在のアカウントになる。
-      extra: extraWithProviderContainer(
-        container,
-        deckComposeExtra(
+      extra: extraWithProviderContainer(container, {
+        ...deckComposeExtra(
           column,
           channels:
               container.read(followedChannelsProvider).valueOrNull ?? const [],
         ),
-      ),
+        if (insertNowPlaying) 'insertNowPlaying': true,
+      }),
     );
   }
 

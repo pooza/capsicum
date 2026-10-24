@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../../provider/platform_providers.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
@@ -212,8 +213,11 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar>
     }
   }
 
-  Future<void> _openCompose() async {
-    final extra = <String, dynamic>{};
+  Future<void> _openCompose({bool insertNowPlaying = false}) async {
+    final extra = <String, dynamic>{
+      // 打ちかけの本文の末尾に入る（#1300）。
+      if (insertNowPlaying) 'insertNowPlaying': true,
+    };
     final text = _controller.text;
     if (text.isNotEmpty) {
       extra['initialText'] = text;
@@ -366,6 +370,10 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar>
       return true;
     }).toList();
     final hasRecents = visibleRecents.isNotEmpty;
+    // 投稿フォームの音符と同じ条件 (#1300)。
+    final hasNowPlaying = ref
+        .watch(nowPlayingResolverProvider)
+        .hasAvailableSource;
 
     final bar = Container(
       decoration: BoxDecoration(
@@ -467,11 +475,29 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar>
                   tooltip: '絵文字・劇中ワード',
                   onPressed: _sending ? null : _openInsertPicker,
                 ),
-                IconButton(
-                  icon: const Icon(Icons.open_in_new, size: 20),
-                  tooltip: '詳細な$postLabel画面',
-                  onPressed: _sending ? null : _openCompose,
-                ),
+                if (hasNowPlaying)
+                  // 長押しで「ナウプレで新規投稿」(#1300)。⚠ IconButton の
+                  // tooltip はタッチの長押しで出るので、長押しを奪われないよう
+                  // 外へ出し、タッチでは出さない（マウスのホバーでは出る）。
+                  Tooltip(
+                    message: '詳細な$postLabel画面（長押しでナウプレ）',
+                    triggerMode: TooltipTriggerMode.manual,
+                    child: GestureDetector(
+                      onLongPress: _sending
+                          ? null
+                          : () => _openCompose(insertNowPlaying: true),
+                      child: IconButton(
+                        icon: const Icon(Icons.open_in_new, size: 20),
+                        onPressed: _sending ? null : _openCompose,
+                      ),
+                    ),
+                  )
+                else
+                  IconButton(
+                    icon: const Icon(Icons.open_in_new, size: 20),
+                    tooltip: '詳細な$postLabel画面',
+                    onPressed: _sending ? null : _openCompose,
+                  ),
                 IconButton(
                   icon: _sending
                       ? const SizedBox(

@@ -459,6 +459,12 @@ class ComposeScreen extends ConsumerStatefulWidget {
   /// を渡す。タグの区切り・`#` の付け方は [SimplePostBar] の送信と揃える。
   final List<String> hashtags;
 
+  /// 開いたらすぐ、再生中の曲を本文へ入れる（「ナウプレで新規投稿」・#1300）。
+  ///
+  /// ⚠ 保存済みの下書きは復元しない（入れたナウプレの上に載ると、どちらが本文か
+  /// 決まらなくなる。[hashtags] の枝と同じ理由）。
+  final bool insertNowPlaying;
+
   const ComposeScreen({
     super.key,
     this.redraft,
@@ -471,6 +477,7 @@ class ComposeScreen extends ConsumerStatefulWidget {
     this.restoreDraft,
     this.template,
     this.hashtags = const [],
+    this.insertNowPlaying = false,
   });
 
   @override
@@ -1088,12 +1095,22 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     } else if (widget.template != null) {
       _applyTemplateContent(widget.template!);
       _applyAccountDefaults();
+    } else if (widget.insertNowPlaying) {
+      // 本文は下のナウプレで作る（下書きは復元しない・#1300）。
+      _applyAccountDefaults();
     } else {
       _applyAccountDefaults();
       // Fresh compose: enable draft auto-save and try to restore the
       // previously saved draft (if any).
       _draftAutoSave = true;
       _restoreDraft();
+    }
+    if (widget.insertNowPlaying) {
+      // 「ナウプレで新規投稿」(#1300)。⚠ 取得は非同期で SnackBar も出すので、
+      // フレームの後で行う。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_insertNowPlaying());
+      });
     }
     WidgetsBinding.instance.addObserver(this);
     _controller.addListener(_onTextChanged);
@@ -4580,6 +4597,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         MenuActionEntry(
           label: 'ナウプレを挿入',
           icon: Icons.music_note,
+          // 投稿フォームの中のショートカット (#1300)。⚠ アプリのメニューの
+          // 「ナウプレで新規投稿」（⇧N）とは別のキーにする —— 投稿フォームを
+          // 開いている間もアプリのメニューは残っている。
+          shortcut: const MenuShortcut(LogicalKeyboardKey.keyP, shift: true),
+          globalShortcut: true,
           onSelected: (busy || _insertingNowPlaying) ? null : _insertNowPlaying,
         ),
       // 添付ごとのサブメニュー (#941)。`_showAttachmentMenu` はタップしたサムネの
