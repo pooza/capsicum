@@ -27,7 +27,6 @@ capsicum で発生する不具合のうち、原因が Flutter framework 本体�
 
 | capsicum | 判定日 | 監視対象にしない理由 |
 |---|---|---|
-| [#1299](https://github.com/pooza/capsicum/issues/1299) macOS（Intel Mac）: 起動すると画面にノイズが出る | 2026-10-23 | **原因が Flutter の描画エンジン（Impeller）かどうかがまだ分からない**ので、追う上流 Issue が決まっていない。報告者の回答（2.3.0 でもノイズが出るか）を待つ `on-hold`。⚠ 回答が来て Impeller が原因と分かったら、上流の Issue を探して監視対象へ移す |
 
 ## close 候補
 
