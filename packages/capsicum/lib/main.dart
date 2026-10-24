@@ -48,6 +48,7 @@ import 'src/service/wns_service.dart';
 import 'src/ui/util/deck_notification_fallback.dart';
 import 'src/util/action_labels.dart';
 import 'src/util/exception_scrub.dart';
+import 'src/util/notification_route_wait.dart';
 import 'src/util/sensitive_fields.dart';
 import 'src/util/sentry_observability.dart';
 import 'src/util/sentry_tag_hash.dart';
@@ -719,6 +720,8 @@ String _classifyDecryptErrorKind(String reason) =>
 /// 遷移する (#440)。後方互換: payload が JSON でなく裸の `username@host` だった
 /// 場合 (v1.24.x 以前にスケジュールされて残っている通知) は account-only として扱う。
 void _routeFromNotificationPayload(String? payload) {
+  // 待っている前のタップの経路を捨てる（どの種類の通知でも・#1332）。
+  NotificationRouteTicket.issue();
   if (payload == null || payload.isEmpty) {
     _routeToNotificationsTab(null);
     return;
@@ -757,6 +760,8 @@ void _routeFromNotificationPayload(String? payload) {
 
 /// iOS APNs タップの userInfo dict から JSON 経路と同じ判定を行う。
 void _routeFromNotificationUserInfo(Map<String, dynamic> userInfo) {
+  // 待っている前のタップの経路を捨てる（どの種類の通知でも・#1332）。
+  NotificationRouteTicket.issue();
   final account = userInfo['account'] as String?;
   final type = userInfo['type'] as String?;
   final userId = userInfo['userId'] as String?;
@@ -970,25 +975,32 @@ void _routeToPushSettings({int attempt = 0}) {
   router.push('/settings/push');
 }
 
-void _routeToNotificationsTab(String? accountString, {int attempt = 0}) {
+void _routeToNotificationsTab(
+  String? accountString, {
+  int attempt = 0,
+  NotificationRouteTicket? ticket,
+}) {
   // 上限: restoreSessions は #716 でアカウント内・アカウント間とも probe を
   // 並列化したため、所要は最長 1 アカウントぶん（getMyself + mulukhiya +
   // timeline availability + version probe の最長 1 本）へ畳まれた。とはいえ
   // 低速回線では数秒〜十数秒かかりうるので、3600 フレーム（≒ 60 秒 @60fps）を
   // 上限に設定し、現実的な restore 時間を十分にカバーしつつ、pathological な
-  // Navigator 未確立ケースの暴走も防ぐ。
-  const maxAttempts = 3600;
+  // Navigator 未確立ケースの暴走も防ぐ。⚠ 実時間でも切る (#1332・
+  // [notificationRouteExpired])。
+  final route = ticket ?? NotificationRouteTicket.issue();
+  // 後から別の通知がタップされていたら、この経路は捨てる (#1332)。
+  if (!route.isCurrent) return;
 
   final context = rootNavigatorKey.currentContext;
   if (context == null) {
-    _rescheduleNotificationRoute(accountString, attempt, maxAttempts);
+    _rescheduleNotificationRoute(accountString, attempt, route);
     return;
   }
   final container = ProviderScope.containerOf(context);
   // restore 完了までは accounts.isNotEmpty でも宛先が見つからない可能性が
   // ある。sessionsRestoredProvider が true になるまで待つ。
   if (!container.read(sessionsRestoredProvider)) {
-    _rescheduleNotificationRoute(accountString, attempt, maxAttempts);
+    _rescheduleNotificationRoute(accountString, attempt, route);
     return;
   }
 
@@ -1009,15 +1021,17 @@ void _routeToNotificationsTab(String? accountString, {int attempt = 0}) {
 
   // 宛先のアカウントが、起動の締切（#1294）で「遅いだけ」なのにオフライン扱いに
   // なっている間は待つ (#1304)。待たずに進むと、今のアカウントの通知が開く。
-  // ⚠ 待つのは再スケジュールの上限まで。戻らなければ従来どおり今のアカウント。
+  // ⚠ 待つのは [notificationRecoveryWait] まで（実時間・#1332）。戻らなければ
+  // 従来どおり今のアカウント。⚠ フレームの数で待つと、描画が止まっている間は
+  // 進まず、ずっと後で戻った時点で開いていた画面を置き換えた。
   if (matched == null &&
       accountString != null &&
-      attempt < maxAttempts &&
       notificationTargetIsRecovering(
         container.read(accountManagerProvider).offlineAccounts,
         accountString,
-      )) {
-    _rescheduleNotificationRoute(accountString, attempt, maxAttempts);
+      ) &&
+      notificationRecoveryStillWaiting(route.recoveryElapsed())) {
+    _rescheduleNotificationRoute(accountString, attempt, route);
     return;
   }
 
@@ -1099,15 +1113,19 @@ void _releaseUnreceivedDeckNotification(AccountKey target) {
   WidgetsBinding.instance.scheduleFrame();
 }
 
-/// [_routeToNotificationsTab] の再スケジュール。attempt 上限超過で諦める。
+/// [_routeToNotificationsTab] の再スケジュール。フレームの数か実時間の上限を
+/// 超えたら諦める（[notificationRouteExpired]・#1332）。
 void _rescheduleNotificationRoute(
   String? accountString,
   int attempt,
-  int maxAttempts,
+  NotificationRouteTicket route,
 ) {
-  if (attempt >= maxAttempts) {
+  // 後のタップに置き換わった経路は、諦めた記録も残さず黙って捨てる。
+  if (!route.isCurrent) return;
+  if (notificationRouteExpired(attempt: attempt, elapsed: route.elapsed)) {
     _logDev(
-      'capsicum: notification: routing gave up after $maxAttempts frames',
+      'capsicum: notification: routing gave up after $attempt frames '
+      '/ ${route.elapsed.inSeconds}s',
     );
     // 60 秒空振りは UX バグ (タップで該当画面に遷移しない) だが debugPrint
     // のみで Sentry に上がらず発生頻度・条件が掴めなかった (#513)。
@@ -1130,13 +1148,18 @@ void _rescheduleNotificationRoute(
             scope.setTag('payload', '<malformed>');
           }
         }
-        scope.setTag('attempts', maxAttempts.toString());
+        scope.setTag('attempts', attempt.toString());
+        scope.setTag('elapsed_s', route.elapsed.inSeconds.toString());
       },
     );
     return;
   }
   WidgetsBinding.instance.addPostFrameCallback(
-    (_) => _routeToNotificationsTab(accountString, attempt: attempt + 1),
+    (_) => _routeToNotificationsTab(
+      accountString,
+      attempt: attempt + 1,
+      ticket: route,
+    ),
   );
 }
 
