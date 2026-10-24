@@ -185,6 +185,10 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
     // ⚠ フレームの後（provider の書き換えなので `_shiftMountedDecks` と同じ理由）。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      // 起動時の判定待ちの印は、開いている数に入ったこのフレームで下ろす
+      // (#1332)。HomeScreen が push の前に下ろすと、数に入るまでのタップが
+      // タブ表示の経路へ流れる。
+      ref.read(deckStartupPendingProvider.notifier).state = false;
       // 通知から起動してデッキで始まった回は、ここで宛先を受ける (#1295)。
       _consumePendingNotifications();
       _menuActions.state = DeckMenuActions(

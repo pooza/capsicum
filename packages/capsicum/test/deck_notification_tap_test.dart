@@ -155,6 +155,28 @@ void main() {
     });
   });
 
+  group('settleDeckStartupWithoutDeck (#1332)', () {
+    test('⚠⚠ 起動の判定待ちの印を下ろし、デッキ宛ての印をタブ表示へ振り替える（共有から起動した回）', () {
+      final container = ProviderContainer(
+        overrides: [
+          accountManagerProvider.overrideWith(_TestAccountNotifier.new),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.read(pendingDeckNotificationsProvider.notifier).state = _other;
+
+      settleDeckStartupWithoutDeck(container.read);
+
+      expect(container.read(deckStartupPendingProvider), isFalse);
+      expect(container.read(pendingDeckNotificationsProvider), isNull);
+      expect(container.read(accountManagerProvider).current?.key, _other);
+      expect(
+        container.read(pendingInitialTabProvider),
+        const NotificationsTab(),
+      );
+    });
+  });
+
   Future<ProviderContainer> pumpDeck(
     WidgetTester tester,
     List<String> columns,
@@ -257,6 +279,15 @@ void main() {
 
     expect(container.read(deckColumnsProvider), hasLength(2));
     expect(container.read(deckFocusProvider).columnId, 'all');
+  });
+
+  testWidgets('⚠ 起動の判定待ちの印は、デッキが開いている数に入ってから下ろす (#1332)', (tester) async {
+    final container = await pumpDeck(tester, [
+      'a|misskey://me@misskey.example|hashtag:a',
+    ]);
+
+    expect(container.read(mountedDeckCountProvider), 1);
+    expect(container.read(deckStartupPendingProvider), isFalse);
   });
 
   testWidgets('⚠⚠ 閉じかけのデッキは通知のタップを受けず、開いている数からも抜けている (#1332)', (tester) async {

@@ -64,7 +64,9 @@ final pendingDeckNotificationsProvider = StateProvider<AccountKey?>(
 );
 
 /// 起動時に「デッキで始めるか」の判定（[shouldStartInDeck]）がまだ済んでいないか
-/// (#1304)。**プロセスの最初は true**で、`HomeScreen` が判定を済ませたら下ろす。
+/// (#1304)。**プロセスの最初は true**。デッキで始めないと決まったら
+/// `settleDeckStartupWithoutDeck`（`HomeScreen`・共有から `/compose` へ直行する
+/// `SplashScreen`）が、デッキで始める回は開いた `DeckScreen` が下ろす (#1332)。
 ///
 /// ⚠⚠ **「前回デッキで終えた」だけで通知のタップをデッキ宛てにしない。**判定が
 /// 済んだあとは、デッキが閉じていればデッキは現れない。以前は

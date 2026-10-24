@@ -171,7 +171,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     _lastViewModeRestored = true;
     // ⚠ 判定は provider の書き換えを伴うので、どの枝もフレームの後で済ませる。
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+      if (!mounted) {
+        // 判定する前に捨てられた（アカウントの切り替え等）。次の HomeScreen に
+        // やり直させる。⚠ 戻さないと、起動の判定待ちの印がプロセスの終わりまで
+        // 残る (#1332)。
+        _lastViewModeRestored = false;
+        return;
+      }
       final router = GoRouter.of(context);
       // 条件の正本は [shouldStartInDeck]。
       final startInDeck = shouldStartInDeck(
@@ -182,14 +188,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       );
       // 起動時の判定はこれで済んだ (#1304)。以降の通知のタップは、デッキが
       // 開いているときだけデッキ宛てになる。
-      ref.read(deckStartupPendingProvider.notifier).state = false;
       if (!startInDeck) {
         // デッキで始める見込みで立てられた通知のタップは、タブ表示の通知タブへ
         // 振り替える (#1304)。放っておくと、後で手でデッキを開いたときに
         // 頼んでいない通知カラムが足される。
-        releasePendingDeckNotification(ref.read);
+        settleDeckStartupWithoutDeck(ref.read);
         return;
       }
+      // ⚠ 印はここでは下ろさない。DeckScreen が開いている数に入ってから下ろす
+      // (#1332)。
       router.push('/deck');
     });
   }

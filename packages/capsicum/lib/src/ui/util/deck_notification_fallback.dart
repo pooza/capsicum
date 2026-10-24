@@ -38,3 +38,20 @@ bool releasePendingDeckNotification(ProviderReader read) {
   read(pendingInitialTabProvider.notifier).state = const NotificationsTab();
   return true;
 }
+
+/// 起動時の「デッキで始めるか」の判定を、**デッキで始めない**で済ませる (#1304 /
+/// #1332)。印（[deckStartupPendingProvider]）を下ろし、デッキで始める見込みで
+/// 立てられた通知のタップがあればタブ表示へ振り替える。
+///
+/// ⚠⚠ **HomeScreen を通らない起動経路でも呼ぶ。**共有から冷えた状態で起動すると
+/// `SplashScreen` が `/compose` へ直行するので、HomeScreen の判定が走らず、印が
+/// 立ったまま残っていた。投稿フォームを開いたまま通知をタップすると、居ない
+/// デッキ宛てに積まれて何も起きないように見えた。
+///
+/// ⚠ デッキで始める回は呼ばない。印は `DeckScreen` が開いている数に入ってから
+/// 下ろす（先に下ろすと、数に入るまでの数フレームのタップがタブ表示の経路へ
+/// 流れる）。
+void settleDeckStartupWithoutDeck(ProviderReader read) {
+  read(deckStartupPendingProvider.notifier).state = false;
+  releasePendingDeckNotification(read);
+}

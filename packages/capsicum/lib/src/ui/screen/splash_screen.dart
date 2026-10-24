@@ -13,6 +13,7 @@ import '../../service/entitlement_notice_service.dart';
 import '../../service/push_registration_service.dart';
 import '../../util/exception_scrub.dart';
 import '../../util/startup_trace.dart';
+import '../util/deck_notification_fallback.dart';
 import 'eula_screen.dart';
 
 class SplashScreen extends ConsumerStatefulWidget {
@@ -145,6 +146,9 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
         // EULA must be accepted first; shared text is lost in this edge case.
         context.go('/eula', extra: '/home');
       } else {
+        // HomeScreen を通らないので、起動時のデッキの判定をここで済ませる
+        // （共有から始めた回はデッキで始めない・#1332）。
+        settleDeckStartupWithoutDeck(ref.read);
         context.go(nextRoute, extra: extra);
       }
       return;
