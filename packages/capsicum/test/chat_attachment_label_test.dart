@@ -48,6 +48,21 @@ void main() {
       expect(hitsIn(before.stdout as String), 4);
     });
 
+    // ⚠⚠ 3 点セットの 1（#1332）。「正本の外に無い」だけを見ると、走査が
+    // 空振りしていても（対象を拾えていない・表記の形が変わった）緑になる。
+    test('⚠ 走査が空振りしていない', () {
+      final paths = [for (final f in sourceFiles('lib')) f.path];
+      expect(paths, contains('lib/src/util/chat_attachment_label.dart'));
+      expect(paths, contains('lib/src/service/push_message_dispatcher.dart'));
+      // 正本には 5 種類の表記が実在する（判定が今の書き方に当たっている）。
+      expect(
+        hitsIn(
+          File('lib/src/util/chat_attachment_label.dart').readAsStringSync(),
+        ),
+        5,
+      );
+    });
+
     test('表記は chat_attachment_label.dart の 1 本だけ', () {
       final offenders = [
         for (final file in sourceFiles('lib'))
