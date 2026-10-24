@@ -1034,9 +1034,14 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
     }
     // ⚠ 理由は 1 つに絞る。条件は AND なので複数外れうるが、並べても打ち手が
     // 変わらない。いちばん手前で外れたものを出す（判定と同じ順）。
-    final authorHost = target.author.host;
-    if (emoji.localOnly && authorHost != null && authorHost != widget.host) {
-      return 'この絵文字はこのサーバー限定で、他のサーバーの投稿には付けられません';
+    if (emoji.localOnly &&
+        !localOnlyEmojiAllowedOn(target, myHost: widget.host)) {
+      // 作者がローカルなのに外れたなら、引用先がリモート (#1334)。
+      final authorHost = target.author.host;
+      final authorIsLocal = authorHost == null || authorHost == widget.host;
+      return authorIsLocal
+          ? 'この絵文字はこのサーバー限定で、他のサーバーの投稿を引用した投稿には付けられません'
+          : 'この絵文字はこのサーバー限定で、他のサーバーの投稿には付けられません';
     }
     if (emoji.isSensitive) {
       return 'この投稿はセンシティブな絵文字のリアクションを受け付けていません';

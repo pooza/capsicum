@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/dart_source.dart';
+import 'support/git_show.dart';
 import 'support/source_files.dart';
 
 /// #1304: Sentry へ送りたい値を `Hint` に載せない。
@@ -53,10 +54,9 @@ void main() {
 
   test('⚠⚠ 修正前の timeline_provider は当たる', () {
     // `b5d6147f` = #1304 の修正の前。続き読みの 2 か所が hint だった。
-    final before = Process.runSync('git', [
-      'show',
+    final before = gitShow(
       'b5d6147f:packages/capsicum/lib/src/provider/timeline_provider.dart',
-    ], workingDirectory: '../..');
+    );
     expect(before.exitCode, 0, reason: (before.stderr as String));
     expect(hitsIn(before.stdout as String), 2);
   });

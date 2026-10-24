@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/dart_source.dart';
+import 'support/git_show.dart';
 
 /// #1216: カラム設定シートの候補は「荷物を持たない `DeckOnlyTab`」で決まる。
 ///
@@ -210,10 +211,7 @@ $synthetic
 
   group('⚠⚠ 歯があることを、穴を開けて確かめる', () {
     String before(String path) {
-      final r = Process.runSync('git', [
-        'show',
-        '$beforeRev:packages/capsicum/$path',
-      ], workingDirectory: '../..');
+      final r = gitShow('$beforeRev:packages/capsicum/$path');
       expect(r.exitCode, 0, reason: (r.stderr as String));
       return r.stdout as String;
     }

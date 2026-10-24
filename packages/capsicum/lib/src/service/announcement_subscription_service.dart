@@ -26,13 +26,17 @@ import 'push_relay_client.dart';
 class AnnouncementSubscriptionService {
   /// アカウント別 subscription id 保存先 (SharedPreferences key prefix)。
   /// 値の型は int。存在 = 有効、不在 = 無効。
-  @visibleForTesting
+  ///
+  /// 設定のバックアップ（`settings_backup.dart` の `accountScopedKeys`）も
+  /// このキーを引く（書き出さない側・#1332）。
   static const prefsKeyPrefix = 'capsicum_announcement_sub_';
 
   /// 明示的に OFF にしたかを記録する marker (SharedPreferences key prefix)。
   /// 値は単に true を入れる。存在 = 明示 OFF (auto-enable しない)、不在 =
   /// 未操作 (auto-enable 対象)。
-  @visibleForTesting
+  ///
+  /// 設定のバックアップ（書き出す側）と、取り込み後の読み直し
+  /// （`preferences_provider.dart`）もこのキーを引く（#1317 / #1332）。
   static const prefsKeyOptOutPrefix = 'capsicum_announcement_optout_';
 
   static PushRelayClient _client = PushRelayClient();

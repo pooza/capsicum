@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:capsicum/src/service/server_metadata_cache.dart';
 import 'package:capsicum/src/ui/widget/server_badge.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -35,6 +36,77 @@ void main() {
     expect(await textColor(tester, const Color(0xFF3F51B5)), Colors.white);
   });
 
+  // #1331。⚠ 既定で出すと、同じバッジを使う投稿のティッカーに favicon が並ぶ。
+  group('favicon (#1331)', () {
+    Future<void> pumpBadge(WidgetTester tester, {required bool? showIcon}) =>
+        tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: Center(
+                child: showIcon == null
+                    ? const ServerBadge(
+                        host: 'badge.example',
+                        color: Color(0xFF3F51B5),
+                      )
+                    : ServerBadge(
+                        host: 'badge.example',
+                        color: const Color(0xFF3F51B5),
+                        showIcon: showIcon,
+                      ),
+              ),
+            ),
+          ),
+        );
+
+    testWidgets('⚠ 既定では favicon を出さない', (tester) async {
+      await pumpBadge(tester, showIcon: null);
+      expect(find.byType(ServerFavicon), findsNothing);
+      expect(find.text('badge.example'), findsOneWidget);
+    });
+
+    testWidgets('showIcon で favicon をバッジの左に出す', (tester) async {
+      await pumpBadge(tester, showIcon: true);
+      expect(find.byType(ServerFavicon), findsOneWidget);
+      expect(find.text('badge.example'), findsOneWidget);
+      expect(
+        tester.getTopLeft(find.byType(ServerFavicon)).dx,
+        lessThan(tester.getTopLeft(find.text('badge.example')).dx),
+      );
+    });
+
+    // ⚠ 2026-10-24 に macOS で実測: デッキの簡易投稿バーは先読みより先に
+    // 組み立てられ、後からキャッシュが埋まっても favicon が出なかった。
+    testWidgets('⚠ 後からキャッシュが埋まったら描き直して出す', (tester) async {
+      addTearDown(ServerMetadataCache.instance.clear);
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(body: ServerFavicon(host: 'late.example')),
+        ),
+      );
+      expect(find.byType(Image), findsNothing);
+
+      ServerMetadataCache.instance.debugPut(
+        'late.example',
+        const ServerMetadata(
+          name: 'Late',
+          iconUrl: 'https://late.example/icon.png',
+        ),
+      );
+      await tester.pump();
+      expect(find.byType(Image), findsOneWidget);
+    });
+
+    testWidgets('⚠ アイコンが取れないときは何も描かない（代わりの絵を出さない）', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(body: ServerFavicon(host: 'no-icon.invalid')),
+        ),
+      );
+      expect(find.byType(Image), findsNothing);
+      expect(find.byType(Icon), findsNothing);
+    });
+  });
+
   // ⚠ 投稿タイルは単体で組み立てるテストが無いので、ソースで見る。見ているのは
   // 「サーバー表示の箱を自前で組まず、[ServerBadge] を使っていること」。
   group('投稿のサーバー表示は ServerBadge を使う', () {
@@ -54,6 +126,17 @@ void main() {
       expect(body, contains('ServerBadge('));
       expect(body, isNot(contains('foregroundOnHostColor')));
       expect(body, isNot(contains('Colors.white')));
+      // #1331。⚠ 投稿ごとに favicon を並べない（出すのは自分のアカウントの場所だけ）。
+      expect(body, isNot(contains('showIcon')));
+    });
+
+    test('判定: ティッカーで favicon を出す形は落ちる (#1331)', () {
+      const withIcon = '''
+  Widget _buildInstanceTicker(BuildContext context, String host) {
+    return ServerBadge(host: host, color: color, showIcon: true);
+  }
+''';
+      expect(tickerBody(withIcon).contains('showIcon'), isTrue);
     });
 
     test('判定: 箱を手書きした形（直す前）は落ちる', () {

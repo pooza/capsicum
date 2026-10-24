@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/dart_source.dart';
+import 'support/git_show.dart';
 
 /// #1167: 投稿画面の下のツールバーが、横スクロールへ戻らないこと。
 ///
@@ -145,10 +146,7 @@ void main() {
 
   group('⚠⚠ 歯があることを、穴を開けて確かめる', () {
     test('#1167 の前（`dab8e314`）は横スクロールで、公開範囲が同じ行にあった', () {
-      final before = Process.runSync('git', [
-        'show',
-        'dab8e314:packages/capsicum/$path',
-      ], workingDirectory: '../..');
+      final before = gitShow('dab8e314:packages/capsicum/$path');
       expect(before.exitCode, 0, reason: (before.stderr as String));
       final source = maskComments(before.stdout as String);
 

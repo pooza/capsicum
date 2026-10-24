@@ -7,6 +7,8 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:test/test.dart';
 import 'package:web_socket_channel/io.dart';
 
+import 'support/refusing_port.dart';
+
 /// #1252: チャットの接続にも、通知側（#1249）と同じ「諦めない」を入れる。
 ///
 /// ⚠⚠ 直す前のチャット側は、#1249 で直す前の通知側と同じ形だった —— 10 回で
@@ -18,11 +20,12 @@ import 'package:web_socket_channel/io.dart';
 /// 振る舞いは `notification_streaming_reconnect_test.dart` が見ている。ここでは
 /// **チャット側がその部品に載っていること**を、実際の接続で確かめる。
 void main() {
-  Future<int> closedPort() async {
-    final socket = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
-    final port = socket.port;
-    await socket.close();
-    return port;
+  /// 以後の接続が必ず失敗するポート。⚠ 閉じたポートは Windows で拒否までに
+  /// 約 2 秒かかるので使わない（#1301・`support/refusing_port.dart`）。
+  Future<RefusingPort> refusingPort() async {
+    final refusing = await RefusingPort.open();
+    addTearDown(refusing.close);
+    return refusing;
   }
 
   Future<void> waitUntil(bool Function() condition) async {
@@ -32,7 +35,7 @@ void main() {
   }
 
   test('⚠⚠ 1 回の失敗は 1 回だけ数える', () async {
-    final probe = _Probe(await closedPort());
+    final probe = _Probe((await refusingPort()).port);
     final sub = probe.connect().listen((_) {});
     addTearDown(sub.cancel);
 
@@ -50,7 +53,7 @@ void main() {
   test('⚠⚠ 上限を超えても諦めない・exhausted は 1 回だけ知らせる', () async {
     var exhausted = 0;
     final probe = _Probe(
-      await closedPort(),
+      (await refusingPort()).port,
       onReconnectExhausted: () => exhausted++,
     );
     final sub = probe.connect().listen((_) {});
@@ -66,7 +69,8 @@ void main() {
   });
 
   test('⚠⚠ 諦めたはずの回数を過ぎてからサーバーが戻っても、購読を送り直す', () async {
-    final port = await closedPort();
+    final refusing = await refusingPort();
+    final port = refusing.port;
     final probe = _Probe(port);
     final sub = probe.connect().listen((_) {});
     addTearDown(sub.cancel);
@@ -74,6 +78,8 @@ void main() {
     await waitUntil(() => probe.delayRequests.length >= 15);
     expect(probe.delayRequests.length, greaterThanOrEqualTo(15), reason: '前提');
 
+    // 同じポートでサーバーを立てる ＝ 回線が戻った。
+    await refusing.close();
     final received = <Map<String, dynamic>>[];
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, port);
     addTearDown(() => server.close(force: true));

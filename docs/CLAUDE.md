@@ -16,11 +16,11 @@ v2.0 はメジャーリリースで、次の 3 本を束ねている。**構造�
 
 | | 何か | 設計書 |
 | --- | --- | --- |
-| **デッキ表示**（[#720](https://github.com/pooza/capsicum/issues/720)） | タイムラインなどを横に並べるマルチカラム。カラムごとにアカウントを違えられる | [deck-ui-plan.md](deck-ui-plan.md)（入口）/ [deck-ui-decisions.md](deck-ui-decisions.md)（決定の本文） |
+| **デッキ表示**（[#720](https://github.com/pooza/capsicum/issues/720)） | タイムラインなどを横に並べるマルチカラム。カラムごとにアカウントを違えられる | [deck-ui-plan.md](deck-ui-plan.md)（入口）/ [deck-ui-decisions.md](deck-ui-decisions.md) / [deck-ui-decisions-2.md](deck-ui-decisions-2.md)（決定の本文） |
 | **有償プッシュ通知リレー**（[#597](https://github.com/pooza/capsicum/issues/597)） | プリセットサーバーの利用者は無償のまま、それ以外の利用者へアプリ内課金で開放する | [paid-relay-plan.md](paid-relay-plan.md) |
 | **添付画像のレイヤ編集**（[#884](https://github.com/pooza/capsicum/issues/884)） | 投稿する画像に文字・スタンプ・画像を重ね、後から編集し直せる | 設計書なし（Issue とコードが正本） |
 
-⚠⚠ **デッキを触る回は deck-ui-decisions.md を、課金・利用権を触る回は paid-relay-plan.md と [product-policy.md](product-policy.md) の「課金の方向性」を先に読む。**どちらも「再判定しない」と明記した決定を持っており、コードのコメントが節番号で参照している。
+⚠⚠ **デッキを触る回は deck-ui-decisions.md と deck-ui-decisions-2.md を、課金・利用権を触る回は paid-relay-plan.md と [product-policy.md](product-policy.md) の「課金の方向性」を先に読む。**どちらも「再判定しない」と明記した決定を持っており、コードのコメントが節番号で参照している。
 
 ## モロヘイヤ連携
 
@@ -323,9 +323,9 @@ dart analyze --fatal-infos > /tmp/analyze.log 2>&1; echo "ANALYZE_EXIT=$?"
 
 [GitHub Milestones](https://github.com/pooza/capsicum/milestones) が正本。各マイルストーンの概要・スコープはマイルストーンの description に記載し、CLAUDE.md には複写しない。個別 Issue の一覧・ステータスも同様。
 
-最新リリース: **v2.4.1**（2026-10-18 タグ、build 206、リリース PR [#1309](https://github.com/pooza/capsicum/pull/1309)、merge `753c7341`）。**v2.4.0 の公開直後に見つかった不具合だけを出すホットフィックス**（デッキのカラムから開くエピソードブラウザ・Annict・テンプレート管理が、ルートのアカウントで動いていた [#1305](https://github.com/pooza/capsicum/issues/1305)）。develop に次の枠の実装が乗っていなかったので、通常の develop → main で出した。**公開状況（2026-10-22 実測）**: iOS は公開済み（`READY_FOR_SALE`）/ ⚠ **macOS は 2.4.1 の審査を取り下げた**（`DEVELOPER_REJECTED`・公開版は 2.3.0 のまま）。TestFlight の 2.4.1 で投稿欄の改行が空白になる [#1327](https://github.com/pooza/capsicum/issues/1327) が見つかり、審査中なら取り下げれば Mac の利用者に届かないため。修正は v2.5 で出す。iOS / macOS とも、取り下げた 2.4.0 のページを 2.4.1 に書き換えて提出していた / Android は公開済み（production 206）/ Windows は公開済み（`2.4.206.0`）/ Linux AppImage は [GitHub Release v2.4.1](https://github.com/pooza/capsicum/releases/tag/v2.4.1)（Latest・10-18 に pooza が公開）。⚠ **Play の API の `status=completed` は「トラックへの配置が済んだ」で、審査を通ったことではない**（公開の判定に使わない）。ストア掲載文は変えていない（スクリーンショットの見直しは [#1311](https://github.com/pooza/capsicum/issues/1311) で v2.5 の提出に合わせる）。
+最新リリース: **v2.5.0**（2026-10-22 タグ、build 208、リリース PR [#1325](https://github.com/pooza/capsicum/pull/1325)、merge `c3edf62c`）。**大更新なし — デッキで複数のアカウントを横断するようになって増えた「誤爆」（投稿先の取り違え）への手当ての回**（投稿画面と簡易投稿バーに投稿先のサーバー名 [#1328](https://github.com/pooza/capsicum/issues/1328) / [#1313](https://github.com/pooza/capsicum/issues/1313)・連携のダイアログに対象のアカウント [#1312](https://github.com/pooza/capsicum/issues/1312)・カラムを縦にスクロールしたらフォーカスを移す [#1330](https://github.com/pooza/capsicum/issues/1330)）。ほかに macOS の改行が空白になる [#1327](https://github.com/pooza/capsicum/issues/1327)（2.4.1 の macOS の審査を取り下げた理由）と、デッキがタブ表示へ戻る不具合 3 件を直した。**公開状況（2026-10-24 実測）: 全 5 プラットフォームで公開済み**（iOS / macOS は `READY_FOR_SALE`・macOS が最後で 10-23・Android / Windows は 10-22〜23・Linux AppImage は [GitHub Release v2.5.0](https://github.com/pooza/capsicum/releases/tag/v2.5.0)）。⚠ **macOS は 2.4 系を飛ばして 2.3.0 → 2.5.0。**各ストアのスクリーンショットは v2.5 の画面で撮り直した（[#1311](https://github.com/pooza/capsicum/issues/1311)・手順は [screenshot-procedure.md](screenshot-procedure.md)）。⚠ iPhone と iPad の 01 は #1328 の変更より前の画面のまま出したので、次の版で撮り直す。
 
-⚠ **リリース前レビュー（5 観点 + Codex）は赤・黄 0 件。**緑のうち観測性の 1 件を [#1310](https://github.com/pooza/capsicum/issues/1310)（v2.5）へ送った。⚠ **#1305 は最初「Linux 版でキーリングから復元したトークンが効いていない」と見立てたが外れで、原因はデッキのスコープだった**（Linux 機でデッキを使っていたので Linux に見えた）。release ビルドでは Annict 系の失敗が何も残らないので、切り分けには debug ビルドでの再現が要った（#1310 の動機）。
+⚠ **リリース前レビュー（5 観点 + Codex）は赤 0 件。**直すと決めたものは `152b5856`・`59d1fe1c` で直してからビルドした。送り分は [#1332](https://github.com/pooza/capsicum/issues/1332)（v2.6）。
 
 過去リリースの詳細ログは [archive/release-log.md](archive/release-log.md) に退避した（正本は [GitHub Releases](https://github.com/pooza/capsicum/releases) / Milestones）。マイルストーン移行時のログトリム手順は [milestone-transition スキル](../.claude/skills/milestone-transition/SKILL.md) の step 7。
 
@@ -367,7 +367,7 @@ dart analyze --fatal-infos > /tmp/analyze.log 2>&1; echo "ANALYZE_EXIT=$?"
   - **付けるときは、閉じる条件と測り方を Issue に書く**（測るコマンド・見る値・「満たした / 満たしていない / まだ分からない」の読み分け）。書いていないものには付けない
   - **マイルストーンに載せたまま持ち越す。**移行時に条件を満たしていなければ次の枠へ移す（[milestone-transition](../.claude/skills/milestone-transition/SKILL.md) の 1.）。⚠ **枠の目安（大更新 0〜1 + 小中 5〜12）の件数には数えない**・**進捗報告でも作業の残件と分けて書く**（作業が残っているように見せない）
   - 条件を満たしたら、測った値を添えて close する
-- Flutter framework 由来の不具合（capsicum 側で根治不能なもの、`flutter` ラベル付き）は [flutter-upstream-watch.md](flutter-upstream-watch.md) で集中管理し、**月初のセッションで手動 chase** して上流の進捗を巡回する。⚠ **クラウドの schedule routine は 2026-08-21 に廃止した**（4 か月連続で発火しても成果コミットが 1 件も残らず、実務はローカル頼みだった）。**資格情報の満了チェックがこの巡回に相乗りしている**点に注意
+- Flutter framework 由来の不具合（capsicum 側で根治不能なもの、`flutter` ラベル付き）は [flutter-upstream-watch.md](flutter-upstream-watch.md) で集中管理し、**月初のセッションで手動 chase** して上流の進捗を巡回する。⚠⚠ **`flutter` ラベルを付けたら、同じ作業で同 doc の表に行を足す**（外すときも同じ・規約は同 doc の冒頭）。⚠ **クラウドの schedule routine は 2026-08-21 に廃止した**（4 か月連続で発火しても成果コミットが 1 件も残らず、実務はローカル頼みだった）。**資格情報の満了チェックがこの巡回に相乗りしている**点に注意
 
 ### 実装しない機能
 

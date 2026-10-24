@@ -6,6 +6,7 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/dart_source.dart';
+import 'support/git_show.dart';
 import 'support/source_files.dart';
 
 /// #1304（v2.4 リリース前レビューの送り分）: 同じ処理が散っていたものを 1 本に
@@ -40,12 +41,26 @@ void main() {
     });
 
     test('⚠⚠ 修正前の通知の振り分けは当たる', () {
-      final before = Process.runSync('git', [
-        'show',
+      final before = gitShow(
         'b5d6147f:packages/capsicum/lib/src/service/push_message_dispatcher.dart',
-      ], workingDirectory: '../..');
+      );
       expect(before.exitCode, 0, reason: (before.stderr as String));
       expect(hitsIn(before.stdout as String), 4);
+    });
+
+    // ⚠⚠ 3 点セットの 1（#1332）。「正本の外に無い」だけを見ると、走査が
+    // 空振りしていても（対象を拾えていない・表記の形が変わった）緑になる。
+    test('⚠ 走査が空振りしていない', () {
+      final paths = [for (final f in sourceFiles('lib')) f.path];
+      expect(paths, contains('lib/src/util/chat_attachment_label.dart'));
+      expect(paths, contains('lib/src/service/push_message_dispatcher.dart'));
+      // 正本には 5 種類の表記が実在する（判定が今の書き方に当たっている）。
+      expect(
+        hitsIn(
+          File('lib/src/util/chat_attachment_label.dart').readAsStringSync(),
+        ),
+        5,
+      );
     });
 
     test('表記は chat_attachment_label.dart の 1 本だけ', () {

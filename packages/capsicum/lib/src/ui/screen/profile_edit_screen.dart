@@ -11,7 +11,9 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../provider/platform_providers.dart';
+import '../../provider/server_config_provider.dart';
 import '../../service/sentry_op_failure.dart';
+import '../../util/upstream_error_message.dart';
 import '../util/compose_text_style.dart';
 import '../widget/bottom_safe_area.dart';
 
@@ -204,6 +206,8 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
     // autoDispose ではない app スコープ）なので、掴んでおけば dispose 後でも
     // 安全に呼べる。#990 / #1009 の「開く前に捕まえる」と同じ形。
     final accountManager = ref.read(accountManagerProvider.notifier);
+    // 失敗の理由の文面に使う（#1335）。上と同じく await の前に掴む。
+    final reblogLabel = ref.read(reblogLabelProvider);
 
     // 補足情報は「項目名・値とも空」の行を送らない（未入力の UI 行）。さらに
     // Mastodon は「値はあるが項目名が空」の行を 422 で弾く
@@ -329,9 +333,16 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
         }
       }
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('保存に失敗しました')));
+        // 上流が理由を返していれば添える（#1335）。Misskey 2026.10.1 の
+        // AVATAR_IS_SENSITIVE / BANNER_IS_SENSITIVE は、画像の指定だけでなく
+        // 一緒に送った表示名なども保存されないので、理由が無いと分からない。
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              upstreamFailureText('保存に失敗しました', e, reblogLabel: reblogLabel),
+            ),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _saving = false);

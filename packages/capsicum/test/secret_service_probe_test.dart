@@ -5,6 +5,7 @@ import 'package:capsicum/src/service/secret_service_probe.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/dart_source.dart';
+import 'support/git_show.dart';
 import 'support/source_files.dart';
 
 /// #1085: secure storage に**触る前に** Secret Service が応答するか聞く。
@@ -281,12 +282,9 @@ void main() {
       test('⚠⚠ 修正前の push_key_store は全部の呼び出しが当たる', () {
         // #1136 を直す直前の develop。
         const preFix = '95645329';
-        final shown = Process.runSync('git', [
-          '-C',
-          '../..',
-          'show',
+        final shown = gitShow(
           '$preFix:packages/capsicum/lib/src/service/push_key_store.dart',
-        ]);
+        );
         if (shown.exitCode != 0) {
           markTestSkipped('git show が使えない: ${shown.stderr}');
           return;

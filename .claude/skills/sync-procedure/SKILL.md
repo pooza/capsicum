@@ -236,6 +236,18 @@ capsicum-relay の Issue・マイルストーンは、**capsicum 本体と同じ
   | 2 | 本番 | 同上を本番 URL で |
 
   ⚠ **ステージングで確かめてから本番へ進む。**手順（pull → 依存更新 → サービス再起動 → `/health`）は 2 台とも同じ（逐語は chubo2 側）。⚠ **変更系と確認系を同じ ssh セッションに混ぜない**（本番を意図せず再起動した事故がある）。⚠ **ステージングは購読数が小さく `supporters` が 0** なので、`/health` の数値が本番と違っても異常ではない。
+- **新しい Ruby を検出したら、relay の版を合わせる**（2026-10-24 pooza 指示）。⚠⚠ **relay は ginseng を使っていないので、ginseng-style から来る「新しい Ruby が出た」というお知らせが届かない。**他のリポジトリより取り残されやすく、**拾えるのはここだけ**:
+
+  ```sh
+  gh api repos/ruby/ruby/releases/latest --jq '.tag_name, .published_at'   # 最新の安定版（v4.0.9 の形）
+  git -C ~/repos/capsicum-relay show origin/develop:.ruby-version          # relay の版
+  ```
+
+  - 版が違えば、relay に版上げの Issue があるかを見る: `gh issue list --repo pooza/capsicum-relay --state open --search 'Ruby in:title'`
+  - ⚠⚠ **無ければその場で起票する。**書式は relay#98 / relay#108（やること・前提・手順の 3 節）。稼働中の relay の枠に載せ、**同じ作業で capsicum 側 description の `## relay` 節も直す**（step 5）
+  - ⚠ 起票の前に、**ステージング・本番の両機の rbenv に新しい版が入っているか**を読み取りで確かめ、前提の節に書く（入れるのは chubo2 側の作業・接続先は chubo2 の `docs/infra-servers.md`）。入っていなければ「chubo2 側が先」と書く
+  - ⚠⚠ **すぐ作業するかは、直前の版からの差分で決める**（2026-10-24 pooza）。リリースノート（`gh api repos/ruby/ruby/releases --jq '.[] | select(.tag_name=="vX.Y.Z") | .body'`）を読み、**修正が relay の通る経路に効くか**を確かめて Issue のコメントに書く。例: 4.0.9 は「巨大な正規表現のコンパイル」の修正で、relay は外部入力から正規表現を組み立てないので急がない（relay#108）
+  - ⚠ **急ぐと判断しない限り、起票までで止める。**版上げに着手するのは言われてから
 - **Mastodon / Misskey の現行バージョン確認**: 自前サーバーのソフトウェアは pooza フォークがリリース追従しているため、ローカルの fork を pull すれば現行バージョンを正確に確認できる（推測しない）。
   - Mastodon: `git -C ~/repos/mastodon pull --ff-only` → `lib/mastodon/version.rb` の major/minor/patch（または `git -C ~/repos/mastodon tag --sort=-creatordate | head` で `vX.Y.Z-bshockdon`）
   - Misskey: `git -C ~/repos/misskey pull --ff-only` → `package.json` の `version`（`jq -r .version ~/repos/misskey/package.json`）

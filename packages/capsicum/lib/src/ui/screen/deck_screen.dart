@@ -25,6 +25,7 @@ import '../widget/deck_column_view.dart';
 import '../widget/deck_columns_sheet.dart';
 import '../widget/home_drawer.dart';
 import '../widget/livecure_filter_button.dart';
+import '../widget/server_badge.dart';
 import '../widget/simple_post_bar.dart';
 import '../widget/user_avatar.dart';
 
@@ -978,9 +979,21 @@ class _DeckPostBar extends ConsumerWidget {
       channelName: extra['channelName'] as String?,
       hashtags: (extra['hashtags'] as List<String>?) ?? const [],
       // 誰として投稿するかをバー自身に出す（決定済み事項 10）。
+      // ⚠ 同じアバターを複数のサーバーで使っていると、アイコンだけでは
+      // 見分けられない。右下にサーバーの favicon を重ねる (#1331)。
       leading: user == null
           ? null
-          : UserAvatar(user: user, size: 24, compact: true),
+          : Stack(
+              clipBehavior: Clip.none,
+              children: [
+                UserAvatar(user: user, size: 24, compact: true),
+                Positioned(
+                  right: -4,
+                  bottom: -4,
+                  child: ServerFavicon(host: column.account.host, size: 14),
+                ),
+              ],
+            ),
       // ⚠ `onPosted` は渡さない。デッキのカラムへの反映は楽観挿入が担う
       // （`readVisibleTimelines` が列のカラムを宛先に含める・#1099）。ここで
       // `invalidate` すると、そのカラムだけ REST で丸ごと取り直しになる。

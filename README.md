@@ -16,7 +16,7 @@ capsicum が提案するのは、アプリ単体の体験ではなく、サー�
 
 ## macOS / Linux / Windows 版について
 
-- **macOS**: App Store からダウンロードできます（iOS / iPadOS と同一の App レコード・Universal Purchase）。Apple silicon / Intel 両対応
+- **macOS**: App Store からダウンロードできます（iOS / iPadOS と同一の App レコード・Universal Purchase）。Apple silicon を推奨。Intel Mac でもインストールはできるが、動作は実験的な扱いで実用はおすすめしない（開発元に実機がなく確かめられないため・[#1299](https://github.com/pooza/capsicum/issues/1299)）
 - **Linux**: [GitHub Releases](https://github.com/pooza/capsicum/releases) から AppImage（x86_64）を配布。Flathub への提出は断念し、AppImage 単独運用に確定しました。アプリ一覧への統合インストールはワンライナーで完結します（[導入手順](https://capsicum.shrieker.net/desktop#linux)）
 
   ```bash

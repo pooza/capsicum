@@ -20,6 +20,7 @@ import 'package:yaml/yaml.dart';
 import '../model/account_key.dart';
 import '../model/deck_column.dart';
 import 'account_storage.dart';
+import 'announcement_subscription_service.dart';
 
 /// ファイル形式の版。読み込み側は未知の版を弾く。
 const settingsBackupFormatVersion = 1;
@@ -205,7 +206,7 @@ const deviceLocalKeys = <String>{
 const accountScopedKeys = <String>{
   'background_opacity',
   'last_tab_',
-  'capsicum_announcement_sub_',
+  AnnouncementSubscriptionService.prefsKeyPrefix,
 };
 
 /// 書き出すかどうかが**まだ決まっていない**設定。今は書き出さない。
@@ -316,11 +317,10 @@ const accountScopedSettings = <AccountScopedSetting>[
     keyedBy: SettingKeyedBy.host,
   ),
   // お知らせのプッシュ通知を明示的に切った印 (#1317)。ユーザーが意図して付けた
-  // 印なので含める。⚠ `AnnouncementSubscriptionService.prefsKeyOptOutPrefix` と
-  // 一致させる（`settings_backup_coverage_test` が見ている）。値は `true` だけ
+  // 印なので含める。キーはサービスの定数を引く（写しを置かない・#1332）。値は `true` だけ
   // （在る＝切った）。取り込み先では、接続し直したときの自動の購読を止める。
   AccountScopedSetting(
-    'capsicum_announcement_optout_',
+    AnnouncementSubscriptionService.prefsKeyOptOutPrefix,
     BackupValueType.boolean,
   ),
 ];

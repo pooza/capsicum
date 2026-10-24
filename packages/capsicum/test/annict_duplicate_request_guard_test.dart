@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/dart_source.dart';
+import 'support/git_show.dart';
 
 /// #1176: Annict の記録・感想の 2 画面が `duplicate_request` を同じ扱いにする。
 ///
@@ -100,10 +101,7 @@ void main() {
       // ⚠ SHA で固定する（`HEAD:` だと修正のコミット後に修正後を取り出してしまう）。
       // `cd5eaab7` = #1170 / #1157 の直後、#1176 に手を付ける前。
       for (final path in paths) {
-        final before = Process.runSync('git', [
-          'show',
-          'cd5eaab7:packages/capsicum/$path',
-        ], workingDirectory: '../..');
+        final before = gitShow('cd5eaab7:packages/capsicum/$path');
         expect(before.exitCode, 0, reason: '$path: ${before.stderr}');
         final missing = missingFrom(before.stdout as String);
         expect(missing.length, required.length + 1, reason: '$path で $missing');

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/dart_source.dart';
+import 'support/git_show.dart';
 import 'support/source_files.dart';
 
 /// #1107: `state.extra` を必須で読まない。
@@ -112,10 +113,7 @@ void main() {
       // ⚠⚠ **SHA で固定する。**`HEAD:` だと修正がコミットされた瞬間に修正後の
       // ファイルが出てきて当たらなくなる。`60ff9b23` = #1107 の直前。
       // `analyze.yml` は `fetch-depth: 0` なので CI でも引ける。
-      final before = Process.runSync('git', [
-        'show',
-        '60ff9b23:packages/capsicum/lib/src/router.dart',
-      ], workingDirectory: '../..');
+      final before = gitShow('60ff9b23:packages/capsicum/lib/src/router.dart');
       expect(before.exitCode, 0, reason: (before.stderr as String));
       final source = before.stdout as String;
       expect(

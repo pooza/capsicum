@@ -6,6 +6,8 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:test/test.dart';
 import 'package:web_socket_channel/io.dart';
 
+import 'support/refusing_port.dart';
+
 /// #1249: 通知用の接続は、圏外が続いても再接続を諦めない。
 ///
 /// ⚠⚠ 以前は 10 回で諦めてタイマーを張らなくなり、**回線が戻ってもアプリを
@@ -17,12 +19,12 @@ import 'package:web_socket_channel/io.dart';
 /// ここでは**実際にローカルのポートへつなぎにいき**、拒否されたときの数え方と、
 /// サーバーが戻ったときの復帰を見る。
 void main() {
-  /// 空いているポートを取ってすぐ閉じる ＝ 以後の接続は必ず拒否される。
-  Future<int> closedPort() async {
-    final socket = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
-    final port = socket.port;
-    await socket.close();
-    return port;
+  /// 以後の接続が必ず失敗するポート。⚠ 閉じたポートは Windows で拒否までに
+  /// 約 2 秒かかるので使わない（#1301・`support/refusing_port.dart`）。
+  Future<RefusingPort> refusingPort() async {
+    final refusing = await RefusingPort.open();
+    addTearDown(refusing.close);
+    return refusing;
   }
 
   /// [condition] が真になるまで待つ（最長 5 秒）。
@@ -33,7 +35,7 @@ void main() {
   }
 
   test('⚠⚠ 1 回の失敗は 1 回だけ数える（3 経路から届いても）', () async {
-    final probe = _Probe(await closedPort());
+    final probe = _Probe((await refusingPort()).port);
     final sub = probe.connect().listen((_) {});
     addTearDown(sub.cancel);
 
@@ -58,7 +60,7 @@ void main() {
   test('⚠⚠ 上限を超えても諦めない・exhausted は 1 回だけ知らせる', () async {
     var exhausted = 0;
     final probe = _Probe(
-      await closedPort(),
+      (await refusingPort()).port,
       onReconnectExhausted: () => exhausted++,
     );
     final sub = probe.connect().listen((_) {});
@@ -72,7 +74,8 @@ void main() {
   });
 
   test('⚠⚠ 諦めたはずの回数を過ぎてからサーバーが戻っても、つながって購読を送る', () async {
-    final port = await closedPort();
+    final refusing = await refusingPort();
+    final port = refusing.port;
     final probe = _Probe(port, subscribe: 'hello');
     final sub = probe.connect().listen((_) {});
     addTearDown(sub.cancel);
@@ -82,6 +85,7 @@ void main() {
     expect(probe.connectCount, greaterThanOrEqualTo(15), reason: '前提');
 
     // 同じポートでサーバーを立てる ＝ 回線が戻った。
+    await refusing.close();
     final received = <String>[];
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, port);
     addTearDown(() => server.close(force: true));
@@ -95,13 +99,15 @@ void main() {
   });
 
   test('つながったら数え直す（次に切れたときは 0 回目から）', () async {
-    final port = await closedPort();
+    final refusing = await refusingPort();
+    final port = refusing.port;
     final probe = _Probe(port);
     final sub = probe.connect().listen((_) {});
     addTearDown(sub.cancel);
 
     await waitUntil(() => probe.delayRequests.length >= 3);
 
+    await refusing.close();
     final sockets = <WebSocket>[];
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, port);
     addTearDown(() => server.close(force: true));
@@ -123,13 +129,15 @@ void main() {
   // ---- #1252: v2.0.1 のレビューで送られた分 ----
 
   test('⚠⚠ つながっては切ってくる相手には、数え直さず待ち時間を伸ばす', () async {
-    final port = await closedPort();
+    final refusing = await refusingPort();
+    final port = refusing.port;
     // ⚠ 「つながり続けた」とみなすまでを長く取る ＝ すぐ切られる限り数え直さない。
     final probe = _Probe(port, stableAfter: const Duration(seconds: 30));
     final sub = probe.connect().listen((_) {});
     addTearDown(sub.cancel);
 
     // 握手は通すが、通した直後に切るサーバー。
+    await refusing.close();
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, port);
     addTearDown(() => server.close(force: true));
     server.listen((request) async {
@@ -180,7 +188,7 @@ void main() {
   test('⚠ 1 回の失敗につき、エラーの通知は 1 回', () async {
     final errors = <Object>[];
     final probe = _Probe(
-      await closedPort(),
+      (await refusingPort()).port,
       onStreamError: (e, _) => errors.add(e),
     );
     final sub = probe.connect().listen((_) {});
@@ -199,7 +207,7 @@ void main() {
   test('⚠ 破棄したあとは、接続もエラーの通知もしない', () async {
     final errors = <Object>[];
     final probe = _Probe(
-      await closedPort(),
+      (await refusingPort()).port,
       onStreamError: (e, _) => errors.add(e),
     );
     final sub = probe.connect().listen((_) {});
@@ -215,7 +223,8 @@ void main() {
   });
 
   test('接続の節目を知らせる（つながった・購読した・切れた）', () async {
-    final port = await closedPort();
+    final refusing = await refusingPort();
+    final port = refusing.port;
     final events = <String>[];
     final probe = _Probe(
       port,
@@ -225,13 +234,16 @@ void main() {
     final sub = probe.connect().listen((_) {});
     addTearDown(sub.cancel);
 
+    await refusing.close();
     final sockets = <WebSocket>[];
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, port);
     addTearDown(() => server.close(force: true));
     server.listen((request) async {
       sockets.add(await WebSocketTransformer.upgrade(request));
     });
-    await waitUntil(() => events.contains('subscribed'));
+    // ⚠ サーバー側の upgrade の完了は、クライアント側の「購読した」より後に
+    // 処理されることがある（#1301・全量を流した負荷の下で Windows で実測）。
+    await waitUntil(() => events.contains('subscribed') && sockets.isNotEmpty);
     await sockets.first.close();
     await waitUntil(
       () => events.lastIndexOf('disconnected') > events.indexOf('subscribed'),

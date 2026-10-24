@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/dart_source.dart';
+import 'support/git_show.dart';
 import 'support/source_files.dart';
 
 /// #1148 / #1150: カラムの中身から開く画面は `deck_navigation.dart` の `open*` で
@@ -126,10 +127,9 @@ void main() {
       // ⚠ SHA で固定する（`HEAD:` だと修正のコミット後に修正後のファイルを
       // 取り出して当たらなくなる）。`87752871` = #1149 の全画面 push 対応。
       // 投稿・プロフィール・一覧・チャンネルの遷移はまだ素のまま。
-      final before = Process.runSync('git', [
-        'show',
+      final before = gitShow(
         '87752871:packages/capsicum/lib/src/ui/widget/post_tile.dart',
-      ], workingDirectory: '../..');
+      );
       expect(before.exitCode, 0, reason: (before.stderr as String));
       expect(
         offendersIn(before.stdout as String).length,
@@ -140,10 +140,9 @@ void main() {
 
     test('修正前の profile_screen は当たる', () {
       // `ea651431` = #1148。一覧・実績・コレクション・ギャラリー・メッセージは素のまま。
-      final before = Process.runSync('git', [
-        'show',
+      final before = gitShow(
         'ea651431:packages/capsicum/lib/src/ui/screen/profile_screen.dart',
-      ], workingDirectory: '../..');
+      );
       expect(before.exitCode, 0, reason: (before.stderr as String));
       expect(
         offendersIn(before.stdout as String).length,

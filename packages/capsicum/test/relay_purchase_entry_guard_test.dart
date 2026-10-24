@@ -6,6 +6,7 @@ import 'package:capsicum/src/ui/widget/relay_entitlement_purchase_section.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/dart_source.dart';
+import 'support/git_show.dart';
 
 /// #1217: プッシュ通知設定画面からも利用権を買えるようにした回の不変条件。
 ///
@@ -608,10 +609,7 @@ void main() {
 
   group('⚠⚠ 歯があることを、穴を開けて確かめる', () {
     String before(String path) {
-      final r = Process.runSync('git', [
-        'show',
-        '$beforeRev:packages/capsicum/$path',
-      ], workingDirectory: '../..');
+      final r = gitShow('$beforeRev:packages/capsicum/$path');
       expect(r.exitCode, 0, reason: (r.stderr as String));
       return r.stdout as String;
     }
@@ -682,10 +680,7 @@ void main() {
     const asymmetricRev = '2e397a92';
 
     String beforeAsymmetric(String path) {
-      final r = Process.runSync('git', [
-        'show',
-        '$asymmetricRev:packages/capsicum/$path',
-      ], workingDirectory: '../..');
+      final r = gitShow('$asymmetricRev:packages/capsicum/$path');
       expect(r.exitCode, 0, reason: (r.stderr as String));
       return r.stdout as String;
     }
@@ -722,10 +717,7 @@ void main() {
     });
 
     test('⚠⚠ 前は購入の面に利用規約とプライバシーポリシーが無かった', () {
-      final r = Process.runSync('git', [
-        'show',
-        '6d8ababb:packages/capsicum/$sectionPath',
-      ], workingDirectory: '../..');
+      final r = gitShow('6d8ababb:packages/capsicum/$sectionPath');
       expect(r.exitCode, 0, reason: (r.stderr as String));
       final section = maskComments(r.stdout as String);
 

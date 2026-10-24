@@ -8,15 +8,24 @@ import 'package:flutter_test/flutter_test.dart';
 /// ので、この判定が壊れても Sentry にもユーザー報告にも出ない。テストで固定する。
 Post _post({
   ReactionAcceptance? acceptance,
-  String authorHost = 'example.com',
+  String? authorHost = 'example.com',
+  Post? quote,
 }) {
   return Post(
     id: '1',
     postedAt: DateTime.utc(2026),
     author: User(id: 'u1', username: 'someone', host: authorHost),
     reactionAcceptance: acceptance,
+    quote: quote,
   );
 }
+
+/// 引用先の投稿 (#1334)。
+Post _quoted(String? host) => Post(
+  id: 'q',
+  postedAt: DateTime.utc(2026),
+  author: User(id: 'u2', username: 'quoted', host: host),
+);
 
 /// #1081 用。⚠ **3 つとも default は「制限なし」**（サーバーが false / 空を
 /// 省くため、欠落をそのまま受けた状態と同じになる）。
@@ -155,6 +164,64 @@ void main() {
           ),
           isTrue,
         );
+      });
+
+      // Misskey 2026.10.1 で入った条件 (#1334・misskey-dev/misskey#17406)。
+      // ⚠ サーバーは満たさない絵文字を ❤️ に差し替えるので、壊れても気付けない。
+      group('引用', () {
+        test('⚠ ローカルの投稿でも、リモートの投稿を引用していたら使えない', () {
+          expect(
+            canReactWith(
+              _emoji(localOnly: true),
+              _post(quote: _quoted('other.example')),
+              myHost: 'example.com',
+            ),
+            isFalse,
+          );
+        });
+
+        test('ローカルの投稿を引用しているなら使える', () {
+          expect(
+            canReactWith(
+              _emoji(localOnly: true),
+              _post(quote: _quoted('example.com')),
+              myHost: 'example.com',
+            ),
+            isTrue,
+          );
+        });
+
+        test('作者のホストが null（ローカル）の投稿を引用しているなら使える', () {
+          expect(
+            canReactWith(
+              _emoji(localOnly: true),
+              _post(authorHost: null, quote: _quoted(null)),
+              myHost: 'example.com',
+            ),
+            isTrue,
+          );
+        });
+
+        test('ローカル限定でない絵文字は、リモートを引用した投稿にも使える', () {
+          expect(
+            canReactWith(
+              _emoji(),
+              _post(quote: _quoted('other.example')),
+              myHost: 'example.com',
+            ),
+            isTrue,
+          );
+        });
+
+        test('⚠ 自ホストが不明なら、引用でも制限しない側に倒す', () {
+          expect(
+            canReactWith(
+              _emoji(localOnly: true),
+              _post(quote: _quoted('other.example')),
+            ),
+            isTrue,
+          );
+        });
       });
     });
 
