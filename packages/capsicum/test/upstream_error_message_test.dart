@@ -18,6 +18,37 @@ DioException _dioError(Object? body, {int status = 400}) {
 
 void main() {
   group('Misskey 形（error がオブジェクト）', () {
+    // #1335。Misskey 2026.10.1 の i/update（本家の meta.errors の値そのまま）。
+    // ⚠ 理由が無いと「保存に失敗しました」だけになり、一緒に送った表示名なども
+    // 保存されていないことが分からない。
+    test('センシティブな画像をアイコン・ヘッダーにしたときの理由を訳す（#1335）', () {
+      final avatar = _dioError({
+        'error': {
+          'code': 'AVATAR_IS_SENSITIVE',
+          'message': 'The file specified as an avatar is marked as sensitive.',
+          'id': '71bb5e53-4742-4609-b465-36081e131208',
+          'kind': 'client',
+        },
+      });
+      expect(
+        upstreamFailureText('保存に失敗しました', avatar, reblogLabel: 'リノート'),
+        '保存に失敗しました: センシティブとして扱われている画像は、アイコンにできません',
+      );
+
+      final banner = _dioError({
+        'error': {
+          'code': 'BANNER_IS_SENSITIVE',
+          'message': 'The file specified as a banner is marked as sensitive.',
+          'id': 'e148b34c-9f33-4300-93e0-7817008fb366',
+          'kind': 'client',
+        },
+      });
+      expect(
+        upstreamFailureText('保存に失敗しました', banner, reblogLabel: 'リノート'),
+        '保存に失敗しました: センシティブとして扱われている画像は、ヘッダーにできません',
+      );
+    });
+
     test('既知の code は日本語の理由に訳す（#879 の下書き上限）', () {
       // mulukhiya#4480 の透過後に実際に届く形。
       final error = _dioError({
