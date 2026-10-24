@@ -44,22 +44,55 @@ enum ExtraTrustedRootsStatus {
 /// ⚠ 期限: ISRG Root X1 は 2035-06-04、X2 は 2040-09-17。Let's Encrypt が
 /// ルートを切り替えたら、ここも足し直す。
 ///
+/// ⚠ **管理者が Windows のストアで ISRG を「信頼しない証明書」に入れていても、
+/// Dart の通信では信頼する。**ここで足したルートは Dart の [SecurityContext] の中
+/// だけのもので、OS の Disallowed の一覧は見ない。
+///
 /// 失敗しても起動は止めない（既定のルートのまま動く＝直す前と同じ）。
-ExtraTrustedRootsStatus installExtraTrustedRoots({
+ExtraTrustedRootsResult installExtraTrustedRoots({
   @visibleForTesting bool? isWindows,
   @visibleForTesting SecurityContext? context,
+  @visibleForTesting List<String> pems = extraTrustedRootPems,
 }) {
   final target = isWindows ?? (!kIsWeb && Platform.isWindows);
-  if (!target) return ExtraTrustedRootsStatus.skipped;
-  try {
-    final ctx = context ?? SecurityContext.defaultContext;
-    for (final pem in extraTrustedRootPems) {
-      ctx.setTrustedCertificatesBytes(ascii.encode(pem));
-    }
-    return ExtraTrustedRootsStatus.installed;
-  } catch (_) {
-    return ExtraTrustedRootsStatus.failed;
+  if (!target) {
+    return const ExtraTrustedRootsResult(ExtraTrustedRootsStatus.skipped);
   }
+  final ctx = context ?? SecurityContext.defaultContext;
+  for (var i = 0; i < pems.length; i++) {
+    try {
+      ctx.setTrustedCertificatesBytes(ascii.encode(pems[i]));
+    } catch (e) {
+      // ⚠ 手前の分は足せている（X1 だけ効いた回がありうる）ので、何本目かを残す。
+      return ExtraTrustedRootsResult(
+        ExtraTrustedRootsStatus.failed,
+        failedAt: i + 1,
+        errorType: e.runtimeType.toString(),
+      );
+    }
+  }
+  return const ExtraTrustedRootsResult(ExtraTrustedRootsStatus.installed);
+}
+
+/// [installExtraTrustedRoots] の結果。⚠ 失敗の理由は起動時の breadcrumb に
+/// 載せる（#1332）。以前は `catch (_)` で捨てていて、X1 だけ効いた回と
+/// まったく足せなかった回を区別できなかった。
+class ExtraTrustedRootsResult {
+  final ExtraTrustedRootsStatus status;
+
+  /// 何本目（1 始まり・[extraTrustedRootPems] の順）で落ちたか。失敗のときだけ。
+  final int? failedAt;
+
+  /// 例外の型名。⚠ 中身（メッセージ）は載せない（端末のパスなどが混じりうる）。
+  final String? errorType;
+
+  const ExtraTrustedRootsResult(this.status, {this.failedAt, this.errorType});
+
+  /// breadcrumb の data。
+  Map<String, Object> get breadcrumbData => {
+    'failed_at': ?failedAt,
+    'error_type': ?errorType,
+  };
 }
 
 /// 足すルート証明書（PEM）。出どころは <https://letsencrypt.org/certificates/>。

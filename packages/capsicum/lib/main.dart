@@ -261,12 +261,14 @@ Future<void> main() async {
       );
     }
     // 足せなかった回を後から見分けられるようにする (#1298)。
-    if (extraTrustedRoots != ExtraTrustedRootsStatus.skipped) {
+    // 失敗の理由（何本目・例外の型）も data に載せる (#1332)。
+    if (extraTrustedRoots.status != ExtraTrustedRootsStatus.skipped) {
       Sentry.addBreadcrumb(
         Breadcrumb(
           category: 'tls.extra_roots',
-          message: extraTrustedRoots.name,
-          level: extraTrustedRoots == ExtraTrustedRootsStatus.failed
+          message: extraTrustedRoots.status.name,
+          data: extraTrustedRoots.breadcrumbData,
+          level: extraTrustedRoots.status == ExtraTrustedRootsStatus.failed
               ? SentryLevel.warning
               : SentryLevel.info,
         ),

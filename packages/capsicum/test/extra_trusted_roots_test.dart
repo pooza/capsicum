@@ -66,7 +66,7 @@ void main() {
     test('Windows 以外では何もしない', () {
       final ctx = SecurityContext(withTrustedRoots: false);
       expect(
-        installExtraTrustedRoots(isWindows: false, context: ctx),
+        installExtraTrustedRoots(isWindows: false, context: ctx).status,
         ExtraTrustedRootsStatus.skipped,
       );
     });
@@ -74,7 +74,7 @@ void main() {
     test('Windows では足せる（PEM が SecurityContext に読み込める）', () {
       final ctx = SecurityContext(withTrustedRoots: false);
       expect(
-        installExtraTrustedRoots(isWindows: true, context: ctx),
+        installExtraTrustedRoots(isWindows: true, context: ctx).status,
         ExtraTrustedRootsStatus.installed,
       );
     });
@@ -82,13 +82,45 @@ void main() {
     test('OS のルートに重ねて足しても例外にならない', () {
       final ctx = SecurityContext(withTrustedRoots: true);
       expect(
-        installExtraTrustedRoots(isWindows: true, context: ctx),
+        installExtraTrustedRoots(isWindows: true, context: ctx).status,
         ExtraTrustedRootsStatus.installed,
       );
       // 2 回目（同じものの重ね足し）も通る
       expect(
-        installExtraTrustedRoots(isWindows: true, context: ctx),
+        installExtraTrustedRoots(isWindows: true, context: ctx).status,
         ExtraTrustedRootsStatus.installed,
+      );
+    });
+
+    // #1332。⚠ 以前は `catch (_)` で捨てていて、X1 だけ効いた回と区別できなかった。
+    test('失敗したら、何本目で落ちたかと例外の型を残す', () {
+      final ctx = SecurityContext(withTrustedRoots: false);
+      final result = installExtraTrustedRoots(
+        isWindows: true,
+        context: ctx,
+        pems: [
+          extraTrustedRootPems.first,
+          '-----BEGIN CERTIFICATE-----\nbroken\n-----END CERTIFICATE-----\n',
+        ],
+      );
+      expect(result.status, ExtraTrustedRootsStatus.failed);
+      expect(result.failedAt, 2);
+      expect(result.errorType, isNotEmpty);
+      expect(result.breadcrumbData, {
+        'failed_at': 2,
+        'error_type': result.errorType,
+      });
+    });
+
+    test('成功・対象外では breadcrumb の data は空', () {
+      final ctx = SecurityContext(withTrustedRoots: false);
+      expect(
+        installExtraTrustedRoots(isWindows: true, context: ctx).breadcrumbData,
+        isEmpty,
+      );
+      expect(
+        installExtraTrustedRoots(isWindows: false, context: ctx).breadcrumbData,
+        isEmpty,
       );
     });
   });
