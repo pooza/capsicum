@@ -97,6 +97,7 @@ SIM=iphone tool/screenshot/sim.sh shot s01         # 撮って縮小版の場所
 - **Xcode 27 は Simulator.app ではなく DeviceHub**（`Xcode.app/Contents/Applications/DeviceHub.app`）。窓の一覧の行は、座標のクリックでは選べない。AX で `set selected of row N of outline 1 of …` する。表示は「ウィンドウに合わせる」で拡大する
 - ⚠ **System Events の `click at` はシミュレータの画面に効かない**（-25204）。`simtap`（CGEvent）で押す
 - ⚠ **`simctl pbcopy` が効かない**（入れた直後でも空）。貼り付けは使わず、キー入力で入れる
+- ⌘ 付きのキー（iPad のメニューバーのショートカット）を端末へ送るときは、DeviceHub の Device ＞ Keyboard ＞ Keyboard Capture をオンにして `simtap key <code> cmd` で送る（#1268）。⚠ オフのままだと DeviceHub が受けてしまう。終わったらオフに戻す
 - ⚠⚠ **iOS の言語が日本語だと、Mac のキー入力がローマ字かな変換される**（Mac の入力ソースは関係ない）
   - **英字だけの欄**（ログイン・認可コード）: `sim.sh lang en` で英語にしてから打ち、終わったら `sim.sh lang ja`
   - **日本語の欄**: ja のまま、ローマ字を `type` → `key 49`（スペース）で変換 → 候補をタップするか `key 36`（Return）で第一候補を確定。`,` は「、」、`.` は「。」になる
