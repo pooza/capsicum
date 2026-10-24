@@ -1,8 +1,7 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/dart_source.dart';
+import 'support/git_show.dart';
 import 'support/source_files.dart';
 
 /// #1083-E: `reportOpFailure` の `tagKey` の形を機械で守る。
@@ -233,12 +232,7 @@ Widget build() => CursorPagedListView(tagKey: _moderationTagKey);
     const preFix = '11d19821^';
     const path =
         'packages/capsicum/lib/src/ui/screen/moderation_list_screen.dart';
-    final shown = Process.runSync('git', [
-      '-C',
-      '../..',
-      'show',
-      '$preFix:$path',
-    ]);
+    final shown = gitShow('$preFix:$path');
     // ⚠ shallow clone 等で履歴が無い環境では skip する（検査の本体は上の合成
     // ソース側にある）。
     if (shown.exitCode != 0) {
@@ -270,12 +264,7 @@ Widget build() => CursorPagedListView(tagKey: _moderationTagKey);
         'packages/capsicum/lib/src/provider/chat_provider.dart',
         'packages/capsicum/lib/src/provider/unified_notification_provider.dart',
       ]) {
-        final shown = Process.runSync('git', [
-          '-C',
-          '../..',
-          'show',
-          '$preFix:$path',
-        ]);
+        final shown = gitShow('$preFix:$path');
         if (shown.exitCode != 0) {
           markTestSkipped('git show が使えない: ${shown.stderr}');
           return;

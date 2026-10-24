@@ -5,6 +5,7 @@ import 'package:capsicum/src/ui/util/settings_backup_apply.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/dart_source.dart';
+import 'support/git_show.dart';
 
 /// #1317: 取り込んだ節は全部、実行中のアプリへ反映する。
 ///
@@ -94,10 +95,9 @@ Object other() => parsed['outside'];
     () {
       // `b5d6147f` = #1317 の修正の直前。このときの反映は `settings:` の provider と
       // アカウント別設定の provider の invalidate と、索引の積み直しだけだった。
-      final before = Process.runSync('git', [
-        'show',
+      final before = gitShow(
         'b5d6147f:packages/capsicum/lib/src/service/settings_backup.dart',
-      ], workingDirectory: '../..');
+      );
       expect(before.exitCode, 0, reason: (before.stderr as String));
       final read = sectionsRead(before.stdout as String);
       const refreshedThen = {'settings', 'account_settings', 'accounts'};

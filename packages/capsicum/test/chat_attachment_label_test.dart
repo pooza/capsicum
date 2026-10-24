@@ -6,6 +6,7 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/dart_source.dart';
+import 'support/git_show.dart';
 import 'support/source_files.dart';
 
 /// #1304（v2.4 リリース前レビューの送り分）: 同じ処理が散っていたものを 1 本に
@@ -40,10 +41,9 @@ void main() {
     });
 
     test('⚠⚠ 修正前の通知の振り分けは当たる', () {
-      final before = Process.runSync('git', [
-        'show',
+      final before = gitShow(
         'b5d6147f:packages/capsicum/lib/src/service/push_message_dispatcher.dart',
-      ], workingDirectory: '../..');
+      );
       expect(before.exitCode, 0, reason: (before.stderr as String));
       expect(hitsIn(before.stdout as String), 4);
     });

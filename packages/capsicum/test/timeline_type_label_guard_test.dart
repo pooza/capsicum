@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/dart_source.dart';
+import 'support/git_show.dart';
 import 'support/source_files.dart';
 
 /// #1304: タイムラインの種類の表示名は `timeline_type_label.dart` の 1 本だけ。
@@ -36,10 +37,7 @@ void main() {
       'lib/src/ui/widget/home_menu.dart',
       'lib/src/ui/widget/tab_management_sheet.dart',
     ]) {
-      final before = Process.runSync('git', [
-        'show',
-        'b5d6147f:packages/capsicum/$path',
-      ], workingDirectory: '../..');
+      final before = gitShow('b5d6147f:packages/capsicum/$path');
       expect(before.exitCode, 0, reason: (before.stderr as String));
       expect(
         rowsIn(before.stdout as String),

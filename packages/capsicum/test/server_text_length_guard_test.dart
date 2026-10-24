@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/dart_source.dart';
+import 'support/git_show.dart';
 import 'support/source_files.dart';
 
 /// #1027-F2 / #1035-A3: サーバーと同じ単位で数え、勝手に切らない。
@@ -216,12 +217,7 @@ final rule = ref.watch(postLengthRuleProvider);
       // #1034 を直した commit の親。
       const preFix = '94808c91';
       const path = 'packages/capsicum/lib/src/ui/screen/compose_screen.dart';
-      final shown = Process.runSync('git', [
-        '-C',
-        '../..',
-        'show',
-        '$preFix:$path',
-      ]);
+      final shown = gitShow('$preFix:$path');
       if (shown.exitCode != 0) {
         markTestSkipped('git show が使えない: ${shown.stderr}');
         return;
@@ -247,12 +243,7 @@ final rule = ref.watch(postLengthRuleProvider);
       const preFix = '111583ea^';
       const path =
           'packages/capsicum/lib/src/ui/screen/templates_manage_screen.dart';
-      final shown = Process.runSync('git', [
-        '-C',
-        '../..',
-        'show',
-        '$preFix:$path',
-      ]);
+      final shown = gitShow('$preFix:$path');
       if (shown.exitCode != 0) {
         markTestSkipped('git show が使えない: ${shown.stderr}');
         return;

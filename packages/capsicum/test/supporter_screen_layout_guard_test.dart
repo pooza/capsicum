@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/dart_source.dart';
+import 'support/git_show.dart';
 
 /// #1225: 投げ銭画面は**グレーの帯**で区切り、**投げ銭を利用権より先**に出す。
 ///
@@ -138,10 +139,7 @@ return [
       // **修正後**のファイルを取り出して当たらなくなる。`5c915b11` は #1225 /
       // #1226 を入れる直前の develop の tip。`analyze.yml` は `fetch-depth: 0`
       // なので CI でも引ける。
-      final before = Process.runSync('git', [
-        'show',
-        '5c915b11:packages/capsicum/$path',
-      ], workingDirectory: '../..');
+      final before = gitShow('5c915b11:packages/capsicum/$path');
       expect(before.exitCode, 0, reason: (before.stderr as String));
       final source = before.stdout as String;
       expect(

@@ -5,6 +5,7 @@ import 'package:capsicum/src/service/settings_backup.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/dart_source.dart';
+import 'support/git_show.dart';
 
 /// #1144: 取り込んだアカウント別設定を画面へ反映する provider の対応検査。
 ///
@@ -137,12 +138,9 @@ void main() {
   // ⚠⚠ 修正前の実物を食わせる（3 点セットの 3）。v1.65.0 には対応表が無く、
   // アカウント別設定を読む provider が全部「invalidate されない」側に出るはず。
   test('⚠⚠ v1.65.0 の preferences_provider を食わせると漏れが出る', () {
-    final shown = Process.runSync('git', [
-      '-C',
-      '../..',
-      'show',
+    final shown = gitShow(
       'v1.65.0:packages/capsicum/lib/src/provider/preferences_provider.dart',
-    ]);
+    );
     if (shown.exitCode != 0) {
       markTestSkipped('git show が使えない: ${shown.stderr}');
       return;

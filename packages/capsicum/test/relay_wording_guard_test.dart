@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/dart_source.dart';
+import 'support/git_show.dart';
 import 'support/source_files.dart';
 
 /// #1226: 利用者が読む文言に**裸の「リレー」**を出さない。
@@ -147,11 +148,10 @@ void main() {
       // **修正後**のファイルを取り出して当たらなくなる。`5c915b11` は #1226 の
       // 修正を入れる直前の develop の tip。`analyze.yml` は `fetch-depth: 0`
       // なので CI でも引ける。
-      final before = Process.runSync('git', [
-        'show',
+      final before = gitShow(
         '5c915b11:packages/capsicum/lib/src/ui/screen/settings/'
-            'push_notification_settings_screen.dart',
-      ], workingDirectory: '../..');
+        'push_notification_settings_screen.dart',
+      );
       expect(before.exitCode, 0, reason: (before.stderr as String));
       final source = before.stdout as String;
       expect(

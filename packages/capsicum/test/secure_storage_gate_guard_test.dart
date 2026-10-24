@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/dart_source.dart';
+import 'support/git_show.dart';
 import 'support/source_files.dart';
 
 /// #1136: secure storage を**名前で握って直に叩く**クラスを作らせない。
@@ -260,12 +261,7 @@ const doc = 'FlutterSecureStorage _storage; _storage.read(key: k)';
       // #1136 を直す直前の develop。
       const preFix = '95645329';
       for (final path in storePaths) {
-        final shown = Process.runSync('git', [
-          '-C',
-          '../..',
-          'show',
-          '$preFix:packages/capsicum/$path',
-        ]);
+        final shown = gitShow('$preFix:packages/capsicum/$path');
         if (shown.exitCode != 0) {
           markTestSkipped('git show が使えない: ${shown.stderr}');
           return;
@@ -281,12 +277,7 @@ const doc = 'FlutterSecureStorage _storage; _storage.read(key: k)';
     test('⚠ 修正前の 3 ファイルには関所への委譲が無い', () {
       const preFix = '95645329';
       for (final path in storePaths) {
-        final shown = Process.runSync('git', [
-          '-C',
-          '../..',
-          'show',
-          '$preFix:packages/capsicum/$path',
-        ]);
+        final shown = gitShow('$preFix:packages/capsicum/$path');
         if (shown.exitCode != 0) {
           markTestSkipped('git show が使えない: ${shown.stderr}');
           return;
