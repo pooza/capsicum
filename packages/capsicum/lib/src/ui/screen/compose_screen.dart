@@ -49,6 +49,7 @@ import '../util/drive_description_sync.dart';
 import '../util/hashtag_body.dart';
 import '../util/image_crop_geometry.dart';
 import '../util/livecure_snackbar.dart';
+import '../util/pop_or_go.dart';
 import '../util/post_scope_display.dart';
 import '../util/program_schedule_display.dart';
 import '../util/provider_scope_carrier.dart';
@@ -2946,13 +2947,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// ⚠ `go('/home')` で畳まない。デッキから開いた投稿フォームなら /deck ごと
   /// 消えてタブ表示に落ちる (#1319)。入力中の本文は離脱時保存 (#966) が拾う。
   /// 投稿フォームは投稿していないので、開いた側へは何も返さない。
-  void _closeAfterAnnictPosted() {
-    if (context.canPop()) {
-      context.pop();
-    } else {
-      context.go('/home');
-    }
-  }
+  void _closeAfterAnnictPosted() => popOrGo(context, '/home');
 
   /// ナウプレ挿入 (#466)。優先順位リゾルバで現在再生中の曲を取得し、本文末尾に
   /// 整形テキストを挿入する。取れなければ SnackBar で知らせる。

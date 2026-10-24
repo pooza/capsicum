@@ -74,16 +74,12 @@ void main() {
 
     test('逃げ道として書いた go は、実物の書き方で認められている', () {
       // ⚠ これが崩れたら、判定が実物の書き方から外れている（逃げ道まで
-      // 違反扱いになるか、`go` を拾えていない）。
-      for (final path in [
-        'lib/src/ui/screen/annict_record_screen.dart',
-        'lib/src/ui/screen/chat_room_timeline_screen.dart',
-        'lib/src/ui/screen/compose_screen.dart',
-      ]) {
-        final masked = maskComments(File(path).readAsStringSync());
-        expect(goCall.hasMatch(masked), isTrue, reason: '$path に go が無い');
-        expect(offendersIn(masked), isEmpty, reason: path);
-      }
+      // 違反扱いになるか、`go` を拾えていない）。逃げ道は popOrGo の 1 本に
+      // 寄せてある (#1332)。
+      const path = 'lib/src/ui/util/pop_or_go.dart';
+      final masked = maskComments(File(path).readAsStringSync());
+      expect(goCall.hasMatch(masked), isTrue, reason: '$path に go が無い');
+      expect(offendersIn(masked), isEmpty, reason: path);
     });
 
     test('対象外の指定は実在し、実際に当たるものだけ（古い除外を残さない）', () {
