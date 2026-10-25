@@ -53,7 +53,8 @@ class DesktopMenuBar extends ConsumerWidget {
       WidgetsBinding.instance.addPostFrameCallback(
         (_) => IosMenuBridge.publish(model),
       );
-      return child;
+      // shell が消えたら（ログイン画面へ移るなど）メニューを空にする。
+      return IosMenuLifetime(child: child);
     }
     if (Platform.isMacOS) return renderMacMenuBar(model, child);
     return renderInWindowMenuBar(model, child); // Windows / Linux

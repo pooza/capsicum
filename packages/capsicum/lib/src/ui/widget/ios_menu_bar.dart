@@ -1,7 +1,7 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 
 import 'desktop_menu_model.dart';
 
@@ -27,6 +27,33 @@ class IosMenuBridge {
   static Map<int, VoidCallback> _callbacks = const {};
   static bool _listening = false;
 
+  /// メニューバーを持っている shell の数（[IosMenuLifetime]）。
+  static int _owners = 0;
+
+  /// shell がメニューバーを持ち始めた。
+  static void attach() => _owners++;
+
+  /// shell が消えた。最後の 1 つなら、ネイティブのメニューとコールバックの
+  /// 表を空にする。
+  ///
+  /// ⚠⚠ **ネイティブのメニューはウィジェットと一緒に消えない**（PR #1333 の
+  /// Codex P2）。最後のアカウントを削除するとログイン画面（shell の外）へ
+  /// 移るが、空にしないと「設定」「新規投稿」などが残り、選ぶと捨てられた
+  /// shell の context を使って失敗する。
+  static void detach() {
+    if (_owners > 0) _owners--;
+    if (_owners > 0) return;
+    _callbacks = const {};
+    _publishedShape = null;
+    _generation++;
+    _channel
+        .invokeMethod<void>('setMenus', {
+          'generation': _generation,
+          'menus': const <Object>[],
+        })
+        .catchError((Object _) {});
+  }
+
   /// [model] を送る。
   ///
   /// ⚠⚠ **比べるのは構造（文言・キー・有効か）だけ。**メニューの項目は build の
@@ -38,6 +65,8 @@ class IosMenuBridge {
   /// から届いた選択は、世代が違うので捨てる（id は位置の連番なので、項目が
   /// 増減すると別の操作を指す・#1332 のレビュー）。
   static void publish(List<MenuSubmenuEntry> model) {
+    // shell が消えた後に、フレームの後の予約が届くことがある。
+    if (_owners == 0) return;
     if (!_listening) {
       _listening = true;
       _channel.setMethodCallHandler(_handle);
@@ -162,4 +191,32 @@ String? iosKeyInput(LogicalKeyboardKey key) {
   final label = key.keyLabel;
   if (label.length != 1) return null;
   return label.toLowerCase();
+}
+
+/// iPad のメニューバーを、認証後の shell（[child] を包む `DesktopMenuBar`）の
+/// 寿命に結びつける (#1268・PR #1333 の Codex P2)。
+class IosMenuLifetime extends StatefulWidget {
+  const IosMenuLifetime({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  State<IosMenuLifetime> createState() => _IosMenuLifetimeState();
+}
+
+class _IosMenuLifetimeState extends State<IosMenuLifetime> {
+  @override
+  void initState() {
+    super.initState();
+    IosMenuBridge.attach();
+  }
+
+  @override
+  void dispose() {
+    IosMenuBridge.detach();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }

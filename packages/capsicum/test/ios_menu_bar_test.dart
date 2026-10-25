@@ -147,8 +147,12 @@ void main() {
         }
         return null;
       });
+      IosMenuBridge.attach();
     });
-    tearDown(() => messenger.setMockMethodCallHandler(channel, null));
+    tearDown(() {
+      IosMenuBridge.detach();
+      messenger.setMockMethodCallHandler(channel, null);
+    });
 
     List<MenuSubmenuEntry> model(String label, VoidCallback onSelected) => [
       MenuSubmenuEntry(
@@ -176,6 +180,25 @@ void main() {
       expect(sent, hasLength(1), reason: '構造が同じなら送らない');
       await select(sent.single['generation']! as int, 1);
       expect(calls, ['new'], reason: '選択は差し替えた新しいコールバックに届く');
+    });
+
+    test('⚠⚠ shell が消えたら、空のメニューを送り、残っていた選択も捨てる（PR #1333 の Codex P2）', () async {
+      final calls = <String>[];
+      IosMenuBridge.publish(model('設定', () => calls.add('settings')));
+      await Future<void>.delayed(Duration.zero);
+      final before = sent.last['generation']! as int;
+
+      IosMenuBridge.detach(); // ログイン画面へ移った
+      await Future<void>.delayed(Duration.zero);
+      expect(sent.last['menus'], isEmpty);
+
+      await select(before, 1); // 残っていたメニューから
+      // shell の外で build が終わった後の予約が届いても、送らない。
+      IosMenuBridge.publish(model('設定', () => calls.add('late')));
+      await Future<void>.delayed(Duration.zero);
+      expect(calls, isEmpty);
+      expect(sent.last['menus'], isEmpty);
+      IosMenuBridge.attach(); // tearDown の detach と釣り合わせる
     });
 
     test('⚠⚠ 古い世代のメニューから届いた選択は捨てる', () async {
