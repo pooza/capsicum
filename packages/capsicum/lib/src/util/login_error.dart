@@ -179,9 +179,17 @@ bool serverProbeFailureIsEvent(ServerProbeFailureKind kind) => switch (kind) {
 /// ⚠⚠ **入力欄はアカウントの識別子の形（`user@example.social`）でも打たれる。**
 /// イベントの `beforeSend` はタグを伏せないので、`@` までを落としてサーバー名
 /// だけにする。
+///
+/// ⚠ プロフィールの URL（`https://example.social/@user`）や、サーバー名を付け
+/// 忘れた `@user` も打たれる。スキームとパスを落としてから `@` の後ろを取り、
+/// サーバー名の形（`.` を含む）でなければ `<invalid>` にする。
 String serverProbeHostTag(String input) {
-  final at = input.lastIndexOf('@');
-  return at < 0 ? input : input.substring(at + 1);
+  var host = input.replaceFirst(RegExp(r'^[a-zA-Z][a-zA-Z0-9+.-]*://'), '');
+  final slash = host.indexOf('/');
+  if (slash >= 0) host = host.substring(0, slash);
+  final at = host.lastIndexOf('@');
+  if (at >= 0) host = host.substring(at + 1);
+  return host.contains('.') ? host : '<invalid>';
 }
 
 const ServerProbeFailureInfo _probeTls = (

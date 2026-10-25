@@ -330,6 +330,13 @@ void main() {
       expect(serverProbeHostTag('user@example.social'), 'example.social');
       expect(serverProbeHostTag('@user@example.social'), 'example.social');
       expect(serverProbeHostTag('example.social'), 'example.social');
+      // プロフィールの URL を貼った・サーバー名を付け忘れた（#1332 のレビュー）。
+      expect(
+        serverProbeHostTag('https://example.social/@user'),
+        'example.social',
+      );
+      expect(serverProbeHostTag('@user'), '<invalid>');
+      expect(serverProbeHostTag('user'), '<invalid>');
     });
   });
 }
