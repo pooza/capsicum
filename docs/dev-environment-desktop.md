@@ -2,7 +2,7 @@
 
 v1.24 以降のデスクトップ向け作業（[#423](https://github.com/pooza/capsicum/issues/423) / [#424](https://github.com/pooza/capsicum/issues/424) / [#425](https://github.com/pooza/capsicum/issues/425)）専用。Apple / Google Play 関連のシークレットや署名鍵は持ち込まない。
 
-⚠ **開発のメインは macOS。**Flutter SDK の版・Xcode・`flutter run` の手順・**コマンドの書き方**・Claude Code の権限設定は [dev-environment.md](dev-environment.md) が正本で、この 2 機でも同じルールが効く。ここには**その 2 機でしか要らないこと**だけ置く。
+⚠ **開発のメインは macOS。**Flutter SDK の版・Xcode・`flutter run` の手順は [dev-environment.md](dev-environment.md)、**コマンドの書き方**・Claude Code の権限設定は [dev-environment-claude-code.md](dev-environment-claude-code.md) が正本で、この 2 機でも同じルールが効く。ここには**その 2 機でしか要らないこと**だけ置く。
 
 ## その端末で拾う作業の探し方
 
