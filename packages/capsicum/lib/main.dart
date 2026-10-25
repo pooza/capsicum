@@ -990,6 +990,14 @@ void _routeToNotificationsTab(
   final route = ticket ?? NotificationRouteTicket.issue();
   // 後から別の通知がタップされていたら、この経路は捨てる (#1332)。
   if (!route.isCurrent) return;
+  // ⚠⚠ 上限は、待ち直しの分岐だけでなく遷移の前でも見る。描画が止まっている
+  // 間（裏へ回した・画面を消した）は再スケジュールが保留され、戻った最初の
+  // フレームでは復元が済んでいて待ち直しを通らない。ここで見ないと、何分も
+  // 後で開いていた画面を置き換える。
+  if (notificationRouteExpired(attempt: attempt, elapsed: route.elapsed)) {
+    _giveUpNotificationRoute(accountString, attempt, route);
+    return;
+  }
 
   final context = rootNavigatorKey.currentContext;
   if (context == null) {
@@ -1123,35 +1131,7 @@ void _rescheduleNotificationRoute(
   // 後のタップに置き換わった経路は、諦めた記録も残さず黙って捨てる。
   if (!route.isCurrent) return;
   if (notificationRouteExpired(attempt: attempt, elapsed: route.elapsed)) {
-    _logDev(
-      'capsicum: notification: routing gave up after $attempt frames '
-      '/ ${route.elapsed.inSeconds}s',
-    );
-    // 60 秒空振りは UX バグ (タップで該当画面に遷移しない) だが debugPrint
-    // のみで Sentry に上がらず発生頻度・条件が掴めなかった (#513)。
-    // payload (= username@host) は #500 の方針に揃えて host + user_hash の
-    // 2 タグに分離し、生 username を Sentry に出さない。
-    Sentry.captureMessage(
-      'notification.routing.gave_up',
-      level: SentryLevel.warning,
-      withScope: (scope) {
-        if (accountString == null) {
-          scope.setTag('payload', '<null>');
-        } else {
-          final atIdx = accountString.indexOf('@');
-          if (atIdx > 0 && atIdx < accountString.length - 1) {
-            final username = accountString.substring(0, atIdx);
-            final host = accountString.substring(atIdx + 1);
-            scope.setTag('payload.host', host);
-            scope.setTag('payload.user_hash', hashForSentryTag(username));
-          } else {
-            scope.setTag('payload', '<malformed>');
-          }
-        }
-        scope.setTag('attempts', attempt.toString());
-        scope.setTag('elapsed_s', route.elapsed.inSeconds.toString());
-      },
-    );
+    _giveUpNotificationRoute(accountString, attempt, route);
     return;
   }
   WidgetsBinding.instance.addPostFrameCallback(
@@ -1160,6 +1140,43 @@ void _rescheduleNotificationRoute(
       attempt: attempt + 1,
       ticket: route,
     ),
+  );
+}
+
+/// 通知タップの経路を諦める（上限を超えた）。
+void _giveUpNotificationRoute(
+  String? accountString,
+  int attempt,
+  NotificationRouteTicket route,
+) {
+  _logDev(
+    'capsicum: notification: routing gave up after $attempt frames '
+    '/ ${route.elapsed.inSeconds}s',
+  );
+  // 60 秒空振りは UX バグ (タップで該当画面に遷移しない) だが debugPrint
+  // のみで Sentry に上がらず発生頻度・条件が掴めなかった (#513)。
+  // payload (= username@host) は #500 の方針に揃えて host + user_hash の
+  // 2 タグに分離し、生 username を Sentry に出さない。
+  Sentry.captureMessage(
+    'notification.routing.gave_up',
+    level: SentryLevel.warning,
+    withScope: (scope) {
+      if (accountString == null) {
+        scope.setTag('payload', '<null>');
+      } else {
+        final atIdx = accountString.indexOf('@');
+        if (atIdx > 0 && atIdx < accountString.length - 1) {
+          final username = accountString.substring(0, atIdx);
+          final host = accountString.substring(atIdx + 1);
+          scope.setTag('payload.host', host);
+          scope.setTag('payload.user_hash', hashForSentryTag(username));
+        } else {
+          scope.setTag('payload', '<malformed>');
+        }
+      }
+      scope.setTag('attempts', attempt.toString());
+      scope.setTag('elapsed_s', route.elapsed.inSeconds.toString());
+    },
   );
 }
 

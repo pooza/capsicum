@@ -63,6 +63,33 @@ void main() {
     });
   });
 
+  group('NotificationRouteTicket の経過時間', () {
+    test('⚠⚠ 端末のスリープ中（単調時計が止まる間）も壁時計で数える', () {
+      var now = DateTime(2026, 10, 25, 9);
+      final ticket = NotificationRouteTicket.issue(now: () => now);
+      // 画面を消して 2 時間後に戻った。Stopwatch はほとんど進んでいない。
+      now = now.add(const Duration(hours: 2));
+
+      expect(ticket.elapsed, greaterThanOrEqualTo(const Duration(hours: 2)));
+      expect(
+        notificationRouteExpired(attempt: 1, elapsed: ticket.elapsed),
+        isTrue,
+      );
+    });
+
+    test('壁時計が戻されても、単調時計の経過は失わない', () async {
+      var now = DateTime(2026, 10, 25, 9);
+      final ticket = NotificationRouteTicket.issue(now: () => now);
+      now = now.subtract(const Duration(hours: 1));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(
+        ticket.elapsed,
+        greaterThanOrEqualTo(const Duration(milliseconds: 10)),
+      );
+    });
+  });
+
   group('NotificationRouteTicket', () {
     test('⚠⚠ 新しいタップが来たら、前の経路は最新でなくなる', () {
       final first = NotificationRouteTicket.issue();

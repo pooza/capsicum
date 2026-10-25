@@ -41,22 +41,46 @@ bool notificationRecoveryStillWaiting(Duration elapsed) =>
 /// していた。[NotificationRouteTicket.issue] で世代を進め、待ちの再開のたびに
 /// [isCurrent] を見る。
 class NotificationRouteTicket {
-  NotificationRouteTicket._(this.generation, this._stopwatch);
+  NotificationRouteTicket._(
+    this.generation,
+    this._stopwatch,
+    this._startedAt,
+    this._now,
+  );
 
   static int _latest = 0;
 
   /// 新しいタップの経路を始める（それより前の経路は [isCurrent] が偽になる）。
-  factory NotificationRouteTicket.issue() =>
-      NotificationRouteTicket._(++_latest, Stopwatch()..start());
+  ///
+  /// [now] はテストの差し替え口。
+  factory NotificationRouteTicket.issue({DateTime Function()? now}) {
+    final clock = now ?? DateTime.now;
+    return NotificationRouteTicket._(
+      ++_latest,
+      Stopwatch()..start(),
+      clock(),
+      clock,
+    );
+  }
 
   final int generation;
   final Stopwatch _stopwatch;
+  final DateTime _startedAt;
+  final DateTime Function() _now;
 
   /// 最新のタップの経路か。
   bool get isCurrent => generation == _latest;
 
   /// タップからの経過時間。
-  Duration get elapsed => _stopwatch.elapsed;
+  ///
+  /// ⚠⚠ **端末のスリープ中も数える。**[Stopwatch] は単調時計なので、画面を
+  /// 消している間は進まない。壁時計の経過と大きいほうを取る（壁時計は手で
+  /// 戻されうるので、それだけには頼らない）。
+  Duration get elapsed {
+    final wall = _now().difference(_startedAt);
+    final mono = _stopwatch.elapsed;
+    return wall > mono ? wall : mono;
+  }
 
   Duration? _recoveryStartedAt;
 
