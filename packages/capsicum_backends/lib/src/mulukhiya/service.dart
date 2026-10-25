@@ -840,10 +840,19 @@ class MulukhiyaService {
   /// Search Annict works by keyword.
   /// Returns an empty list if Annict is not enabled or the user is not
   /// authenticated with Annict.
-  Future<List<AnnictWork>> searchWorks({String? keyword}) async {
+  ///
+  /// ⚠ [snsToken] を Bearer で送る (#1338)。Annict の API 利用規約（2026-11-25
+  /// 施行・第 6 条）に合わせて、モロヘイヤがこの口に SNS の認証をかける
+  /// （mulukhiya-toot-proxy#4865）。認証をかける前のモロヘイヤでも、送って
+  /// 困ることはない。
+  Future<List<AnnictWork>> searchWorks({
+    required String snsToken,
+    String? keyword,
+  }) async {
     final response = await _dio.get(
       '$baseUrl/program/works',
       queryParameters: {'q': ?keyword},
+      options: _bearerOptions(snsToken),
     );
     final data = response.data;
     if (data is! List) return [];
@@ -925,8 +934,16 @@ class MulukhiyaService {
   }
 
   /// Fetch episodes for a given Annict work ID.
-  Future<List<AnnictEpisode>> getEpisodes(int workId) async {
-    final response = await _dio.get('$baseUrl/program/works/$workId/episodes');
+  ///
+  /// ⚠ [snsToken] を Bearer で送る（[searchWorks] と同じ理由・#1338）。
+  Future<List<AnnictEpisode>> getEpisodes(
+    int workId, {
+    required String snsToken,
+  }) async {
+    final response = await _dio.get(
+      '$baseUrl/program/works/$workId/episodes',
+      options: _bearerOptions(snsToken),
+    );
     final data = response.data;
     if (data is! List) return [];
     return data
