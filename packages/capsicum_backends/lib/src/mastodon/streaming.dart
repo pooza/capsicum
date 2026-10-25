@@ -4,7 +4,6 @@ import 'dart:math';
 
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:fediverse_objects/fediverse_objects.dart';
-
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../reconnecting_socket.dart';

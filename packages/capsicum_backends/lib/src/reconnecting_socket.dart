@@ -14,7 +14,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 ///
 /// 載っているのは 4 本: 通知（`NotificationStreamingBase`）・チャット
 /// （`MisskeyChatStreamingBase`）・タイムライン（`MastodonStreaming` /
-/// `MisskeyStreaming`・#1265）。⚠ タイムラインの 2 本は v2.6 まで自前の再接続の
+/// `MisskeyStreaming`・#1265）。⚠ タイムラインの 2 本は v2.5 まで自前の再接続の
 /// ままで、握手の上限が無く（宙づりになると起動し直すまで更新が来ない）、1 回の
 /// 失敗を最大 3 回数えていた。
 ///

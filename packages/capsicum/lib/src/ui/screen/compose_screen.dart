@@ -4598,7 +4598,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           label: 'ナウプレを挿入',
           icon: Icons.music_note,
           // 投稿フォームの中のショートカット (#1300)。⚠ アプリのメニューの
-          // 「ナウプレで新規投稿」（⇧N）とは別のキーにする —— 投稿フォームを
+          // 「ナウプレで新規投稿」（⇧⌘N / Ctrl+Shift+N）とは別のキーにする —— 投稿フォームを
           // 開いている間もアプリのメニューは残っている。
           shortcut: const MenuShortcut(LogicalKeyboardKey.keyP, shift: true),
           globalShortcut: true,

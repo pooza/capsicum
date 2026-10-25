@@ -89,15 +89,6 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
   /// 間の数 ([mountedDeckCountProvider]) を戻す口を initState で掴んでおく。
   late final ProviderContainer _root;
 
-  /// 開いている数を [delta] だけ動かす (#1099)。
-  ///
-  /// ⚠⚠ **フレームの後で行う。**initState / dispose の最中に provider を書き換え
-  /// ると Riverpod が assert で落とす（「Tried to modify a provider while the
-  /// widget tree was building」）。
-  ///
-  /// ⚠ **`mounted` で握り潰さない。**開いた直後に閉じた場合でも、増やす側が
-  /// 飛んで減らす側だけが走ると数が負に振り切れる。予約の順は保たれるので、
-  /// 対称に投げておけば辻褄が合う。
   /// 開いている数に入っているか。[_leaveMountedDecks] を 2 回走らせないための印。
   bool _countedAsMounted = false;
 
@@ -116,6 +107,15 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
   /// route の pop を見張り始めたか。
   bool _watchingRoutePop = false;
 
+  /// 開いている数を [delta] だけ動かす (#1099)。
+  ///
+  /// ⚠⚠ **フレームの後で行う。**initState / dispose の最中に provider を書き換え
+  /// ると Riverpod が assert で落とす（「Tried to modify a provider while the
+  /// widget tree was building」）。
+  ///
+  /// ⚠ **`mounted` で握り潰さない。**開いた直後に閉じた場合でも、増やす側が
+  /// 飛んで減らす側だけが走ると数が負に振り切れる。予約の順は保たれるので、
+  /// 対称に投げておけば辻褄が合う。
   void _shiftMountedDecks(int delta) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       try {
