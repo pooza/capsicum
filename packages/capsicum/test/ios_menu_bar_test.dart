@@ -132,6 +132,68 @@ void main() {
     });
   });
 
+  group('IosMenuBridge（#1332 のレビュー）', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    const channel = MethodChannel('capsicum/menu_bar');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    late List<Map<Object?, Object?>> sent;
+
+    setUp(() {
+      sent = [];
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        if (call.method == 'setMenus') {
+          sent.add(call.arguments as Map<Object?, Object?>);
+        }
+        return null;
+      });
+    });
+    tearDown(() => messenger.setMockMethodCallHandler(channel, null));
+
+    List<MenuSubmenuEntry> model(String label, VoidCallback onSelected) => [
+      MenuSubmenuEntry(
+        label: '移動',
+        children: [MenuActionEntry(label: label, onSelected: onSelected)],
+      ),
+    ];
+
+    Future<void> select(int generation, int id) =>
+        messenger.handlePlatformMessage(
+          channel.name,
+          const StandardMethodCodec().encodeMethodCall(
+            MethodCall('menuSelected', {'generation': generation, 'id': id}),
+          ),
+          (_) {},
+        );
+
+    test('⚠⚠ 構造が同じなら送り直さず、コールバックだけ差し替える', () async {
+      final calls = <String>[];
+      IosMenuBridge.publish(model('新規投稿', () => calls.add('old')));
+      // build のたびに作り直されたラムダ（項目の == では別物）。
+      IosMenuBridge.publish(model('新規投稿', () => calls.add('new')));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(sent, hasLength(1), reason: '構造が同じなら送らない');
+      await select(sent.single['generation']! as int, 1);
+      expect(calls, ['new'], reason: '選択は差し替えた新しいコールバックに届く');
+    });
+
+    test('⚠⚠ 古い世代のメニューから届いた選択は捨てる', () async {
+      final calls = <String>[];
+      IosMenuBridge.publish(model('A', () => calls.add('A')));
+      await Future<void>.delayed(Duration.zero);
+      final first = sent.last['generation']! as int;
+      IosMenuBridge.publish(model('B', () => calls.add('B')));
+      await Future<void>.delayed(Duration.zero);
+      final second = sent.last['generation']! as int;
+      expect(second, greaterThan(first));
+
+      await select(first, 1); // 組み直す前の古いメニューから
+      await select(second, 1);
+      expect(calls, ['B']);
+    });
+  });
+
   test('キーの文字は小文字の 1 文字（記号もそのまま）', () {
     expect(iosKeyInput(LogicalKeyboardKey.keyN), 'n');
     expect(iosKeyInput(LogicalKeyboardKey.comma), ',');

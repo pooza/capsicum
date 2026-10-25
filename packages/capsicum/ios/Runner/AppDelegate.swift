@@ -177,6 +177,7 @@ final class MenuBarPlugin: NSObject {
 
   private var channel: FlutterMethodChannel?
   private var menus: [[String: Any]] = []
+  private var generation = 0
 
   func register(with registrar: FlutterPluginRegistrar) {
     let channel = FlutterMethodChannel(
@@ -189,15 +190,24 @@ final class MenuBarPlugin: NSObject {
         result(FlutterMethodNotImplemented)
         return
       }
-      self?.menus = call.arguments as? [[String: Any]] ?? []
+      let args = call.arguments as? [String: Any]
+      self?.menus = args?["menus"] as? [[String: Any]] ?? []
+      self?.generation = args?["generation"] as? Int ?? 0
       UIMenuSystem.main.setNeedsRebuild()
       result(nil)
     }
   }
 
+  /// 選ばれた項目を、組んだときの世代と一緒に返す。⚠ Dart は世代が違う選択を
+  /// 捨てる（組み直す前の古いメニューから届くと、id が別の項目を指しうる）。
   func select(_ propertyList: Any?) {
-    guard let id = propertyList as? Int else { return }
-    channel?.invokeMethod("menuSelected", arguments: id)
+    guard let item = propertyList as? [String: Int],
+      let id = item["id"], let generation = item["generation"]
+    else { return }
+    channel?.invokeMethod(
+      "menuSelected",
+      arguments: ["generation": generation, "id": id]
+    )
   }
 
   func build(with builder: UIMenuBuilder) {
@@ -284,7 +294,9 @@ final class MenuBarPlugin: NSObject {
 
   private func makeCommand(_ item: [String: Any], usedKeys: inout Set<String>) -> UICommand {
     let title = item["title"] as? String ?? ""
-    let id = item["id"] as? Int ?? 0
+    let property: [String: Int] = [
+      "generation": generation, "id": item["id"] as? Int ?? 0,
+    ]
     let action = #selector(AppDelegate.capsicumMenuSelected(_:))
     let command: UICommand
     if let input = item["input"] as? String, !input.isEmpty {
@@ -296,13 +308,13 @@ final class MenuBarPlugin: NSObject {
           action: action,
           input: input,
           modifierFlags: flags,
-          propertyList: id
+          propertyList: property
         )
       } else {
-        command = UICommand(title: title, action: action, propertyList: id)
+        command = UICommand(title: title, action: action, propertyList: property)
       }
     } else {
-      command = UICommand(title: title, action: action, propertyList: id)
+      command = UICommand(title: title, action: action, propertyList: property)
     }
     if item["enabled"] as? Bool == false { command.attributes = .disabled }
     if item["checked"] as? Bool == true { command.state = .on }

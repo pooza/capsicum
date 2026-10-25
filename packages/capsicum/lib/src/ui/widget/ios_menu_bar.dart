@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
@@ -20,31 +22,49 @@ class IosMenuBridge {
 
   static const _channel = MethodChannel('capsicum/menu_bar');
 
-  static List<MenuSubmenuEntry>? _published;
+  static String? _publishedShape;
+  static int _generation = 0;
   static Map<int, VoidCallback> _callbacks = const {};
   static bool _listening = false;
 
-  /// [model] を送る。前回と同じ中身なら送らない（画面は打鍵のたびに作り直さ
-  /// れるので、比べずに送るとメニューを毎回組み直すことになる）。
+  /// [model] を送る。
+  ///
+  /// ⚠⚠ **比べるのは構造（文言・キー・有効か）だけ。**メニューの項目は build の
+  /// たびに作り直されたラムダを持つので、項目の `==` で比べると毎回違って見え、
+  /// 打鍵のたびにメニューを組み直すことになる。構造が同じなら id は同じ項目を
+  /// 指すので、コールバックの表だけを差し替えて送らない。
+  ///
+  /// ⚠ 構造が変わったら世代を進めて送る。ネイティブが組み直す前に古いメニュー
+  /// から届いた選択は、世代が違うので捨てる（id は位置の連番なので、項目が
+  /// 増減すると別の操作を指す・#1332 のレビュー）。
   static void publish(List<MenuSubmenuEntry> model) {
-    final published = _published;
-    if (published != null && sameMenuEntries(published, model)) return;
-    _published = model;
     if (!_listening) {
       _listening = true;
       _channel.setMethodCallHandler(_handle);
     }
     final callbacks = <int, VoidCallback>{};
-    final payload = iosMenuPayload(model, callbacks);
+    final menus = iosMenuPayload(model, callbacks);
     _callbacks = callbacks;
-    _channel.invokeMethod<void>('setMenus', payload).catchError((Object _) {
-      // メニューバーが無い（古い OS・テスト）ときは黙って捨てる。
-    });
+    final shape = jsonEncode(menus);
+    if (shape == _publishedShape) return;
+    _publishedShape = shape;
+    _generation++;
+    _channel
+        .invokeMethod<void>('setMenus', {
+          'generation': _generation,
+          'menus': menus,
+        })
+        .catchError((Object _) {
+          // メニューバーが無い（古い OS・テスト）ときは黙って捨てる。
+        });
   }
 
   static Future<void> _handle(MethodCall call) async {
     if (call.method != 'menuSelected') return;
-    final id = call.arguments;
+    final args = call.arguments;
+    if (args is! Map) return;
+    if (args['generation'] != _generation) return;
+    final id = args['id'];
     if (id is int) _callbacks[id]?.call();
   }
 }
@@ -92,11 +112,14 @@ List<Map<String, Object?>> iosMenuPayload(
   List<MenuSubmenuEntry> model,
   Map<int, VoidCallback> callbacks,
 ) {
+  // ⚠ 無効な項目（表に積まない）にも番号を振る。表の大きさで数えると、無効な
+  // 項目と次の項目が同じ id になる。
+  var nextId = 0;
   Map<String, Object?>? item(MenuEntry e) {
     switch (e) {
       case MenuActionEntry():
         final onSelected = e.onSelected;
-        final id = callbacks.length + 1;
+        final id = ++nextId;
         if (onSelected != null) callbacks[id] = onSelected;
         final shortcut = e.shortcut;
         return {
