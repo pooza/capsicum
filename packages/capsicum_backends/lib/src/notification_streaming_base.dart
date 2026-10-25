@@ -79,7 +79,7 @@ abstract class NotificationStreamingBase {
     _socket = ReconnectingSocket(
       buildUri: buildStreamUri,
       onMessage: _onMessage,
-      subscribeMessage: buildSubscribeMessage,
+      subscribeMessages: () => [?buildSubscribeMessage()],
       delayFor: reconnectDelayFor,
       onStreamError: onStreamError,
       onReconnectExhausted: onReconnectExhausted,

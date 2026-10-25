@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/dart_source.dart';
+import 'support/git_show.dart';
 import 'support/source_files.dart';
 
 /// #1319: 画面の積み重ねを丸ごと置き換える `go(...)` は、デッキを消す。
@@ -73,16 +74,12 @@ void main() {
 
     test('逃げ道として書いた go は、実物の書き方で認められている', () {
       // ⚠ これが崩れたら、判定が実物の書き方から外れている（逃げ道まで
-      // 違反扱いになるか、`go` を拾えていない）。
-      for (final path in [
-        'lib/src/ui/screen/annict_record_screen.dart',
-        'lib/src/ui/screen/chat_room_timeline_screen.dart',
-        'lib/src/ui/screen/compose_screen.dart',
-      ]) {
-        final masked = maskComments(File(path).readAsStringSync());
-        expect(goCall.hasMatch(masked), isTrue, reason: '$path に go が無い');
-        expect(offendersIn(masked), isEmpty, reason: path);
-      }
+      // 違反扱いになるか、`go` を拾えていない）。逃げ道は popOrGo の 1 本に
+      // 寄せてある (#1332)。
+      const path = 'lib/src/ui/util/pop_or_go.dart';
+      final masked = maskComments(File(path).readAsStringSync());
+      expect(goCall.hasMatch(masked), isTrue, reason: '$path に go が無い');
+      expect(offendersIn(masked), isEmpty, reason: path);
     });
 
     test('対象外の指定は実在し、実際に当たるものだけ（古い除外を残さない）', () {
@@ -140,10 +137,7 @@ void main() {
     // ⚠ SHA で固定する（`HEAD:` だと修正のコミット後に修正後のファイルを取り出して
     // 当たらなくなる）。`b5d6147f` = #1319 の修正の直前（v2.5 の移行）。
     String before(String path) {
-      final result = Process.runSync('git', [
-        'show',
-        'b5d6147f:packages/capsicum/$path',
-      ], workingDirectory: '../..');
+      final result = gitShow('b5d6147f:packages/capsicum/$path');
       expect(result.exitCode, 0, reason: (result.stderr as String));
       return result.stdout as String;
     }

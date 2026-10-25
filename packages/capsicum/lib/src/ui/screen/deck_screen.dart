@@ -25,6 +25,7 @@ import '../widget/deck_column_view.dart';
 import '../widget/deck_columns_sheet.dart';
 import '../widget/home_drawer.dart';
 import '../widget/livecure_filter_button.dart';
+import '../widget/server_badge.dart';
 import '../widget/simple_post_bar.dart';
 import '../widget/user_avatar.dart';
 
@@ -87,6 +88,24 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
   /// ルートのコンテナ。⚠ [dispose] の時点では `ref` が使えないので、開いている
   /// 間の数 ([mountedDeckCountProvider]) を戻す口を initState で掴んでおく。
   late final ProviderContainer _root;
+
+  /// 開いている数に入っているか。[_leaveMountedDecks] を 2 回走らせないための印。
+  bool _countedAsMounted = false;
+
+  /// 開いている数から抜ける (#1332)。
+  ///
+  /// ⚠⚠ **dispose を待たず、route が pop され始めた時点で抜ける。**閉じる
+  /// アニメーションの間（約 300ms）も DeckScreen はマウントされているので、
+  /// dispose で減らすと、その間の通知タップが消えていくデッキ宛てになる
+  /// （`_releaseUnreceivedDeckNotification` が「デッキが居る」と見て振り替えない）。
+  void _leaveMountedDecks() {
+    if (!_countedAsMounted) return;
+    _countedAsMounted = false;
+    _shiftMountedDecks(-1);
+  }
+
+  /// route の pop を見張り始めたか。
+  bool _watchingRoutePop = false;
 
   /// 開いている数を [delta] だけ動かす (#1099)。
   ///
@@ -158,6 +177,7 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
     // ⚠ 投稿・ブロックの反映先がカラム列から解決されるようになる (#1099)。
     // 閉じている間に列を読むと、片づいたはずの TL provider を起こしてしまう。
     _shiftMountedDecks(1);
+    _countedAsMounted = true;
     // 最後に開いていた側を覚える (#1239)。開き直したとき、前回の側で始める。
     unawaited(writeLastViewMode(LastViewMode.deck));
     _scrollController.addListener(_syncFocusToVisibleColumn);
@@ -165,11 +185,16 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
     // ⚠ フレームの後（provider の書き換えなので `_shiftMountedDecks` と同じ理由）。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      // 起動時の判定待ちの印は、開いている数に入ったこのフレームで下ろす
+      // (#1332)。HomeScreen が push の前に下ろすと、数に入るまでのタップが
+      // タブ表示の経路へ流れる。
+      ref.read(deckStartupPendingProvider.notifier).state = false;
       // 通知から起動してデッキで始まった回は、ここで宛先を受ける (#1295)。
       _consumePendingNotifications();
       _menuActions.state = DeckMenuActions(
         revealAndFocus: _revealAndFocus,
         openCompose: _openComposeForFocused,
+        openNowPlayingCompose: _openNowPlayingComposeForFocused,
         // ⚠ AppBar のボタンと同じ経路にする (#1229)。メニューから開いた
         // シートでも、一覧を押せばそのカラムへ送る。
         openColumnsSheet: () async {
@@ -181,8 +206,19 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_watchingRoutePop) return;
+    final route = ModalRoute.of(context);
+    if (route == null) return;
+    _watchingRoutePop = true;
+    // pop の始まりで完了する（閉じるアニメーションより前）。
+    unawaited(route.popped.then((_) => _leaveMountedDecks()));
+  }
+
+  @override
   void dispose() {
-    _shiftMountedDecks(-1);
+    _leaveMountedDecks();
     _liveScreens--;
     // タブ UI へ戻った (#1239)。⚠⚠ **アプリが前面に居るときだけ書く。**画面が
     // 捨てられるのは利用者が戻ったときだけではなく、アプリが終了へ向かうときにも
@@ -277,6 +313,9 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
   /// ⚠ provider の書き換えなので、フレームの後で呼ぶ（initState・listen から）。
   void _consumePendingNotifications() {
     if (!mounted) return;
+    // 閉じかけのデッキは受けずに残す (#1332)。開いている数からは pop の始まりで
+    // 抜けているので、通知の経路がタブ表示へ振り替える。
+    if (ModalRoute.of(context)?.isActive == false) return;
     final target = ref.read(pendingDeckNotificationsProvider);
     if (target == null) return;
     ref.read(pendingDeckNotificationsProvider.notifier).state = null;
@@ -397,7 +436,12 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
   /// ShellRoute に常駐していてルートのスコープで動くので、**別アカウントのカラムを
   /// 見ながら ⌘N を打つと現在のアカウントから投稿される**（#1149 と同じ穴）。
   /// ここでカラムのコンテナを載せてから開く。
-  void _openComposeForFocused() {
+  /// 「ナウプレで新規投稿」(#1300)。⚠ メニューの等価判定のため、テアオフで渡す
+  /// （`DeckMenuActions` は開いたときに 1 度だけ作る）。
+  void _openNowPlayingComposeForFocused() =>
+      _openComposeForFocused(insertNowPlaying: true);
+
+  void _openComposeForFocused({bool insertNowPlaying = false}) {
     final id = ref.read(deckFocusProvider).columnId;
     final column = ref
         .read(deckColumnsProvider)
@@ -417,14 +461,14 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
       '/compose',
       // ⚠ `extraWithProviderScope(context)` ではない。ここの `context` は
       // デッキ画面（ルートのスコープ）なので、それだと現在のアカウントになる。
-      extra: extraWithProviderContainer(
-        container,
-        deckComposeExtra(
+      extra: extraWithProviderContainer(container, {
+        ...deckComposeExtra(
           column,
           channels:
               container.read(followedChannelsProvider).valueOrNull ?? const [],
         ),
-      ),
+        if (insertNowPlaying) 'insertNowPlaying': true,
+      }),
     );
   }
 
@@ -978,9 +1022,21 @@ class _DeckPostBar extends ConsumerWidget {
       channelName: extra['channelName'] as String?,
       hashtags: (extra['hashtags'] as List<String>?) ?? const [],
       // 誰として投稿するかをバー自身に出す（決定済み事項 10）。
+      // ⚠ 同じアバターを複数のサーバーで使っていると、アイコンだけでは
+      // 見分けられない。右下にサーバーの favicon を重ねる (#1331)。
       leading: user == null
           ? null
-          : UserAvatar(user: user, size: 24, compact: true),
+          : Stack(
+              clipBehavior: Clip.none,
+              children: [
+                UserAvatar(user: user, size: 24, compact: true),
+                Positioned(
+                  right: -4,
+                  bottom: -4,
+                  child: ServerFavicon(host: column.account.host, size: 14),
+                ),
+              ],
+            ),
       // ⚠ `onPosted` は渡さない。デッキのカラムへの反映は楽観挿入が担う
       // （`readVisibleTimelines` が列のカラムを宛先に含める・#1099）。ここで
       // `invalidate` すると、そのカラムだけ REST で丸ごと取り直しになる。

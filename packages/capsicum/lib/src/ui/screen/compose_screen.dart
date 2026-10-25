@@ -49,6 +49,7 @@ import '../util/drive_description_sync.dart';
 import '../util/hashtag_body.dart';
 import '../util/image_crop_geometry.dart';
 import '../util/livecure_snackbar.dart';
+import '../util/pop_or_go.dart';
 import '../util/post_scope_display.dart';
 import '../util/program_schedule_display.dart';
 import '../util/provider_scope_carrier.dart';
@@ -131,6 +132,14 @@ class _MediaEntry {
 
   /// [overlaySource] に重ねたレイヤ列（先頭が最背面）(#1129)。
   List<OverlayLayerSpec> overlayLayers = const [];
+
+  /// ナウプレのジャケットとして足したときの出どころ（#1133）。それ以外は null。
+  ///
+  /// ⚠⚠ **「同じジャケットを 2 枚添付しない」は、いま並んでいる添付だけで見る**
+  /// （#1329）。以前はフォームが別に集合を持っていて、**添付を外しても印が
+  /// 残った**ので、外してから同じ曲で押し直すとジャケットが付かなかった。
+  /// 添付そのものに持たせれば、外したときに印ごと消える。
+  Uri? nowPlayingArtwork;
 
   _MediaEntry.local(XFile this.file) : driveFile = null;
 
@@ -450,6 +459,12 @@ class ComposeScreen extends ConsumerStatefulWidget {
   /// を渡す。タグの区切り・`#` の付け方は [SimplePostBar] の送信と揃える。
   final List<String> hashtags;
 
+  /// 開いたらすぐ、再生中の曲を本文へ入れる（「ナウプレで新規投稿」・#1300）。
+  ///
+  /// ⚠ 保存済みの下書きは復元しない（入れたナウプレの上に載ると、どちらが本文か
+  /// 決まらなくなる。[hashtags] の枝と同じ理由）。
+  final bool insertNowPlaying;
+
   const ComposeScreen({
     super.key,
     this.redraft,
@@ -462,6 +477,7 @@ class ComposeScreen extends ConsumerStatefulWidget {
     this.restoreDraft,
     this.template,
     this.hashtags = const [],
+    this.insertNowPlaying = false,
   });
 
   @override
@@ -1079,12 +1095,22 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     } else if (widget.template != null) {
       _applyTemplateContent(widget.template!);
       _applyAccountDefaults();
+    } else if (widget.insertNowPlaying) {
+      // 本文は下のナウプレで作る（下書きは復元しない・#1300）。
+      _applyAccountDefaults();
     } else {
       _applyAccountDefaults();
       // Fresh compose: enable draft auto-save and try to restore the
       // previously saved draft (if any).
       _draftAutoSave = true;
       _restoreDraft();
+    }
+    if (widget.insertNowPlaying) {
+      // 「ナウプレで新規投稿」(#1300)。⚠ 取得は非同期で SnackBar も出すので、
+      // フレームの後で行う。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_insertNowPlaying());
+      });
     }
     WidgetsBinding.instance.addObserver(this);
     _controller.addListener(_onTextChanged);
@@ -2938,13 +2964,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// ⚠ `go('/home')` で畳まない。デッキから開いた投稿フォームなら /deck ごと
   /// 消えてタブ表示に落ちる (#1319)。入力中の本文は離脱時保存 (#966) が拾う。
   /// 投稿フォームは投稿していないので、開いた側へは何も返さない。
-  void _closeAfterAnnictPosted() {
-    if (context.canPop()) {
-      context.pop();
-    } else {
-      context.go('/home');
-    }
-  }
+  void _closeAfterAnnictPosted() => popOrGo(context, '/home');
 
   /// ナウプレ挿入 (#466)。優先順位リゾルバで現在再生中の曲を取得し、本文末尾に
   /// 整形テキストを挿入する。取れなければ SnackBar で知らせる。
@@ -3163,9 +3183,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     );
   }
 
-  /// このフォームで既に添付したナウプレのアートワーク (#1133)。⚠ 「ナウプレを
-  /// 挿入」を続けて押したとき、同じジャケットを 2 枚添付しない。
-  final Set<Uri> _attachedNowPlayingArtwork = {};
+  /// [uri] のジャケットが、いま添付に並んでいるか (#1133)。⚠ 「ナウプレを
+  /// 挿入」を続けて押したとき、同じジャケットを 2 枚添付しない。⚠ 外した
+  /// ものは数えない（#1329・[_MediaEntry.nowPlayingArtwork]）。
+  bool _hasNowPlayingArtwork(Uri uri) =>
+      _attachments.any((entry) => entry.nowPlayingArtwork == uri);
 
   /// ナウプレのアートワーク（ジャケット画像）を添付に足す (#1133)。
   ///
@@ -3188,7 +3210,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       _noteNowPlayingArtwork(nowPlayingArtworkNoSourceOutcome(info));
       return;
     }
-    if (_attachedNowPlayingArtwork.contains(uri)) {
+    if (_hasNowPlayingArtwork(uri)) {
       _noteNowPlayingArtwork('already_attached', uri);
       return;
     }
@@ -3233,11 +3255,14 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       _noteNowPlayingArtwork('not_added', uri);
       return;
     }
-    _attachedNowPlayingArtwork.add(uri);
     _noteNowPlayingArtwork('attached', uri);
     // 読み上げに何も出ない添付にしない。⚠ 利用者が書いた ALT は上書きしない
     // （ここで足した直後の 1 枚にだけ入れる）。
-    setState(() => _attachments.last.description = nowPlayingArtworkAlt(info));
+    setState(() {
+      _attachments.last
+        ..nowPlayingArtwork = uri
+        ..description = nowPlayingArtworkAlt(info);
+    });
     _scheduleDraftSave();
   }
 
@@ -4572,6 +4597,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         MenuActionEntry(
           label: 'ナウプレを挿入',
           icon: Icons.music_note,
+          // 投稿フォームの中のショートカット (#1300)。⚠ アプリのメニューの
+          // 「ナウプレで新規投稿」（⇧⌘N / Ctrl+Shift+N）とは別のキーにする —— 投稿フォームを
+          // 開いている間もアプリのメニューは残っている。
+          shortcut: const MenuShortcut(LogicalKeyboardKey.keyP, shift: true),
+          globalShortcut: true,
           onSelected: (busy || _insertingNowPlaying) ? null : _insertNowPlaying,
         ),
       // 添付ごとのサブメニュー (#941)。`_showAttachmentMenu` はタップしたサムネの
@@ -5219,16 +5249,39 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
             }
           },
         ),
-        title: Text(
-          // ⚠ 元投稿の取得を待たずに「返信」と出す (#1113)。取得が返る前でも
-          // 返信として送られることは確定している。
-          _isReply
-              ? (_effectiveChannelName != null
-                    ? '返信：$_effectiveChannelName'
-                    : '返信')
-              : _effectiveChannelName != null
-              ? '${ref.watch(postLabelProvider)}：$_effectiveChannelName'
-              : ref.watch(postLabelProvider),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Text(
+                // ⚠ 元投稿の取得を待たずに「返信」と出す (#1113)。取得が返る前でも
+                // 返信として送られることは確定している。
+                _isReply
+                    ? (_effectiveChannelName != null
+                          ? '返信：$_effectiveChannelName'
+                          : '返信')
+                    : _effectiveChannelName != null
+                    ? '${ref.watch(postLabelProvider)}：$_effectiveChannelName'
+                    : ref.watch(postLabelProvider),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            // どのサーバーへ投稿するか (#1331)。⚠ 入力欄のヒント (#1328) は
+            // 打ち始めると消えるので、書いている間も出たままの手がかりをここに
+            // 置く。⚠ デッキでは開いたカラムのアカウント（[postTargetHint] と同じ）。
+            if (ref.watch(currentAccountProvider)?.key.host
+                case final host?) ...[
+              const SizedBox(width: 8),
+              Flexible(
+                child: ServerBadge.fromHost(
+                  host,
+                  themeColors: ref.watch(hostThemeColorProvider),
+                  showIcon: true,
+                ),
+              ),
+            ],
+          ],
         ),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [

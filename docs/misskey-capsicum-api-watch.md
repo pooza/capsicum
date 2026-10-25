@@ -139,6 +139,28 @@ daisskey（ダイスキー本番のフォーク本体）への**本番適用**�
 
 ## トリアージ履歴
 
+### 前倒し: 上流タグ `2026.10.0..2026.10.1`（2026-10-24 記録）
+
+⚠ **fork（`daisskey`）が 2026.10.1 を取り込む前の前倒し**で、上流のタグどうしで差分した（38 commits）。ダイスキー本番・ステージングは **2026.10.0+0**、きゅあすきーは **2026.9.1**（いずれも `/api/meta` で実測）。
+
+🔴 **actionable 2 件。**どちらも**本番が 2026.10.1 に上がるまでは起きない。**
+
+- [#1334](https://github.com/pooza/capsicum/issues/1334): **ローカル限定の絵文字の条件が狭まった**（misskey-dev/misskey#17406）。リアクション先がリノート / 引用なら、**リノート先の作者もローカル**であることが要る。サーバーは満たさない絵文字を ❤️ に差し替える。⚠⚠ **capsicum の `canReactWith` は上流の `check-reaction-permissions.ts` の移植**なので、上流の判定が動いたら追う。⚠ **これは ①② に 1 行も出ない**（`ReactionService` と frontend の関数の中だけの変更）—— CHANGELOG の Server 節で拾った
+- [#1335](https://github.com/pooza/capsicum/issues/1335): **`i/update` がセンシティブな画像をアイコン・バナーに指定するのを拒む**（`AVATAR_IS_SENSITIVE` / `BANNER_IS_SENSITIVE`）。capsicum は表示名などと 1 回の `i/update` で送るので、**保存全体が「保存に失敗しました」で落ちる**。アップロードは `alwaysMarkNsfw` などでサーバー側でセンシティブになりうる。⚠ これも **`types.ts` に出ない**（`errors` は autogen に載らない）
+
+**それ以外は client 影響なし。**
+
+- ① は `types.ts` の +9 だけ（`followApproval*Seconds` と `autoArchiveAt`）。endpoint の `required` / `limit` / `requireCredential` / `kind` の変化は 0 件
+- **passive**: ストリーミングのサーバーが `perMessageDeflate: false`・受信 1MiB 上限・**送信バッファが 8MiB を超えた接続を切る**ようになった。capsicum は切れたら再接続する
+- **passive**: ハッシュタグの正規化が `normalizeForSearch` から `normalizeTag` に替わった（セキュリティ修正）。中身は同じ NFKC + 小文字化で、**128 文字を超えるタグの扱いが変わっただけ**。`hashtags/*`・`notes/search-by-tag`・ストリームの `hashtag` に 128 文字の上限が付いた。デフォルトハッシュタグは当たらない
+- **passive**: 公開の `announcements` が `autoArchiveAt` を過ぎたお知らせを `isActive: true` から外すようになった（サーバー側の絞り込みだけ・packed の形は不変）
+- **none**: 未ログインで `requiredRolePolicy` の endpoint を叩いたときの判定 / ルーム招待のブロック / 禁止ワードの URL 正規化 / mfm-js 0.28 の解析の制限（サーバー側の抽出だけ・capsicum の MFM は自前）
+- **棚卸しの母数（未使用）**: 新しい利用者設定 `followApprovalLocalSeconds` / `followApprovalRemoteSeconds`（作成から日の浅いアカウントのフォローを申請扱いにする）/ ストリームの `clip` チャンネル（上流はデッキにクリップのカラムを足した）
+- ⚠ **サーバーの運用側**: Node の最低版が 22.23.4 / 24.22.1 / 26.12.1 に上がった・Sentry SDK v11 で `sendDefaultPii` が無視される（chubo2 の管轄）
+- **③ `@syuilo/aiscript` は 1.2.1 で据え置き**。Flash 互換ハーネスは本番昇格後に回す
+
+→ fork が取り込んだら、`816846dc6d..daisskey` で上流以外の差分（fork 独自のコミット）が無いかだけ確かめ、次の baseline をその SHA にする。
+
 ### baseline: `816846dc6d`（**2026.10.0**、2026-10-02 記録）
 
 `179cb2da75`（2026.9.0）..`daisskey`（2026.10.0+0）の差分トリアージ。**92 commits**。⚠ **本番昇格より前の前倒し**で、ステージング `st2.misskey.delmulin.com` が **2026.10.0+0**、**ダイスキー本番は 2026.9.1+1 / きゅあすきーは 2026.9.1 のまま**（いずれも `/api/meta` で実測）。

@@ -1,7 +1,10 @@
 import 'package:capsicum/src/model/account.dart';
 import 'package:capsicum/src/model/account_key.dart';
+import 'package:capsicum/src/platform/now_playing/now_playing_provider.dart';
+import 'package:capsicum/src/platform/now_playing/now_playing_resolver.dart';
 import 'package:capsicum/src/provider/account_manager_provider.dart';
 import 'package:capsicum/src/provider/deck_provider.dart';
+import 'package:capsicum/src/provider/platform_providers.dart';
 import 'package:capsicum/src/ui/widget/desktop_menu_model.dart';
 import 'package:capsicum/src/ui/widget/home_menu.dart';
 import 'package:capsicum/src/util/shared_preferences_cache.dart';
@@ -71,6 +74,7 @@ void main() {
     List<String> composeCalls = const [],
     List<String> revealed = const [],
     List<String> sheetOpened = const [],
+    bool nowPlayingAvailable = false,
   }) async {
     SharedPreferences.setMockInitialValues({
       'deck_columns': [
@@ -85,6 +89,9 @@ void main() {
         accountManagerProvider.overrideWith(
           () => _TestAccountNotifier([for (final u in usernames) _account(u)]),
         ),
+        nowPlayingResolverProvider.overrideWithValue(
+          NowPlayingResolver([_FakeNowPlaying(available: nowPlayingAvailable)]),
+        ),
       ],
     );
     addTearDown(container.dispose);
@@ -94,6 +101,7 @@ void main() {
       container.read(deckMenuActionsProvider.notifier).state = DeckMenuActions(
         revealAndFocus: revealed.add,
         openCompose: () => composeCalls.add('compose'),
+        openNowPlayingCompose: () => composeCalls.add('nowplaying'),
         openColumnsSheet: () => sheetOpened.add('sheet'),
       );
     }
@@ -418,9 +426,66 @@ void main() {
     });
   });
 
+  group('移動 > ナウプレで新規投稿 (⇧⌘N・#1300)', () {
+    testWidgets('取得源がこの端末で使えなければ出さない（投稿フォームの音符と同じ条件）', (tester) async {
+      final move = childrenOf(await buildModel(tester), '移動');
+
+      expect(actionNamed(move, 'ナウプレで新規投稿'), isNull);
+    });
+
+    testWidgets('使えれば出し、主修飾 + Shift + N を割り当てる', (tester) async {
+      final move = childrenOf(
+        await buildModel(tester, nowPlayingAvailable: true),
+        '移動',
+      );
+
+      final entry = actionNamed(move, 'ナウプレで新規投稿');
+      expect(entry, isNotNull);
+      expect(
+        entry!.shortcut,
+        const MenuShortcut(LogicalKeyboardKey.keyN, shift: true),
+      );
+      expect(entry.globalShortcut, isTrue);
+      expect(
+        entry.shortcut,
+        isNot(actionNamed(move, '新規投稿')!.shortcut),
+        reason: '⌘N とぶつけない',
+      );
+    });
+
+    testWidgets('⚠⚠ デッキ中はデッキ画面が登録したものを呼ぶ（カラムのアカウントで投稿する）', (tester) async {
+      final calls = <String>[];
+      final move = childrenOf(
+        await buildModel(
+          tester,
+          inDeck: true,
+          composeCalls: calls,
+          nowPlayingAvailable: true,
+        ),
+        '移動',
+      );
+
+      actionNamed(move, 'ナウプレで新規投稿')!.onSelected!();
+
+      expect(calls, ['nowplaying']);
+    });
+  });
+
   testWidgets('⚠ メニューを丸ごと隠したりはしない（capsicum / 編集が残る）', (tester) async {
     final model = await buildModel(tester, inDeck: true);
 
     expect(model.map((m) => m.label), containsAll(['capsicum', '編集', '表示']));
   });
+}
+
+class _FakeNowPlaying implements NowPlayingProvider {
+  _FakeNowPlaying({required this.available});
+
+  final bool available;
+
+  @override
+  bool get isAvailable => available;
+
+  @override
+  Future<NowPlayingInfo?> currentlyPlaying() async => null;
 }

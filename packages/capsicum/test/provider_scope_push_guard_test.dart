@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/dart_source.dart';
+import 'support/git_show.dart';
 import 'support/source_files.dart';
 
 /// #1149: 投稿フォーム（`/compose`）とメディアビューア（`/media`）へは、開く側の
@@ -165,10 +166,9 @@ void main() {
       // ⚠ SHA で固定する（`HEAD:` だと修正のコミット後に修正後のファイルを
       // 取り出して当たらなくなる）。`55081ceb` = #1149 のシート・ダイアログ対応。
       // 全画面の push はまだ素のまま。
-      final before = Process.runSync('git', [
-        'show',
+      final before = gitShow(
         '55081ceb:packages/capsicum/lib/src/ui/widget/post_tile.dart',
-      ], workingDirectory: '../..');
+      );
       expect(before.exitCode, 0, reason: (before.stderr as String));
       final offenders = offendersIn(before.stdout as String);
       expect(
@@ -181,10 +181,7 @@ void main() {
     test('修正前の compose_screen と episode_browser_screen は当たる (#1305)', () {
       // ⚠ v2.4.0 のタグで固定する（修正のコミット後も修正前を取り出せるように）。
       String at(String path) {
-        final r = Process.runSync('git', [
-          'show',
-          'v2.4.0:packages/capsicum/lib/src/ui/screen/$path',
-        ], workingDirectory: '../..');
+        final r = gitShow('v2.4.0:packages/capsicum/lib/src/ui/screen/$path');
         expect(r.exitCode, 0, reason: (r.stderr as String));
         return r.stdout as String;
       }

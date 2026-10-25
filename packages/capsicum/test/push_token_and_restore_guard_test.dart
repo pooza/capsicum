@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/dart_source.dart';
+import 'support/git_show.dart';
 
 /// #1223 / #1219: **プッシュが丸ごと死ぬ経路を無音にしない**ための不変条件。
 ///
@@ -24,10 +25,7 @@ void main() {
   String read(String path) => maskComments(File(path).readAsStringSync());
 
   String before(String path) {
-    final r = Process.runSync('git', [
-      'show',
-      '$beforeRev:packages/capsicum/$path',
-    ], workingDirectory: '../..');
+    final r = gitShow('$beforeRev:packages/capsicum/$path');
     expect(r.exitCode, 0, reason: (r.stderr as String));
     return maskComments(r.stdout as String);
   }

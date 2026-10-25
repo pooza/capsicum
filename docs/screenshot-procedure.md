@@ -72,6 +72,15 @@ tool/dev-run.sh -s -d <UDID>             # 初回だけ debug ビルドを入れ
 | iPhone | iPhone 18 Pro Max | 1320×2868（6.9 インチ） |
 | iPad | iPad Pro 13-inch (M5)・横 | 2752×2064 |
 
+⚠⚠ **App Store Connect の iPhone の枠は、2026-10 の時点で「Dynamic Island 搭載 iPhone（中型ディスプレイ）」の 1 つだけ**になっていて、受け付けるのは **1179×2556 / 1206×2622**（6.1 / 6.3 インチ）。⚠ **6.9 インチの 1320×2868 は「サイズが無効です」で弾かれる**（v2.5 の提出で踏んだ）。撮るのは 6.9 インチのままにして、貼る前に縮める（縦横比はほぼ同じで、横が 1 画素はみ出すだけ）:
+
+```sh
+sips --resampleHeight 2622 iphone-6.3/*.png
+sips --cropToHeightWidth 2622 1206 iphone-6.3/*.png
+```
+
+⚠ **画面から消えた 6.5 インチの枠も、API の上では版に残る**（v2.5 では 2026-03 の古い 4 枚が載ったままだった）。貼ったあとは `.claude/scripts/asc-status.rb screenshots` で、版に載っている枠と枚数を確かめる。⚠ 画面に無い枠の画像は App Store Connect の画面から消せないので、API（`DELETE /v1/appScreenshotSets/{id}`）で消す。
+
 ⚠ **debug ビルドで撮る**（シミュレータでは release が動かない）。画面に「debug」は出ないが、**通知のバナーにはアプリ名「capsicum (debug)」が出る**ので、プッシュ通知は iPhone の枠から外してある。
 
 ### 操作のしかた
@@ -88,6 +97,7 @@ SIM=iphone tool/screenshot/sim.sh shot s01         # 撮って縮小版の場所
 - **Xcode 27 は Simulator.app ではなく DeviceHub**（`Xcode.app/Contents/Applications/DeviceHub.app`）。窓の一覧の行は、座標のクリックでは選べない。AX で `set selected of row N of outline 1 of …` する。表示は「ウィンドウに合わせる」で拡大する
 - ⚠ **System Events の `click at` はシミュレータの画面に効かない**（-25204）。`simtap`（CGEvent）で押す
 - ⚠ **`simctl pbcopy` が効かない**（入れた直後でも空）。貼り付けは使わず、キー入力で入れる
+- ⌘ 付きのキー（iPad のメニューバーのショートカット）を端末へ送るときは、DeviceHub の Device ＞ Keyboard ＞ Keyboard Capture をオンにして `simtap key <code> cmd` で送る（#1268）。⚠ オフのままだと DeviceHub が受けてしまう。終わったらオフに戻す
 - ⚠⚠ **iOS の言語が日本語だと、Mac のキー入力がローマ字かな変換される**（Mac の入力ソースは関係ない）
   - **英字だけの欄**（ログイン・認可コード）: `sim.sh lang en` で英語にしてから打ち、終わったら `sim.sh lang ja`
   - **日本語の欄**: ja のまま、ローマ字を `type` → `key 49`（スペース）で変換 → 候補をタップするか `key 36`（Return）で第一候補を確定。`,` は「、」、`.` は「。」になる
@@ -188,6 +198,7 @@ tool/screenshot/android.sh demo off     # 撮り終えたら戻す
 
 ## 後始末
 
+- **撮った版の一式を、pooza の共有ドライブの `screenshots/<版>/` に置く**（枠ごとのフォルダ: `iphone-6.3` / `ipad` / `mac` / `windows` / `play`。⚠ iPhone は 6.3 インチだけ。App Store Connect に上がるのはこちらだけなので、撮った 6.9 インチは置かない）。撮り直さなかった枠も前の版から写して、**その版でストアに載る一式**にする（2026-10-25 pooza・v2.6 から）。具体的な場所はメモリ（端末固有の情報）
 - ⚠ **撮影用の投稿・リアクションは消さない**（2026-10-21 pooza）。利用者には「スルーするなりミュートするなりしてください」と伝えてある。`fedi.sh cleanup`（`posted.log` の投稿を消し、`reacted.log` のリアクションを外す）は、消す必要が出たときのために残してある
 - bot の印を戻す（承認を取ってから）: `fedi.sh bot <KEY> true` を 4 台
 - ⚠ ミュート・相互フォロー・表示名・アイコン・Annict の連携・Mac の Vivaldi の `@test` のログインは**残す**（次の撮影でも使う）

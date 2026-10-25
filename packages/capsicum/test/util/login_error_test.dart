@@ -311,4 +311,32 @@ void main() {
       );
     });
   });
+
+  group('接続確認の失敗の記録 (#1332)', () {
+    test('イベントにするのは TLS と不明の回だけ', () {
+      expect(serverProbeFailureIsEvent(ServerProbeFailureKind.tls), isTrue);
+      expect(serverProbeFailureIsEvent(ServerProbeFailureKind.other), isTrue);
+      expect(
+        serverProbeFailureIsEvent(ServerProbeFailureKind.hostLookup),
+        isFalse,
+      );
+      expect(
+        serverProbeFailureIsEvent(ServerProbeFailureKind.timeout),
+        isFalse,
+      );
+    });
+
+    test('⚠⚠ アカウントの識別子の形で打たれても、host にはサーバー名だけ載せる', () {
+      expect(serverProbeHostTag('user@example.social'), 'example.social');
+      expect(serverProbeHostTag('@user@example.social'), 'example.social');
+      expect(serverProbeHostTag('example.social'), 'example.social');
+      // プロフィールの URL を貼った・サーバー名を付け忘れた（#1332 のレビュー）。
+      expect(
+        serverProbeHostTag('https://example.social/@user'),
+        'example.social',
+      );
+      expect(serverProbeHostTag('@user'), '<invalid>');
+      expect(serverProbeHostTag('user'), '<invalid>');
+    });
+  });
 }

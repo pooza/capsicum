@@ -8,6 +8,10 @@ class Announcement {
   final bool isHtml;
   final List<AnnouncementReaction> reactions;
 
+  /// サーバーがこのお知らせへのリアクションを受け付けるか (#1321)。
+  /// Mastodon 5.0 で無効にできるようになった。無効のときに付け外しすると 400 になる。
+  final bool reactionsAllowed;
+
   const Announcement({
     required this.id,
     required this.content,
@@ -17,6 +21,7 @@ class Announcement {
     this.read = false,
     this.isHtml = false,
     this.reactions = const [],
+    this.reactionsAllowed = true,
   });
 
   Announcement copyWith({bool? read, List<AnnouncementReaction>? reactions}) =>
@@ -29,6 +34,7 @@ class Announcement {
         read: read ?? this.read,
         isHtml: isHtml,
         reactions: reactions ?? this.reactions,
+        reactionsAllowed: reactionsAllowed,
       );
 }
 

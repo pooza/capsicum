@@ -45,7 +45,8 @@ bool shouldStartInDeck({
 /// （`visible_timeline.dart` が `mainTimelineIsVisible` の doc で警告している穴と
 /// 同じもの）。投稿・ブロックのたびにこれが走るので、フラグで切る。
 ///
-/// 書き換えるのは `DeckScreen` の initState / dispose だけ。
+/// 書き換えるのは `DeckScreen` だけ。initState で増やし、**route の pop の
+/// 始まり**（閉じるアニメーションより前）か dispose の早いほうで減らす (#1332)。
 final mountedDeckCountProvider = StateProvider<int>((ref) => 0);
 
 /// 通知のタップで、デッキの通知カラムへ送ってほしいアカウント (#1295)。
@@ -63,7 +64,9 @@ final pendingDeckNotificationsProvider = StateProvider<AccountKey?>(
 );
 
 /// 起動時に「デッキで始めるか」の判定（[shouldStartInDeck]）がまだ済んでいないか
-/// (#1304)。**プロセスの最初は true**で、`HomeScreen` が判定を済ませたら下ろす。
+/// (#1304)。**プロセスの最初は true**。デッキで始めないと決まったら
+/// `settleDeckStartupWithoutDeck`（`HomeScreen`・共有から `/compose` へ直行する
+/// `SplashScreen`）が、デッキで始める回は開いた `DeckScreen` が下ろす (#1332)。
 ///
 /// ⚠⚠ **「前回デッキで終えた」だけで通知のタップをデッキ宛てにしない。**判定が
 /// 済んだあとは、デッキが閉じていればデッキは現れない。以前は
@@ -248,6 +251,7 @@ class DeckMenuActions {
   const DeckMenuActions({
     required this.revealAndFocus,
     required this.openCompose,
+    required this.openNowPlayingCompose,
     required this.openColumnsSheet,
   });
 
@@ -256,6 +260,9 @@ class DeckMenuActions {
 
   /// フォーカス中のカラムのアカウントで新規投稿を開く（⌘N / Ctrl+N）。
   final VoidCallback openCompose;
+
+  /// 同じく、再生中の曲を入れた新規投稿を開く（⇧⌘N / Ctrl+Shift+N・#1300）。
+  final VoidCallback openNowPlayingCompose;
 
   /// カラム編集のシートを開く（表示 > カラム > カラムを編集…）。
   final VoidCallback openColumnsSheet;

@@ -14,6 +14,7 @@ import '../util/chat_message_jump.dart';
 import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
 import '../util/op_error.dart';
+import '../util/pop_or_go.dart';
 import '../util/relative_time.dart';
 import '../util/scroll_thresholds.dart';
 import '../widget/chat_compose_row.dart';
@@ -190,13 +191,7 @@ class _ChatRoomTimelineScreenState extends ConsumerState<ChatRoomTimelineScreen>
   ///
   /// ⚠ `go('/chat')` で置き換えない。デッキから開いたルームだと /deck ごと
   /// 消えてタブ表示に落ちる (#1319)。一覧は直前の invalidate で読み直される。
-  void _closeRoom() {
-    if (context.canPop()) {
-      context.pop();
-    } else {
-      context.go('/chat');
-    }
-  }
+  void _closeRoom() => popOrGo(context, '/chat');
 
   Future<void> _confirmLeave() async {
     final ok = await showDialog<bool>(

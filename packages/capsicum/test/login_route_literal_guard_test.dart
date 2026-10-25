@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/dart_source.dart';
+import 'support/git_show.dart';
 import 'support/source_files.dart';
 
 /// #1057: `/login` へは [loginLocation] 経由でしか遷移させない。
@@ -93,10 +94,9 @@ void main() {
       // いた最後のコミットなので、動かない参照でなければ意味が無い。
       // `c80318b4` = #1057 の 1 つ前の直し方。`analyze.yml` は
       // `fetch-depth: 0` なので CI でも引ける。
-      final before = Process.runSync('git', [
-        'show',
+      final before = gitShow(
         'c80318b4:packages/capsicum/lib/src/ui/screen/server_selection_screen.dart',
-      ], workingDirectory: '../..');
+      );
       expect(before.exitCode, 0, reason: (before.stderr as String));
       final source = before.stdout as String;
       expect(

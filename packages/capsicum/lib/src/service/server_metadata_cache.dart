@@ -44,6 +44,14 @@ class ServerMetadataCache {
   final _cache = <String, _CacheEntry>{};
   final _pending = <String, Future<ServerMetadata?>>{};
 
+  /// 取得に成功してキャッシュが入れ替わるたびに増える (#1331)。
+  ///
+  /// ⚠ キャッシュを読むだけの表示（[ServerFavicon] など）は、組み立てた時点で
+  /// まだ取れていないと、後から埋まっても描き直されない。デッキの簡易投稿バーは
+  /// 起動直後に組み立てられ、アカウント管理側の先読みより先に描かれるので、
+  /// favicon が出ないまま残った（2026-10-24 に macOS で実測）。
+  final updates = ValueNotifier<int>(0);
+
   ServerMetadata? getCached(String host) {
     final entry = _cache[host];
     if (entry == null || entry.isExpired) return null;
@@ -95,6 +103,7 @@ class ServerMetadataCache {
                 await _tryPieFed(dio, host));
       _cache[host] = _CacheEntry(metadata, DateTime.now());
       _pending.remove(host);
+      if (metadata != null) updates.value++;
       return metadata;
     } catch (e) {
       debugLogException(
@@ -211,6 +220,13 @@ class ServerMetadataCache {
     final accentColor = config?['accent_color'] as String?;
     if (accentColor != null) return accentColor;
     return null;
+  }
+
+  /// 取得に成功したのと同じ状態を作る（[updates] も進める）。
+  @visibleForTesting
+  void debugPut(String host, ServerMetadata metadata) {
+    _cache[host] = _CacheEntry(metadata, DateTime.now());
+    updates.value++;
   }
 
   @visibleForTesting

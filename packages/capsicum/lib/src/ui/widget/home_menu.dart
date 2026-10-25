@@ -12,6 +12,7 @@ import '../../provider/channel_provider.dart';
 import '../../provider/deck_provider.dart';
 import '../../provider/hashtag_provider.dart';
 import '../../provider/list_provider.dart';
+import '../../provider/platform_providers.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/supporter_purchase_provider.dart';
@@ -639,6 +640,25 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
                   extra: extraWithProviderScope(context),
                 ),
         ),
+        // 投稿フォームの外から 1 回でナウプレの投稿を始める (#1300・2026-10-20
+        // pooza 判断)。取得源がこの端末で使えるときだけ出す（投稿フォームの
+        // 音符と同じ条件）。⚠ デッキ中は新規投稿と同じく、フォーカス中のカラムの
+        // アカウントで開く。
+        if (ref.watch(nowPlayingResolverProvider).hasAvailableSource)
+          MenuActionEntry(
+            label: 'ナウプレで新規投稿',
+            icon: Icons.music_note,
+            shortcut: const MenuShortcut(LogicalKeyboardKey.keyN, shift: true),
+            globalShortcut: true,
+            onSelected: inDeck && deckActions != null
+                ? deckActions.openNowPlayingCompose
+                : () => context.push(
+                    '/compose',
+                    extra: extraWithProviderScope(context, const {
+                      'insertNowPlaying': true,
+                    }),
+                  ),
+          ),
         const MenuGroupSeparator(),
         for (final item in navItems.where((i) => i.title != '設定'))
           MenuActionEntry(
@@ -666,7 +686,7 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
           // 切り替えると `go('/home')` で**デッキを抜ける**うえ、デッキは各カラムが
           // それぞれのアカウントで動くので「現在のアカウント」を替える意味も薄い
           // （替えるとコンテナの割り当てが組み替わる・決定済み事項 8）。
-          // ⚠ プロフィール・追加・ログアウトは残す。
+          // ⚠ プロフィール・追加・削除（この端末から外す・#1297）は残す。
           if (!inDeck && current != null && otherAccounts.isNotEmpty)
             const MenuGroupSeparator(),
           if (!inDeck)

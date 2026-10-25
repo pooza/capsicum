@@ -7,6 +7,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/announcement_provider.dart';
 import 'desktop_menu_model.dart';
 import 'home_menu.dart';
+import 'ios_menu_bar.dart';
 import 'screen_menu.dart';
 
 /// 認証後の全ルートを包み、デスクトップメニューバー（macOS はネイティブ・
@@ -23,8 +24,13 @@ class DesktopMenuBar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // デスクトップ以外（モバイル）はメニューバー無しで素通し。
-    if (!(Platform.isMacOS || Platform.isWindows || Platform.isLinux)) {
+    // Android はメニューバー無しで素通し。⚠ iOS は iPad のメニューバー
+    // （iPadOS 26〜）へネイティブ経由で載せる (#1268)。iPhone にはメニューバーが
+    // 無いので、送っても何も起きない。
+    if (!(Platform.isMacOS ||
+        Platform.isWindows ||
+        Platform.isLinux ||
+        Platform.isIOS)) {
       return child;
     }
     final account = ref.watch(currentAccountProvider);
@@ -42,6 +48,14 @@ class DesktopMenuBar extends ConsumerWidget {
       ),
       ref.watch(activeScreenMenuProvider),
     );
+    if (Platform.isIOS) {
+      // ⚠ 送るのはフレームの後（build の中で外へ副作用を出さない）。
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => IosMenuBridge.publish(model),
+      );
+      // shell が消えたら（ログイン画面へ移るなど）メニューを空にする。
+      return IosMenuLifetime(child: child);
+    }
     if (Platform.isMacOS) return renderMacMenuBar(model, child);
     return renderInWindowMenuBar(model, child); // Windows / Linux
   }

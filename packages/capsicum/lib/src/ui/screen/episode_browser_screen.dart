@@ -61,6 +61,7 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
     // 失敗の記録に使う (#1310)。⚠ catch の中で読まない（画面が破棄済みだと
     // StateError が元の例外を潰す・#1064）。
     final account = ref.read(currentAccountProvider);
+    if (account == null) return;
 
     setState(() {
       _loading = true;
@@ -69,7 +70,10 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
 
     try {
       final keyword = _controller.text.trim();
+      // SNS のトークンを送る (#1338・Annict の API 利用規約に合わせて
+      // モロヘイヤが認証をかける)。
       final works = await mulukhiya.searchWorks(
+        snsToken: account.userSecret.accessToken,
         keyword: keyword.isEmpty ? null : keyword,
       );
       if (mounted) setState(() => _works = works);
@@ -143,6 +147,7 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
     final mulukhiya = _mulukhiya;
     if (mulukhiya == null) return;
     final account = ref.read(currentAccountProvider);
+    if (account == null) return;
 
     setState(() {
       _selectedWork = work;
@@ -151,7 +156,10 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
     });
 
     try {
-      final episodes = await mulukhiya.getEpisodes(work.annictId);
+      final episodes = await mulukhiya.getEpisodes(
+        work.annictId,
+        snsToken: account.userSecret.accessToken,
+      );
       if (mounted) setState(() => _episodes = episodes);
     } catch (e, st) {
       debugLogException('Episode load error', e);

@@ -164,6 +164,34 @@ ServerProbeFailureInfo classifyServerProbeFailure(Object error) {
   return (kind: ServerProbeFailureKind.other, message: '接続に失敗しました');
 }
 
+/// 接続確認の失敗を Sentry のイベントにするか (#1332)。
+///
+/// ⚠ 打ち間違い（hostLookup）・圏外やサーバー停止（timeout）は利用者の側で
+/// 毎日起きるので、イベントにすると #1298 で見たかった TLS の回が埋もれる。
+/// こちらは breadcrumb だけ残す。
+bool serverProbeFailureIsEvent(ServerProbeFailureKind kind) => switch (kind) {
+  ServerProbeFailureKind.tls || ServerProbeFailureKind.other => true,
+  ServerProbeFailureKind.hostLookup || ServerProbeFailureKind.timeout => false,
+};
+
+/// 接続確認の入力欄の文字列を、Sentry の `host` に載せる形にする (#1332)。
+///
+/// ⚠⚠ **入力欄はアカウントの識別子の形（`user@example.social`）でも打たれる。**
+/// イベントの `beforeSend` はタグを伏せないので、`@` までを落としてサーバー名
+/// だけにする。
+///
+/// ⚠ プロフィールの URL（`https://example.social/@user`）や、サーバー名を付け
+/// 忘れた `@user` も打たれる。スキームとパスを落としてから `@` の後ろを取り、
+/// サーバー名の形（`.` を含む）でなければ `<invalid>` にする。
+String serverProbeHostTag(String input) {
+  var host = input.replaceFirst(RegExp(r'^[a-zA-Z][a-zA-Z0-9+.-]*://'), '');
+  final slash = host.indexOf('/');
+  if (slash >= 0) host = host.substring(0, slash);
+  final at = host.lastIndexOf('@');
+  if (at >= 0) host = host.substring(at + 1);
+  return host.contains('.') ? host : '<invalid>';
+}
+
 const ServerProbeFailureInfo _probeTls = (
   kind: ServerProbeFailureKind.tls,
   message: 'サーバーの証明書を確かめられず、接続できませんでした',

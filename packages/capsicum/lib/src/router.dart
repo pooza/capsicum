@@ -422,6 +422,8 @@ final routerProvider = Provider<GoRouter>((ref) {
                   // ハッシュタグの TL / カラムから開いた新規投稿 (#1172)。
                   hashtags:
                       (extra?['hashtags'] as List?)?.cast<String>() ?? const [],
+                  // 「ナウプレで新規投稿」(#1300)。
+                  insertNowPlaying: extra?['insertNowPlaying'] == true,
                 ),
               );
             },

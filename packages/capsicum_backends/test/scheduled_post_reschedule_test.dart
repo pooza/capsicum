@@ -170,6 +170,32 @@ void main() {
       expect(_body(update())['poll'], isNotNull, reason: '101 件目の投票を送り直す');
     });
 
+    // #1332。以前は一覧だけ `limit` 無しで 1 回叩いており、上流の既定（30 件）で
+    // 切れていた（Mastodon は全件を辿る・#1202）。
+    test('⚠ 予約の一覧も、100 件を超えたら全件を辿る', () async {
+      final all = [
+        for (var i = 0; i < 101; i++)
+          {'id': 'd${1000 - i}', 'text': '予約 $i', 'scheduledAt': 1},
+      ];
+      http = _Recorder((options) {
+        if (!options.path.contains('drafts/list')) return <String, dynamic>{};
+        final body = _body(options);
+        final untilId = body['untilId'] as String?;
+        final start = untilId == null
+            ? 0
+            : all.indexWhere((d) => d['id'] == untilId) + 1;
+        return all.skip(start).take(body['limit'] as int).toList();
+      });
+      adapter.client.dio.httpClientAdapter = http;
+
+      final posts = await (adapter as ScheduleSupport).getScheduledPosts();
+
+      expect(posts, hasLength(101));
+      final lists = http.requests.where((r) => r.path.contains('drafts/list'));
+      expect(lists.length, 2);
+      expect(_body(lists.first)['scheduled'], isTrue);
+    });
+
     test('⚠⚠ サーバーが同じページを返し続けても、辿るのをやめる (#1304)', () async {
       // untilId を無視して、毎回同じ 100 件を返すサーバー。以前は while (true)
       // で終わらなかった。

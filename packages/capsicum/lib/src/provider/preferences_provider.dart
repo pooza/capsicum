@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../model/account_key.dart';
 import '../model/deck_column.dart';
+import '../service/announcement_subscription_service.dart';
 import '../util/shared_preferences_cache.dart';
 import 'account_manager_provider.dart';
 import 'channel_provider.dart';
@@ -2530,5 +2531,5 @@ final backedUpAccountScopedProviders = <String, List<ProviderOrFamily>>{
   // お知らせのプッシュ通知を明示的に切った印 (#1317)。⚠ 読み直す provider は無い
   // —— 読むのは `AnnouncementSubscriptionService` で、使うたびに
   // SharedPreferences を引く（プッシュ通知の設定画面も開くたびに読む）。
-  'capsicum_announcement_optout_': [],
+  AnnouncementSubscriptionService.prefsKeyOptOutPrefix: [],
 };

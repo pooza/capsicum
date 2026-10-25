@@ -104,6 +104,30 @@ Xcode 27 の `lipo` は `-verify_arch` に複数アーキテクチャを渡せ�
 
 ⚠ **基準版へ追従する前に、`git -C <SDK> status` で手元の変更を確かめる。**patch が残った端末では `git checkout <基準版>` が止まるので、先に `git checkout -- packages/flutter_tools/lib/src/build_system/targets/darwin.dart` で捨てる。
 
+## Android Studio / SDK の版も pin していない（#1315）
+
+Xcode と違って勝手には動かない。Android Studio 本体は更新を通知するだけで、入れるのは手で入れたときだけ。SDK のパッケージ（`emulator` / `platform-tools` / `build-tools` / `platforms` / `cmdline-tools`）も、SDK Manager か `sdkmanager` で上げたときだけ動く。⚠ **ただし Mac は Tsunagal と共用**で、向こうの作業で上がることがある（#1314・#1316）。**上げた側が、上げたものと版を Issue に残す**（#1314 の形）。
+
+⚠⚠ **`JAVA_HOME` は Android Studio 同梱の JDK（`Android Studio.app/Contents/jbr`）を指している。**本体を上げると JDK も変わり、Gradle のビルドに効く。SDK のパッケージを上げるより影響が大きい。上げる前後で `"$JAVA_HOME/bin/java" -version` を控える。
+
+### 上げる時期と、上げた後のスモーク
+
+⚠ **リリースの直後に上げる**（Xcode と同じ理由: 壊れても次のリリースまでが復旧の余裕になる）。上げたらその場で次を通す:
+
+```sh
+flutter doctor -v                       # Android toolchain の節に ✗ が無い
+adb devices                             # 実機が出る
+"$ANDROID_SDK_ROOT/emulator/emulator" -avd <AVD>   # エミュレータが起動する
+cd packages/capsicum
+source ~/.config/capsicum/secrets.env
+flutter build appbundle --release --dart-define=SENTRY_DSN=$SENTRY_DSN --dart-define=SENTRY_ENV=production --dart-define=RELAY_SECRET=$RELAY_SECRET
+ls -la build/app/outputs/bundle/release/app-release.aab   # 終了コードでなく成果物で判定する
+```
+
+⚠ リリース本番のビルドは、16KB ページ整列のフラグと gradle daemon の止め方が加わる（[store-release の build-upload](../.claude/skills/store-release/build-upload.md)）。スモークはビルドが通るかだけを見るので、上の形でよい。
+
+⚠ 2026-10-25 の時点で、本体（2025.2）と `cmdline-tools`（19.0・23.0 が出ている）は上げていない。次のリリースの直後に上げる候補。
+
 ## Debug ビルドと TestFlight の役割分担
 
 Debug ビルドは「コードを動かしてみるための環境」であり、本番相当の検証は TestFlight / 内部テストトラックで行う。Debug 環境で本番と同じ機能スイートが揃わなくても、TestFlight 経由で検証できるなら気にしない方針。

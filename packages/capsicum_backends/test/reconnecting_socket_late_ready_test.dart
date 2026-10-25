@@ -51,7 +51,7 @@ void main() {
       final socket = ReconnectingSocket(
         buildUri: () => Uri.parse('ws://example.invalid/'),
         onMessage: (_) {},
-        subscribeMessage: () => 'subscribe',
+        subscribeMessages: () => ['subscribe'],
         delayFor: (attempt) {
           delays.add(attempt);
           // 安定とみなす時間（1 秒）より長く待つ ＝ 待っている間に、誤って張られた
@@ -99,7 +99,7 @@ void main() {
       final socket = ReconnectingSocket(
         buildUri: () => Uri.parse('ws://example.invalid/'),
         onMessage: (_) {},
-        subscribeMessage: () => 'subscribe',
+        subscribeMessages: () => ['subscribe'],
         delayFor: (attempt) {
           delays.add(attempt);
           return const Duration(seconds: 5);

@@ -168,10 +168,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   /// 同じ形にする（HomeScreen を下に残す）。
   void _restoreLastViewModeOnce() {
     if (_lastViewModeRestored) return;
-    _lastViewModeRestored = true;
     // ⚠ 判定は provider の書き換えを伴うので、どの枝もフレームの後で済ませる。
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+      // ⚠⚠ **済んだ印は、生き残った画面がフレームの後で立てる** (#1332)。
+      // 同じフレームで作られて捨てられた画面が先に印を立てると、置き換わった
+      // 画面は判定を飛ばし、捨てられた画面は判定できず、起動の判定待ちの印が
+      // 残る。同じフレームに 2 つ居ても、先に来たほうだけが判定する。
+      if (!mounted || _lastViewModeRestored) return;
+      _lastViewModeRestored = true;
       final router = GoRouter.of(context);
       // 条件の正本は [shouldStartInDeck]。
       final startInDeck = shouldStartInDeck(
@@ -180,16 +184,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         location: router.routerDelegate.currentConfiguration.uri.path,
         hasColumns: ref.read(deckColumnsProvider).isNotEmpty,
       );
-      // 起動時の判定はこれで済んだ (#1304)。以降の通知のタップは、デッキが
-      // 開いているときだけデッキ宛てになる。
-      ref.read(deckStartupPendingProvider.notifier).state = false;
+      // 起動時の判定はここで決まる (#1304)。判定待ちの印を下ろすのは、デッキで
+      // 始めない回は settleDeckStartupWithoutDeck、デッキで始める回は DeckScreen。
       if (!startInDeck) {
         // デッキで始める見込みで立てられた通知のタップは、タブ表示の通知タブへ
         // 振り替える (#1304)。放っておくと、後で手でデッキを開いたときに
         // 頼んでいない通知カラムが足される。
-        releasePendingDeckNotification(ref.read);
+        settleDeckStartupWithoutDeck(ref.read);
         return;
       }
+      // ⚠ 印はここでは下ろさない。DeckScreen が開いている数に入ってから下ろす
+      // (#1332)。
       router.push('/deck');
     });
   }
@@ -1493,7 +1498,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
   Widget _buildServerBadge(BuildContext context, WidgetRef ref, String host) {
     final themeColors = ref.watch(hostThemeColorProvider);
-    return ServerBadge.fromHost(host, themeColors: themeColors);
+    // 取り違えの手当て (#1331)。
+    return ServerBadge.fromHost(host, themeColors: themeColors, showIcon: true);
   }
 }
 
@@ -1758,8 +1764,8 @@ class _OfflineHomeScaffold extends ConsumerWidget {
                           ? null
                           : () => context.push(reconnectRouteFor(o.key)),
                       trailing: IconButton(
-                        // 削除操作は delete_outline に統一する (#828)。logout は
-                        // 実ログアウト (ドロワー) と紛れるため使わない。
+                        // 削除操作は delete_outline に統一する (#828)。ドロワーの
+                        // 「このアカウントを削除」(#1297) と同じアイコンに揃える。
                         icon: const Icon(Icons.delete_outline),
                         tooltip: 'このアカウントを削除',
                         onPressed: () =>

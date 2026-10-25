@@ -678,18 +678,15 @@ class MisskeyClient {
 
   /// POST /api/notes/drafts/list — list scheduled notes.
   Future<List<ScheduledPost>> getScheduledNotes() async {
-    final response = await dio.post(
-      '/api/notes/drafts/list',
-      data: createBody({'scheduled': true}),
-    );
+    // ⚠ **全件を辿る** (#1332)。以前は `limit` を付けずに 1 回だけ叩いており、
+    // 上流の既定（30 件）で切れていた。辿り方は [getScheduledNotesRaw] に
+    // 寄せる（上限・進まないときの打ち切りも引き継ぐ）。
+    final raw = await getScheduledNotesRaw();
     // ⚠ 変換は [misskeyScheduledPostFromMap] に寄せてある (#1187)。
     // `scheduledNotePostFailed` 通知の `noteDraft` が同じ `NoteDraft` の形で
     // 来るので、2 箇所で同じパースを書かないため。⚠ **`scheduledAt` を持たない
     // 行を落とす**挙動は helper 側が引き継いでいる（null を返す）。
-    return (response.data as List)
-        .map((e) => misskeyScheduledPostFromMap(e as Map<String, dynamic>))
-        .nonNulls
-        .toList();
+    return raw.map(misskeyScheduledPostFromMap).nonNulls.toList();
   }
 
   /// POST /api/notes/drafts/list — 予約投稿を、変換せずそのまま返す (#1212)。

@@ -150,24 +150,41 @@ case "$CMD" in
     fi ;;
   cleanup)
     # 付けたリアクションを外し、投稿を消す。済んだ行はログから外す。
+    # ⚠ 失敗した行（トークンが無い・対象を引けない・削除が通らない）はログに残す。
+    #    丸ごと空にすると、消し損ねた投稿やリアクションが本番に残ったまま
+    #    記録から消える（PR #1325 の Codex P2・#1332）。
     if [ -s "$SHOT_DIR/reacted.log" ]; then
+      : > "$SHOT_DIR/reacted.log.keep"
       while read -r KEY ACT URL; do
-        HOST="$(shot_host "$KEY")"; TOKEN="$(shot_token "$KEY")" || continue
+        HOST="$(shot_host "$KEY")"
+        if ! TOKEN="$(shot_token "$KEY")"; then
+          echo "$KEY $ACT $URL" >> "$SHOT_DIR/reacted.log.keep"; continue
+        fi
         if shot_is_misskey "$KEY"; then
           NID=$(mk "$HOST" "$TOKEN" ap/show "$(jq -n --arg u "$URL" '{uri: $u}')" | jq -r '.object.id // empty')
+          if [ -z "$NID" ]; then
+            echo "failed(no note): $KEY $ACT $URL"; echo "$KEY $ACT $URL" >> "$SHOT_DIR/reacted.log.keep"; continue
+          fi
           [ "$ACT" = fav ] && mk "$HOST" "$TOKEN" notes/reactions/delete "{\"noteId\":\"$NID\"}" >/dev/null
         else
           SID=$(resolve_mastodon_status "$HOST" "$TOKEN" "$URL")
+          if [ -z "$SID" ]; then
+            echo "failed(no status): $KEY $ACT $URL"; echo "$KEY $ACT $URL" >> "$SHOT_DIR/reacted.log.keep"; continue
+          fi
           [ "$ACT" = fav ] && EP=unfavourite || EP=unreblog
           md "$HOST" "$TOKEN" POST "/api/v1/statuses/$SID/$EP" >/dev/null
         fi
         echo "undone: $KEY $ACT $URL"
       done < "$SHOT_DIR/reacted.log"
-      : > "$SHOT_DIR/reacted.log"
+      mv "$SHOT_DIR/reacted.log.keep" "$SHOT_DIR/reacted.log"
     fi
     if [ -s "$SHOT_DIR/posted.log" ]; then
+      : > "$SHOT_DIR/posted.log.keep"
       while read -r KEY KIND ID _; do
-        HOST="$(shot_host "$KEY")"; TOKEN="$(shot_token "$KEY")" || continue
+        HOST="$(shot_host "$KEY")"
+        if ! TOKEN="$(shot_token "$KEY")"; then
+          echo "$KEY $KIND $ID" >> "$SHOT_DIR/posted.log.keep"; continue
+        fi
         if [ "$KIND" = note ]; then
           CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST "https://$HOST/api/notes/delete" \
             -H 'Content-Type: application/json' -d "{\"i\":\"$TOKEN\",\"noteId\":\"$ID\"}")
@@ -176,8 +193,13 @@ case "$CMD" in
             -H "Authorization: Bearer $TOKEN")
         fi
         echo "deleted($CODE): $KEY $KIND $ID"
+        # 2xx は消せた・404 はもう無い。それ以外（接続の失敗は 000）は残す。
+        case "$CODE" in
+          2??|404) ;;
+          *) echo "$KEY $KIND $ID" >> "$SHOT_DIR/posted.log.keep" ;;
+        esac
       done < "$SHOT_DIR/posted.log"
-      : > "$SHOT_DIR/posted.log"
+      mv "$SHOT_DIR/posted.log.keep" "$SHOT_DIR/posted.log"
     fi ;;
   *) sed -n '2,20p' "$0"; exit 2 ;;
 esac

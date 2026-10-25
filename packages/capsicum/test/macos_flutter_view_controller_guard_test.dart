@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/dart_source.dart';
+import 'support/git_show.dart';
 
 /// macOS の `FlutterViewController` を、既定の `FlutterDartProject` のまま
 /// 作っていることを見る (#1327)。
@@ -83,6 +84,15 @@ class MainFlutterWindow: NSWindow {
       final src = '// final class X: FlutterDartProject {}\n$good';
       expect(dartProjectProblems(src), isEmpty);
     });
+  });
+
+  // ⚠⚠ 3 点セットの 3（#1332）。合成ソースは自分が想定した形しか並べないので、
+  // #1327 を起こした実物（v2.4.1 の `085f6612`）を食わせて落ちることを見る。
+  test('⚠⚠ #1327 を起こした実物（085f6612）は落ちる', () {
+    final before = gitShow('085f6612:packages/capsicum/$swiftPath');
+    expect(before.exitCode, 0, reason: before.stderr as String);
+    final problems = dartProjectProblems(before.stdout as String);
+    expect(problems, contains(startsWith('FlutterDartProject のサブクラスがある')));
   });
 
   test('アプリの MainFlutterWindow.swift', () {

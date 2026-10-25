@@ -2,13 +2,13 @@ import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../util/mulukhiya_conflict.dart';
 import '../util/annict_error.dart';
 import '../util/annict_link.dart';
 import '../util/compose_text_style.dart';
+import '../util/pop_or_go.dart';
 
 /// Annict 視聴記録 (感想・レーティング) を投稿する画面 (#298)。
 ///
@@ -28,13 +28,8 @@ class AnnictPosted {
 
 /// [AnnictPosted] を返して閉じる。閉じる先が無いとき（深いリンクで直接開いた
 /// など）だけタイムラインへ出す。
-void popAnnictPosted(BuildContext context) {
-  if (context.canPop()) {
-    context.pop(const AnnictPosted());
-  } else {
-    context.go('/home');
-  }
-}
+void popAnnictPosted(BuildContext context) =>
+    popOrGo(context, '/home', result: const AnnictPosted());
 
 class AnnictRecordScreenArgs {
   final int episodeId;

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/dart_source.dart';
+import 'support/git_show.dart';
 import 'support/source_files.dart';
 
 /// #1120: `FlutterSecureStorage(...)` を作るときは、必ず
@@ -159,12 +160,7 @@ const doc = 'FlutterSecureStorage()';
         'lib/src/service/push_key_store.dart',
         'lib/src/service/device_install_id.dart',
       ]) {
-        final shown = Process.runSync('git', [
-          '-C',
-          '../..',
-          'show',
-          '$preFix:packages/capsicum/$path',
-        ]);
+        final shown = gitShow('$preFix:packages/capsicum/$path');
         if (shown.exitCode != 0) {
           markTestSkipped('git show が使えない ($preFix): ${shown.stderr}');
           return;
