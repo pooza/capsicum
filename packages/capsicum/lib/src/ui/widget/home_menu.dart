@@ -506,7 +506,7 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
     MenuSubmenuEntry(
       // 先頭メニューは macOS ではアプリ名（capsicum）で表示される。in-window は
       // ブランドの唐辛子アイコンを見出しに付ける。
-      label: 'capsicum',
+      label: TopMenuLabel.app,
       leadingIcon: Image.asset(
         'assets/images/capsicum_icon.webp',
         width: 18,
@@ -561,7 +561,7 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
     // ファイル (#857)。今は設定のバックアップだけだが、macOS / Windows の
     // 慣習ではファイル入出力はここに置く。
     MenuSubmenuEntry(
-      label: 'ファイル',
+      label: TopMenuLabel.file,
       children: [
         MenuActionEntry(
           label: '設定のバックアップ…',
@@ -571,7 +571,7 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
       ],
     ),
     MenuSubmenuEntry(
-      label: '編集',
+      label: TopMenuLabel.edit,
       children: [
         MenuActionEntry(
           label: '取り消す',
@@ -718,7 +718,7 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
         ],
       ),
     MenuSubmenuEntry(
-      label: '表示',
+      label: TopMenuLabel.view,
       children: [
         MenuActionEntry(
           label: 'タイムラインを更新',
@@ -874,7 +874,7 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
       ],
     ),
     MenuSubmenuEntry(
-      label: 'ウインドウ',
+      label: TopMenuLabel.window,
       children: [
         MenuProvidedEntry(
           macType: PlatformProvidedMenuItemType.minimizeWindow,
