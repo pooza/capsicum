@@ -339,4 +339,23 @@ void main() {
       expect(serverProbeHostTag('user'), '<invalid>');
     });
   });
+
+  // #1340: 「その他」の中身を見分けるタグ。
+  group('serverProbeOsErrorCode', () {
+    test('DioException に包まれた SocketException の番号を取る', () {
+      final error = DioException(
+        requestOptions: RequestOptions(),
+        error: const SocketException(
+          'Connection refused',
+          osError: OSError('Connection refused', 61),
+        ),
+      );
+      expect(serverProbeOsErrorCode(error), '61');
+    });
+
+    test('番号が無い・SocketException でないなら null', () {
+      expect(serverProbeOsErrorCode(const SocketException('x')), isNull);
+      expect(serverProbeOsErrorCode(Exception('x')), isNull);
+    });
+  });
 }

@@ -211,12 +211,21 @@ class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
         // Sentry 失敗で UI を止めない。
       }
       if (serverProbeFailureIsEvent(failure.kind)) {
+        final osErrorCode = failure.kind == ServerProbeFailureKind.other
+            ? serverProbeOsErrorCode(e)
+            : null;
         reportOpFailure(
           tagKey: 'server_probe.op',
           operation: 'connect',
           error: e,
           stackTrace: st,
-          tags: {'host': hostTag, 'probe.failure_kind': failure.kind.name},
+          tags: {
+            'host': hostTag,
+            'probe.failure_kind': failure.kind.name,
+            'probe.os_error': ?osErrorCode,
+          },
+          // TLS と「その他」を別のイシューにする (#1340)。どちらも DioException。
+          fingerprintExtra: [failure.kind.name],
         );
       }
       if (!mounted) return;
