@@ -721,9 +721,11 @@ String _classifyDecryptErrorKind(String reason) =>
 /// 場合 (v1.24.x 以前にスケジュールされて残っている通知) は account-only として扱う。
 void _routeFromNotificationPayload(String? payload) {
   // 待っている前のタップの経路を捨てる（どの種類の通知でも・#1332）。
-  NotificationRouteTicket.issue();
+  // ⚠ 発行した ticket を各経路へ渡す (#1340)。渡さないと、チャット等の経路が
+  // 世代を見ず、後のタップの経路を上書き・横取りする。
+  final ticket = NotificationRouteTicket.issue();
   if (payload == null || payload.isEmpty) {
-    _routeToNotificationsTab(null);
+    _routeToNotificationsTab(null, ticket: ticket);
     return;
   }
   try {
@@ -733,50 +735,51 @@ void _routeFromNotificationPayload(String? payload) {
       final type = decoded['type'] as String?;
       final userId = decoded['userId'] as String?;
       if (type == 'newChatMessage' && userId != null && userId.isNotEmpty) {
-        _routeToChatThread(account, userId);
+        _routeToChatThread(account, userId, ticket: ticket);
         return;
       }
       // お知らせ通知 (#477)。dispatcher が payload に type='announcement' を
       // 埋めている。account を切り替えてから /announcements へ push。
       if (type == 'announcement') {
-        _routeToAnnouncements(account);
+        _routeToAnnouncements(account, ticket: ticket);
         return;
       }
       // 未払いの案内 (#1123)。⚠ **relay を経由しないローカル通知**なので
       // account を持たない。行き先は登録ステータス画面（そこに直し方と
       // 「購入を復元する」ボタンがある）。
       if (type == 'entitlement_unpaid') {
-        _routeToPushSettings();
+        _routeToPushSettings(ticket: ticket);
         return;
       }
-      _routeToNotificationsTab(account);
+      _routeToNotificationsTab(account, ticket: ticket);
       return;
     }
   } catch (_) {
     // JSON でない → legacy 形式として扱う。
   }
-  _routeToNotificationsTab(payload);
+  _routeToNotificationsTab(payload, ticket: ticket);
 }
 
 /// iOS APNs タップの userInfo dict から JSON 経路と同じ判定を行う。
 void _routeFromNotificationUserInfo(Map<String, dynamic> userInfo) {
   // 待っている前のタップの経路を捨てる（どの種類の通知でも・#1332）。
-  NotificationRouteTicket.issue();
+  // ⚠ 発行した ticket を各経路へ渡す (#1340・[_routeFromNotificationPayload])。
+  final ticket = NotificationRouteTicket.issue();
   final account = userInfo['account'] as String?;
   final type = userInfo['type'] as String?;
   final userId = userInfo['userId'] as String?;
   if (type == 'newChatMessage' && userId != null && userId.isNotEmpty) {
-    _routeToChatThread(account, userId);
+    _routeToChatThread(account, userId, ticket: ticket);
     return;
   }
   // お知らせ通知 (#477)。iOS APNs では NSE / dispatcher を経由せず relay の
   // custom_payload (notification_type='announcement') がそのまま userInfo に
   // 乗るため、Android 経路 (decoded['type']) と判定キーが異なる。
   if (userInfo['notification_type'] == 'announcement') {
-    _routeToAnnouncements(account);
+    _routeToAnnouncements(account, ticket: ticket);
     return;
   }
-  _routeToNotificationsTab(account);
+  _routeToNotificationsTab(account, ticket: ticket);
 }
 
 /// 通知タップで該当 DM スレッドを開く経路 (#440)。account を必要に応じて切り替え、
@@ -786,14 +789,22 @@ void _routeFromNotificationUserInfo(Map<String, dynamic> userInfo) {
 void _routeToChatThread(
   String? accountString,
   String userId, {
+  required NotificationRouteTicket ticket,
   int attempt = 0,
 }) {
+  // 後から別の通知がタップされていたら、この経路は捨てる (#1340)。
+  if (!ticket.isCurrent) return;
   const maxAttempts = 3600;
   final context = rootNavigatorKey.currentContext;
   if (context == null) {
     if (attempt >= maxAttempts) return;
     WidgetsBinding.instance.scheduleFrameCallback(
-      (_) => _routeToChatThread(accountString, userId, attempt: attempt + 1),
+      (_) => _routeToChatThread(
+        accountString,
+        userId,
+        ticket: ticket,
+        attempt: attempt + 1,
+      ),
     );
     return;
   }
@@ -801,7 +812,12 @@ void _routeToChatThread(
   if (!container.read(sessionsRestoredProvider)) {
     if (attempt >= maxAttempts) return;
     WidgetsBinding.instance.scheduleFrameCallback(
-      (_) => _routeToChatThread(accountString, userId, attempt: attempt + 1),
+      (_) => _routeToChatThread(
+        accountString,
+        userId,
+        ticket: ticket,
+        attempt: attempt + 1,
+      ),
     );
     return;
   }
@@ -831,7 +847,9 @@ void _routeToChatThread(
           }
         },
       );
-      _routeToNotificationsTab(accountString);
+      // ⚠ 振り替えでは同じ ticket を引き継ぐ (#1340)。新しく発行すると、
+      // 後のタップの経路を捨ててしまう。
+      _routeToNotificationsTab(accountString, ticket: ticket);
       return;
     }
     container.read(accountManagerProvider.notifier).switchAccount(matched);
@@ -841,12 +859,15 @@ void _routeToChatThread(
     final adapter = container.read(currentAdapterProvider);
     if (adapter == null || adapter is! ChatSupport) {
       // 想定外: chat 非対応アカウントへ切り替わった等。通知タブにフォールバック。
-      _routeToNotificationsTab(accountString);
+      _routeToNotificationsTab(accountString, ticket: ticket);
       return;
     }
     try {
       final user = await adapter.getUserById(userId);
       if (!context.mounted) return;
+      // ⚠ 待っている間に別の通知がタップされたら積まない (#1340)。積むと、
+      // 後のタップの画面の上に古いチャットが乗る。
+      if (!ticket.isCurrent) return;
       // /home に揃えてから push しないと Drawer / 戻る挙動が崩れるが、
       // /splash や /eula は起動 / EULA 承諾フローのゲート画面であり、
       // ここで go('/home') を呼ぶとそれらを bypass してしまう (#562)。
@@ -879,7 +900,8 @@ void _routeToChatThread(
           scope.fingerprint = ['notification.routing.chat.failed'];
         },
       );
-      _routeToNotificationsTab(accountString);
+      // ⚠ 同じ ticket で振り替える。後のタップがあれば、ここで止まる (#1340)。
+      _routeToNotificationsTab(accountString, ticket: ticket);
     }
   }());
 }
@@ -891,13 +913,23 @@ void _routeToChatThread(
 /// (Sentry に観測タグだけ残す)。account が一致しない (ログアウト済み等) は
 /// 現在アカウントのまま `/announcements` を開く — 通知タブ系と違って遷移先
 /// 自体は無効化しない方が UX として近い (画面は空表示になる)。
-void _routeToAnnouncements(String? accountString, {int attempt = 0}) {
+void _routeToAnnouncements(
+  String? accountString, {
+  required NotificationRouteTicket ticket,
+  int attempt = 0,
+}) {
+  // 後から別の通知がタップされていたら、この経路は捨てる (#1340)。
+  if (!ticket.isCurrent) return;
   const maxAttempts = 3600;
   final context = rootNavigatorKey.currentContext;
   if (context == null) {
     if (attempt >= maxAttempts) return;
     WidgetsBinding.instance.scheduleFrameCallback(
-      (_) => _routeToAnnouncements(accountString, attempt: attempt + 1),
+      (_) => _routeToAnnouncements(
+        accountString,
+        ticket: ticket,
+        attempt: attempt + 1,
+      ),
     );
     return;
   }
@@ -905,7 +937,11 @@ void _routeToAnnouncements(String? accountString, {int attempt = 0}) {
   if (!container.read(sessionsRestoredProvider)) {
     if (attempt >= maxAttempts) return;
     WidgetsBinding.instance.scheduleFrameCallback(
-      (_) => _routeToAnnouncements(accountString, attempt: attempt + 1),
+      (_) => _routeToAnnouncements(
+        accountString,
+        ticket: ticket,
+        attempt: attempt + 1,
+      ),
     );
     return;
   }
@@ -946,13 +982,18 @@ void _routeToAnnouncements(String? accountString, {int attempt = 0}) {
 ///
 /// ⚠ **アカウントの切り替えをしない。**利用権はストアのアカウントに紐づく
 /// （fedi のアカウントではない・設計書 2-A）ので、切り替える先が無い。
-void _routeToPushSettings({int attempt = 0}) {
+void _routeToPushSettings({
+  required NotificationRouteTicket ticket,
+  int attempt = 0,
+}) {
+  // 後から別の通知がタップされていたら、この経路は捨てる (#1340)。
+  if (!ticket.isCurrent) return;
   const maxAttempts = 3600;
   final context = rootNavigatorKey.currentContext;
   if (context == null) {
     if (attempt >= maxAttempts) return;
     WidgetsBinding.instance.scheduleFrameCallback(
-      (_) => _routeToPushSettings(attempt: attempt + 1),
+      (_) => _routeToPushSettings(ticket: ticket, attempt: attempt + 1),
     );
     return;
   }
@@ -960,7 +1001,7 @@ void _routeToPushSettings({int attempt = 0}) {
   if (!container.read(sessionsRestoredProvider)) {
     if (attempt >= maxAttempts) return;
     WidgetsBinding.instance.scheduleFrameCallback(
-      (_) => _routeToPushSettings(attempt: attempt + 1),
+      (_) => _routeToPushSettings(ticket: ticket, attempt: attempt + 1),
     );
     return;
   }
@@ -1141,6 +1182,10 @@ void _rescheduleNotificationRoute(
       ticket: route,
     ),
   );
+  // ⚠ フレームを自分で起こす（#1340）。post-frame の予約だけでは、画面に動きが
+  // 無いと次のフレームが来ず、判定が進まない。上限（[notificationRouteExpired]）
+  // があるので回り続けはしない。
+  WidgetsBinding.instance.scheduleFrame();
 }
 
 /// 通知タップの経路を諦める（上限を超えた）。
