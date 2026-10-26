@@ -22,8 +22,11 @@ String serverDisplayName(String host) =>
 ///
 /// ⚠ [host] には**実際に投稿するアカウント**を渡す。デッキでは開いたカラムの
 /// アカウントになる（`currentAccountProvider` がカラムのスコープを返す）。
-String postTargetHint({required String postLabel, required String? host}) =>
-    host == null ? '$postLabel...' : '${serverDisplayName(host)}で$postLabel...';
+///
+/// [label] は何を書いているか。新規なら投稿の呼称、返信・引用ならその呼称
+/// （`composeActionLabel`・#1336）。
+String postTargetHint({required String label, required String? host}) =>
+    host == null ? '$label...' : '${serverDisplayName(host)}で$label...';
 
 /// サーバーのアイコン（favicon）(#1331)。
 ///

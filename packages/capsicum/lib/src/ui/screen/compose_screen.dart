@@ -29,6 +29,7 @@ import '../../service/compose_draft_store.dart';
 import '../../service/now_playing_artwork.dart';
 import '../../service/sentry_op_failure.dart';
 import '../../url_helper.dart';
+import '../../util/action_labels.dart';
 import '../../util/exception_scrub.dart';
 import '../../util/misskey_api_error.dart';
 import '../../util/now_playing_formatter.dart';
@@ -572,6 +573,16 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// で引き継いだ返信先が漏れる（それが #1113 の形）。⚠ **元投稿の取得を
   /// 待たない**ので、開いた瞬間から正しい。
   bool get _isReply => _inReplyToId != null;
+
+  /// タイトルと入力欄のヒントに出す「何を書いているか」(#1336)。
+  ///
+  /// ⚠ build の中から呼ぶ（投稿の呼称を watch する）。引用は送信と同じ
+  /// [_quotedPost] で見る（再編集で引き継いだ引用も含む）。
+  String _composeActionLabel() => composeActionLabel(
+    isReply: _isReply,
+    isQuote: _quotedPost != null,
+    postLabel: ref.watch(postLabelProvider),
+  );
 
   /// 送信する返信先。表示・送信・公開範囲の判定はすべてここを通す。
   String? get _inReplyToId => resolveComposeInReplyToId(
@@ -5283,14 +5294,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
             Flexible(
               child: Text(
                 // ⚠ 元投稿の取得を待たずに「返信」と出す (#1113)。取得が返る前でも
-                // 返信として送られることは確定している。
-                _isReply
-                    ? (_effectiveChannelName != null
-                          ? '返信：$_effectiveChannelName'
-                          : '返信')
-                    : _effectiveChannelName != null
-                    ? '${ref.watch(postLabelProvider)}：$_effectiveChannelName'
-                    : ref.watch(postLabelProvider),
+                // 返信として送られることは確定している。引用も「引用」と出す
+                // （#1336・新規投稿と見分けられなかった）。
+                _effectiveChannelName != null
+                    ? '${_composeActionLabel()}：$_effectiveChannelName'
+                    : _composeActionLabel(),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -5486,8 +5494,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                               // どのサーバーへ投稿するかを出す (#1328)。
                               // 「今なにしてる？」では何も分からず、投稿する
                               // アカウントを相当な頻度で取り違えていた。
+                              // 返信・引用ならそう出す (#1336)。
                               hintText: postTargetHint(
-                                postLabel: ref.watch(postLabelProvider),
+                                label: _composeActionLabel(),
                                 host: ref
                                     .watch(currentAccountProvider)
                                     ?.key

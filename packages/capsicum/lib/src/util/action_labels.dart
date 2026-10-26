@@ -44,6 +44,28 @@ String favouriteLabelFrom(Object? adapter) =>
 String postLabelFrom(MulukhiyaService? mulukhiya) =>
     mulukhiya?.postLabel ?? '投稿';
 
+/// 返信・引用の呼称 (#1336)。
+///
+/// ⚠ **サーバーごとの呼称は無い。**モロヘイヤが返すのは投稿（`status.label`）と
+/// ブースト（`reblog_label`）の 2 つだけ（2026-10-26 時点）。増えたらここで
+/// [postLabelFrom] と同じ形に直す（2026-10-26 pooza: 呼称に合わせる）。
+const replyLabel = '返信';
+const quoteLabel = '引用';
+
+/// 投稿画面がいま何を書いているか (#1336)。タイトルと入力欄のヒントが使う。
+///
+/// ⚠ **返信を引用より先に見る。**再編集では両方を引き継ぐことがあり、送信先が
+/// 決まるのは返信のほう（タイトルは従来から返信を優先していた）。
+String composeActionLabel({
+  required bool isReply,
+  required bool isQuote,
+  required String postLabel,
+}) => isReply
+    ? replyLabel
+    : isQuote
+    ? quoteLabel
+    : postLabel;
+
 /// [account] の文脈での [reblogLabelFrom]。
 ///
 /// [account] が null（プッシュ payload のアカウントが手元に無い等）のときは
