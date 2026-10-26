@@ -136,4 +136,33 @@ void main() {
       expect(delays, [0, 0], reason: '安定してつながったあとは 0 回目から');
     });
   });
+
+  // #1340: 置き換えた古い接続に残っていたメッセージを、受け手へ渡さない。
+  test('⚠ 張り直したあと、古い接続から届いたメッセージは捨てる', () {
+    fakeAsync((async) {
+      final channels = <_FakeChannel>[];
+      final received = <Object?>[];
+      final socket = ReconnectingSocket(
+        buildUri: () => Uri.parse('ws://example.invalid/'),
+        onMessage: received.add,
+        subscribeMessages: () => const [],
+        delayFor: (_) => const Duration(seconds: 5),
+        channelFactory: (_) {
+          final channel = _FakeChannel();
+          channels.add(channel);
+          return channel;
+        },
+      );
+      addTearDown(socket.dispose);
+
+      socket.connect();
+      socket.connect();
+      final [old, current] = channels;
+      old.incoming.add('old');
+      current.incoming.add('new');
+      async.flushMicrotasks();
+
+      expect(received, ['new']);
+    });
+  });
 }

@@ -136,8 +136,13 @@ class ReconnectingSocket {
     _channel = channel;
     // ⚠ listener / catchError は、前の世代の接続を閉じたときにも走りうる。
     // 「いまの接続か」は [_failed] の中で、捕まえた channel を見て判定する (#548)。
+    // ⚠ メッセージも世代で見る (#1340)。閉じた古い接続にバッファが残っていると、
+    // 置き換えた後にも届く（受け手の重複除去で実害は出ていない）。
     channel.stream.listen(
-      onMessage,
+      (message) {
+        if (_disposed || _channel != channel) return;
+        onMessage(message);
+      },
       onError: (Object error, StackTrace stack) =>
           _failed(channel, error, stack),
       // ⚠ 切れただけでは数え直さない（数え直すのは [stableAfter] のあと）。
