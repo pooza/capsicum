@@ -167,6 +167,11 @@ class NotificationService: UNNotificationServiceExtension {
 
         if let body = parsed.body, !body.isEmpty {
             bestAttempt.body = body
+        } else if parsed.type != nil, let title = parsed.title, !title.isEmpty {
+            // 本文が空なら、上で捨てたサーバーの title（「誰が・何をした」）を
+            // 本文に回す (#1326)。自己紹介の空な相手からの新規登録・フォローで
+            // 起きる。回さないと復号失敗時の文面が残る。Dart 側と揃える。
+            bestAttempt.body = title
         }
 
         // 復号で得た通知 ID を userInfo に stamp する (#674)。アプリ起動中は
