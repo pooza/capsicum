@@ -574,6 +574,13 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// 待たない**ので、開いた瞬間から正しい。
   bool get _isReply => _inReplyToId != null;
 
+  /// 送信する返信先。表示・送信・公開範囲の判定はすべてここを通す。
+  String? get _inReplyToId => resolveComposeInReplyToId(
+    widget.replyTo,
+    widget.redraft,
+    redraftReplyDropped: _redraftReplyDropped,
+  );
+
   /// タイトルと入力欄のヒントに出す「何を書いているか」(#1336)。
   ///
   /// ⚠ build の中から呼ぶ（投稿の呼称を watch する）。引用は送信と同じ
@@ -582,13 +589,6 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     isReply: _isReply,
     isQuote: _quotedPost != null,
     postLabel: ref.watch(postLabelProvider),
-  );
-
-  /// 送信する返信先。表示・送信・公開範囲の判定はすべてここを通す。
-  String? get _inReplyToId => resolveComposeInReplyToId(
-    widget.replyTo,
-    widget.redraft,
-    redraftReplyDropped: _redraftReplyDropped,
   );
 
   /// 引き継いだ返信先をユーザーがやめた (#1113)。
@@ -4154,11 +4154,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('下書きを保存しました')));
-        if (context.canPop()) {
-          context.pop(true);
-        } else {
-          context.go('/home');
-        }
+        popOrGo(context, '/home', result: true);
       }
     } catch (e, st) {
       // 失敗したら自動保存を張り直す (Codex P2 / PR #1017)。理由は
@@ -4446,11 +4442,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           // 行うため、ユーザー入力に #実況 がない自動付与経路もカバーする。
           maybeShowHideLivecureSnackBar(context, ref, posted);
         }
-        if (context.canPop()) {
-          context.pop(true);
-        } else {
-          context.go('/home');
-        }
+        popOrGo(context, '/home', result: true);
       }
     } catch (e, st) {
       // ⚠ **失敗したら自動保存を張り直す (Codex P2 / PR #1017)。**投稿に失敗
@@ -5279,15 +5271,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         // GoRouter の go() で stack が置換されており automatic back button が
         // 出ないため、明示的に leading に置く。_submit 末尾と同じく canPop
         // が false のときは /home にフォールバック (#422)。
-        leading: BackButton(
-          onPressed: () {
-            if (context.canPop()) {
-              context.pop();
-            } else {
-              context.go('/home');
-            }
-          },
-        ),
+        leading: BackButton(onPressed: () => popOrGo(context, '/home')),
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
