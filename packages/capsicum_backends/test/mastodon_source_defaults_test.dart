@@ -103,6 +103,23 @@ void main() {
       expect(user.defaultQuotePolicy, 'mutuals');
     });
 
+    // #1322: Mastodon 5.0 で増えた。4.7 以前は `source` にキーが無い。
+    test('CW 欄の既定（spoiler_field）を読む。無ければ null', () {
+      expect(
+        account({
+          'source': {'privacy': 'public', 'spoiler_field': true},
+        }).toCapsicum('example.com').defaultSpoilerField,
+        isTrue,
+      );
+      expect(
+        account({
+          'source': {'privacy': 'public'},
+        }).toCapsicum('example.com').defaultSpoilerField,
+        isNull,
+        reason: '⚠ false に倒すと、設定画面が 4.7 以前のサーバーにも項目を出して送ってしまう',
+      );
+    });
+
     // 対照群。`privacy` の既存の読み取りを壊していないこと。
     test('privacy は従来どおり（対照群）', () {
       expect(

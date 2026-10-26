@@ -12,7 +12,14 @@ import 'package:mocktail/mocktail.dart';
 /// #1210: サーバー側の投稿の既定の画面。
 class _Adapter extends Mock
     implements DecentralizedBackendAdapter, PostingDefaultsSupport {
-  ({PostScope? scope, bool? sensitive, String? language, String? quote})? sent;
+  ({
+    PostScope? scope,
+    bool? sensitive,
+    String? language,
+    String? quote,
+    bool? spoilerField,
+  })?
+  sent;
 
   @override
   Future<User> updatePostingDefaults({
@@ -20,12 +27,14 @@ class _Adapter extends Mock
     bool? sensitive,
     String? language,
     String? quotePolicy,
+    bool? spoilerField,
   }) async {
     sent = (
       scope: scope,
       sensitive: sensitive,
       language: language,
       quote: quotePolicy,
+      spoilerField: spoilerField,
     );
     return User(
       id: 'me',
@@ -195,5 +204,31 @@ void main() {
 
     expect(find.text('引用の許可'), findsNothing);
     expect(find.text('公開範囲'), findsOneWidget);
+  });
+
+  testWidgets('CW 欄の既定を出して、変えた値で保存する（#1322・5.0〜）', (tester) async {
+    final (_, adapter) = await pump(
+      tester,
+      user: const User(id: 'me', username: 'me', defaultSpoilerField: false),
+    );
+
+    await tester.tap(find.text('CW の欄を最初から開いておく'));
+    await tester.pump();
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+
+    expect(adapter.sent?.spoilerField, isTrue);
+  });
+
+  testWidgets('⚠ CW 欄の既定を返さないサーバー（4.7 以前）では、項目を出さず送らない', (tester) async {
+    final (_, adapter) = await pump(
+      tester,
+      user: const User(id: 'me', username: 'me'),
+    );
+
+    expect(find.text('CW の欄を最初から開いておく'), findsNothing);
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+    expect(adapter.sent?.spoilerField, isNull);
   });
 }

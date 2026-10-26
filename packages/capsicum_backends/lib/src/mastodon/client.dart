@@ -1578,6 +1578,7 @@ class MastodonClient {
     bool? sourceSensitive,
     String? sourceLanguage,
     String? sourceQuotePolicy,
+    bool? sourceSpoilerField,
   }) async {
     Future<FormData> buildFormData() async {
       final map = <String, dynamic>{};
@@ -1603,6 +1604,9 @@ class MastodonClient {
       if (sourceLanguage != null) map['source[language]'] = sourceLanguage;
       if (sourceQuotePolicy != null) {
         map['source[quote_policy]'] = sourceQuotePolicy;
+      }
+      if (sourceSpoilerField != null) {
+        map['source[spoiler_field]'] = sourceSpoilerField.toString();
       }
       if (avatarPath != null) {
         map['avatar'] = await MultipartFile.fromFile(avatarPath);

@@ -130,6 +130,12 @@ class User {
   /// できない**（トグルが嘘になる）。
   final bool? defaultSensitive;
 
+  /// 投稿欄の CW を最初から開いておくか（Mastodon 5.0 の `source.spoiler_field`・
+  /// #1322）。未対応サーバー（4.7 以前）では null。
+  ///
+  /// ⚠ **開くのは欄だけ。**CW の文字を入れなければ CW は付かない（Web と同じ）。
+  final bool? defaultSpoilerField;
+
   /// Misskey 用。サーバー側のロール policy から導出される
   /// 「このユーザーが chat を利用可能か」フラグ。Mastodon 等
   /// chat 概念のないサーバーでは null。
@@ -225,6 +231,7 @@ class User {
     this.defaultLanguage,
     this.defaultQuotePolicy,
     this.defaultSensitive,
+    this.defaultSpoilerField,
     this.canChat,
     this.showMedia,
     this.showMediaReplies,
@@ -265,6 +272,7 @@ class User {
     defaultLanguage: defaultLanguage,
     defaultQuotePolicy: defaultQuotePolicy,
     defaultSensitive: defaultSensitive,
+    defaultSpoilerField: defaultSpoilerField,
     canChat: canChat,
     showMedia: showMedia,
     showMediaReplies: showMediaReplies,

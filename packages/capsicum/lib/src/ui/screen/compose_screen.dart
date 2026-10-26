@@ -561,6 +561,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       // 既定を読めた ＝ `false` を明示して送れる。
       _sensitiveExplicit = true;
     }
+    // CW 欄を最初から開く (#1322・Mastodon 5.0〜)。⚠ 開くのは欄だけで、文字を
+    // 入れなければ CW も閲覧注意も付かない（[_effectiveSensitive]）。
+    if (user.defaultSpoilerField == true) _cwEnabled = true;
   }
 
   /// ⚠ **この投稿が返信として送られるか (#1113)。**
@@ -1114,6 +1117,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     }
     WidgetsBinding.instance.addObserver(this);
     _controller.addListener(_onTextChanged);
+    _cwController.addListener(_onCwChanged);
     // Mastodon のみ: デフォルト言語をロケールから設定
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -1177,6 +1181,22 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     cursor: _controller.selection.baseOffset,
     trigger: trigger,
   );
+
+  /// CW 欄が空でないか。最後に描いたときの値。
+  bool _cwHasText = false;
+
+  /// CW 欄の空・非空が変わったら描き直す (#1322)。閲覧注意の表示
+  /// （[_effectiveSensitive]）が CW の文字の有無で決まるため。
+  ///
+  /// ⚠ **変わったときだけ・IME の変換中は描かない。**打鍵ごとの setState は
+  /// 変換を巻き戻す（#463 / #54・[_onTextChanged] と同じ守り）。確定すると
+  /// もう一度呼ばれるので、そこで追いつく。
+  void _onCwChanged() {
+    if (_cwController.value.composing.isValid) return;
+    final hasText = _cwController.text.trim().isNotEmpty;
+    if (hasText == _cwHasText) return;
+    setState(() => _cwHasText = hasText);
+  }
 
   void _onTextChanged() {
     // 既存の debounce は IME 中でも止める (#511): early return より前に
@@ -1479,6 +1499,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     _draftDebounceTimer?.cancel();
     _controller.removeListener(_onTextChanged);
     _controller.dispose();
+    _cwController.removeListener(_onCwChanged);
     _cwController.dispose();
     _toolbarScroll.dispose();
     for (final c in _pollControllers) {
@@ -3828,7 +3849,14 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     return '${seconds ~/ 60}分';
   }
 
-  bool get _effectiveSensitive => _cwEnabled || _sensitiveEnabled;
+  /// CW を付けると添付も閲覧注意になる。
+  ///
+  /// ⚠ **CW 欄が開いているだけでは閲覧注意にしない (#1322)。**空の CW は送らない
+  /// （[_submit]）ので、サーバー側の判定（`spoiler_text.present?`）と揃える。
+  /// CW 欄を最初から開く設定の利用者は、欄が開いたまま CW を書かずに投稿するのが
+  /// 普通で、欄の開閉で見ると**添付がすべて閲覧注意になる**。
+  bool get _effectiveSensitive =>
+      (_cwEnabled && _cwController.text.trim().isNotEmpty) || _sensitiveEnabled;
 
   Future<void> _pickScheduleDate() async {
     // ⚠ 選ばせ方と下限は、予約投稿一覧の「時刻を変更」と共有する (#1212)。

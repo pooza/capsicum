@@ -1990,12 +1990,14 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     bool? sensitive,
     String? language,
     String? quotePolicy,
+    bool? spoilerField,
   }) async {
     final account = await client.updateCredentials(
       sourcePrivacy: scope == null ? null : mastodonVisibilityFromScope(scope),
       sourceSensitive: sensitive,
       sourceLanguage: language,
       sourceQuotePolicy: quotePolicy,
+      sourceSpoilerField: spoilerField,
     );
     return account.toCapsicum(host, adminRoleIds: _adminRoleIds);
   }
