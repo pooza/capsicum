@@ -304,6 +304,7 @@ extension CapsicumMisskeyAnnouncementExtension on MisskeyAnnouncement {
       title: title,
       imageUrl: imageUrl,
       publishedAt: createdAt,
+      updatedAt: updatedAt,
       read: isRead,
       isHtml: false,
     );

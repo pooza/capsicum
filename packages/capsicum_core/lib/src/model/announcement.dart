@@ -4,6 +4,12 @@ class Announcement {
   final String? title;
   final String? imageUrl;
   final DateTime publishedAt;
+
+  /// 最後に編集された時刻。無ければ null (#1308)。
+  ///
+  /// ⚠ **Mastodon は編集していなくても値を返す**（作成時の時刻）。編集されたか
+  /// どうかは [edited] で見る。
+  final DateTime? updatedAt;
   final bool read;
   final bool isHtml;
   final List<AnnouncementReaction> reactions;
@@ -18,11 +24,22 @@ class Announcement {
     this.title,
     this.imageUrl,
     required this.publishedAt,
+    this.updatedAt,
     this.read = false,
     this.isHtml = false,
     this.reactions = const [],
     this.reactionsAllowed = true,
   });
+
+  /// 公開したあとに編集されたか (#1308)。
+  ///
+  /// ⚠ 1 分までの差は編集と見なさない。Mastodon は作成時にも `updated_at` を
+  /// 入れ、予約して公開したお知らせでは `published_at` と数秒ずれる。
+  bool get edited {
+    final updated = updatedAt;
+    if (updated == null) return false;
+    return updated.difference(publishedAt) > const Duration(minutes: 1);
+  }
 
   Announcement copyWith({bool? read, List<AnnouncementReaction>? reactions}) =>
       Announcement(
@@ -31,6 +48,7 @@ class Announcement {
         title: title,
         imageUrl: imageUrl,
         publishedAt: publishedAt,
+        updatedAt: updatedAt,
         read: read ?? this.read,
         isHtml: isHtml,
         reactions: reactions ?? this.reactions,

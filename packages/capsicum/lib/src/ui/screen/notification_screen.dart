@@ -10,6 +10,7 @@ import '../../provider/marker_provider.dart';
 import '../../provider/notification_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../service/background_notification_service.dart';
+import '../../util/announcement_notifications.dart';
 import '../util/op_error.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/notification_filter_button.dart';
@@ -117,10 +118,13 @@ class _NotificationViewState extends ConsumerState<NotificationView>
       if (minIndex < state.notifications.length) {
         // ⚠ 先頭が見えているときは、絞り込みで伏せた分も含めた一番新しい通知
         // まで既読にする（伏せた通知が未読のまま残る・#1291 のレビュー）。
+        // ⚠ お知らせの行（#1308）はサーバーの通知ではないので、その下の通知の
+        // id を使う（[serverNotificationIdAt]）。
         final id = minIndex == 0
-            ? state.rawNewestId ?? state.notifications.first.id
-            : state.notifications[minIndex].id;
-        ref.read(notificationMarkerSaverProvider).save(id);
+            ? state.rawNewestId ??
+                  serverNotificationIdAt(state.notifications, 0)
+            : serverNotificationIdAt(state.notifications, minIndex);
+        if (id != null) ref.read(notificationMarkerSaverProvider).save(id);
       }
     } else if (adapter is NotificationReadSupport &&
         state.notifications.isNotEmpty) {
@@ -129,8 +133,11 @@ class _NotificationViewState extends ConsumerState<NotificationView>
       // 読んでいる利用者の、まだ見ていない新着まで既読にしてしまう。
       // ⚠ 先頭から離れたら、まだ返していない予約も取り消す。
       final saver = ref.read(notificationReadSaverProvider);
+      // ⚠ お知らせの行（#1308）は飛ばす（[serverNotificationIdAt]）。
       if (positions.any((p) => p.index == 0)) {
-        saver.markSeen(state.notifications.first.id);
+        if (serverNotificationIdAt(state.notifications, 0) case final id?) {
+          saver.markSeen(id);
+        }
       } else {
         saver.unsee();
       }

@@ -630,6 +630,7 @@ extension CapsicumMastodonAnnouncementExtension on MastodonAnnouncement {
       id: id,
       content: content,
       publishedAt: publishedAt,
+      updatedAt: updatedAt,
       read: read,
       isHtml: true,
       reactions: reactions.map((r) => r.toCapsicum()).toList(),
