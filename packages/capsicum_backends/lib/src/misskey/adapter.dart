@@ -2379,6 +2379,10 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     // ⚠ Misskey は通報者が転送を指定する口を持たない（転送はモデレータが
     // 管理画面から行う）。`reportForwardHost` が null なので画面も出さない。
     bool forward = false,
+    // ⚠ 分類の口も無い（#1257）。`supportsReportCategory` が false なので
+    // 画面も出さない。
+    ReportCategory category = ReportCategory.other,
+    List<String> ruleIds = const [],
   }) async {
     await client.reportAbuse(authorId, comment: comment ?? '投稿 $postId に対する通報');
   }
@@ -2388,6 +2392,8 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     String userId, {
     String? comment,
     bool forward = false,
+    ReportCategory category = ReportCategory.other,
+    List<String> ruleIds = const [],
   }) async {
     // report-abuse はもともとユーザー単位なので、投稿を指さない通報はこちらが
     // 素直な形 (#998)。comment は必須なので、未入力なら理由なしと明示する。

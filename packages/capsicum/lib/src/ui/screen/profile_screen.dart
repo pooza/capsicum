@@ -1849,6 +1849,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       context,
       message: '@${userAcct(widget.user)} をサーバー管理者に通報しますか？',
       forwardHost: (adapter as ReportSupport).reportForwardHost(widget.user),
+      // 分類を添えられるバックエンドだけ (#1257)。
+      rules: (adapter as ReportSupport).supportsReportCategory
+          ? (adapter as ReportSupport).getReportRules()
+          : null,
     );
     if (input == null) return;
 
@@ -1859,6 +1863,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
         widget.user.id,
         comment: input.comment.isNotEmpty ? input.comment : null,
         forward: input.forward,
+        category: input.category,
+        ruleIds: input.ruleIds,
       );
       messenger.showSnackBar(const SnackBar(content: Text('通報しました')));
     } catch (e) {

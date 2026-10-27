@@ -2010,12 +2010,16 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     String authorId, {
     String? comment,
     bool forward = false,
+    ReportCategory category = ReportCategory.other,
+    List<String> ruleIds = const [],
   }) async {
     await client.createReport(
       authorId,
       statusIds: [postId],
       comment: comment,
       forward: forward ? true : null,
+      category: _reportCategoryParam(category),
+      ruleIds: _reportRuleIdsParam(category, ruleIds),
     );
   }
 
@@ -2024,6 +2028,8 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     String userId, {
     String? comment,
     bool forward = false,
+    ReportCategory category = ReportCategory.other,
+    List<String> ruleIds = const [],
   }) async {
     // status_ids を省くと「アカウントに対する通報」になる。空配列ではなく
     // 未送信にする必要がある (#998)。
@@ -2031,7 +2037,56 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       userId,
       comment: comment,
       forward: forward ? true : null,
+      category: _reportCategoryParam(category),
+      ruleIds: _reportRuleIdsParam(category, ruleIds),
     );
+  }
+
+  /// 「その他」は送らない（サーバーの既定・#1257）。分類を選ばなかった通報の
+  /// 本文を、分類を足す前と同じに保つ。
+  static String? _reportCategoryParam(ReportCategory category) =>
+      category == ReportCategory.other ? null : category.name;
+
+  /// ルールは「違反」のときだけ送る (#1257)。⚠ ほかの分類で送ると、サーバーが
+  /// 分類を「違反」に書き換える（`ReportService`）。
+  static List<String>? _reportRuleIdsParam(
+    ReportCategory category,
+    List<String> ruleIds,
+  ) => category == ReportCategory.violation && ruleIds.isNotEmpty
+      ? ruleIds
+      : null;
+
+  @override
+  bool get supportsReportCategory => true;
+
+  @override
+  Future<List<ReportRule>> getReportRules() async {
+    try {
+      final raw = await client.getInstanceRules();
+      return [for (final rule in raw) ?_reportRule(rule)];
+    } catch (_) {
+      // 取れなければ「サーバーのルール違反」を出さないだけで、通報はできる。
+      return const [];
+    }
+  }
+
+  /// ルール 1 件。⚠ 日本語の翻訳があればそちらを使う（本文はサーバーの既定の
+  /// 言語で書かれている）。
+  static ReportRule? _reportRule(Map<String, dynamic> rule) {
+    final id = rule['id']?.toString();
+    final translations = rule['translations'];
+    final ja = translations is Map ? translations['ja'] : null;
+    String? pick(String key) {
+      final translated = ja is Map ? ja[key] as String? : null;
+      final value = (translated != null && translated.trim().isNotEmpty)
+          ? translated
+          : rule[key] as String?;
+      return (value == null || value.trim().isEmpty) ? null : value.trim();
+    }
+
+    final text = pick('text');
+    if (id == null || text == null) return null;
+    return ReportRule(id: id, text: text, hint: pick('hint'));
   }
 
   @override

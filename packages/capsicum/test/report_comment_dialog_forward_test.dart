@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:capsicum/src/ui/widget/report_comment_dialog.dart';
+import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -59,7 +60,12 @@ void main() {
     await tester.enterText(find.byType(TextField), ' spam ');
     await submit(tester);
 
-    expect(result(), (comment: 'spam', forward: true));
+    expect(result(), (
+      comment: 'spam',
+      forward: true,
+      category: ReportCategory.other,
+      ruleIds: const <String>[],
+    ));
   });
 
   testWidgets('チェックを外すと forward は false で返る', (tester) async {
@@ -69,7 +75,12 @@ void main() {
     await tester.pump();
     await submit(tester);
 
-    expect(result(), (comment: '', forward: false));
+    expect(result(), (
+      comment: '',
+      forward: false,
+      category: ReportCategory.other,
+      ruleIds: const <String>[],
+    ));
   });
 
   testWidgets('⚠ 転送先が無ければチェックを出さず、forward は false', (tester) async {
@@ -79,7 +90,12 @@ void main() {
 
     await submit(tester);
 
-    expect(result(), (comment: '', forward: false));
+    expect(result(), (
+      comment: '',
+      forward: false,
+      category: ReportCategory.other,
+      ruleIds: const <String>[],
+    ));
   });
 
   testWidgets('キャンセルは null', (tester) async {
@@ -109,6 +125,22 @@ void main() {
           src,
           contains('forward: input.forward'),
           reason: 'ダイアログの結果を通報へ渡していない ＝ 押しても転送されない',
+        );
+        // #1257: 分類とルールも同じ形で通す。
+        expect(
+          src,
+          contains('.getReportRules()'),
+          reason: 'ルールをダイアログへ渡していない ＝ 分類が出ない',
+        );
+        expect(
+          src,
+          contains('category: input.category'),
+          reason: '選んだ分類を通報へ渡していない',
+        );
+        expect(
+          src,
+          contains('ruleIds: input.ruleIds'),
+          reason: '選んだルールを通報へ渡していない',
         );
       });
     }

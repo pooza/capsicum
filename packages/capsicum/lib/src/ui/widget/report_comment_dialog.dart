@@ -1,11 +1,25 @@
+import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../constants.dart';
 import '../util/compose_text_style.dart';
 
-/// 通報ダイアログの入力 (#1203)。
-typedef ReportInput = ({String comment, bool forward});
+/// 通報ダイアログの入力 (#1203 / #1257)。
+typedef ReportInput = ({
+  String comment,
+  bool forward,
+  ReportCategory category,
+  List<String> ruleIds,
+});
+
+/// 分類の表示名 (#1257)。
+const reportCategoryLabels = {
+  ReportCategory.other: 'その他',
+  ReportCategory.spam: 'スパム',
+  ReportCategory.legal: '違法な内容',
+  ReportCategory.violation: 'サーバーのルール違反',
+};
 
 /// 通報の確認ダイアログ (#998)。理由を任意で添えられる。
 ///
@@ -25,21 +39,37 @@ typedef ReportInput = ({String comment, bool forward});
 /// 破棄済み controller に触れる。呼び出し側が持つ形にしていた 2 画面
 /// （投稿の通報 / プロフィールの通報）で、片方は早すぎる破棄、もう片方は破棄
 /// 漏れになっていたので、寿命ごとここへ寄せる。
+///
+/// [rules] を渡すと分類を選べるようにする (#1257・2026-10-27 pooza 判断)。
+/// 渡さなければ（Misskey）出さず、返る分類は常に「その他」。
+/// ⚠ **既定は「その他」**で、触らなければ分類を足す前と同じ手数で送れる。
+/// ⚠⚠ 「サーバーのルール違反」は、ルールが読めて 1 件以上あるときだけ出し、
+/// 選んだらルールを 1 つ以上選ぶまで送れない（添えずに送るとサーバーが断る）。
+/// ルールはダイアログを開いてから読む（開くのを待たせない）。
 Future<ReportInput?> showReportCommentDialog(
   BuildContext context, {
   required String message,
   String? forwardHost,
+  Future<List<ReportRule>>? rules,
 }) => showDialog<ReportInput>(
   context: context,
-  builder: (_) =>
-      _ReportCommentDialog(message: message, forwardHost: forwardHost),
+  builder: (_) => _ReportCommentDialog(
+    message: message,
+    forwardHost: forwardHost,
+    rules: rules,
+  ),
 );
 
 class _ReportCommentDialog extends StatefulWidget {
-  const _ReportCommentDialog({required this.message, this.forwardHost});
+  const _ReportCommentDialog({
+    required this.message,
+    this.forwardHost,
+    this.rules,
+  });
 
   final String message;
   final String? forwardHost;
+  final Future<List<ReportRule>>? rules;
 
   @override
   State<_ReportCommentDialog> createState() => _ReportCommentDialogState();
@@ -48,6 +78,23 @@ class _ReportCommentDialog extends StatefulWidget {
 class _ReportCommentDialogState extends State<_ReportCommentDialog> {
   final _controller = TextEditingController();
   late bool _forward = widget.forwardHost != null;
+  ReportCategory _category = ReportCategory.other;
+
+  /// 読めたルール。読み込み中・読めなかったときは空。
+  List<ReportRule> _rules = const [];
+  final _selectedRuleIds = <String>{};
+
+  @override
+  void initState() {
+    super.initState();
+    widget.rules
+        ?.then((rules) {
+          if (mounted) setState(() => _rules = rules);
+        })
+        .catchError((Object _) {
+          // 読めなければ「サーバーのルール違反」を出さないだけ。
+        });
+  }
 
   @override
   void dispose() {
@@ -55,9 +102,18 @@ class _ReportCommentDialogState extends State<_ReportCommentDialog> {
     super.dispose();
   }
 
+  bool get _canSubmit =>
+      _category != ReportCategory.violation || _selectedRuleIds.isNotEmpty;
+
   @override
   Widget build(BuildContext context) {
     final forwardHost = widget.forwardHost;
+    final categories = [
+      ReportCategory.other,
+      ReportCategory.spam,
+      ReportCategory.legal,
+      if (_rules.isNotEmpty) ReportCategory.violation,
+    ];
     return AlertDialog(
       title: const Text('通報'),
       // 小さい画面でキーボードが出ると、チェックのぶんだけ縦が足りなくなる。
@@ -67,6 +123,50 @@ class _ReportCommentDialogState extends State<_ReportCommentDialog> {
           children: [
             Text(widget.message),
             const SizedBox(height: 12),
+            if (widget.rules != null) ...[
+              DropdownButtonFormField<ReportCategory>(
+                initialValue: _category,
+                decoration: const InputDecoration(
+                  labelText: '分類',
+                  border: OutlineInputBorder(),
+                ),
+                items: [
+                  for (final category in categories)
+                    DropdownMenuItem(
+                      value: category,
+                      child: Text(reportCategoryLabels[category]!),
+                    ),
+                ],
+                onChanged: (v) =>
+                    setState(() => _category = v ?? ReportCategory.other),
+              ),
+              if (_category == ReportCategory.violation) ...[
+                const SizedBox(height: 4),
+                for (final rule in _rules)
+                  CheckboxListTile(
+                    value: _selectedRuleIds.contains(rule.id),
+                    onChanged: (v) => setState(() {
+                      if (v ?? false) {
+                        _selectedRuleIds.add(rule.id);
+                      } else {
+                        _selectedRuleIds.remove(rule.id);
+                      }
+                    }),
+                    contentPadding: EdgeInsets.zero,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    title: Text(rule.text),
+                    subtitle: rule.hint == null ? null : Text(rule.hint!),
+                  ),
+                if (_selectedRuleIds.isEmpty)
+                  Text(
+                    '違反したルールを 1 つ以上選んでください',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+              ],
+              const SizedBox(height: 12),
+            ],
             Consumer(
               builder: (context, ref, _) => TextField(
                 controller: _controller,
@@ -101,10 +201,21 @@ class _ReportCommentDialogState extends State<_ReportCommentDialog> {
           child: const Text('キャンセル'),
         ),
         TextButton(
-          onPressed: () => Navigator.pop(context, (
-            comment: _controller.text.trim(),
-            forward: forwardHost != null && _forward,
-          )),
+          onPressed: _canSubmit
+              ? () => Navigator.pop(context, (
+                  comment: _controller.text.trim(),
+                  forward: forwardHost != null && _forward,
+                  category: _category,
+                  // ⚠ ルールは「違反」のときだけ返す（ほかの分類で送ると、
+                  // サーバーが分類を「違反」に書き換える）。
+                  ruleIds: _category == ReportCategory.violation
+                      ? [
+                          for (final rule in _rules)
+                            if (_selectedRuleIds.contains(rule.id)) rule.id,
+                        ]
+                      : const <String>[],
+                ))
+              : null,
           child: const Text('通報'),
         ),
       ],
