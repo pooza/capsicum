@@ -410,6 +410,7 @@ class PushRegistrationService {
           publickey: keys.p256dh,
           auth: keys.auth,
         );
+        await _saveNseTokenIfNeeded(account, accountKey);
       } else {
         await (account.adapter as PushSubscriptionSupport).subscribePush(
           endpoint: endpoint,
@@ -501,6 +502,43 @@ class PushRegistrationService {
       }
     }
   }
+
+  /// iOS の NSE が縮退した通知の本文を引き直せるよう、アクセストークンの写しを
+  /// 置く (#1215)。対象は [shouldSaveNseToken] のとおり。
+  ///
+  /// 登録は起動のたびに走るので、既存の利用者も移行の手順なしで次の起動から
+  /// 写しを持つ。⚠ **失敗しても登録は止めない** —— 写しが無いときの NSE は、
+  /// 今までどおり relay の汎用の文面を出すだけ（今より悪くならない）。
+  static Future<void> _saveNseTokenIfNeeded(
+    Account account,
+    String accountKey,
+  ) async {
+    if (!shouldSaveNseToken(isIOS: Platform.isIOS, type: account.key.type)) {
+      return;
+    }
+    try {
+      await PushKeyStore.saveNseToken(
+        accountKey,
+        account.userSecret.accessToken,
+      );
+    } catch (e) {
+      debugLogException(
+        'capsicum: push.registration: nse token save failed',
+        e,
+      );
+    }
+  }
+
+  /// アクセストークンの写しを NSE 用に置くか (#1215)。
+  ///
+  /// ⚠⚠ **iOS の Misskey だけ。**4KB を超えて本文が落ちているのは Misskey の
+  /// 経路で、トークンを読めるプロセスを増やす変更なので対象を絞る。macOS の
+  /// NSE は OS が `didReceive` を渡さない（#673）ので置いても使われない。
+  @visibleForTesting
+  static bool shouldSaveNseToken({
+    required bool isIOS,
+    required BackendType type,
+  }) => isIOS && type == BackendType.misskey;
 
   /// Sentry 用の長大な message / StackTrace ではなく、UI 表示用に短縮した
   /// メッセージを作る。DioException は種別・ステータスコードに寄せ、他は

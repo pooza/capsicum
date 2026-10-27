@@ -57,6 +57,24 @@ enum PushKeyReader {
             keys: nil, lastStatus: lastStatus, triedPrefixes: tried)
     }
 
+    /// 縮退した通知の本文を引き直すための、アクセストークンの写しを読む (#1215)。
+    ///
+    /// 書くのは Dart 側の `PushKeyStore.saveNseToken` で、**Misskey のアカウント
+    /// にしか置かない**ので `misskey` の prefix だけを見る。キーの綴りは Dart の
+    /// `_Slot.nseToken`（`capsicum_push_nse_token_{storageKey}`）と揃えること。
+    ///
+    /// ⚠⚠ **このトークンは `account` の host にしか送らないこと。**写しは
+    /// `misskey://{account}` のキーで引くので、payload が別の host を名乗っても
+    /// その host 用の写しは存在せず、トークンが外へ出ない。payload の `server`
+    /// を宛先に使うと、この縛りが外れる。
+    static func readNseToken(account: String) -> String? {
+        let keychainKey = storageKey(
+            slot: "nse_token", accountStorageKey: "misskey://\(account)")
+        let (raw, _) = keychainRead(account: keychainKey)
+        guard let raw = raw, !raw.isEmpty else { return nil }
+        return raw
+    }
+
     private static func tryRead(storageKey: String) -> (PushKeys?, OSStatus) {
         let keychainKey = PushKeyReader.storageKey(
             slot: "keyset", accountStorageKey: storageKey)

@@ -41,6 +41,32 @@ class NotificationService: UNNotificationServiceExtension {
         let rawEncoding = userInfo["encoding"] as? String
         let host = rawAccount.flatMap { hostFromAccount($0) }
 
+        // relay が APNs の 4KB に収めるため暗号化された本文を落とした回 (#1215)。
+        // Misskey のアカウントで写しのトークンがあれば、API から本文を引き直す。
+        // ⚠ お知らせの push (#477) も body を持たないので、announcement_id で除く。
+        if let account = rawAccount, !account.isEmpty,
+            userInfo["body"] == nil, userInfo["announcement_id"] == nil,
+            let host = host,
+            let token = PushKeyReader.readNseToken(account: account)
+        {
+            DegradedNotificationFetcher.fetchLatest(
+                host: host, token: token, account: account
+            ) { parsed in
+                guard let parsed = parsed,
+                    let content =
+                        bestAttempt.mutableCopy() as? UNMutableNotificationContent
+                else {
+                    NSLog("capsicum: nse: degraded, kept the relay fallback")
+                    self.deliverOnce(bestAttempt)
+                    return
+                }
+                NotificationService.apply(parsed, account: account, to: content)
+                NSLog("capsicum: nse: degraded, refetched (elapsed=\(elapsedMs())ms)")
+                self.deliverOnce(content)
+            }
+            return
+        }
+
         guard
             let account = rawAccount, !account.isEmpty,
             let bodyB64 = userInfo["body"] as? String,
@@ -116,6 +142,16 @@ class NotificationService: UNNotificationServiceExtension {
             return
         }
 
+        NotificationService.apply(parsed, account: account, to: bestAttempt)
+        contentHandler(bestAttempt)
+    }
+
+    /// 復号（または引き直し）で得た内容で、通知の title / body を書き換える。
+    static func apply(
+        _ parsed: ParsedPayload,
+        account: String,
+        to content: UNMutableNotificationContent
+    ) {
         // ラベル解決は App Group UserDefaults 経由の NotificationLabelCache
         // から行う（iOS 側は shared_preferences_foundation の suiteName 設定で
         // `UserDefaults(suiteName:)` に焼いている）。未保存アカウントは
@@ -123,36 +159,140 @@ class NotificationService: UNNotificationServiceExtension {
         let (reblogLabel, postLabel) = LabelCache.read(account: account)
 
         if let type = parsed.type {
-            bestAttempt.title = NotificationTypeLabel.displayLabel(
+            content.title = NotificationTypeLabel.displayLabel(
                 type: type,
                 reblogLabel: reblogLabel,
                 postLabel: postLabel
             )
         } else if let title = parsed.title, !title.isEmpty {
-            bestAttempt.title = title
+            content.title = title
         }
 
         if let body = parsed.body, !body.isEmpty {
-            bestAttempt.body = body
+            content.body = body
         } else if parsed.type != nil, let title = parsed.title, !title.isEmpty {
             // 本文が空なら、上で捨てたサーバーの title（「誰が・何をした」）を
             // 本文に回す (#1326)。自己紹介の空な相手からの新規登録・フォローで
             // 起きる。回さないと復号失敗時の文面が残る。Dart 側と揃える。
-            bestAttempt.body = title
+            content.body = title
         }
+    }
 
-        contentHandler(bestAttempt)
+    /// 通知を 1 回だけ渡す (#1215)。縮退した通知の引き直しは非同期なので、
+    /// 完了と [serviceExtensionTimeWillExpire] が競りうる。
+    private let deliverLock = NSLock()
+    private var delivered = false
+
+    private func deliverOnce(_ content: UNNotificationContent) {
+        deliverLock.lock()
+        let first = !delivered
+        delivered = true
+        deliverLock.unlock()
+        if first { contentHandler?(content) }
     }
 
     override func serviceExtensionTimeWillExpire() {
         // NSE は 30 秒以内に完了する必要がある。タイムアウト寸前にここが
         // 呼ばれるので、現時点での best attempt (relay の fallback 文面等)
         // を返して通知を止めない。
-        if let contentHandler = contentHandler,
-            let bestAttemptContent = bestAttemptContent
-        {
-            contentHandler(bestAttemptContent)
+        if let bestAttemptContent = bestAttemptContent {
+            deliverOnce(bestAttemptContent)
         }
+    }
+}
+
+// MARK: - Degraded notification refetch
+
+/// relay が本文を落とした（縮退した）通知の本文を、Misskey の API から引き直す
+/// (#1215)。
+///
+/// 縮退した payload には通知の ID も種別も残らない（relay は暗号化された本文を
+/// 丸ごと落とす）ので、**そのアカウントのいちばん新しい通知**で代用する。外れを
+/// 見せないため、次のどちらかに当たったら使わず、relay の汎用の文面のままにする:
+///
+/// - **作成から [freshness] 秒を過ぎている。**縮退したのがチャット
+///   （`newChatMessage`）だと通知の一覧には出ないので、無関係な古い通知を
+///   拾ってしまう。
+/// - **前に引き直しで使った通知と同じ。**短い間隔で 2 件届いたとき、2 件目に
+///   1 件目と同じ本文を見せない（2026-10-28 pooza 判断）。
+///
+/// ⚠ 取得に失敗したときも汎用の文面のまま（今より悪くしない）。
+enum DegradedNotificationFetcher {
+    static let freshness: TimeInterval = 60
+    private static let suiteName = "group.jp.co.b-shock.capsicum"
+    private static let lastIdPrefix = "capsicum_nse_degraded_last_id_"
+
+    static func fetchLatest(
+        host: String,
+        token: String,
+        account: String,
+        completion: @escaping (ParsedPayload?) -> Void
+    ) {
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = host
+        components.path = "/api/i/notifications"
+        guard let url = components.url else {
+            completion(nil)
+            return
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        // ⚠ markAsRead を必ず false で送る。Misskey の既定は true で、通知を
+        // 1 件出すだけで全部が既読になってしまう（Dart 側の #1045 と同じ）。
+        let body: [String: Any] = ["i": token, "limit": 1, "markAsRead": false]
+        guard let data = try? JSONSerialization.data(withJSONObject: body) else {
+            completion(nil)
+            return
+        }
+        request.httpBody = data
+
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 8
+        config.timeoutIntervalForResource = 10
+        let session = URLSession(configuration: config)
+        session.dataTask(with: request) { data, response, error in
+            defer { session.finishTasksAndInvalidate() }
+            guard error == nil,
+                let http = response as? HTTPURLResponse, http.statusCode == 200,
+                let data = data,
+                let list = try? JSONSerialization.jsonObject(with: data) as? [Any],
+                let latest = list.first as? [String: Any]
+            else {
+                NSLog("capsicum: nse: degraded refetch failed")
+                completion(nil)
+                return
+            }
+            completion(accept(latest, account: account, now: Date()))
+        }.resume()
+    }
+
+    /// 引いた通知を使ってよいかを決め、使うなら内容を返す。
+    static func accept(
+        _ notification: [String: Any],
+        account: String,
+        now: Date
+    ) -> ParsedPayload? {
+        guard let id = notification["id"] as? String, !id.isEmpty,
+            let createdAt = (notification["createdAt"] as? String).flatMap(parseDate),
+            now.timeIntervalSince(createdAt) <= freshness
+        else {
+            return nil
+        }
+        let defaults = UserDefaults(suiteName: suiteName)
+        let key = lastIdPrefix + account
+        if defaults?.string(forKey: key) == id { return nil }
+        defaults?.set(id, forKey: key)
+        return PayloadParser.parseMisskeyNotification(notification)
+    }
+
+    private static func parseDate(_ value: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: value) { return date }
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: value)
     }
 }
 
@@ -282,11 +422,7 @@ enum PayloadParser {
         if (dict["type"] as? String) == "notification",
             let inner = dict["body"] as? [String: Any]
         {
-            return ParsedPayload(
-                title: nil,
-                body: synthesizeMisskeyBody(inner),
-                type: inner["type"] as? String
-            )
+            return parseMisskeyNotification(inner)
         }
 
         // Misskey 新 chat: {type: 'newChatMessage', body: <ChatMessage>, ...} (#248)。
@@ -304,6 +440,16 @@ enum PayloadParser {
             )
         }
         return nil
+    }
+
+    /// Misskey の通知オブジェクト（push の `body` の中身、または
+    /// `/api/i/notifications` の 1 件。どちらも同じ形）を解釈する。
+    static func parseMisskeyNotification(_ inner: [String: Any]) -> ParsedPayload {
+        return ParsedPayload(
+            title: nil,
+            body: synthesizeMisskeyBody(inner),
+            type: inner["type"] as? String
+        )
     }
 
     private static func synthesizeMisskeyBody(_ body: [String: Any]) -> String? {
