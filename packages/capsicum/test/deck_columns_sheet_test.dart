@@ -1,6 +1,7 @@
 import 'package:capsicum/src/model/account.dart';
 import 'package:capsicum/src/model/account_key.dart';
 import 'package:capsicum/src/provider/account_manager_provider.dart';
+import 'package:capsicum/src/provider/deck_provider.dart';
 import 'package:capsicum/src/provider/preferences_provider.dart';
 import 'package:capsicum/src/ui/widget/deck_columns_sheet.dart';
 import 'package:capsicum/src/ui/widget/user_avatar.dart';
@@ -332,6 +333,64 @@ void main() {
       await tester.tap(candidate('timeline:local'));
       await tester.pumpAndSettle();
       expect(find.text('カラム（押すと移動）'), findsOneWidget);
+    });
+  });
+
+  // #1307: ロックしていないカラムをまとめて閉じる（2026-10-27 pooza 判断）。
+  group('ロックしていないカラムを閉じる (#1307)', () {
+    final closeTile = find.byKey(const ValueKey('deck-close-unlocked'));
+
+    Future<List<String>> addThree(
+      WidgetTester tester,
+      ProviderContainer container,
+    ) async {
+      for (final key in [
+        'timeline:home',
+        'timeline:local',
+        'timeline:federated',
+      ]) {
+        await tester.tap(candidate(key));
+        await tester.pumpAndSettle();
+      }
+      return [for (final c in container.read(deckColumnsProvider)) c.id];
+    }
+
+    testWidgets('⚠ ロック中が無ければ、隠さずに無効で出して理由を添える', (tester) async {
+      final (container, _) = await pumpModalSheet(tester);
+      await addThree(tester, container);
+
+      expect(closeTile, findsOneWidget);
+      expect(tester.widget<ListTile>(closeTile).enabled, isFalse);
+      expect(find.text('ロックしたカラムがあると使えます'), findsOneWidget);
+    });
+
+    testWidgets('カラムが無ければ出さない', (tester) async {
+      await pumpModalSheet(tester);
+
+      expect(closeTile, findsNothing);
+    });
+
+    testWidgets('押すと、ロックしていないカラムだけを閉じ、シートは開いたまま', (tester) async {
+      final (container, results) = await pumpModalSheet(tester);
+      final [first, second, third] = await addThree(tester, container);
+      await container
+          .read(deckLockedColumnsProvider.notifier)
+          .setLocked(second, true);
+      await tester.pumpAndSettle();
+      expect(tester.widget<ListTile>(closeTile).enabled, isTrue);
+
+      await tester.tap(closeTile);
+      await tester.pumpAndSettle();
+
+      expect(container.read(deckColumnsProvider).map((c) => c.id), [second]);
+      expect(container.read(deckFocusProvider).columnId, second);
+      expect(results, isEmpty, reason: '閉じるのはカラムで、シートではない');
+      expect(first, isNot(third));
+      expect(
+        tester.widget<ListTile>(closeTile).enabled,
+        isFalse,
+        reason: '閉じるものが無くなった',
+      );
     });
   });
 }

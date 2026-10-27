@@ -5,6 +5,7 @@ import 'package:capsicum/src/platform/now_playing/now_playing_resolver.dart';
 import 'package:capsicum/src/provider/account_manager_provider.dart';
 import 'package:capsicum/src/provider/deck_provider.dart';
 import 'package:capsicum/src/provider/platform_providers.dart';
+import 'package:capsicum/src/provider/preferences_provider.dart';
 import 'package:capsicum/src/ui/widget/desktop_menu_model.dart';
 import 'package:capsicum/src/ui/widget/home_menu.dart';
 import 'package:capsicum/src/util/shared_preferences_cache.dart';
@@ -75,12 +76,15 @@ void main() {
     List<String> revealed = const [],
     List<String> sheetOpened = const [],
     bool nowPlayingAvailable = false,
+    List<String> locked = const [],
+    void Function(ProviderContainer container)? onContainer,
   }) async {
     SharedPreferences.setMockInitialValues({
       'deck_columns': [
         for (final id in columnIds)
           '$id|misskey://me@misskey.example|hashtag:$id',
       ],
+      if (locked.isNotEmpty) 'deck_locked_columns': locked,
     });
     initSharedPreferencesCache(await SharedPreferences.getInstance());
 
@@ -95,6 +99,7 @@ void main() {
       ],
     );
     addTearDown(container.dispose);
+    onContainer?.call(container);
 
     if (inDeck) {
       container.read(mountedDeckCountProvider.notifier).state = 1;
@@ -199,7 +204,14 @@ void main() {
           .whereType<MenuActionEntry>()
           .map((a) => a.label)
           .toList();
-      expect(labels, ['前のカラム', '次のカラム', '#a · me さん', '#b · me さん', 'カラムを編集…']);
+      expect(labels, [
+        '前のカラム',
+        '次のカラム',
+        '#a · me さん',
+        '#b · me さん',
+        'カラムを編集…',
+        'ロックしていないカラムを閉じる',
+      ]);
     });
 
     // #1258: ⌘N と Ctrl+R は「フォーカス中のカラム」に効くのに、その宛先を
@@ -468,6 +480,92 @@ void main() {
       actionNamed(move, 'ナウプレで新規投稿')!.onSelected!();
 
       expect(calls, ['nowplaying']);
+    });
+  });
+
+  // #1307: ロックしていないカラムをまとめて閉じる（2026-10-27 pooza 判断）。
+  group('表示 > カラム > ロックしていないカラムを閉じる', () {
+    MenuActionEntry closeEntry(List<MenuSubmenuEntry> model) => actionNamed(
+      submenuNamed(childrenOf(model, '表示'), 'カラム')!.children,
+      'ロックしていないカラムを閉じる',
+    )!;
+
+    testWidgets('主修飾 + Shift + W で、メニューを開かなくても効く', (tester) async {
+      final entry = closeEntry(
+        await buildModel(tester, inDeck: true, locked: const ['a']),
+      );
+
+      expect(
+        entry.shortcut,
+        const MenuShortcut(LogicalKeyboardKey.keyW, shift: true),
+      );
+      expect(entry.globalShortcut, isTrue);
+    });
+
+    testWidgets('⚠ ロック中が無ければ、隠さずに無効で出す', (tester) async {
+      final entry = closeEntry(await buildModel(tester, inDeck: true));
+
+      expect(entry.onSelected, isNull);
+    });
+
+    testWidgets('⚠ ロックしていないカラムが無ければ無効', (tester) async {
+      final entry = closeEntry(
+        await buildModel(tester, inDeck: true, locked: const ['a', 'b']),
+      );
+
+      expect(entry.onSelected, isNull);
+    });
+
+    testWidgets('押すと、ロックしていないカラムだけを閉じる（確認は挟まない）', (tester) async {
+      late ProviderContainer container;
+      final revealed = <String>[];
+      final entry = closeEntry(
+        await buildModel(
+          tester,
+          inDeck: true,
+          columnIds: const ['a', 'b', 'c'],
+          locked: const ['b'],
+          revealed: revealed,
+          onContainer: (c) => container = c,
+        ),
+      );
+
+      entry.onSelected!();
+      await tester.pumpAndSettle();
+
+      expect(container.read(deckColumnsProvider).map((c) => c.id), ['b']);
+      expect(container.read(deckFocusProvider).columnId, 'b');
+      expect(revealed, ['b'], reason: '列が詰まったので、残ったカラムまで送る');
+    });
+
+    testWidgets('⚠⚠ 主修飾つきのキーが、メニューの中でほかの項目とぶつからない', (tester) async {
+      final model = await buildModel(
+        tester,
+        inDeck: true,
+        locked: const ['a'],
+        nowPlayingAvailable: true,
+      );
+      final seen = <MenuShortcut, String>{};
+      final duplicates = <String>[];
+      void walk(List<MenuEntry> entries) {
+        for (final entry in entries) {
+          if (entry is MenuSubmenuEntry) walk(entry.children);
+          if (entry is MenuActionEntry && entry.shortcut != null) {
+            final other = seen[entry.shortcut!];
+            if (other != null) duplicates.add('${entry.label} / $other');
+            seen[entry.shortcut!] = entry.label;
+          }
+        }
+      }
+
+      walk(model);
+
+      expect(seen, isNotEmpty, reason: '走査が空振りしていない');
+      expect(
+        seen.keys,
+        contains(const MenuShortcut(LogicalKeyboardKey.keyW, shift: true)),
+      );
+      expect(duplicates, isEmpty);
     });
   });
 
