@@ -12,12 +12,38 @@ class HealthCheckResult {
   final String? detail;
   final Duration? responseTime;
 
+  /// このサーバーには、この確認の口が無い (#1337)。⚠ [ok] は false だが、
+  /// 画面はエラーとして出さない。
+  final bool unavailable;
+
   const HealthCheckResult({
     required this.name,
     required this.ok,
     this.detail,
     this.responseTime,
+    this.unavailable = false,
   });
+}
+
+/// ヘルスチェックの口が無いことを表す (#1337)。
+class HealthEndpointMissing implements Exception {
+  const HealthEndpointMissing();
+}
+
+/// [error] が「確認の口が無い」を指しているか (#1337)。
+///
+/// ⚠ Mastodon の一種として動いているフォーク（Akkoma など）には
+/// `/api/v1/streaming/health` が無く 404 を返す。ストリーミング自体は動いて
+/// いるので、エラーとして出すと誤解させる。
+bool isHealthEndpointMissing(Object error) =>
+    error is HealthEndpointMissing ||
+    (error is DioException && error.response?.statusCode == 404);
+
+/// ヘルスチェックの応答が HTML か (#1337)。⚠ Akkoma の `/health` は、口が
+/// 無いぶんを SPA の受け皿が 200 の HTML で返す（本家は `OK` の平文）。
+bool looksLikeHtml(String body) {
+  final head = body.trimLeft().toLowerCase();
+  return head.startsWith('<!doctype html') || head.startsWith('<html');
 }
 
 class ServerInfoState {
@@ -95,7 +121,14 @@ class ServerInfoNotifier extends AutoDisposeAsyncNotifier<ServerInfoState> {
     final results = <HealthCheckResult>[];
 
     if (adapter is MastodonAdapter) {
-      results.add(await _check('Mastodon', () => adapter.client.checkHealth()));
+      results.add(
+        await _check('Mastodon', () async {
+          final body = await adapter.client.checkHealth();
+          // ⚠ HTML は口が無いぶんを受け皿が返したもの（#1337・Akkoma）。
+          if (looksLikeHtml(body)) throw const HealthEndpointMissing();
+          return body;
+        }),
+      );
       results.add(
         await _check('Streaming', () => adapter.client.checkStreamingHealth()),
       );
@@ -162,6 +195,7 @@ class ServerInfoNotifier extends AutoDisposeAsyncNotifier<ServerInfoState> {
         ok: false,
         detail: e.toString(),
         responseTime: sw.elapsed,
+        unavailable: isHealthEndpointMissing(e),
       );
     }
   }

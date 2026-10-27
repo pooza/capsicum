@@ -51,6 +51,7 @@ import 'src/util/exception_scrub.dart';
 import 'src/util/notification_route_wait.dart';
 import 'src/util/sensitive_fields.dart';
 import 'src/util/sentry_observability.dart';
+import 'src/util/sentry_server_software.dart';
 import 'src/util/sentry_tag_hash.dart';
 import 'src/util/shared_preferences_cache.dart';
 
@@ -311,7 +312,9 @@ FutureOr<SentryEvent?> _scrubEvent(SentryEvent event, Hint hint) {
     event.breadcrumbs = breadcrumbs.map(_scrubBreadcrumb).toList();
   }
 
-  return event;
+  // サーバーのソフトウェア名を足す（Akkoma などのフォークを本家と見分ける・
+  // #1337）。
+  return tagServerSoftware(event);
 }
 
 const _sensitiveHeaderNames = ['Authorization', 'X-Relay-Secret'];

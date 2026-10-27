@@ -240,12 +240,24 @@ class _ServerInfoScreenState extends ConsumerState<ServerInfoScreen> {
         else ...[
           ...state.healthChecks.map(
             (check) => ListTile(
+              // ⚠ 口が無い確認（#1337・Akkoma の streaming/health など）は
+              // エラーとして出さない。
               leading: Icon(
-                check.ok ? Icons.check_circle : Icons.error,
-                color: check.ok ? Colors.green : colorScheme.error,
+                check.ok
+                    ? Icons.check_circle
+                    : check.unavailable
+                    ? Icons.remove_circle_outline
+                    : Icons.error,
+                color: check.ok
+                    ? Colors.green
+                    : check.unavailable
+                    ? colorScheme.outline
+                    : colorScheme.error,
               ),
               title: Text(check.name),
-              subtitle: check.responseTime != null
+              subtitle: check.unavailable
+                  ? const Text('このサーバーには、この確認がありません')
+                  : check.responseTime != null
                   ? Text('${check.responseTime!.inMilliseconds}ms')
                   : null,
             ),

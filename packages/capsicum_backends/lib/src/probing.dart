@@ -10,7 +10,22 @@ const _mastodonForks = {
   'hometown',
   'glitch-soc',
   'kmyblue',
+  // ⚠ Mastodon の一種として扱う（#1337・2026-10-25 / 10-27 pooza 判断）。
+  // Mastodon 互換の API で動いている。種別（`BackendType`）は Mastodon のまま
+  // で、Akkoma を種別に足す本格対応は #1287。
+  'akkoma',
+  'pleroma',
 };
+
+/// NodeInfo で読めたソフトウェア名（host → 小文字の名前）(#1337)。
+///
+/// ⚠ Sentry で、Mastodon の一種として動いているフォーク（Akkoma など）の失敗を
+/// 本家と見分けるため。セッションの復元で全アカウントの host を probe するので、
+/// 起動の後はここに載っている。種別が分からなかった名前も覚える。
+final _knownSoftwareNames = <String, String>{};
+
+/// [host] について、これまでに NodeInfo で読めたソフトウェア名。無ければ null。
+String? knownSoftwareName(String host) => _knownSoftwareNames[host];
 
 const _misskeyForks = {
   'misskey',
@@ -101,6 +116,7 @@ Future<InstanceProbe?> _probeViaNodeInfo(Dio dio, String host) async {
 
     final name = (software['name'] as String?)?.toLowerCase();
     final version = software['version'] as String?;
+    if (name != null && name.isNotEmpty) _knownSoftwareNames[host] = name;
     final type = _detectBackendType(name);
     if (type == null) return null;
     return InstanceProbe(
