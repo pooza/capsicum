@@ -128,6 +128,24 @@ ls -la build/app/outputs/bundle/release/app-release.aab   # 終了コードで�
 
 ⚠ 2026-10-25 の時点で、本体（2025.2）と `cmdline-tools`（19.0・23.0 が出ている）は上げていない。次のリリースの直後に上げる候補。
 
+## 同じ Mac に同居する Tsunagal との共有物（#1316）
+
+メインの Mac には、Tsunagal（同じく Flutter）の開発環境が同居している。Claude Code のセッションも別々に動く。⚠⚠ **この節が正本**で、Tsunagal 側の docs はここへリンクするだけにする（2026-10-27 pooza 判断・二重に書かない）。
+
+| もの | 共有の形 | 決まり |
+| --- | --- | --- |
+| Flutter 本体 | `/opt/flutter` の 1 つ。capsicum の基準は CI の pin（`analyze.yml`）、Tsunagal の基準は `.fvmrc` | **今は分けない**（どちらも同じ版）。片方だけ上げたい時期が来たら、そのときに分ける（Tsunagal は fvm を前提にしている） |
+| Android SDK | 1 か所を両方が使う | 下の「上げるとき」 |
+| JDK | 両方の `JAVA_HOME` が Android Studio 同梱の JDK | 本体を上げると両方の Gradle が変わる（上の節） |
+| エミュレータ | 共用だった AVD が 1 台と、Tsunagal 専用の AVD（2026-10-19 に作った） | **共用だった AVD は capsicum 専用と見なす**。Tsunagal は自分の AVD を使う |
+| Gradle のキャッシュ | `~/.gradle` | 版ごとに分かれるので、ぶつかりにくい |
+
+### 上げるとき（#1314 の形）
+
+- **上げるかどうかは pooza が決める。**どちらのセッションも、共有物を自分の判断で上げない
+- **上げた側のセッションが、もう片方のリポジトリに記録の Issue を立てる。**上げたものと前後の版、上げた後に通したスモークを書く（#1314 が実例）。capsicum 側で上げたときは Tsunagal のリポジトリへ、Tsunagal 側で上げたときは capsicum へ
+- 受け取った側は、自分の手順（capsicum なら上の「上げる時期と、上げた後のスモーク」）を通して閉じる
+
 ## Debug ビルドと TestFlight の役割分担
 
 Debug ビルドは「コードを動かしてみるための環境」であり、本番相当の検証は TestFlight / 内部テストトラックで行う。Debug 環境で本番と同じ機能スイートが揃わなくても、TestFlight 経由で検証できるなら気にしない方針。
