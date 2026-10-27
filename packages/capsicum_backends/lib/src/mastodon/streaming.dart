@@ -1,13 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math';
 
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:fediverse_objects/fediverse_objects.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../reconnecting_socket.dart';
-import '../streaming_backoff.dart';
 import 'extensions.dart';
 
 /// 購読する `stream` と、必要な追加パラメータ。対応しないタブは null (#1098)。
@@ -81,7 +79,7 @@ bool mastodonCanStream(TabType tab) =>
     mastodonStreamTarget(tab) != null ||
     mastodonHashtagSubscriptions(tab) != null;
 
-class MastodonStreaming {
+class MastodonStreaming with ReconnectTuning, StreamConnectionStateReporter {
   final String host;
   final String accessToken;
 
@@ -97,6 +95,7 @@ class MastodonStreaming {
   final void Function()? onReconnectExhausted;
 
   /// 接続ライフサイクルの遷移を呼び出し側 (UI インジケータ) へ流す (#714)。
+  @override
   final void Function(StreamConnectionState state)? onConnectionState;
 
   /// 切断 (onDone) 時の WebSocket closeCode / closeReason を観測層へ流す (#788)。
@@ -121,19 +120,14 @@ class MastodonStreaming {
   final _seenIds = <String>{};
   static const _seenIdsLimit = 500;
   bool _disposed = false;
-  StreamConnectionState? _lastConnectionState;
-  final Random _random = Random();
-  // 初動は速く（瞬間 503 / 瞬断から数秒で復帰）、上限は live クライアント向けに
-  // 短め（5 分待ちは実況で長すぎる）。jitter は streaming_backoff 側で付与 (#784)。
-  static const _baseReconnectDelay = Duration(seconds: 1);
-  static const _maxReconnectDelay = Duration(seconds: 60);
-  // 無音切断（NAT/プロキシのアイドル切断・ungraceful な離脱）では FIN/RST が
-  // 来ず onDone/onError が発火しないため、ping/pong を張らないと「繋がっている
-  // つもり」で死んだソケットに座り続け再接続が走らない (#788)。pingInterval を
-  // 設定すると dart:io が ping を送り、同間隔内に pong が無ければ自動で close →
-  // onDone 発火 → 再接続が動く。検知時間 ≒ pingInterval。本線タイムラインは
-  // 即時性が要るので短め。
-  static const _pingInterval = Duration(seconds: 30);
+
+  @override
+  bool get isStreamDisposed => _disposed;
+
+  /// タイムラインは「即時」の値で再接続する (#1340)。理由は
+  /// [ReconnectProfile.live]。
+  @override
+  ReconnectProfile get reconnectProfile => ReconnectProfile.live;
 
   MastodonStreaming({
     required this.host,
@@ -146,16 +140,6 @@ class MastodonStreaming {
     this.onDisconnect,
     this.channelFactory,
   });
-
-  // 同じ状態が連続するときは UI へ重複通知しない (#714)。観測経路の失敗で
-  // 本筋を止めない。
-  void _notifyConnectionState(StreamConnectionState next) {
-    if (_disposed || _lastConnectionState == next) return;
-    _lastConnectionState = next;
-    try {
-      onConnectionState?.call(next);
-    } catch (_) {}
-  }
 
   Stream<Post> connect(TabType tab) {
     // 対応する stream を持たないタブは購読しない (#793 / #1098)。既定の 'user'
@@ -185,58 +169,26 @@ class MastodonStreaming {
     // (#1265)。握手の上限・1 回の失敗を 1 回だけ数える・安定を待ってから
     // 数え直す、は通知とチャット（#1252）と同じになる。
     _socket?.dispose();
-    _socket = ReconnectingSocket(
+    _socket = ReconnectingSocket.tuned(
+      this,
       buildUri: () => uri,
       onMessage: _onMessage,
       subscribeMessages: () => [
         for (final tag in subscriptions ?? const <String>[])
           jsonEncode({'type': 'subscribe', 'stream': 'hashtag', 'tag': tag}),
       ],
-      delayFor: reconnectDelayFor,
       onStreamError: onStreamError,
-      onReconnectExhausted: () {
-        try {
-          onReconnectExhausted?.call();
-        } catch (_) {
-          // 観測経路の失敗で本筋を止めない。
-        }
-        _notifyConnectionState(StreamConnectionState.exhausted);
-      },
-      onConnectionEvent: (event) {
-        if (event == ReconnectingSocket.connected) {
-          _notifyConnectionState(StreamConnectionState.live);
-        } else if (event == ReconnectingSocket.disconnected) {
-          _notifyConnectionState(StreamConnectionState.disconnected);
-        }
-      },
+      onReconnectExhausted: reportExhausted(onReconnectExhausted),
+      onConnectionEvent: reportConnectionEvent,
       onConnecting: () {
         _seenIds.clear();
-        _notifyConnectionState(StreamConnectionState.connecting);
+        notifyConnectionState(StreamConnectionState.connecting);
       },
       onClosed: onDisconnect,
       channelFactory: channelFactory,
-      pingInterval: _pingInterval,
-      connectTimeout: connectTimeout,
-      stableAfter: stableConnectionAfter,
     )..connect();
     return _controller!.stream;
   }
-
-  /// 握手を待つ上限 (#1265)。⚠ テストが縮める。
-  Duration get connectTimeout => const Duration(seconds: 30);
-
-  /// これだけつながり続けたら、失敗を数え直す (#1265)。⚠ テストが縮める。
-  Duration get stableConnectionAfter => const Duration(seconds: 30);
-
-  /// [attempt] 回目（0 始まり）の再接続までの待ち時間。⚠ テストが上書きする。
-  Duration reconnectDelayFor(int attempt) => Duration(
-    milliseconds: reconnectBackoffMs(
-      attempt,
-      baseMs: _baseReconnectDelay.inMilliseconds,
-      maxMs: _maxReconnectDelay.inMilliseconds,
-      random: _random,
-    ),
-  );
 
   void _onMessage(dynamic message) {
     if (message is! String) return;
