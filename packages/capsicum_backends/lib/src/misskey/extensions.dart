@@ -118,8 +118,16 @@ extension CapsicumMisskeyNoteExtension on MisskeyNote {
     bool pinned = false,
     Set<String> adminRoleIds = const {},
   }) {
-    // Misskey: renote + text = quote, renote without text = simple renote
-    final isQuote = renote != null && text != null;
+    // Misskey: 本文・CW・返信先・投票・添付のどれかがあれば引用、どれも無ければ
+    // 単なるリノート（上流の `isQuotePacked` と同じ判定・#1340）。⚠ 以前は本文
+    // だけを見ていたので、CW・添付・投票だけの引用がリノートに化けていた。
+    final isQuote =
+        renote != null &&
+        (text != null ||
+            cw != null ||
+            replyId != null ||
+            poll != null ||
+            (files?.isNotEmpty ?? false));
     return Post(
       id: id,
       postedAt: createdAt,
