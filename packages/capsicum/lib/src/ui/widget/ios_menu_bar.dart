@@ -2,7 +2,9 @@ import 'dart:convert';
 
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
+import '../../util/exception_scrub.dart';
 import 'desktop_menu_model.dart';
 
 /// iPad のメニューバー（iPadOS 26〜）へ、デスクトップと同じモデルを載せる
@@ -94,7 +96,19 @@ class IosMenuBridge {
     if (args is! Map) return;
     if (args['generation'] != _generation) return;
     final id = args['id'];
-    if (id is int) _callbacks[id]?.call();
+    if (id is! int) return;
+    // ⚠ 項目のコールバックが同期で投げた例外は、チャンネルがネイティブへの
+    // エラー応答に変えて飲み込む（ネイティブは応答を見ない）ので、どこにも
+    // 残らない（#1340）。ここで拾って Sentry へ送る。
+    try {
+      _callbacks[id]?.call();
+    } catch (e, st) {
+      Sentry.captureException(
+        scrubException(e),
+        stackTrace: st,
+        withScope: (scope) => scope.setTag('service', 'ios_menu_bar'),
+      );
+    }
   }
 }
 
@@ -124,10 +138,10 @@ enum IosMenuPlacement {
 ///   システムの Window がその役
 @visibleForTesting
 IosMenuPlacement iosMenuPlacement(String label) => switch (label) {
-  'capsicum' => IosMenuPlacement.application,
-  'ファイル' => IosMenuPlacement.file,
-  '表示' => IosMenuPlacement.view,
-  '編集' || 'ウインドウ' => IosMenuPlacement.skip,
+  TopMenuLabel.app => IosMenuPlacement.application,
+  TopMenuLabel.file => IosMenuPlacement.file,
+  TopMenuLabel.view => IosMenuPlacement.view,
+  TopMenuLabel.edit || TopMenuLabel.window => IosMenuPlacement.skip,
   _ => IosMenuPlacement.afterEdit,
 };
 

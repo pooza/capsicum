@@ -251,6 +251,14 @@ capsicum-relay の Issue・マイルストーンは、**capsicum 本体と同じ
 - **Mastodon / Misskey の現行バージョン確認**: 自前サーバーのソフトウェアは pooza フォークがリリース追従しているため、ローカルの fork を pull すれば現行バージョンを正確に確認できる（推測しない）。
   - Mastodon: `git -C ~/repos/mastodon pull --ff-only` → `lib/mastodon/version.rb` の major/minor/patch（または `git -C ~/repos/mastodon tag --sort=-creatordate | head` で `vX.Y.Z-bshockdon`）
   - Misskey: `git -C ~/repos/misskey pull --ff-only` → `package.json` の `version`（`jq -r .version ~/repos/misskey/package.json`）
+  - ⚠⚠ **Mastodon の上流のプレリリース（beta / RC）も見る**（2026-10-28 pooza）。フォークが追うのは正式リリースだけなので、**RC はフォークのタグに出てこない**:
+
+    ```sh
+    gh api 'repos/mastodon/mastodon/releases?per_page=5' --jq '.[] | select(.prerelease) | "\(.tag_name) \(.published_at[0:10])"'
+    ```
+
+    - **5.0 の RC が出ていたら、その同期のうちに報告し、5.0 待ちの Issue（`gh issue list --search 'Mastodon 5.0 in:title'`）をその時点の稼働枠へ引き取る提案をする**。pooza は「RC が出たらなるべく早くやりたい」。⚠ 上流が遅れるあいだは、枠の移行のたびに送り続けてよい（待つのは先方の都合）
+    - beta は報告だけでよい（フィールド名が RC で変わりうる）
   - 前回同期からメジャー/マイナーが上がっていれば、API 変更トリアージ（`docs/mastodon-capsicum-api-watch.md` / `docs/misskey-capsicum-api-watch.md`）の要否を判断し、メモリの「対応方針」系（例 `project_mastodon_46_posture`）の版表記を更新する
 
 ## 9. MEMORY.md の更新

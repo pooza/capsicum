@@ -20,10 +20,19 @@ import '../util/notification_type_display.dart';
 final notificationFilterableTypesProvider = Provider<List<NotificationType>>((
   ref,
 ) {
+  final accounts = ref.watch(accountManagerProvider).accounts;
   final supported = <NotificationType>{
-    for (final account in ref.watch(accountManagerProvider).accounts)
+    for (final account in accounts)
       if (account.adapter case final NotificationSupport adapter)
         ...adapter.filterableNotificationTypes,
+    // ⚠ お知らせ (#1308) はサーバーの通知ではないが、通知の一覧に並ぶので
+    // 1 つの種類として外せるようにする。⚠ 絞り込みは手元で掛かる（ワイヤ名が
+    // 無いのでサーバーへは送られない・`announcementsForNotifications`）。
+    if (accounts.any(
+      (a) =>
+          a.adapter is NotificationSupport && a.adapter is AnnouncementSupport,
+    ))
+      NotificationType.announcement,
   };
   return [
     for (final type in NotificationType.values)

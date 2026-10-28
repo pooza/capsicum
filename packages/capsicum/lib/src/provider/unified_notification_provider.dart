@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../model/account.dart';
 import '../service/sentry_op_failure.dart';
+import '../util/announcement_notifications.dart';
 import '../util/conversion_skip_report.dart';
 import '../util/notification_filter.dart';
 import 'account_manager_provider.dart';
@@ -159,6 +160,11 @@ class UnifiedNotificationNotifier
     NotificationQuery filter,
   ) async {
     try {
+      // お知らせも並べる (#1308)。⚠ 通知と並行して取り、取れなくても空が返る。
+      final announcements = announcementsForNotifications(
+        account,
+        excludeTypes: filter.excludeTypes,
+      );
       final response = await (account.adapter as NotificationSupport)
           .getNotifications(
             query: const TimelineQuery(limit: kUnifiedNotificationPageSize),
@@ -181,9 +187,18 @@ class UnifiedNotificationNotifier
       final notifications = await enricher.enrichNotifications(
         dropFilteredNotifications(response.notifications),
       );
+      // ⚠ 1 ページ目しか取らないので、続きがあるならそのページより古いお知らせは
+      // 出さない（読み込んでいない通知より下に並ぶ・`mergeAnnouncements`）。
+      final withAnnouncements = mergeAnnouncements(
+        notifications,
+        await announcements,
+        hasMore:
+            response.hasMore ??
+            response.rawCount >= kUnifiedNotificationPageSize,
+      );
       return _FetchResult(
         account: account,
-        notifications: notifications,
+        notifications: withAnnouncements.merged,
         rawNewestId: response.notifications.firstOrNull?.id,
       );
     } catch (e, st) {

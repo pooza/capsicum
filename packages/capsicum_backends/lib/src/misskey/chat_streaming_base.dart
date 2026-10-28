@@ -1,13 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math';
 
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:uuid/uuid.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../reconnecting_socket.dart';
-import '../streaming_backoff.dart';
 
 /// Misskey の `/streaming` WebSocket を 1 本張り、指数バックオフ再接続つきで
 /// [ChatMessage] を配信する共通基盤 (#627)。
@@ -17,7 +15,7 @@ import '../streaming_backoff.dart';
 /// 観測コールバック・WebSocket セットアップが完全に重複していたため集約した。
 /// channel 固有の差分だけを [buildConnectBody] / [parseChannelMessage] の
 /// 2 つの抽象メソッドに切り出す。
-abstract class MisskeyChatStreamingBase {
+abstract class MisskeyChatStreamingBase with ReconnectTuning {
   final String host;
   final String accessToken;
   final Set<String> adminRoleIds;
@@ -35,13 +33,11 @@ abstract class MisskeyChatStreamingBase {
 
   StreamController<ChatMessage>? _controller;
   ReconnectingSocket? _socket;
-  final Random _random = Random();
-  static const _baseReconnectDelay = Duration(seconds: 5);
-  // ⚠ 通知側と同じ 60 秒 (#1252)。以前は 300 秒で、しかも 10 回で諦めていた。
-  static const _maxReconnectDelay = Duration(seconds: 60);
-  // 無音切断を検知するための WS ping/pong。pong が無ければ自動 close → onDone →
-  // 再接続が走る (#788)。チャットは緊急性が低めなので timeline より長め。
-  static const _pingInterval = Duration(seconds: 60);
+
+  /// チャットは「常駐」の値で再接続する (#1340)。⚠ 上限は通知側と同じ 60 秒
+  /// (#1252)。以前は 300 秒で、しかも 10 回で諦めていた。
+  @override
+  ReconnectProfile get reconnectProfile => ReconnectProfile.resident;
 
   MisskeyChatStreamingBase({
     required this.host,
@@ -72,7 +68,8 @@ abstract class MisskeyChatStreamingBase {
     // タイマーを張らず、1 回の失敗を 3 経路から数えていた。デスクトップで
     // チャットを開いたまま持ち歩くと、回線が戻っても画面を開き直すまで届かない。
     _socket?.dispose();
-    _socket = ReconnectingSocket(
+    _socket = ReconnectingSocket.tuned(
+      this,
       buildUri: () => Uri(
         scheme: 'wss',
         host: host,
@@ -87,33 +84,13 @@ abstract class MisskeyChatStreamingBase {
           'body': buildConnectBody(const Uuid().v4()),
         }),
       ],
-      delayFor: reconnectDelayFor,
       onStreamError: onStreamError,
       onReconnectExhausted: onReconnectExhausted,
       onConnectionEvent: onConnectionEvent,
       channelFactory: channelFactory,
-      pingInterval: _pingInterval,
-      connectTimeout: connectTimeout,
-      stableAfter: stableConnectionAfter,
     )..connect();
     return _controller!.stream;
   }
-
-  /// 握手を待つ上限。⚠ テストが縮める。
-  Duration get connectTimeout => const Duration(seconds: 30);
-
-  /// これだけつながり続けたら、失敗を数え直す。⚠ テストが縮める。
-  Duration get stableConnectionAfter => const Duration(seconds: 30);
-
-  /// [attempt] 回目（0 始まり）の再接続までの待ち時間。⚠ テストが上書きする。
-  Duration reconnectDelayFor(int attempt) => Duration(
-    milliseconds: reconnectBackoffMs(
-      attempt,
-      baseMs: _baseReconnectDelay.inMilliseconds,
-      maxMs: _maxReconnectDelay.inMilliseconds,
-      random: _random,
-    ),
-  );
 
   void _onMessage(dynamic message) {
     if (message is! String) return;

@@ -1225,11 +1225,17 @@ class MastodonClient {
   ///
   /// ⚠⚠ **[forward] を送らないと、リモートの相手のサーバーへは届かない**
   /// (#1203)。サーバーの既定は「転送しない」。
+  ///
+  /// [category] は `spam` / `legal` / `violation` / `other`。null なら送らない
+  /// （サーバーは `other` として受ける）。⚠ `violation` は [ruleIds] が 1 つ以上
+  /// 要る（空だとサーバーが断る・#1257）。
   Future<void> createReport(
     String accountId, {
     List<String>? statusIds,
     String? comment,
     bool? forward,
+    String? category,
+    List<String>? ruleIds,
   }) async {
     await dio.post(
       '/api/v1/reports',
@@ -1238,6 +1244,8 @@ class MastodonClient {
         'status_ids': ?statusIds,
         'comment': ?comment,
         'forward': ?forward,
+        'category': ?category,
+        'rule_ids': ?ruleIds,
       },
     );
   }
@@ -1516,6 +1524,15 @@ class MastodonClient {
     return response.data as Map<String, dynamic>;
   }
 
+  /// GET /api/v1/instance/rules (#1257)
+  ///
+  /// 通報の `rule_ids` に使う。⚠ サーバー情報の画面が使う `rules`（v2 / v1 の
+  /// instance）は文字列しか持ち帰っていないので、id はこちらで取る。
+  Future<List<Map<String, dynamic>>> getInstanceRules() async {
+    final response = await dio.get('/api/v1/instance/rules');
+    return (response.data as List<dynamic>).cast<Map<String, dynamic>>();
+  }
+
   /// POST /api/v1/statuses/:id/translate
   Future<Map<String, dynamic>> translateStatus(
     String statusId, {
@@ -1578,6 +1595,7 @@ class MastodonClient {
     bool? sourceSensitive,
     String? sourceLanguage,
     String? sourceQuotePolicy,
+    bool? sourceSpoilerField,
   }) async {
     Future<FormData> buildFormData() async {
       final map = <String, dynamic>{};
@@ -1603,6 +1621,9 @@ class MastodonClient {
       if (sourceLanguage != null) map['source[language]'] = sourceLanguage;
       if (sourceQuotePolicy != null) {
         map['source[quote_policy]'] = sourceQuotePolicy;
+      }
+      if (sourceSpoilerField != null) {
+        map['source[spoiler_field]'] = sourceSpoilerField.toString();
       }
       if (avatarPath != null) {
         map['avatar'] = await MultipartFile.fromFile(avatarPath);

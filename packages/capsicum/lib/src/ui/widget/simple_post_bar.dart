@@ -428,7 +428,7 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar>
                       // 使っていると見分けられず、取り違えたまま「詳細な投稿画面」→
                       // Annict の連携まで進むと別のサーバーと連携してしまう（#1312）。
                       hintText: postTargetHint(
-                        postLabel: postLabel,
+                        label: postLabel,
                         host: ref.watch(currentAccountProvider)?.key.host,
                       ),
                       isDense: true,

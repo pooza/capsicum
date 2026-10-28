@@ -248,6 +248,19 @@ void openCollections(
   );
 }
 
+/// お知らせを開く (#1308)。通知の一覧のお知らせの行から使う。
+///
+/// [account] は [openPost] と同じ扱い（アカウントをまたぐカラムから開くときに
+/// 渡す）。⚠ 全画面の `/announcements` は現在のアカウントのお知らせを出すので、
+/// デッキの外では呼ぶ側が先にアカウントを切り替えておく。
+void openAnnouncements(BuildContext context, {AccountKey? account}) =>
+    openColumnOrPush(
+      context,
+      const AnnouncementsTab(),
+      account: account,
+      push: () => context.push('/announcements'),
+    );
+
 /// コレクション 1 つを開く (#1150)。全画面なら閉じるまで待つ（一覧の再読込用）。
 Future<void> openCollection(BuildContext context, String collectionId) =>
     openColumnOrPush<void>(

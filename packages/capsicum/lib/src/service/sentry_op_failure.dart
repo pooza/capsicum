@@ -127,6 +127,10 @@ void reportFanOutFailures({
 /// 「モデレーション操作の失敗を全部見る」が **1 クエリで書けるかどうか**。
 /// [tags] は fingerprint に含めない補助タグ（例: Play の未実装キー `Ui:C:switch`）。
 /// issue は集約したまま、Sentry UI 上でタグ別に件数比較・絞り込みできる (#875)。
+///
+/// [fingerprintExtra] は fingerprint の末尾に足す。⚠ 例外型が同じでも原因が
+/// まるで違う経路だけに使う（接続確認の TLS と「その他」がどちらも
+/// `DioException` で 1 つにまとまっていた・#1340）。
 void reportOpFailure({
   required String tagKey,
   required String operation,
@@ -134,6 +138,7 @@ void reportOpFailure({
   required StackTrace stackTrace,
   Account? account,
   Map<String, String>? tags,
+  List<String> fingerprintExtra = const [],
 }) {
   try {
     Sentry.captureException(
@@ -148,7 +153,12 @@ void reportOpFailure({
             scope.setTag(entry.key, entry.value);
           }
         }
-        scope.fingerprint = [tagKey, operation, error.runtimeType.toString()];
+        scope.fingerprint = [
+          tagKey,
+          operation,
+          error.runtimeType.toString(),
+          ...fingerprintExtra,
+        ];
       },
     );
   } catch (_) {

@@ -83,6 +83,12 @@ void main() {
     expect(_fields(http.requests.single), {'source[sensitive]': 'false'});
   });
 
+  test('CW 欄の既定を source[spoiler_field] で送る (#1322)', () async {
+    await adapter.updatePostingDefaults(spoilerField: true);
+
+    expect(_fields(http.requests.single), {'source[spoiler_field]': 'true'});
+  });
+
   test('言語の「指定しない」は空文字で送る', () async {
     await adapter.updatePostingDefaults(language: '');
 

@@ -88,6 +88,8 @@ extension CapsicumMastodonAccountExtension on MastodonAccount {
       defaultLanguage: _blankToNull(source?['language'] as String?),
       defaultQuotePolicy: source?['quote_policy'] as String?,
       defaultSensitive: source?['sensitive'] as bool?,
+      // 5.0〜 (#1322)。4.7 以前は `source` にキーが無く null になる。
+      defaultSpoilerField: source?['spoiler_field'] as bool?,
       showMedia: showMedia,
       showMediaReplies: showMediaReplies,
       showFeatured: showFeatured,
@@ -628,6 +630,7 @@ extension CapsicumMastodonAnnouncementExtension on MastodonAnnouncement {
       id: id,
       content: content,
       publishedAt: publishedAt,
+      updatedAt: updatedAt,
       read: read,
       isHtml: true,
       reactions: reactions.map((r) => r.toCapsicum()).toList(),

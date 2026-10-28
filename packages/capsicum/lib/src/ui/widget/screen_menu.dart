@@ -201,7 +201,7 @@ List<MenuSubmenuEntry> withScreenMenu(
     label: contribution.label,
     children: contribution.entries,
   );
-  final windowIndex = model.indexWhere((m) => m.label == 'ウインドウ');
+  final windowIndex = model.indexWhere((m) => m.label == TopMenuLabel.window);
   if (windowIndex < 0) return [...model, submenu];
   return [...model.take(windowIndex), submenu, ...model.skip(windowIndex)];
 }

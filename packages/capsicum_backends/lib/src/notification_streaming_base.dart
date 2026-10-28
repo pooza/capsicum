@@ -1,11 +1,9 @@
 import 'dart:async';
-import 'dart:math';
 
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'reconnecting_socket.dart';
-import 'streaming_backoff.dart';
 
 /// notification / announcement を配信する長寿命 WebSocket 接続の共通基盤 (#676)。
 ///
@@ -16,7 +14,7 @@ import 'streaming_backoff.dart';
 /// URI・subscribe メッセージ・メッセージのパースの 3 点だけで、それぞれ
 /// [buildStreamUri] / [buildSubscribeMessage] / [parseNotificationMessage] の
 /// 抽象メソッドに切り出す。
-abstract class NotificationStreamingBase {
+abstract class NotificationStreamingBase with ReconnectTuning {
   final String host;
   final String accessToken;
   final Set<String> adminRoleIds;
@@ -37,15 +35,11 @@ abstract class NotificationStreamingBase {
 
   StreamController<Notification>? _controller;
   ReconnectingSocket? _socket;
-  final Random _random = Random();
-  static const _baseReconnectDelay = Duration(seconds: 5);
-  // ⚠ 上限は「回線が戻ってから通知が戻るまでに待たせる最長」になる。以前は
-  // 300 秒だったが、スリープ復帰や Wi-Fi の切り替えのたびに最長 5 分通知が
-  // 止まることになるので、timeline (#784) と同じ 60 秒に揃えた。
-  static const _maxReconnectDelay = Duration(seconds: 60);
-  // 無音切断を検知するための WS ping/pong。pong が無ければ自動 close → onDone →
-  // 再接続が走る (#788)。通知は緊急性が低めなので timeline より長め。
-  static const _pingInterval = Duration(seconds: 60);
+
+  /// 通知は「常駐」の値で再接続する (#1340)。理由と、デスクトップでは通知が
+  /// プッシュの経路である点は [ReconnectProfile.resident]。
+  @override
+  ReconnectProfile get reconnectProfile => ReconnectProfile.resident;
 
   NotificationStreamingBase({
     required this.host,
@@ -76,40 +70,18 @@ abstract class NotificationStreamingBase {
     _controller = StreamController<Notification>.broadcast(onCancel: dispose);
     // ⚠ つなぐ・切れたら予約する・数える、は [ReconnectingSocket] が持つ (#1252)。
     _socket?.dispose();
-    _socket = ReconnectingSocket(
+    _socket = ReconnectingSocket.tuned(
+      this,
       buildUri: buildStreamUri,
       onMessage: _onMessage,
       subscribeMessages: () => [?buildSubscribeMessage()],
-      delayFor: reconnectDelayFor,
       onStreamError: onStreamError,
       onReconnectExhausted: onReconnectExhausted,
       onConnectionEvent: onConnectionEvent,
       channelFactory: channelFactory,
-      pingInterval: _pingInterval,
-      connectTimeout: connectTimeout,
-      stableAfter: stableConnectionAfter,
     )..connect();
     return _controller!.stream;
   }
-
-  /// 握手を待つ上限 (#1252)。⚠ テストが縮める。
-  Duration get connectTimeout => const Duration(seconds: 30);
-
-  /// これだけつながり続けたら、失敗を数え直す (#1252)。⚠ テストが縮める。
-  Duration get stableConnectionAfter => const Duration(seconds: 30);
-
-  /// [attempt] 回目（0 始まり）の再接続までの待ち時間。
-  ///
-  /// ⚠ テストが上書きして、待ち時間を縮めつつ「何回目として数えたか」を読む
-  /// (#1249)。本番の計算は timeline と同じ [reconnectBackoffMs]（jitter つき）。
-  Duration reconnectDelayFor(int attempt) => Duration(
-    milliseconds: reconnectBackoffMs(
-      attempt,
-      baseMs: _baseReconnectDelay.inMilliseconds,
-      maxMs: _maxReconnectDelay.inMilliseconds,
-      random: _random,
-    ),
-  );
 
   void _onMessage(dynamic message) {
     if (message is! String) return;

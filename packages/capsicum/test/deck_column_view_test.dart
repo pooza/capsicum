@@ -2,7 +2,9 @@ import 'package:capsicum/src/model/account.dart';
 import 'package:capsicum/src/model/account_key.dart';
 import 'package:capsicum/src/model/deck_column.dart';
 import 'package:capsicum/src/provider/account_manager_provider.dart';
+import 'package:capsicum/src/provider/hashtag_provider.dart';
 import 'package:capsicum/src/provider/server_config_provider.dart';
+import 'package:capsicum/src/provider/timeline_provider.dart';
 import 'package:capsicum/src/ui/widget/deck_column_view.dart';
 import 'package:capsicum/src/ui/widget/user_avatar.dart';
 import 'package:capsicum/src/util/shared_preferences_cache.dart';
@@ -20,6 +22,27 @@ class _Adapter extends Mock
     implements DecentralizedBackendAdapter, GallerySupport {}
 
 class _Capabilities extends Mock implements AdapterCapabilities {}
+
+/// #1342: 決まった状態を返すタグのタイムライン。build の回数を数える。
+class _StalledHashtagTimeline extends HashtagTimelineNotifier {
+  _StalledHashtagTimeline(
+    this.onBuild, {
+    this.result = const TimelineState(
+      hasMore: false,
+      streamReconnectExhausted: true,
+      streamConnectionState: StreamConnectionState.exhausted,
+    ),
+  });
+
+  final void Function() onBuild;
+  final TimelineState result;
+
+  @override
+  Future<TimelineState> build(HashtagTimelineKey arg) async {
+    onBuild();
+    return result;
+  }
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -256,6 +279,26 @@ void main() {
       expect(dot, findsNothing);
     });
 
+    // #1342: タグ・リスト・チャンネルもライブ購読を持つので、止まり方は本線と
+    // 同じ。以前は本線にしか点が無く、止まっても手がかりが何も無かった。
+    testWidgets('タグ・リスト・チャンネルのカラムにも出す (#1342)', (tester) async {
+      for (final tab in const <TabType>[
+        HashtagTab('delmulin'),
+        ListTab(id: 'l1'),
+        ChannelTab(id: 'c1'),
+      ]) {
+        await pump(tester, tab);
+        await tester.pump();
+        expect(dot, findsOneWidget, reason: '$tab');
+      }
+    });
+
+    testWidgets('ライブ購読を持たないカラムには出さない', (tester) async {
+      await pump(tester, const UserListTab(UserListKind.followers, 'u1'));
+      await tester.pump();
+      expect(dot, findsNothing);
+    });
+
     // #1238: 状態の色は固定なので、サーバーの色が明るい黄や緑だと点が埋もれる。
     // 色は状態の意味を持つので変えず、見出しの文字と同じ色で縁を取る。
     BoxDecoration dotDecoration(WidgetTester tester) =>
@@ -303,6 +346,117 @@ void main() {
         isNot(Colors.white),
         reason: '縁を足しただけで、状態の色は変えていない',
       );
+    });
+  });
+
+  group('止まったカラムの帯 (#1342)', () {
+    test('出すのは再接続の試行が尽きたときだけ', () {
+      expect(
+        deckColumnStreamStalled(
+          const TimelineState(streamReconnectExhausted: true),
+        ),
+        isTrue,
+      );
+      expect(
+        deckColumnStreamStalled(
+          const TimelineState(
+            streamConnectionState: StreamConnectionState.exhausted,
+          ),
+        ),
+        isTrue,
+      );
+      for (final s in const [
+        StreamConnectionState.live,
+        StreamConnectionState.connecting,
+        // ⚠ 一時的な切断は普段から起きて数秒で戻るので出さない。
+        StreamConnectionState.disconnected,
+        // 利用者がライブ更新を切っているのは止まったのではない。
+        StreamConnectionState.disabled,
+      ]) {
+        expect(
+          deckColumnStreamStalled(TimelineState(streamConnectionState: s)),
+          isFalse,
+          reason: '$s',
+        );
+      }
+    });
+
+    test('⚠ 尽きた後にライブ更新を切ったら出さない（フラグは残っている）', () {
+      expect(
+        deckColumnStreamStalled(
+          const TimelineState(
+            streamReconnectExhausted: true,
+            streamConnectionState: StreamConnectionState.disabled,
+          ),
+        ),
+        isFalse,
+        reason: '自分で止めたのに「不安定」の帯が出る',
+      );
+    });
+
+    testWidgets('止まったタグのカラムに帯が出て、再接続で取り直す', (tester) async {
+      var builds = 0;
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            currentAccountProvider.overrideWithValue(account),
+            hashtagTimelineProvider.overrideWith(
+              () => _StalledHashtagTimeline(() => builds++),
+            ),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: DeckColumnView(
+                column: DeckColumn(
+                  id: 'x',
+                  account: account.key,
+                  tab: const HashtagTab('delmulin'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(find.byKey(deckStalledBannerKey), findsOneWidget);
+      expect(builds, 1);
+
+      await tester.tap(find.text('再接続'));
+      await tester.pumpAndSettle();
+      expect(builds, 2, reason: '引っ張って更新と同じく provider を取り直す');
+    });
+
+    testWidgets('前提: 止まっていないカラムには出さない', (tester) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            currentAccountProvider.overrideWithValue(account),
+            hashtagTimelineProvider.overrideWith(
+              () => _StalledHashtagTimeline(
+                () {},
+                result: const TimelineState(
+                  hasMore: false,
+                  streamConnectionState: StreamConnectionState.live,
+                ),
+              ),
+            ),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: DeckColumnView(
+                column: DeckColumn(
+                  id: 'x',
+                  account: account.key,
+                  tab: const HashtagTab('delmulin'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(find.text('投稿がありません'), findsOneWidget, reason: '本文は描けている');
+      expect(find.byKey(deckStalledBannerKey), findsNothing);
     });
   });
 

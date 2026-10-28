@@ -29,6 +29,20 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+/// 最上位のメニューの見出し (#1340)。
+///
+/// ⚠ **見出しの文字列で振り分けている場所がある**（iPad の置き場所
+/// `iosMenuPlacement`・画面ごとのメニューの差し込み位置）。文字列を直書きすると、
+/// 文言を変えたとき黙って別の場所へ落ちる（iPad では「編集」がシステムの Edit と
+/// 二重に並ぶ）。作る側も見る側もここから引く。
+abstract final class TopMenuLabel {
+  static const app = 'capsicum';
+  static const file = 'ファイル';
+  static const edit = '編集';
+  static const view = '表示';
+  static const window = 'ウインドウ';
+}
+
 /// メニュー項目のショートカット。**主修飾キー**（macOS は Cmd=meta、Windows/Linux
 /// は Ctrl）をモデルから抽象化し、解決は [resolve] に一元化する (#841)。従来 mac は
 /// meta・in-window は control を各ビルダーに直書きしていた差異をここへ集約する。

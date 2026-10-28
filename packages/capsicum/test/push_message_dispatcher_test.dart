@@ -201,6 +201,61 @@ void main() {
     );
   });
 
+  // #1326: 自己紹介の空な相手からの新規登録（admin.sign_up）・フォローは、
+  // Mastodon の body が空で届く。見出しは type から作り直すので、title を
+  // 本文へ回さないと「誰が」がどこにも出ず、復号の失敗と同じ文面になる。
+  group('PushMessageDispatcher.resolveBody (#1326)', () {
+    const fallback = 'me@example.com に通知があります';
+
+    test('本文があれば本文', () {
+      expect(
+        PushMessageDispatcher.resolveBody(
+          const DecryptedPushContent(
+            title: 'test さんにフォローされました',
+            body: 'よろしく',
+            type: 'follow',
+          ),
+          fallback: fallback,
+        ),
+        'よろしく',
+      );
+    });
+
+    test('⚠⚠ 本文が空なら title を本文に回す（復号失敗の文面を残さない）', () {
+      expect(
+        PushMessageDispatcher.resolveBody(
+          const DecryptedPushContent(
+            title: 'test さんがサインアップしました',
+            body: '',
+            type: 'admin.sign_up',
+          ),
+          fallback: fallback,
+        ),
+        'test さんがサインアップしました',
+      );
+    });
+
+    test('⚠ type が無ければ title は見出しになっているので、本文には回さない', () {
+      expect(
+        PushMessageDispatcher.resolveBody(
+          const DecryptedPushContent(title: '何か', body: ''),
+          fallback: fallback,
+        ),
+        fallback,
+      );
+    });
+
+    test('本文も title も無ければ fallback', () {
+      expect(
+        PushMessageDispatcher.resolveBody(
+          const DecryptedPushContent(type: 'follow'),
+          fallback: fallback,
+        ),
+        fallback,
+      );
+    });
+  });
+
   group('PushMessageDispatcher.synthesizeAnnouncementBody', () {
     test('HTML タグを剥がしてそのまま返す (短い場合)', () {
       final body = PushMessageDispatcher.synthesizeAnnouncementBody(

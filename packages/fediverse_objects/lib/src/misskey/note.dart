@@ -17,6 +17,10 @@ class MisskeyNote {
   final MisskeyNote? renote;
   final String? replyId;
   final List<MisskeyDriveFile>? files;
+
+  /// 添付の id。⚠ **引用かどうかはこちらで見る**（上流の `isQuotePacked` と同じ）。
+  /// `files` はドライブから消えた添付を落として返すが、`fileIds` は残す。
+  final List<String>? fileIds;
   final int renoteCount;
   final int repliesCount;
   final Map<String, int>? reactions;
@@ -57,6 +61,7 @@ class MisskeyNote {
     this.renote,
     this.replyId,
     this.files,
+    this.fileIds,
     required this.renoteCount,
     required this.repliesCount,
     this.reactions,

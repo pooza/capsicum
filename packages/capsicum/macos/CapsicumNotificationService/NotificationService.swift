@@ -22,6 +22,10 @@
 //   generic 文面」の切り分けで、無言経路を unified log から判別するため。
 //   iOS は出荷実績があるため足さない。
 //
+// - 縮退した通知（relay が本文を落とした回）を API から引き直す経路
+//   （iOS の DegradedNotificationFetcher・#1215）は持たない。本 appex は
+//   didReceive を受けず、Dart 側もトークンの写しを iOS にしか置かない。
+//
 // iOS は拡張テンプレート由来で `import UIKit` だが UIKit API は未使用。
 // macOS に UIKit は無いため Foundation に置き換える。
 import Foundation
@@ -167,6 +171,11 @@ class NotificationService: UNNotificationServiceExtension {
 
         if let body = parsed.body, !body.isEmpty {
             bestAttempt.body = body
+        } else if parsed.type != nil, let title = parsed.title, !title.isEmpty {
+            // 本文が空なら、上で捨てたサーバーの title（「誰が・何をした」）を
+            // 本文に回す (#1326)。自己紹介の空な相手からの新規登録・フォローで
+            // 起きる。回さないと復号失敗時の文面が残る。Dart 側と揃える。
+            bestAttempt.body = title
         }
 
         // 復号で得た通知 ID を userInfo に stamp する (#674)。アプリ起動中は

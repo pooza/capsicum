@@ -32,7 +32,8 @@ capsicum/
 | `tech-notes.md` | 落とし穴集（Dart / Flutter・体感速度・Sentry・D&D・認証）。⚠ 冒頭に行き先の表がある |
 | `tech-notes-native.md` | 落とし穴集（ネイティブプッシュ APNs / WNS・CI / ビルド） |
 | `tech-notes-api.md` | 落とし穴集（NodeInfo / Mastodon / Misskey / モロヘイヤ の API） |
-| `dev-environment.md` | 開発マシン（macOS）・Claude Code の権限とコマンドの書き方・Sentry・iOS / Android 検証端末 |
+| `dev-environment.md` | 開発マシン（macOS）・Sentry・iOS / Android 検証端末 |
+| `dev-environment-claude-code.md` | Claude Code の権限設定（auto モード・allowlist）とコマンドの書き方（全端末・常時ルール） |
 | `dev-environment-desktop.md` | 補助機（Linux / Windows）のセットアップ・ツールチェーン・実機検証の経路 |
 | `desktop-plugin-compatibility.md` | デスクトップ対応のプラグイン棚卸し |
 | `flutter-upstream-watch.md` | Flutter 上流バグの追跡（月初に手動 chase・資格情報の満了チェックも相乗り） |

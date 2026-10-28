@@ -197,6 +197,32 @@ class PushKeyStore {
     return _gate.read(key: _key(_Slot.endpoint, accountStorageKey));
   }
 
+  /// iOS の NSE が、縮退した通知（APNs の 4KB に収まらず relay が暗号化された
+  /// 本文を落とした回）の本文を API から引き直すためのアクセストークンの写し
+  /// (#1215)。
+  ///
+  /// ⚠⚠ **写しを置くのは iOS の Misskey のアカウントだけ。**トークンを読める
+  /// プロセスを増やす変更なので、実際に 4KB を超えている経路に限る。
+  /// `AccountStorage` の本体は共有グループに無く NSE から読めないため、
+  /// 本体を動かす（全利用者の移行・失敗するとログアウト）代わりに写しを置く。
+  ///
+  /// ⚠ **[_Slot] に入れてあるので、[delete] で鍵と一緒に消える。**ログアウト・
+  /// 未接続アカウントの削除・登録失敗の巻き戻しのどれでも残らない。
+  static Future<void> saveNseToken(
+    String accountStorageKey,
+    String token,
+  ) async {
+    await _gate.write(
+      key: _key(_Slot.nseToken, accountStorageKey),
+      value: token,
+    );
+  }
+
+  /// [saveNseToken] で置いた写しを読む。未保存なら null。
+  static Future<String?> readNseToken(String accountStorageKey) async {
+    return _gate.read(key: _key(_Slot.nseToken, accountStorageKey));
+  }
+
   /// 直近の登録に使ったデバイストークン（APNs / FCM のトークン、Windows は
   /// WNS の Channel URI）を保存する (#937)。
   ///
@@ -327,7 +353,12 @@ class PushKeyStore {
 enum _Slot {
   keyset('keyset'),
   relayId('relay_id'),
-  endpoint('endpoint');
+  endpoint('endpoint'),
+
+  /// NSE 用のアクセストークンの写し (#1215)。⚠ iOS の NSE の
+  /// `PushKeyReader.readNseToken` が同じ綴り（`capsicum_push_nse_token_…`）で
+  /// 読むので、変えるときは両側を揃える。
+  nseToken('nse_token');
 
   final String fragment;
   const _Slot(this.fragment);

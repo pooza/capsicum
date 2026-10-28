@@ -881,6 +881,7 @@ mixin TimelineLiveIngest<Arg>
   void _resetLiveIngestFields() {
     _pendingPosts.clear();
     _isNearTop = true;
+    _exhaustedClearTimer?.cancel();
     _streamConnectionState = StreamConnectionState.connecting;
     _newestKnownId = null;
     _catchUpInProgress = false;
@@ -1119,8 +1120,35 @@ mixin TimelineLiveIngest<Arg>
   void disposeLiveStream(StreamSupport adapter) {
     // この build() が待っている初回接続を無効にする (#1235)。
     _liveGeneration++;
+    _exhaustedClearTimer?.cancel();
     _streamSubscription?.cancel();
     adapter.disposeStream(liveStreamKey);
+  }
+
+  /// つながってから「戻った」とみなすまでの時間。⚠ `ReconnectingSocket` の
+  /// `stableAfter`（既定 30 秒）と同じ値にする —— ソケットが試行回数と「尽きた」
+  /// の通知済みを戻すのもこのとき。
+  static const _stableConnectionAfter = Duration(seconds: 30);
+
+  /// 「尽きた」のフラグを下ろす予約。
+  Timer? _exhaustedClearTimer;
+
+  /// live になった。[_stableConnectionAfter] のあいだ live のままなら、「尽きた」
+  /// のフラグを下ろす。
+  ///
+  /// #784 で give-up せず再試行を続けるので、戻ったら下ろす。下ろさないと次の
+  /// 枯渇で false→true の SnackBar も出なくなる (Codex #780)。⚠⚠ **live になった
+  /// 瞬間には下ろさない**（v2.7 のリリース前レビュー）。握手は通ってすぐ切られる
+  /// 型（#788 で多い型）では毎回 live を通るので、止まったカラムの帯（#1342）が
+  /// 数秒で消え、ソケットの「尽きた」の通知は戻っていないので二度と出なくなる。
+  void _armExhaustedClear() {
+    _exhaustedClearTimer?.cancel();
+    _exhaustedClearTimer = Timer(_stableConnectionAfter, () {
+      if (_streamConnectionState != StreamConnectionState.live) return;
+      final current = state.valueOrNull;
+      if (current == null || !current.streamReconnectExhausted) return;
+      state = AsyncData(current.copyWith(streamReconnectExhausted: false));
+    });
   }
 
   /// WS が live になった時点で、未接続の窓に流れて取りこぼした投稿を
@@ -1199,6 +1227,7 @@ mixin TimelineLiveIngest<Arg>
 
   void _startStreaming(StreamSupport adapter) {
     _streamSubscription?.cancel();
+    final generation = _liveGeneration;
     // 切断系イベント (disconnected / reconnect_exhausted) を Sentry 上で
     // サーバー別に切り分けられるよう host を控える (#826)。挙動は host で分岐
     // しない (per-server workaround は入れない)。付与するのは観測タグのみで、
@@ -1293,6 +1322,9 @@ mixin TimelineLiveIngest<Arg>
           // 回線は生きている。「回線側」の失敗の続きをここで終わらせる。
           streamConnectFailureReporter.noteConnected();
           unawaited(_catchUpSinceTop());
+          _armExhaustedClear();
+        } else {
+          _exhaustedClearTimer?.cancel();
         }
         final current = state.valueOrNull;
         if (current == null) return;
@@ -1301,13 +1333,6 @@ mixin TimelineLiveIngest<Arg>
             streamConnectionState: connState,
             reconnectCount: _reconnectCount,
             lastDisconnectedAt: _lastDisconnectedAt,
-            // #784 で give-up せず再試行を続けるため、live 復帰時に exhausted
-            // フラグをクリアする。これが無いと一度 exhausted を踏むと復帰後も
-            // 「停止」表示が残り、次の枯渇で false→true の SnackBar も出なく
-            // なる (Codex #780)。live 以外では現状維持（null）。
-            streamReconnectExhausted: connState == StreamConnectionState.live
-                ? false
-                : null,
           ),
         );
       },
@@ -1378,12 +1403,33 @@ mixin TimelineLiveIngest<Arg>
           },
         );
       },
+      // ストリームが終わった ＝ このカラムにはライブ更新が流れない（v2.7 の
+      // リリース前レビュー）。アダプタは張れないタブ（端末で確かめられない
+      // タグの条件など）に空のストリームを返すが、接続状態は誰も動かさないので、
+      // デッキの点（#1342）が「接続中」のまま残っていた。⚠ 閉じる側（破棄・
+      // トグル OFF）は先に購読を外すので、ここへは来ない。
+      onDone: () => _markLiveStreamEnded(generation),
     );
+  }
+
+  void _markLiveStreamEnded(int generation) {
+    if (generation != _liveGeneration) return;
+    if (state.valueOrNull == null) {
+      // ⚠ 空のストリームはマイクロタスクで終わるので、build() が state を返す
+      // 前に来ることがある。返した後へ回す。
+      Future(() {
+        if (generation != _liveGeneration) return;
+        _setStreamConnectionState(StreamConnectionState.disabled);
+      });
+      return;
+    }
+    _setStreamConnectionState(StreamConnectionState.disabled);
   }
 
   /// ライブ更新トグルを OFF にしたときの接続解除 (#904)。build() を再走させず
   /// WebSocket の購読だけを止め、インジケータを disabled にする。
   void _stopStreaming(StreamSupport adapter) {
+    _exhaustedClearTimer?.cancel();
     _streamSubscription?.cancel();
     _streamSubscription = null;
     adapter.disposeStream(liveStreamKey);

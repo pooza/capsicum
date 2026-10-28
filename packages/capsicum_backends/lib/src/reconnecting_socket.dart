@@ -1,7 +1,127 @@
 import 'dart:async';
+import 'dart:math';
 
+import 'package:capsicum_core/capsicum_core.dart';
 import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
+
+import 'streaming_backoff.dart';
+
+/// 再接続の値の組 (#1340)。
+///
+/// ⚠⚠ **2 種類あるのは意図したもの**（2026-10-27 pooza 判断・#1340）。値を
+/// 揃えるのではなく、4 本（通知・チャット・タイムライン 2 本）が写していた値と
+/// 配線をここへ寄せた。上限はどちらも 60 秒（以前の 300 秒はスリープ復帰や
+/// Wi-Fi の切り替えのたびに最長 5 分止まった・#784 / #1252）。
+class ReconnectProfile {
+  const ReconnectProfile({
+    required this.baseDelay,
+    required this.maxDelay,
+    required this.pingInterval,
+  });
+
+  /// 1 回目の再接続までの待ち（jitter で半分〜この値）。
+  final Duration baseDelay;
+
+  /// 再接続の待ちの上限。⚠ 「回線が戻ってから届き始めるまでに待たせる最長」になる。
+  final Duration maxDelay;
+
+  /// 無音の切断を見つけるための ping の間隔 (#788)。NAT / プロキシのアイドル切断
+  /// では FIN / RST が来ず onDone / onError が発火しないので、pong が無ければ
+  /// dart:io が閉じる → 再接続、で拾う。検知までの時間 ≒ この値。
+  final Duration pingInterval;
+
+  /// 即時: タイムライン。初動は速く（瞬間 503 / 瞬断から数秒で戻る）、ping も
+  /// 短い（実況で使う本線なので、切れたまま座り続けない）。
+  static const live = ReconnectProfile(
+    baseDelay: Duration(seconds: 1),
+    maxDelay: Duration(seconds: 60),
+    pingInterval: Duration(seconds: 30),
+  );
+
+  /// 常駐: 通知・チャット。タイムラインより緊急性が低めなので長め。
+  ///
+  /// ⚠ デスクトップでは通知のストリーミングがそのままプッシュ通知の経路なので、
+  /// 「緊急性が低め」はモバイルでしか成り立たない。それを確かめたうえで、通知も
+  /// この値にしている（#1340・2026-10-27 pooza 判断）。
+  static const resident = ReconnectProfile(
+    baseDelay: Duration(seconds: 5),
+    maxDelay: Duration(seconds: 60),
+    pingInterval: Duration(seconds: 60),
+  );
+}
+
+/// [ReconnectingSocket] に渡す時間の取り決め (#1340)。
+///
+/// 以前は 4 本がそれぞれ定数と getter を写していた。⚠ getter はテストが上書きして
+/// 縮めるので、名前を変えずに残している。
+mixin ReconnectTuning {
+  /// どちらの値の組で再接続するか。
+  ReconnectProfile get reconnectProfile;
+
+  final Random _reconnectRandom = Random();
+
+  /// 握手を待つ上限 (#1252)。⚠ テストが縮める。
+  Duration get connectTimeout => const Duration(seconds: 30);
+
+  /// これだけつながり続けたら、失敗を数え直す (#1252)。⚠ テストが縮める。
+  Duration get stableConnectionAfter => const Duration(seconds: 30);
+
+  /// [attempt] 回目（0 始まり）の再接続までの待ち時間（jitter つき・#784）。
+  ///
+  /// ⚠ テストが上書きして、待ち時間を縮めつつ「何回目として数えたか」を読む
+  /// (#1249)。
+  Duration reconnectDelayFor(int attempt) => Duration(
+    milliseconds: reconnectBackoffMs(
+      attempt,
+      baseMs: reconnectProfile.baseDelay.inMilliseconds,
+      maxMs: reconnectProfile.maxDelay.inMilliseconds,
+      random: _reconnectRandom,
+    ),
+  );
+}
+
+/// タイムラインの 2 本（Mastodon / Misskey）が持つ、接続の節目を
+/// [StreamConnectionState] へ写す分岐 (#714 / #1340)。
+///
+/// 2 本が同じ分岐を写していたので寄せた。⚠ 同じ状態が続くときは UI へ重ねて
+/// 知らせない。観測経路の失敗で本筋を止めない。
+mixin StreamConnectionStateReporter {
+  void Function(StreamConnectionState state)? get onConnectionState;
+
+  /// 破棄したあとは知らせない。
+  bool get isStreamDisposed;
+
+  StreamConnectionState? _lastConnectionState;
+
+  void notifyConnectionState(StreamConnectionState next) {
+    if (isStreamDisposed || _lastConnectionState == next) return;
+    _lastConnectionState = next;
+    try {
+      onConnectionState?.call(next);
+    } catch (_) {}
+  }
+
+  /// [ReconnectingSocket.onConnectionEvent] に渡す。
+  void reportConnectionEvent(String event) {
+    if (event == ReconnectingSocket.connected) {
+      notifyConnectionState(StreamConnectionState.live);
+    } else if (event == ReconnectingSocket.disconnected) {
+      notifyConnectionState(StreamConnectionState.disconnected);
+    }
+  }
+
+  /// [ReconnectingSocket.onReconnectExhausted] に渡す。呼び出し側の
+  /// [onReconnectExhausted] を知らせてから、状態を `exhausted` にする。
+  void Function() reportExhausted(void Function()? onReconnectExhausted) => () {
+    try {
+      onReconnectExhausted?.call();
+    } catch (_) {
+      // 観測経路の失敗で本筋を止めない。
+    }
+    notifyConnectionState(StreamConnectionState.exhausted);
+  };
+}
 
 /// 長寿命の WebSocket 1 本について、「つなぐ・切れたら次を予約する・失敗を数える」を
 /// 受け持つ (#1252)。
@@ -48,6 +168,34 @@ class ReconnectingSocket {
     this.connectTimeout = const Duration(seconds: 30),
     this.stableAfter = const Duration(seconds: 30),
   });
+
+  /// 時間の取り決めを [tuning] から取る (#1340)。4 本はこちらを使う。
+  ReconnectingSocket.tuned(
+    ReconnectTuning tuning, {
+    required Uri Function() buildUri,
+    required void Function(dynamic message) onMessage,
+    required List<String> Function() subscribeMessages,
+    void Function(Object error, StackTrace stack)? onStreamError,
+    void Function()? onReconnectExhausted,
+    void Function(String event)? onConnectionEvent,
+    void Function()? onConnecting,
+    void Function(int? closeCode, String? closeReason)? onClosed,
+    WebSocketChannel Function(Uri uri)? channelFactory,
+  }) : this(
+         buildUri: buildUri,
+         onMessage: onMessage,
+         subscribeMessages: subscribeMessages,
+         delayFor: tuning.reconnectDelayFor,
+         onStreamError: onStreamError,
+         onReconnectExhausted: onReconnectExhausted,
+         onConnectionEvent: onConnectionEvent,
+         onConnecting: onConnecting,
+         onClosed: onClosed,
+         channelFactory: channelFactory,
+         pingInterval: tuning.reconnectProfile.pingInterval,
+         connectTimeout: tuning.connectTimeout,
+         stableAfter: tuning.stableConnectionAfter,
+       );
 
   /// 接続先。接続のたびに呼ぶ。
   final Uri Function() buildUri;
@@ -136,8 +284,13 @@ class ReconnectingSocket {
     _channel = channel;
     // ⚠ listener / catchError は、前の世代の接続を閉じたときにも走りうる。
     // 「いまの接続か」は [_failed] の中で、捕まえた channel を見て判定する (#548)。
+    // ⚠ メッセージも世代で見る (#1340)。閉じた古い接続にバッファが残っていると、
+    // 置き換えた後にも届く（受け手の重複除去で実害は出ていない）。
     channel.stream.listen(
-      onMessage,
+      (message) {
+        if (_disposed || _channel != channel) return;
+        onMessage(message);
+      },
       onError: (Object error, StackTrace stack) =>
           _failed(channel, error, stack),
       // ⚠ 切れただけでは数え直さない（数え直すのは [stableAfter] のあと）。

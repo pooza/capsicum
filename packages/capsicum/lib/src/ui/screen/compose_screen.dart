@@ -29,6 +29,7 @@ import '../../service/compose_draft_store.dart';
 import '../../service/now_playing_artwork.dart';
 import '../../service/sentry_op_failure.dart';
 import '../../url_helper.dart';
+import '../../util/action_labels.dart';
 import '../../util/exception_scrub.dart';
 import '../../util/misskey_api_error.dart';
 import '../../util/now_playing_formatter.dart';
@@ -561,6 +562,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       // 既定を読めた ＝ `false` を明示して送れる。
       _sensitiveExplicit = true;
     }
+    // CW 欄を最初から開く (#1322・Mastodon 5.0〜)。⚠ 開くのは欄だけで、文字を
+    // 入れなければ CW も閲覧注意も付かない（[_effectiveSensitive]）。
+    if (user.defaultSpoilerField == true) _cwEnabled = true;
   }
 
   /// ⚠ **この投稿が返信として送られるか (#1113)。**
@@ -575,6 +579,16 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     widget.replyTo,
     widget.redraft,
     redraftReplyDropped: _redraftReplyDropped,
+  );
+
+  /// タイトルと入力欄のヒントに出す「何を書いているか」(#1336)。
+  ///
+  /// ⚠ build の中から呼ぶ（投稿の呼称を watch する）。引用は送信と同じ
+  /// [_quotedPost] で見る（再編集で引き継いだ引用も含む）。
+  String _composeActionLabel() => composeActionLabel(
+    isReply: _isReply,
+    isQuote: _quotedPost != null,
+    postLabel: ref.watch(postLabelProvider),
   );
 
   /// 引き継いだ返信先をユーザーがやめた (#1113)。
@@ -1114,6 +1128,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     }
     WidgetsBinding.instance.addObserver(this);
     _controller.addListener(_onTextChanged);
+    _cwController.addListener(_onCwChanged);
     // Mastodon のみ: デフォルト言語をロケールから設定
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -1177,6 +1192,22 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     cursor: _controller.selection.baseOffset,
     trigger: trigger,
   );
+
+  /// CW 欄が空でないか。最後に描いたときの値。
+  bool _cwHasText = false;
+
+  /// CW 欄の空・非空が変わったら描き直す (#1322)。閲覧注意の表示
+  /// （[_effectiveSensitive]）が CW の文字の有無で決まるため。
+  ///
+  /// ⚠ **変わったときだけ・IME の変換中は描かない。**打鍵ごとの setState は
+  /// 変換を巻き戻す（#463 / #54・[_onTextChanged] と同じ守り）。確定すると
+  /// もう一度呼ばれるので、そこで追いつく。
+  void _onCwChanged() {
+    if (_cwController.value.composing.isValid) return;
+    final hasText = _cwController.text.trim().isNotEmpty;
+    if (hasText == _cwHasText) return;
+    setState(() => _cwHasText = hasText);
+  }
 
   void _onTextChanged() {
     // 既存の debounce は IME 中でも止める (#511): early return より前に
@@ -1479,6 +1510,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     _draftDebounceTimer?.cancel();
     _controller.removeListener(_onTextChanged);
     _controller.dispose();
+    _cwController.removeListener(_onCwChanged);
     _cwController.dispose();
     _toolbarScroll.dispose();
     for (final c in _pollControllers) {
@@ -3828,7 +3860,14 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     return '${seconds ~/ 60}分';
   }
 
-  bool get _effectiveSensitive => _cwEnabled || _sensitiveEnabled;
+  /// CW を付けると添付も閲覧注意になる。
+  ///
+  /// ⚠ **CW 欄が開いているだけでは閲覧注意にしない (#1322)。**空の CW は送らない
+  /// （[_submit]）ので、サーバー側の判定（`spoiler_text.present?`）と揃える。
+  /// CW 欄を最初から開く設定の利用者は、欄が開いたまま CW を書かずに投稿するのが
+  /// 普通で、欄の開閉で見ると**添付がすべて閲覧注意になる**。
+  bool get _effectiveSensitive =>
+      (_cwEnabled && _cwController.text.trim().isNotEmpty) || _sensitiveEnabled;
 
   Future<void> _pickScheduleDate() async {
     // ⚠ 選ばせ方と下限は、予約投稿一覧の「時刻を変更」と共有する (#1212)。
@@ -4115,11 +4154,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('下書きを保存しました')));
-        if (context.canPop()) {
-          context.pop(true);
-        } else {
-          context.go('/home');
-        }
+        popOrGo(context, '/home', result: true);
       }
     } catch (e, st) {
       // 失敗したら自動保存を張り直す (Codex P2 / PR #1017)。理由は
@@ -4407,11 +4442,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           // 行うため、ユーザー入力に #実況 がない自動付与経路もカバーする。
           maybeShowHideLivecureSnackBar(context, ref, posted);
         }
-        if (context.canPop()) {
-          context.pop(true);
-        } else {
-          context.go('/home');
-        }
+        popOrGo(context, '/home', result: true);
       }
     } catch (e, st) {
       // ⚠ **失敗したら自動保存を張り直す (Codex P2 / PR #1017)。**投稿に失敗
@@ -5240,29 +5271,18 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         // GoRouter の go() で stack が置換されており automatic back button が
         // 出ないため、明示的に leading に置く。_submit 末尾と同じく canPop
         // が false のときは /home にフォールバック (#422)。
-        leading: BackButton(
-          onPressed: () {
-            if (context.canPop()) {
-              context.pop();
-            } else {
-              context.go('/home');
-            }
-          },
-        ),
+        leading: BackButton(onPressed: () => popOrGo(context, '/home')),
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Flexible(
               child: Text(
                 // ⚠ 元投稿の取得を待たずに「返信」と出す (#1113)。取得が返る前でも
-                // 返信として送られることは確定している。
-                _isReply
-                    ? (_effectiveChannelName != null
-                          ? '返信：$_effectiveChannelName'
-                          : '返信')
-                    : _effectiveChannelName != null
-                    ? '${ref.watch(postLabelProvider)}：$_effectiveChannelName'
-                    : ref.watch(postLabelProvider),
+                // 返信として送られることは確定している。引用も「引用」と出す
+                // （#1336・新規投稿と見分けられなかった）。
+                _effectiveChannelName != null
+                    ? '${_composeActionLabel()}：$_effectiveChannelName'
+                    : _composeActionLabel(),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -5458,8 +5478,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                               // どのサーバーへ投稿するかを出す (#1328)。
                               // 「今なにしてる？」では何も分からず、投稿する
                               // アカウントを相当な頻度で取り違えていた。
+                              // 返信・引用ならそう出す (#1336)。
                               hintText: postTargetHint(
-                                postLabel: ref.watch(postLabelProvider),
+                                label: _composeActionLabel(),
                                 host: ref
                                     .watch(currentAccountProvider)
                                     ?.key

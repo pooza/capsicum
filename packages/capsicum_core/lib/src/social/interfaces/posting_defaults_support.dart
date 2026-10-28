@@ -15,10 +15,12 @@ abstract mixin class PostingDefaultsSupport {
   /// - [scope]: 公開・ひかえめな公開・フォロワーのみ（⚠ Mastodon は DM を既定に
   ///   できない）
   /// - [quotePolicy]: `public` / `followers` / `nobody`（4.5〜）
+  /// - [spoilerField]: 投稿欄の CW を最初から開くか（5.0〜・#1322）
   Future<User> updatePostingDefaults({
     PostScope? scope,
     bool? sensitive,
     String? language,
     String? quotePolicy,
+    bool? spoilerField,
   });
 }

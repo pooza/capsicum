@@ -164,6 +164,16 @@ ServerProbeFailureInfo classifyServerProbeFailure(Object error) {
   return (kind: ServerProbeFailureKind.other, message: '接続に失敗しました');
 }
 
+/// 接続確認の「その他」の失敗で、OS が返したエラー番号 (#1340)。無ければ null。
+///
+/// 「その他」は 1 つのイシューにまとまるので、中身（接続拒否・経路なし等）を
+/// 見分ける手がかりをタグで残す。⚠ 番号は OS ごとに違う（`os` タグと併せて読む）。
+String? serverProbeOsErrorCode(Object error) {
+  final cause = error is DioException ? error.error : error;
+  if (cause is! SocketException) return null;
+  return cause.osError?.errorCode.toString();
+}
+
 /// 接続確認の失敗を Sentry のイベントにするか (#1332)。
 ///
 /// ⚠ 打ち間違い（hostLookup）・圏外やサーバー停止（timeout）は利用者の側で

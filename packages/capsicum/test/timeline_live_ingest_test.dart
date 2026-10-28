@@ -8,6 +8,7 @@ import 'package:capsicum/src/provider/timeline_provider.dart';
 import 'package:capsicum/src/util/shared_preferences_cache.dart';
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
@@ -53,6 +54,7 @@ class _LiveAdapter extends Mock
   final Map<String, StreamController<Post>> controllers = {};
   final Map<String, void Function(StreamConnectionState)> connectionCallbacks =
       {};
+  final Map<String, void Function()> exhaustedCallbacks = {};
   final List<String> disposedKeys = [];
   int getTimelineCalls = 0;
 
@@ -89,6 +91,9 @@ class _LiveAdapter extends Mock
     final controller = StreamController<Post>.broadcast();
     controllers[key] = controller;
     if (onConnectionState != null) connectionCallbacks[key] = onConnectionState;
+    if (onReconnectExhausted != null) {
+      exhaustedCallbacks[key] = onReconnectExhausted;
+    }
     return controller.stream;
   }
 
@@ -104,6 +109,23 @@ class _LiveAdapter extends Mock
   /// 接続状態の遷移を起こす。
   void connectionState(String key, StreamConnectionState state) =>
       connectionCallbacks[key]!(state);
+}
+
+/// 張れないタブとして、空のストリームを返すアダプタ（Mastodon の
+/// `mastodonCanStream` が false のときと同じ）。
+class _EmptyStreamAdapter extends _LiveAdapter {
+  _EmptyStreamAdapter(super.initialPosts);
+
+  @override
+  Stream<Post> streamTimeline(
+    String key,
+    TabType tab, {
+    void Function(Object error, StackTrace stack)? onParseError,
+    void Function(Object error, StackTrace stack)? onStreamError,
+    void Function()? onReconnectExhausted,
+    void Function(StreamConnectionState state)? onConnectionState,
+    void Function(int? closeCode, String? closeReason)? onDisconnect,
+  }) => const Stream.empty();
 }
 
 const _meKey = AccountKey(
@@ -360,6 +382,63 @@ void main() {
       await settle();
 
       expect(read(container).reconnectCount, 2);
+    });
+  });
+
+  // v2.7 のリリース前レビュー: アダプタは張れないタブに空のストリームを返す。
+  // 接続状態を誰も動かさないと、デッキの点（#1342）が「接続中」のまま残る。
+  test('⚠ ストリームが張られずに終わったら、接続状態は disabled になる', () async {
+    final adapter = _EmptyStreamAdapter([_p102, _p101]);
+    final container = makeContainer(adapter);
+    await start(container);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(
+      read(container).streamConnectionState,
+      StreamConnectionState.disabled,
+    );
+  });
+
+  // v2.7 のリリース前レビュー: 握手は通ってすぐ切られる型（#788）では毎回 live を
+  // 通る。live になった瞬間に下ろすと、止まったカラムの帯（#1342）が数秒で消え、
+  // ソケットの「尽きた」の通知は戻っていないので二度と出ない。
+  group('「尽きた」のフラグは、安定してから下ろす', () {
+    void boot(FakeAsync async, _LiveAdapter adapter, ProviderContainer c) {
+      c.listen(timelineProvider(key), (_, _) {}, fireImmediately: true);
+      c.read(timelineProvider(key).future);
+      async.flushMicrotasks();
+      adapter.exhaustedCallbacks[streamKey]!();
+      async.flushMicrotasks();
+      expect(read(c).streamReconnectExhausted, isTrue);
+    }
+
+    test('⚠⚠ live になってすぐ切れたら下ろさない', () {
+      fakeAsync((async) {
+        final adapter = _LiveAdapter([_p102, _p101]);
+        final container = makeContainer(adapter);
+        boot(async, adapter, container);
+
+        adapter.connectionState(streamKey, StreamConnectionState.live);
+        async.elapse(const Duration(seconds: 3));
+        adapter.connectionState(streamKey, StreamConnectionState.disconnected);
+        async.elapse(const Duration(seconds: 60));
+
+        expect(read(container).streamReconnectExhausted, isTrue);
+      });
+    });
+
+    test('live のまま 30 秒たったら下ろす', () {
+      fakeAsync((async) {
+        final adapter = _LiveAdapter([_p102, _p101]);
+        final container = makeContainer(adapter);
+        boot(async, adapter, container);
+
+        adapter.connectionState(streamKey, StreamConnectionState.live);
+        async.elapse(const Duration(seconds: 29));
+        expect(read(container).streamReconnectExhausted, isTrue);
+        async.elapse(const Duration(seconds: 2));
+        expect(read(container).streamReconnectExhausted, isFalse);
+      });
     });
   });
 

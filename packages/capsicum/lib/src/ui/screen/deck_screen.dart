@@ -104,8 +104,23 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
     _shiftMountedDecks(-1);
   }
 
-  /// route の pop を見張り始めたか。
-  bool _watchingRoutePop = false;
+  /// デッキ画面の route。[_DeckRouteProbe] が拾って渡す (#1340)。
+  ///
+  /// ⚠⚠ **DeckScreen 自身の context で `ModalRoute.of` を呼ばない。**1 度でも
+  /// 呼ぶと依存が張られ、上に画面を push / pop するたび（`isCurrent` が変わる
+  /// たび）にデッキ全体が作り直される。要るのは route そのもの（`popped` の
+  /// 待ち受けと `popUntil` の比較）なので、`isActiveOf` のような範囲を絞った
+  /// 取得でも置き換えられない。
+  ModalRoute<Object?>? _route;
+
+  /// [_DeckRouteProbe] から受ける。route は画面ごとに 1 つなので、最初の 1 回だけ
+  /// 見張りを張る。
+  void _onRoute(ModalRoute<Object?> route) {
+    if (_route != null) return;
+    _route = route;
+    // pop の始まりで完了する（閉じるアニメーションより前）。
+    unawaited(route.popped.then((_) => _leaveMountedDecks()));
+  }
 
   /// 開いている数を [delta] だけ動かす (#1099)。
   ///
@@ -203,17 +218,6 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
         },
       );
     });
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_watchingRoutePop) return;
-    final route = ModalRoute.of(context);
-    if (route == null) return;
-    _watchingRoutePop = true;
-    // pop の始まりで完了する（閉じるアニメーションより前）。
-    unawaited(route.popped.then((_) => _leaveMountedDecks()));
   }
 
   @override
@@ -315,7 +319,7 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
     if (!mounted) return;
     // 閉じかけのデッキは受けずに残す (#1332)。開いている数からは pop の始まりで
     // 抜けているので、通知の経路がタブ表示へ振り替える。
-    if (ModalRoute.of(context)?.isActive == false) return;
+    if (_route?.isActive == false) return;
     final target = ref.read(pendingDeckNotificationsProvider);
     if (target == null) return;
     ref.read(pendingDeckNotificationsProvider.notifier).state = null;
@@ -329,7 +333,7 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
   /// （タップしたのに何も起きないと見える）。shell の中（投稿の詳細・
   /// プロフィールなど）と、shell の外の root（画像ビューア）の両方を見る。
   void _closeScreensAboveDeck() {
-    final deckRoute = ModalRoute.of(context);
+    final deckRoute = _route;
     if (deckRoute == null) return;
     final shellContext = Navigator.of(context).context;
     final shellPage = ModalRoute.of(shellContext);
@@ -378,6 +382,9 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
   /// ⚠ 点滅させるのは、選んだのに画面がほとんど動かない（既に見えている）場合に
   /// 「どれを選んだか」が分からなくなるため。
   void _revealAndFocus(String columnId) {
+    // ⚠ フレームの後から呼ばれることがある（まとめて閉じたあと・#1307）。その
+    // 間にデッキが閉じられていたら、破棄済みの ref を読まない。
+    if (!mounted) return;
     ref.read(deckFocusProvider.notifier).focusAndBlink(columnId);
     _reveal(columnId);
   }
@@ -980,13 +987,43 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
               ),
       ),
     );
-    return mouseDragEnabled
-        ? ScrollConfiguration(
-            behavior: const MouseDragScrollBehavior(),
-            child: scaffold,
-          )
-        : scaffold;
+    return _DeckRouteProbe(
+      onRoute: _onRoute,
+      child: mouseDragEnabled
+          ? ScrollConfiguration(
+              behavior: const MouseDragScrollBehavior(),
+              child: scaffold,
+            )
+          : scaffold,
+    );
   }
+}
+
+/// [DeckScreen] の route を拾って渡す (#1340)。
+///
+/// ⚠ `ModalRoute.of` の依存はここが持つ。上に画面を積んで通知が来ても、作り直る
+/// のはこの widget だけ —— `build` が受け取った [child] をそのまま返すので、
+/// 同じインスタンスの配下は作り直されない。
+class _DeckRouteProbe extends StatefulWidget {
+  const _DeckRouteProbe({required this.onRoute, required this.child});
+
+  final ValueChanged<ModalRoute<Object?>> onRoute;
+  final Widget child;
+
+  @override
+  State<_DeckRouteProbe> createState() => _DeckRouteProbeState();
+}
+
+class _DeckRouteProbeState extends State<_DeckRouteProbe> {
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route != null) widget.onRoute(route);
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 /// デッキの簡易投稿バー (#1172)。**フォーカス中のカラムのスコープの中で組む**

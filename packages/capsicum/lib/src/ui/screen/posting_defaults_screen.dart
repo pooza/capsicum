@@ -11,7 +11,7 @@ import '../widget/bottom_safe_area.dart';
 
 /// サーバー側の投稿の既定 (#1210・Mastodon)。
 ///
-/// 公開範囲・閲覧注意・言語・引用の許可。**投稿フォームは新規の投稿を開くとき
+/// 公開範囲・閲覧注意・CW 欄・言語・引用の許可。**投稿フォームは新規の投稿を開くとき
 /// これを読んで使う**（#1185 / #1194）ので、端末側に別の既定は無い。保存すると
 /// 次に開く投稿フォームから効き、Web など他のクライアントにも同じ値が出る。
 ///
@@ -51,6 +51,9 @@ class _PostingDefaultsScreenState extends ConsumerState<PostingDefaultsScreen> {
   late bool _sensitive;
   late String _language;
   String? _quotePolicy;
+
+  /// CW 欄を最初から開くか (#1322)。null はサーバーが返さない（4.7 以前）。
+  bool? _spoilerField;
   bool _saving = false;
 
   /// 開いたときのアカウント。⚠ 保存中に切り替えられても、開いたアカウントへ書く。
@@ -77,6 +80,8 @@ class _PostingDefaultsScreenState extends ConsumerState<PostingDefaultsScreen> {
     _quotePolicy = policy != null && quoteApprovalLabels.containsKey(policy)
         ? policy
         : null;
+    // ⚠ CW 欄の既定も、サーバーが返したときだけ出す（5.0 より前は無い）。
+    _spoilerField = user?.defaultSpoilerField;
   }
 
   Future<void> _save() async {
@@ -93,6 +98,7 @@ class _PostingDefaultsScreenState extends ConsumerState<PostingDefaultsScreen> {
         sensitive: _sensitive,
         language: _language,
         quotePolicy: effectiveDefaultQuotePolicy(_scope, _quotePolicy),
+        spoilerField: _spoilerField,
       );
       // ⚠ 開いたアカウントがまだ現在のアカウントなら、手元の `User` を差し替える。
       // 差し替えないと、次の取り直し（#1185 の TTL）まで投稿フォームが古い既定で
@@ -181,6 +187,14 @@ class _PostingDefaultsScreenState extends ConsumerState<PostingDefaultsScreen> {
                       value: _sensitive,
                       onChanged: (value) => setState(() => _sensitive = value),
                     ),
+                    if (_spoilerField != null)
+                      SwitchListTile(
+                        title: const Text('CW の欄を最初から開いておく'),
+                        subtitle: const Text('警告文は投稿ごとに書きます。書かなければ CW は付きません。'),
+                        value: _spoilerField!,
+                        onChanged: (value) =>
+                            setState(() => _spoilerField = value),
+                      ),
                     const _Header('言語'),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),

@@ -10,10 +10,12 @@ import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/unified_notification_provider.dart';
 import '../../service/tco_resolver.dart';
+import '../../util/announcement_notifications.dart';
 import '../../util/notification_filter.dart';
 import '../util/deck_navigation.dart';
 import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
+import '../util/notification_detail_text.dart';
 import '../util/notification_group_text.dart';
 import '../util/notification_type_display.dart';
 import '../util/relative_time.dart';
@@ -81,6 +83,9 @@ class UnifiedNotificationScreen extends ConsumerWidget {
           final newestIndexes = <int>{};
           final seenAccounts = <String>{};
           for (var i = 0; i < data.items.length; i++) {
+            // ⚠ お知らせの行（#1308）はサーバーの通知ではないので、既読を返す
+            // 起点にしない。
+            if (isAnnouncementRow(data.items[i].notification)) continue;
             if (seenAccounts.add(data.items[i].account.key.toStorageKey())) {
               newestIndexes.add(i);
             }
@@ -264,6 +269,19 @@ class _UnifiedNotificationTileState
                       overflow: TextOverflow.ellipsis,
                     ),
                   ],
+                  // お知らせ (#1308)。題名か本文の冒頭（通知タブの
+                  // `NotificationTile` と同じ `notificationDetailText`）。
+                  if (notification.announcement != null)
+                    if (notificationDetailText(notification)
+                        case final detail?) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        detail,
+                        style: theme.textTheme.bodyMedium,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                 ],
               ),
             ),
@@ -438,6 +456,10 @@ class _UnifiedNotificationTileState
     final account = inDeck ? item.account.key : null;
     if (post != null) {
       openPost(context, post, account: account);
+    } else if (item.notification.announcement != null) {
+      // お知らせ (#1308)。⚠ デッキの外では上でアカウントを切り替えてあるので、
+      // 全画面の `/announcements` がそのアカウントのお知らせを出す。
+      openAnnouncements(context, account: account);
     } else if (user != null) {
       openProfile(context, user, account: account);
     }

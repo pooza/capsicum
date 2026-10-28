@@ -165,7 +165,8 @@ void main() {
       // ⚠ これが「grep では 45 件出るが 1 件は誤検出」の正体。合成ソースではなく
       // **実物**で確かめる（2 本ある）。
       for (final path in const [
-        '$docsDir/dev-environment.md',
+        // 2026-10-26 に dev-environment.md から「コマンドの書き方」ごと移った。
+        '$docsDir/dev-environment-claude-code.md',
         '$skillsDir/store-release/build-upload.md',
       ]) {
         final source = File(path).readAsStringSync();

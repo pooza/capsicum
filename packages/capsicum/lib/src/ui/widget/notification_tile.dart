@@ -198,6 +198,9 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
           // の詳細（#742）を開く。
           : notification.collection != null
           ? () => openCollection(context, notification.collection!.id)
+          // お知らせ (#1308): お知らせの画面を開く（既読はそちらで付く）。
+          : notification.announcement != null
+          ? () => openAnnouncements(context)
           // 実績解除通知 (#918): post を持たないため、タップで実績一覧を開く。
           // ⚠ **`extra` は省略できない。** `/achievements` の builder は
           // `state.extra!` で `userId` を取り出すので、付けずに push すると

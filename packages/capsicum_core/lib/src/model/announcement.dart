@@ -1,9 +1,23 @@
+/// お知らせを通知の 1 行にしたときの id の前置き（`announcement:<id>`）。
+///
+/// ⚠⚠ **サーバーの通知の id と見分けるための印**（#1308）。既読位置や続き読みの
+/// カーソルからお知らせの行を外すのにこれを見るので、ストリーミングの経路と
+/// 一覧に差し込む経路で同じものを使う（片方だけ変えると、お知らせの id を
+/// サーバーの通知の id として送ってしまう）。
+const announcementNotificationIdPrefix = 'announcement:';
+
 class Announcement {
   final String id;
   final String content;
   final String? title;
   final String? imageUrl;
   final DateTime publishedAt;
+
+  /// 最後に編集された時刻。無ければ null (#1308)。
+  ///
+  /// ⚠ **Mastodon は編集していなくても値を返す**（作成時の時刻）。編集されたか
+  /// どうかは [edited] で見る。
+  final DateTime? updatedAt;
   final bool read;
   final bool isHtml;
   final List<AnnouncementReaction> reactions;
@@ -18,11 +32,22 @@ class Announcement {
     this.title,
     this.imageUrl,
     required this.publishedAt,
+    this.updatedAt,
     this.read = false,
     this.isHtml = false,
     this.reactions = const [],
     this.reactionsAllowed = true,
   });
+
+  /// 公開したあとに編集されたか (#1308)。
+  ///
+  /// ⚠ 1 分までの差は編集と見なさない。Mastodon は作成時にも `updated_at` を
+  /// 入れ、予約して公開したお知らせでは `published_at` と数秒ずれる。
+  bool get edited {
+    final updated = updatedAt;
+    if (updated == null) return false;
+    return updated.difference(publishedAt) > const Duration(minutes: 1);
+  }
 
   Announcement copyWith({bool? read, List<AnnouncementReaction>? reactions}) =>
       Announcement(
@@ -31,6 +56,7 @@ class Announcement {
         title: title,
         imageUrl: imageUrl,
         publishedAt: publishedAt,
+        updatedAt: updatedAt,
         read: read ?? this.read,
         isHtml: isHtml,
         reactions: reactions ?? this.reactions,

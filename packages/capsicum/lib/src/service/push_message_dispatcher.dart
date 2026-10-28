@@ -102,9 +102,7 @@ class PushMessageDispatcher {
       } else if (decrypted.title != null && decrypted.title!.isNotEmpty) {
         title = decrypted.title!;
       }
-      if (decrypted.body != null && decrypted.body!.isNotEmpty) {
-        body = decrypted.body!;
-      }
+      body = resolveBody(decrypted, fallback: body);
     }
 
     // タップ payload は JSON 化して type / userId も伝搬する。chat の場合は
@@ -140,6 +138,29 @@ class PushMessageDispatcher {
       'announcement: server=${data['server']} id=${data['announcement_id']}',
     );
     await _showNotification(title: title, body: body, payload: payload);
+  }
+
+  /// 復号できた通知の本文を決める。使えるものが無ければ [fallback]。
+  ///
+  /// 本文が空なら、見出しの置き換えで捨てたサーバーの title（「誰が・何をした」）
+  /// を本文に回す (#1326)。Mastodon は投稿の無い種類（新規登録・フォロー）で
+  /// 相手の自己紹介を本文にするので、自己紹介が空だと本文も空になる。⚠ 回さないと
+  /// [fallback]（復号できなかったときの文面）が残り、失敗と見分けがつかない。
+  ///
+  /// ⚠ type が無いときは title がそのまま見出しになっているので、本文には回さない。
+  /// ⚠ iOS / macOS の NSE（`NotificationService.swift`）と揃える。
+  @visibleForTesting
+  static String resolveBody(
+    DecryptedPushContent decrypted, {
+    required String fallback,
+  }) {
+    final body = decrypted.body;
+    if (body != null && body.isNotEmpty) return body;
+    final title = decrypted.title;
+    if (decrypted.type != null && title != null && title.isNotEmpty) {
+      return title;
+    }
+    return fallback;
   }
 
   /// HTML タグを大雑把に剥がしてプレビュー長 (既定 80 文字) に切る。

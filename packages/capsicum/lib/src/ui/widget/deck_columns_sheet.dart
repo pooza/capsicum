@@ -9,6 +9,7 @@ import '../../provider/channel_provider.dart';
 import '../../provider/hashtag_provider.dart';
 import '../../provider/list_provider.dart';
 import '../../provider/preferences_provider.dart';
+import '../util/deck_close_unlocked.dart';
 import '../util/deck_tabs.dart';
 import 'emoji_text.dart';
 import 'hashtag_condition_dialog.dart';
@@ -63,6 +64,8 @@ class _DeckColumnsSheetState extends ConsumerState<DeckColumnsSheet> {
     final notifier = ref.read(deckColumnsProvider.notifier);
     final columns = ref.watch(deckColumnsProvider);
     final locked = ref.watch(deckLockedColumnsProvider);
+    // ⚠ メニューと同じ入口で判定する（決定済み事項 17）。
+    final canCloseUnlocked = canCloseUnlockedDeckColumns(ref);
     final accounts = ref.watch(accountManagerProvider).accounts;
     final currentKey = ref.watch(currentAccountKeyProvider);
     final selected = accounts.any((a) => a.key == _selectedAccount)
@@ -197,6 +200,20 @@ class _DeckColumnsSheetState extends ConsumerState<DeckColumnsSheet> {
                       );
                     },
                   ),
+                  // ロックしていないカラムをまとめて閉じる (#1307・2026-10-27
+                  // pooza 判断)。⚠ カラムが 1 本も無ければ出さない。押せない
+                  // ときは隠さず、無効にして理由を添える。確認は挟まない。
+                  if (columns.isNotEmpty)
+                    ListTile(
+                      key: const ValueKey('deck-close-unlocked'),
+                      leading: const Icon(Icons.close_fullscreen),
+                      title: const Text('ロックしていないカラムを閉じる'),
+                      subtitle: canCloseUnlocked
+                          ? null
+                          : const Text('ロックしたカラムがあると使えます'),
+                      enabled: canCloseUnlocked,
+                      onTap: () => closeUnlockedDeckColumns(ref),
+                    ),
                   _sectionHeader(theme, 'カラムを追加'),
                   if (selected == null)
                     const Padding(

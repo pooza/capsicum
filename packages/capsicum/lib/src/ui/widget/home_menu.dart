@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
@@ -20,6 +22,7 @@ import '../../provider/timeline_provider.dart';
 import '../../service/resident_mode_service.dart';
 import '../../url_helper.dart';
 import '../util/about_dialog.dart';
+import '../util/deck_close_unlocked.dart';
 import '../util/deck_navigation.dart';
 import '../util/deck_tabs.dart';
 import '../util/provider_scope_carrier.dart';
@@ -489,6 +492,8 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
       ? ref.watch(deckColumnsProvider)
       : const <DeckColumn>[];
   final focusedColumnId = ref.watch(deckFocusProvider).columnId;
+  // ロックしていないカラムをまとめて閉じられるか (#1307)。
+  final canCloseUnlocked = inDeck && canCloseUnlockedDeckColumns(ref);
   // フォーカス中のカラムの再読み込み。⚠ 登録していないカラム（通知・検索など自前の
   // 取り直しを持つもの）では null → 項目を無効にする (#1157)。
   final focusedRefresh = focusedColumnId == null
@@ -506,7 +511,7 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
     MenuSubmenuEntry(
       // 先頭メニューは macOS ではアプリ名（capsicum）で表示される。in-window は
       // ブランドの唐辛子アイコンを見出しに付ける。
-      label: 'capsicum',
+      label: TopMenuLabel.app,
       leadingIcon: Image.asset(
         'assets/images/capsicum_icon.webp',
         width: 18,
@@ -561,7 +566,7 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
     // ファイル (#857)。今は設定のバックアップだけだが、macOS / Windows の
     // 慣習ではファイル入出力はここに置く。
     MenuSubmenuEntry(
-      label: 'ファイル',
+      label: TopMenuLabel.file,
       children: [
         MenuActionEntry(
           label: '設定のバックアップ…',
@@ -571,7 +576,7 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
       ],
     ),
     MenuSubmenuEntry(
-      label: '編集',
+      label: TopMenuLabel.edit,
       children: [
         MenuActionEntry(
           label: '取り消す',
@@ -718,7 +723,7 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
         ],
       ),
     MenuSubmenuEntry(
-      label: '表示',
+      label: TopMenuLabel.view,
       children: [
         MenuActionEntry(
           label: 'タイムラインを更新',
@@ -834,6 +839,21 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
                 icon: Icons.view_column_outlined,
                 onSelected: deckActions.openColumnsSheet,
               ),
+              // ロックしていないカラムをまとめて閉じる (#1307・2026-10-27 pooza
+              // 判断)。⚠ 押せないとき（ロック中が無い・ロックしていないカラムが
+              // 無い）も隠さず、無効にして出す。確認は挟まない。
+              MenuActionEntry(
+                label: 'ロックしていないカラムを閉じる',
+                icon: Icons.close_fullscreen,
+                shortcut: const MenuShortcut(
+                  LogicalKeyboardKey.keyW,
+                  shift: true,
+                ),
+                globalShortcut: true,
+                onSelected: canCloseUnlocked
+                    ? () => unawaited(closeUnlockedDeckColumns(ref))
+                    : null,
+              ),
             ],
           ),
         // タブ UI ↔ デッキの切り替え (#1170・AppBar のアイコン #1153 と対)。
@@ -874,7 +894,7 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
       ],
     ),
     MenuSubmenuEntry(
-      label: 'ウインドウ',
+      label: TopMenuLabel.window,
       children: [
         MenuProvidedEntry(
           macType: PlatformProvidedMenuItemType.minimizeWindow,

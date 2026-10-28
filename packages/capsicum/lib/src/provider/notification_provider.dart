@@ -5,6 +5,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../service/background_notification_service.dart';
+import '../util/announcement_notifications.dart';
 import '../util/conversion_skip_report.dart';
 import '../util/exception_scrub.dart';
 import '../util/notification_filter.dart';
@@ -80,6 +81,10 @@ class NotificationState {
   /// 次に成功した続き読み。
   final Object? loadMoreError;
 
+  /// まだ一覧に差し込んでいないお知らせ (#1308)。いま並んでいる通知より古いので、
+  /// 追加読み込みで範囲に入ったら差し込む（`mergeAnnouncements`）。
+  final List<Announcement> pendingAnnouncements;
+
   const NotificationState({
     this.notifications = const [],
     this.isLoadingMore = false,
@@ -88,6 +93,7 @@ class NotificationState {
     this.rawNewestId,
     this.pageCapHit = false,
     this.loadMoreError,
+    this.pendingAnnouncements = const [],
   });
 
   /// [loadMoreError] は引数省略時に現状を保持する。`null` を渡すとクリア
@@ -99,6 +105,7 @@ class NotificationState {
     String? lastRawId,
     bool? pageCapHit,
     Object? loadMoreError = _keepNotificationLoadMoreError,
+    List<Announcement>? pendingAnnouncements,
   }) => NotificationState(
     notifications: notifications ?? this.notifications,
     isLoadingMore: isLoadingMore ?? this.isLoadingMore,
@@ -109,6 +116,7 @@ class NotificationState {
     loadMoreError: identical(loadMoreError, _keepNotificationLoadMoreError)
         ? this.loadMoreError
         : loadMoreError,
+    pendingAnnouncements: pendingAnnouncements ?? this.pendingAnnouncements,
   );
 }
 
@@ -163,10 +171,20 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
       return const NotificationState(hasMore: false);
     }
 
+    final filter = _filter(watch: true);
+    // お知らせも並べる (#1308)。⚠ 通知と並行して取る。取れなくても空が返る
+    // （通知の一覧は止めない）。
+    final account = ref.read(currentAccountProvider);
+    final announcements = account == null
+        ? Future.value(const <Announcement>[])
+        : announcementsForNotifications(
+            account,
+            excludeTypes: filter.excludeTypes,
+          );
     final page = await _fetchVisible(
       adapter as NotificationSupport,
       maxId: null,
-      filter: _filter(watch: true),
+      filter: filter,
       source: 'notification',
     );
     // ⚠ **猫耳のために通知一覧の表示を止めない (#1080)。**理由と仕組みは
@@ -184,12 +202,18 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
       _updateLastSeen(newestRaw);
     }
 
+    final withAnnouncements = mergeAnnouncements(
+      notifications,
+      await announcements,
+      hasMore: page.hasMore,
+    );
     return NotificationState(
-      notifications: notifications,
+      notifications: withAnnouncements.merged,
       lastRawId: page.lastRawId,
       rawNewestId: newestRaw,
       hasMore: page.hasMore,
       pageCapHit: page.capHit,
+      pendingAnnouncements: withAnnouncements.pending,
     );
   }
 
@@ -324,9 +348,13 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
         // notification's ID: if trailing items were skipped, the converted
         // last ID would re-fetch the same page (#777). Fall back to the
         // converted last ID for older adapters / first page without a raw ID.
+        // ⚠ お知らせの行（#1308）はサーバーの通知ではないので、カーソルにしない。
         final lastId =
             base.lastRawId ??
-            (base.notifications.isNotEmpty ? base.notifications.last.id : null);
+            base.notifications
+                .where((n) => !isAnnouncementRow(n))
+                .lastOrNull
+                ?.id;
         if (lastId == null) {
           state = AsyncData(
             base.copyWith(isLoadingMore: false, hasMore: false),
@@ -349,19 +377,30 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
         // 絞り込みの変更）、古いページも古いカーソルも書かない（2 回目のレビュー）。
         if (generation != _buildGeneration) return;
         final latest = state.valueOrNull ?? base;
+        // 範囲に入った古いお知らせを差し込む (#1308)。⚠ カーソルが進まなかった
+        // ページでは差し込まない（範囲が動いていない）。
+        final withAnnouncements = page.stalled
+            ? (
+                merged: latest.notifications,
+                pending: latest.pendingAnnouncements,
+              )
+            : mergeAnnouncements(
+                [
+                  ...latest.notifications,
+                  ...dropAlreadyShownGroups(latest.notifications, older),
+                ],
+                latest.pendingAnnouncements,
+                hasMore: page.hasMore,
+              );
         state = AsyncData(
           latest.copyWith(
-            notifications: page.stalled
-                ? latest.notifications
-                : [
-                    ...latest.notifications,
-                    ...dropAlreadyShownGroups(latest.notifications, older),
-                  ],
+            notifications: withAnnouncements.merged,
             isLoadingMore: false,
             lastRawId: page.lastRawId,
             hasMore: page.hasMore,
             pageCapHit: page.capHit,
             loadMoreError: null,
+            pendingAnnouncements: withAnnouncements.pending,
           ),
         );
         return;

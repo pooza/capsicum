@@ -369,13 +369,15 @@ class _DeckColumnHeader extends ConsumerWidget {
                   ),
                 ),
               ),
-              // ⚠ 出す条件はタブ UI の AppBar と共有する (#793)。DM には出さない。
-              if (streamIndicatorTimelineType(column.tab) case final type?
+              // ⚠ ライブ購読を持つ 4 種類のカラム（本線・タグ・リスト・チャンネル）
+              // すべてに出す (#1342)。以前は本線だけで、タグ・リスト・チャンネルは
+              // 止まっても手がかりが何も無かった。DM には出さない (#793)。
+              if (deckLiveTimeline(column) case final live?
                   when account == ref.watch(currentAccountKeyProvider))
                 // カラムのスコープの中なので、別アカウントのカラムでもここは一致する。
                 _DeckStreamDot(
-                  key: ValueKey(type),
-                  timelineKey: (account: account, type: type),
+                  key: ValueKey(live),
+                  timeline: live,
                   ringColor: foreground,
                 ),
               // 新規投稿の入口（案 A・#1172・決定済み事項 10）。⚠ **このカラムの
@@ -527,15 +529,118 @@ class _DeckSeededBodyState<T extends Object>
   }
 }
 
+/// このカラムのライブ購読 (#1342)。見出しの接続の点と、止まったときの帯の元。
+///
+/// ライブ購読を持つのは本線・タグ・リスト・チャンネルの 4 種類で、どれも
+/// [TimelineLiveIngest] を共有している（止まり方も同じ）。それ以外は null。
+/// ⚠ DM は出さない（タブ UI と同じ判定・[streamIndicatorTimelineType]・#793）。
+/// ⚠ provider は本文（`DeckColumnView._body`）と同じキーで引くこと。違うキーだと
+/// 別の購読を張ってしまう。
+ProviderListenable<AsyncValue<TimelineState>>? deckLiveTimeline(
+  DeckColumn column,
+) {
+  final account = column.account;
+  return switch (column.tab) {
+    final TimelineTab tab => switch (streamIndicatorTimelineType(tab)) {
+      final type? => timelineProvider((account: account, type: type)),
+      null => null,
+    },
+    HashtagTab(:final tag) => hashtagTimelineProvider((
+      account: account,
+      spec: tag,
+    )),
+    ListTab(:final id) => listTimelineProvider((account: account, id: id)),
+    ChannelTab(:final id) => channelTimelineProvider((
+      account: account,
+      id: id,
+    )),
+    _ => null,
+  };
+}
+
+/// ライブ更新が止まっているか (#1342)。止まったカラムの帯を出す条件。
+///
+/// ⚠ **再接続の試行が尽きた状態（赤い点）だけ。**一時的な切断（橙）は普段から
+/// 起きて数秒で戻るので、そのたびに帯を出すとうるさい。尽きた後も再試行は
+/// 続き（#784）、`live` に戻って安定するとフラグは下りる（`TimelineLiveIngest`
+/// の `_armExhaustedClear`）ので、帯も自然に消える。
+///
+/// ⚠ 利用者がライブ更新を切った（`disabled`）カラムには出さない。フラグは切った
+/// 時点の値のまま残るので、見ないと「自分で止めたのに異常」に見える（v2.7 の
+/// リリース前レビュー）。
+bool deckColumnStreamStalled(TimelineState state) =>
+    state.streamConnectionState != StreamConnectionState.disabled &&
+    (state.streamReconnectExhausted ||
+        state.streamConnectionState == StreamConnectionState.exhausted);
+
+/// 止まったカラムの帯 (#1342)。テストから見つけるための目印。
+const deckStalledBannerKey = Key('deck_stalled_banner');
+
+/// 止まったカラムの本文の上に出す帯 (#1342)。
+///
+/// ⚠⚠ **SnackBar にしない。**回線が切れると全カラムが同時に止まるので、知らせが
+/// 本数ぶん並ぶ。帯はカラムごとに出るので、どれが止まっているかがそのまま
+/// 分かり、画面に 1 個の表示を置かない決定（決定済み事項 7-2）にも沿う。
+/// 「再接続」は引っ張って更新と同じ。デスクトップでは引く操作がしにくいので、
+/// 押せる入口として置く。
+class DeckStalledBanner extends StatelessWidget {
+  const DeckStalledBanner({super.key, required this.onReconnect});
+
+  final VoidCallback onReconnect;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final style = Theme.of(
+      context,
+    ).textTheme.bodySmall?.copyWith(color: scheme.onErrorContainer);
+    return Material(
+      key: deckStalledBannerKey,
+      color: scheme.errorContainer,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 2, 4, 2),
+        child: Row(
+          children: [
+            Icon(Icons.sync_problem, size: 18, color: scheme.onErrorContainer),
+            const SizedBox(width: 8),
+            // ⚠ 文面は正本の表から取る。#784 で再試行は諦めないので「止まった」
+            // とは書かない（見出しの点のツールチップと揃える）。
+            Expanded(
+              child: Text(
+                streamConnectionTooltip(
+                  streamConnectionDisplay(
+                    context,
+                    StreamConnectionState.exhausted,
+                  ).label,
+                ),
+                style: style,
+              ),
+            ),
+            TextButton(
+              onPressed: onReconnect,
+              style: TextButton.styleFrom(
+                foregroundColor: scheme.onErrorContainer,
+                visualDensity: VisualDensity.compact,
+              ),
+              child: const Text('再接続'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// カラム単位の接続状態 (#1092・決定済み事項 7-2)。
 class _DeckStreamDot extends ConsumerWidget {
   const _DeckStreamDot({
     super.key,
-    required this.timelineKey,
+    required this.timeline,
     required this.ringColor,
   });
 
-  final TimelineKey timelineKey;
+  /// [deckLiveTimeline] が返したこのカラムのライブ購読。
+  final ProviderListenable<AsyncValue<TimelineState>> timeline;
 
   /// 縁取りの色。見出しの文字と同じ色を渡す (#1238)。
   ///
@@ -546,7 +651,7 @@ class _DeckStreamDot extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final async = ref.watch(timelineProvider(timelineKey));
+    final async = ref.watch(timeline);
     final state = async.isLoading
         ? StreamConnectionState.connecting
         : async.valueOrNull?.streamConnectionState ??
@@ -753,6 +858,10 @@ class _DeckTimelineBodyState extends ConsumerState<_DeckTimelineBody> {
               );
         return Column(
           children: [
+            // 止まったカラムの帯 (#1342)。「再接続」はメニュー / `Ctrl+R` と同じく
+            // 引っ張って更新の弧を通す。
+            if (deckColumnStreamStalled(state))
+              DeckStalledBanner(onReconnect: _showRefresh),
             if (state.pendingCount > 0 && widget.flushPending != null)
               TextButton(
                 onPressed: () => widget.flushPending!(ref),

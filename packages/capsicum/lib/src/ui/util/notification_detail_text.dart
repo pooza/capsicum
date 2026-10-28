@@ -1,5 +1,7 @@
 import 'package:capsicum_core/capsicum_core.dart';
 
+import '../widget/content_parser.dart';
+
 /// 書き出した対象の表示名 (#1187)。Misskey の `userExportableEntities`
 /// （`packages/backend/src/types.ts`）。
 ///
@@ -32,6 +34,21 @@ String exportedEntityLabel(String entity) =>
 /// ので、「入っていたら出す」で足りる。分岐を足すと、モデルに読み込んだのに
 /// 画面へ出ない経路ができる（#1046 層③ で実際に見つかった型の不具合）。
 String? notificationDetailText(Notification notification) {
+  // お知らせ (#1308)。題名があれば題名、無ければ本文の冒頭の 1 行。⚠ 編集されて
+  // いたら印を付ける（並ぶ位置は公開日時のまま動かさない・2026-10-27 pooza 判断）。
+  if (notification.announcement case final announcement?) {
+    final title = announcement.title?.trim();
+    final body = announcement.isHtml
+        ? stripHtml(announcement.content)
+        : announcement.content;
+    final firstLine = body
+        .split('\n')
+        .map((line) => line.trim())
+        .firstWhere((line) => line.isNotEmpty, orElse: () => '');
+    final text = (title != null && title.isNotEmpty) ? title : firstLine;
+    if (text.isEmpty) return announcement.edited ? '（編集済み）' : null;
+    return announcement.edited ? '$text（編集済み）' : text;
+  }
   if (notification.assignedRole case final role?) {
     return role.name.isEmpty ? null : role.name;
   }

@@ -18,6 +18,18 @@ NodeInfo の rel URL は `http://nodeinfo.diaspora.software/ns/schema/2.0` 形�
 
 `POST /api/v1/media` の multipart リクエストに `description` を同梱しても、サーバー実装によっては保存されないことがある（モロヘイヤ経由で発生を確認済み、原因未特定）。WebUI と同じく、アップロード後に `PUT /api/v1/media/:id` で別途 `description` を設定する 2 ステップ方式を採用している。
 
+### `PUT /api/v1/statuses/:id` は「送らない＝空で更新」（#121）
+
+⚠⚠ **送らなかったパラメータは「現状維持」ではなく「空で更新」になる。**`UpdateStatusService` は `options.key?` で分岐するが、`statuses_controller#update` の `update_options` が**ハッシュリテラル**なのでキーは常に存在する（値が nil になるだけ）。ALT 編集（`media_attributes`）だけを送ると:
+
+- `media_ids` が空 → `media_attributes` の対象が見つからず **ALT が適用されない**うえ、**投稿から添付が全部外れる**
+- `spoiler_text` → **CW が消える** / `sensitive` → **閲覧注意が外れる**
+- `@media_attachments_changed` が立つので `significant_changes?` を通り、**200 のままコミットされる**
+
+`poll` も同じ型（空なら既存のアンケートを消す）だが、Mastodon は添付とアンケートを同時に持てないので ALT 編集では届かない。
+
+⚠ **投稿済みのメディアに `PUT /api/v1/media/:id` は使えない**（`where(status_id: nil)` で引くので 404）。投稿済みの ALT を直す道は `statuses/:id` の `media_attributes` だけ。capsicum は送らない項目の補完をモロヘイヤに任せており、導線の判定は `canEditAttachmentDescription`（純関数・全分岐をテストで固定）。
+
 ### 投稿済み ALT の編集は美食丼ステージングの `~/alt_try.sh` で試す（#121）
 
 ⚠ **Mastodon の Web UI からは試せない。**Web UI は `X-Mulukhiya-Purpose` を付けないため、nginx 前段の `$status_put_backend` map が **405** で弾く（mulukhiya#4474）。「Web で編集できるのに capsicum でできない」ではなく、**Web からは元々できない**。

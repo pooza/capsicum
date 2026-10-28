@@ -69,7 +69,7 @@ class MisskeyNotificationStreaming extends NotificationStreamingBase {
       final annJson = inner['announcement'] as Map<String, dynamic>;
       final announcement = MisskeyAnnouncement.fromJson(annJson).toCapsicum();
       return Notification(
-        id: 'announcement:${announcement.id}',
+        id: '$announcementNotificationIdPrefix${announcement.id}',
         type: NotificationType.announcement,
         createdAt: announcement.publishedAt,
         announcement: announcement,

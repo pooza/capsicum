@@ -1852,6 +1852,8 @@ class _PostTileState extends ConsumerState<PostTile> {
       forwardHost: (adapter as ReportSupport).reportForwardHost(
         targetPost.author,
       ),
+      // 分類を添えられるバックエンドだけ (#1257)。
+      rules: reportRulesFor(adapter as ReportSupport),
     );
     if (input == null) return;
 
@@ -1862,6 +1864,8 @@ class _PostTileState extends ConsumerState<PostTile> {
         targetPost.author.id,
         comment: input.comment.isNotEmpty ? input.comment : null,
         forward: input.forward,
+        category: input.category,
+        ruleIds: input.ruleIds,
       ),
       '通報しました',
     );

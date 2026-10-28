@@ -214,25 +214,37 @@ void main() {
       'lib/src/ui/screen/notification_screen.dart',
     ).readAsStringSync();
 
+    // ⚠ #1308 で、先頭は「お知らせの行を飛ばした、いちばん新しい通知」になった
+    // （お知らせの行はサーバーの通知ではない）。⚠⚠ v2.7 のリリース PR の
+    // Codex P2 で、条件は「0 行目が見えている」から「その通知の行が見えている」
+    // になった（お知らせが上を占めていると、その通知は画面の外にある）。
+    const newest =
+        'final newest = firstServerNotificationIndex(state.notifications);';
+    const call = 'saver.markSeen(state.notifications[newest].id);';
+    const guardLine = 'if (newest != null && visible.contains(newest)) {';
+
     test('保存役を呼んでいる', () {
       expect(src, contains('notificationReadSaverProvider'));
-      expect(src, contains('.markSeen(state.notifications.first.id)'));
+      expect(src, contains(newest));
+      expect(src, contains(call));
     });
 
-    test('⚠ 先頭（index 0）が見えていることを条件にしている', () {
+    test('⚠ 一番新しい通知の行が見えていることを条件にしている', () {
       // ⚠ v2.1 のリリース前レビューで、条件は `markSeen` の直前の `if` になった
       // （外れた側は `unsee` で予約を取り消す）。
-      final call = src.indexOf('.markSeen(state.notifications.first.id)');
-      expect(call, isNot(-1));
-      final guard = src.lastIndexOf(
-        'if (positions.any((p) => p.index == 0)) {',
-        call,
-      );
-      expect(guard, isNot(-1), reason: '先頭が見えていなくても全既読を返してしまう');
+      final at = src.indexOf(call);
+      expect(at, isNot(-1));
+      final guard = src.lastIndexOf(guardLine, at);
+      expect(guard, isNot(-1), reason: '一番新しい通知が見えていなくても全既読を返してしまう');
       expect(
-        src.substring(guard, call).trim(),
-        'if (positions.any((p) => p.index == 0)) {\n        saver',
+        src.substring(guard, at).trim(),
+        guardLine,
         reason: '条件と呼び出しの間に別の文が入っている。同じ分岐に居るかを確かめること',
+      );
+      expect(
+        src,
+        isNot(contains('positions.any((p) => p.index == 0)')),
+        reason: '「0 行目が見えている」で判定すると、お知らせが上を占めたときに画面の外の通知を既読にする',
       );
     });
 
@@ -295,9 +307,10 @@ void main() {
       sub.close();
     });
 
-    test('⚠ 先頭から離れた側で、予約を取り消している', () {
-      final call = src.indexOf('.markSeen(state.notifications.first.id)');
-      final after = src.substring(call, call + 120);
+    test('⚠ 一番新しい通知が見えなくなった側で、予約を取り消している', () {
+      final at = src.indexOf(call);
+      expect(at, isNot(-1));
+      final after = src.substring(at, at + 120);
       expect(after, contains('} else {'));
       expect(after, contains('saver.unsee();'));
     });

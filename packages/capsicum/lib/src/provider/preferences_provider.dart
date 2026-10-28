@@ -827,6 +827,18 @@ class DeckColumnsNotifier extends Notifier<List<DeckColumn>> {
     await _save();
   }
 
+  /// [ids] のカラムをまとめて外す (#1307)。列に無い id は無視する。
+  ///
+  /// ⚠ 1 本ずつ [remove] すると、そのたびに保存とフォーカスの繋ぎ直しが走る。
+  Future<void> removeAll(Set<String> ids) async {
+    if (!state.any((c) => ids.contains(c.id))) return;
+    state = [
+      for (final c in state)
+        if (!ids.contains(c.id)) c,
+    ];
+    await _save();
+  }
+
   /// [id] のカラムの中身を [tab] に差し替える (#1209・タグの条件を直したとき)。
   ///
   /// ⚠ **id・位置・アカウントは変えない。**外して足し直すと、フォーカス・ロック
