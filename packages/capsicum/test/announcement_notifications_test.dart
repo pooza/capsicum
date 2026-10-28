@@ -195,21 +195,53 @@ void main() {
     });
   });
 
-  group('serverNotificationIdAt（既読位置・カーソル）', () {
+  group('firstServerNotificationIndex（既読位置・カーソル）', () {
     final rows = [
       announcementAsNotification(_announcement('a', _at(13))),
       _mention('3', _at(12)),
       announcementAsNotification(_announcement('b', _at(11))),
     ];
 
-    test('⚠⚠ お知らせの行を飛ばして、その下の通知の id を返す', () {
-      expect(serverNotificationIdAt(rows, 0), '3');
-      expect(serverNotificationIdAt(rows, 1), '3');
+    test('⚠⚠ お知らせの行を飛ばして、その下の通知の位置を返す', () {
+      expect(firstServerNotificationIndex(rows), 1);
+      expect(firstServerNotificationIndex(rows, 1), 1);
     });
 
     test('下に通知が無ければ null', () {
-      expect(serverNotificationIdAt(rows, 2), isNull);
+      expect(firstServerNotificationIndex(rows, 2), isNull);
     });
+  });
+
+  // v2.7 のリリース PR の Codex P2: お知らせが画面の上を占めているとき、
+  // 画面の外の通知を既読の起点にしない。
+  group('topVisibleServerNotificationIndex（見えている行だけを既読の起点にする）', () {
+    final rows = [
+      announcementAsNotification(_announcement('a', _at(14))),
+      announcementAsNotification(_announcement('b', _at(13))),
+      _mention('3', _at(12)),
+      _mention('2', _at(11)),
+    ];
+
+    test('⚠⚠ 見えているのがお知らせの行だけなら null（画面の外の通知を拾わない）', () {
+      expect(topVisibleServerNotificationIndex(rows, [0, 1]), isNull);
+    });
+
+    test('見えている通知の行のうち、一番上を返す', () {
+      expect(topVisibleServerNotificationIndex(rows, [3, 1, 2]), 2);
+    });
+
+    test('一覧の外の位置（末尾の入口など）は無視する', () {
+      expect(topVisibleServerNotificationIndex(rows, [3, 4, 5]), 3);
+      expect(topVisibleServerNotificationIndex(rows, [4]), isNull);
+    });
+  });
+
+  group('お知らせの行の id', () {
+    final rows = [
+      announcementAsNotification(_announcement('a', _at(13))),
+      _mention('3', _at(12)),
+      announcementAsNotification(_announcement('b', _at(11))),
+    ];
 
     test('⚠ ストリーミングの経路と同じ id を持つ（重ならない）が、サーバーの通知とは見分ける', () {
       expect(rows.first.id, 'announcement:a');

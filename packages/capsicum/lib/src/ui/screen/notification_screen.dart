@@ -111,33 +111,34 @@ class _NotificationViewState extends ConsumerState<NotificationView>
 
     // Save notification marker (debounced).
     final adapter = ref.read(currentAdapterProvider);
+    // ⚠ お知らせの行（#1308）はサーバーの通知ではないので、既読の起点にしない。
+    // ⚠⚠ 「0 行目が見えている」で判定しない —— お知らせが上を占めていると、
+    // 一番新しい通知は画面の外にある（[topVisibleServerNotificationIndex]）。
+    final visible = positions.map((p) => p.index);
+    final newest = firstServerNotificationIndex(state.notifications);
     if (adapter is MarkerSupport) {
-      final minIndex = positions
-          .map((p) => p.index)
-          .reduce((a, b) => a < b ? a : b);
-      if (minIndex < state.notifications.length) {
-        // ⚠ 先頭が見えているときは、絞り込みで伏せた分も含めた一番新しい通知
-        // まで既読にする（伏せた通知が未読のまま残る・#1291 のレビュー）。
-        // ⚠ お知らせの行（#1308）はサーバーの通知ではないので、その下の通知の
-        // id を使う（[serverNotificationIdAt]）。
-        final id = minIndex == 0
-            ? state.rawNewestId ??
-                  serverNotificationIdAt(state.notifications, 0)
-            : serverNotificationIdAt(state.notifications, minIndex);
-        if (id != null) ref.read(notificationMarkerSaverProvider).save(id);
+      final top = topVisibleServerNotificationIndex(
+        state.notifications,
+        visible,
+      );
+      if (top != null) {
+        // ⚠ 一番新しい通知が見えているときは、絞り込みで伏せた分も含めた一番
+        // 新しい通知まで既読にする（伏せた通知が未読のまま残る・#1291 の
+        // レビュー）。
+        final id = top == newest
+            ? state.rawNewestId ?? state.notifications[top].id
+            : state.notifications[top].id;
+        ref.read(notificationMarkerSaverProvider).save(id);
       }
     } else if (adapter is NotificationReadSupport &&
         state.notifications.isNotEmpty) {
       // 位置を持たないバックエンド（Misskey）は、一番新しい通知が見えたときに
-      // 全既読を返す (#1205)。⚠ **先頭が見えていない間は返さない** —— 途中から
-      // 読んでいる利用者の、まだ見ていない新着まで既読にしてしまう。
-      // ⚠ 先頭から離れたら、まだ返していない予約も取り消す。
+      // 全既読を返す (#1205)。⚠ **一番新しい通知が見えていない間は返さない**
+      // —— 途中から読んでいる利用者の、まだ見ていない新着まで既読にしてしまう。
+      // ⚠ 見えなくなったら、まだ返していない予約も取り消す。
       final saver = ref.read(notificationReadSaverProvider);
-      // ⚠ お知らせの行（#1308）は飛ばす（[serverNotificationIdAt]）。
-      if (positions.any((p) => p.index == 0)) {
-        if (serverNotificationIdAt(state.notifications, 0) case final id?) {
-          saver.markSeen(id);
-        }
+      if (newest != null && visible.contains(newest)) {
+        saver.markSeen(state.notifications[newest].id);
       } else {
         saver.unsee();
       }

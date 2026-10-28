@@ -21,7 +21,7 @@ import '../service/announcement_subscription_service.dart';
 ///
 /// ⚠ id はストリーミングの経路（`notification_streaming.dart`）と同じ
 /// `announcement:<id>`。⚠⚠ **サーバーの通知の id ではない**ので、既読位置や
-/// カーソルに使わない（[serverNotificationIdAt]）。
+/// カーソルに使わない（[firstServerNotificationIndex]）。
 Notification announcementAsNotification(Announcement announcement) =>
     Notification(
       id: '$announcementNotificationIdPrefix${announcement.id}',
@@ -39,17 +39,39 @@ bool isAnnouncementRow(Notification notification) =>
     notification.announcement != null &&
     notification.id.startsWith(announcementNotificationIdPrefix);
 
-/// [notifications] の [index] 番目から古いほうへ見て、最初のサーバーの通知の
-/// id。無ければ null。
+/// [notifications] の [from] 番目から古いほうへ見て、最初のサーバーの通知の
+/// 行の位置。無ければ null。
 ///
 /// ⚠ 既読位置（Mastodon のマーカー・Misskey の全既読）とカーソルは、サーバーの
-/// 通知の id でしか通じない。お知らせの行が見えている位置に来ても、その下の
-/// 通知の id を使う。
-String? serverNotificationIdAt(List<Notification> notifications, int index) {
-  for (var i = index; i < notifications.length; i++) {
-    if (!isAnnouncementRow(notifications[i])) return notifications[i].id;
+/// 通知の id でしか通じない。お知らせの行は飛ばす。
+int? firstServerNotificationIndex(
+  List<Notification> notifications, [
+  int from = 0,
+]) {
+  for (var i = from; i < notifications.length; i++) {
+    if (!isAnnouncementRow(notifications[i])) return i;
   }
   return null;
+}
+
+/// 見えている行（[visibleIndexes]）のうち、一番上にあるサーバーの通知の行の
+/// 位置。見えているのがお知らせの行だけなら null。
+///
+/// ⚠⚠ **見えていない行を既読の起点にしない**（v2.7 のリリース PR の Codex P2）。
+/// お知らせの行が画面の上を占めていると、その下の一番新しい通知は画面の外に
+/// あることがある。「0 行目が見えている」をその通知が見えていることと読むと、
+/// お知らせを眺めただけで、まだ見ていない通知まで既読にしてしまう。
+int? topVisibleServerNotificationIndex(
+  List<Notification> notifications,
+  Iterable<int> visibleIndexes,
+) {
+  int? top;
+  for (final i in visibleIndexes) {
+    if (i < 0 || i >= notifications.length) continue;
+    if (isAnnouncementRow(notifications[i])) continue;
+    if (top == null || i < top) top = i;
+  }
+  return top;
 }
 
 /// 通知の一覧に、範囲に入るお知らせを差し込む。
