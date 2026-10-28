@@ -7,7 +7,7 @@
 1. リリース PR（`develop` → `main`）の CI が緑であることを見て、**マージコミットで**マージする（`gh pr merge <番号> --repo pooza/capsicum --merge`）
 2. `git fetch origin` してから、**`origin/main` のマージコミットに注釈付きのタグ**を打って push する（`git tag -a vX.Y.Z <マージコミット> -F <本文のファイル>` → `git push origin vX.Y.Z`）。⚠ ローカルの `main` は古いので使わない
 3. タグのメッセージは**リリースノートの本文と同じもの**（下の体裁）。GitHub Release の本文にも同じものを入れる（メモリ `feedback_release_pr_body`。前例: `v2.6.0`）
-4. CI が作った **draft の Release に本文を入れる**。⚠⚠ **Release を先に作らない**（§4.5 の注意。CI が draft を外して公開してしまう）。⚠ **公開するのは pooza**（公開すると release_bot が Fedi へ告知する）
+4. CI が作った **draft の Release に本文を入れる**。⚠⚠ **Release を先に作らない**（§4.5 の注意。CI が draft を外して公開してしまう）。⚠ **公開するのは pooza**（公開すると release_bot が Fedi へ告知する）。⚠⚠ **公開はストアへの審査提出のお知らせとして、提出の時点で行う**（2026-10-29 pooza）。ストアで公開されるのを待たない —— 「公開を見てから」と勧めない
 
 ⚠ リリース PR の本文は、リリースノートと同じ内容なら空でよい（同メモリ）。§4.0-2 の「スクリーンショットは見送り」の 1 行は本文に残す。
 
