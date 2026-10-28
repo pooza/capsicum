@@ -562,11 +562,16 @@ ProviderListenable<AsyncValue<TimelineState>>? deckLiveTimeline(
 ///
 /// ⚠ **再接続の試行が尽きた状態（赤い点）だけ。**一時的な切断（橙）は普段から
 /// 起きて数秒で戻るので、そのたびに帯を出すとうるさい。尽きた後も再試行は
-/// 続き（#784）、`live` に戻るとフラグは下りる（`TimelineLiveIngest` の
-/// `onConnectionState`）ので、帯も自然に消える。
+/// 続き（#784）、`live` に戻って安定するとフラグは下りる（`TimelineLiveIngest`
+/// の `_armExhaustedClear`）ので、帯も自然に消える。
+///
+/// ⚠ 利用者がライブ更新を切った（`disabled`）カラムには出さない。フラグは切った
+/// 時点の値のまま残るので、見ないと「自分で止めたのに異常」に見える（v2.7 の
+/// リリース前レビュー）。
 bool deckColumnStreamStalled(TimelineState state) =>
-    state.streamReconnectExhausted ||
-    state.streamConnectionState == StreamConnectionState.exhausted;
+    state.streamConnectionState != StreamConnectionState.disabled &&
+    (state.streamReconnectExhausted ||
+        state.streamConnectionState == StreamConnectionState.exhausted);
 
 /// 止まったカラムの帯 (#1342)。テストから見つけるための目印。
 const deckStalledBannerKey = Key('deck_stalled_banner');
@@ -598,7 +603,19 @@ class DeckStalledBanner extends StatelessWidget {
           children: [
             Icon(Icons.sync_problem, size: 18, color: scheme.onErrorContainer),
             const SizedBox(width: 8),
-            Expanded(child: Text('ライブ更新が止まっています', style: style)),
+            // ⚠ 文面は正本の表から取る。#784 で再試行は諦めないので「止まった」
+            // とは書かない（見出しの点のツールチップと揃える）。
+            Expanded(
+              child: Text(
+                streamConnectionTooltip(
+                  streamConnectionDisplay(
+                    context,
+                    StreamConnectionState.exhausted,
+                  ).label,
+                ),
+                style: style,
+              ),
+            ),
             TextButton(
               onPressed: onReconnect,
               style: TextButton.styleFrom(

@@ -381,6 +381,19 @@ void main() {
       }
     });
 
+    test('⚠ 尽きた後にライブ更新を切ったら出さない（フラグは残っている）', () {
+      expect(
+        deckColumnStreamStalled(
+          const TimelineState(
+            streamReconnectExhausted: true,
+            streamConnectionState: StreamConnectionState.disabled,
+          ),
+        ),
+        isFalse,
+        reason: '自分で止めたのに「不安定」の帯が出る',
+      );
+    });
+
     testWidgets('止まったタグのカラムに帯が出て、再接続で取り直す', (tester) async {
       var builds = 0;
       await tester.pumpWidget(
