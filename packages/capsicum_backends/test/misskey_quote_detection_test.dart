@@ -55,6 +55,16 @@ void main() {
     },
     '添付だけ': {
       'files': [file],
+      'fileIds': ['f1'],
+    },
+    // v2.7 のリリース前レビュー: 上流は `files` からドライブで消えた添付を落とす
+    // が、`fileIds` には残す。引用かは `fileIds` で決まる。
+    '⚠ 添付だけ（添付がドライブから消された）': {
+      'files': <Object>[],
+      'fileIds': ['f1'],
+    },
+    '添付だけ（fileIds を返さないサーバー）': {
+      'files': [file],
     },
   };
 
@@ -73,7 +83,10 @@ void main() {
   });
 
   test('⚠ 添付が空の配列ならリノート（Misskey は files を [] で返す）', () {
-    final post = note({'files': <Object>[]}).toCapsicum('misskey.example');
+    final post = note({
+      'files': <Object>[],
+      'fileIds': <Object>[],
+    }).toCapsicum('misskey.example');
     expect(post.reblog?.id, 'orig');
     expect(post.quote, isNull);
   });

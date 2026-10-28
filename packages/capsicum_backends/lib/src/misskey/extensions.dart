@@ -121,13 +121,16 @@ extension CapsicumMisskeyNoteExtension on MisskeyNote {
     // Misskey: 本文・CW・返信先・投票・添付のどれかがあれば引用、どれも無ければ
     // 単なるリノート（上流の `isQuotePacked` と同じ判定・#1340）。⚠ 以前は本文
     // だけを見ていたので、CW・添付・投票だけの引用がリノートに化けていた。
+    // ⚠ 添付は `fileIds` で見る（上流と同じ）。`files` はドライブから消えた添付を
+    // 落とすので、添付だけの引用の添付が消されると `[]` になる（v2.7 のリリース
+    // 前レビュー）。`fileIds` を返さないサーバーでだけ `files` へ倒す。
     final isQuote =
         renote != null &&
         (text != null ||
             cw != null ||
             replyId != null ||
             poll != null ||
-            (files?.isNotEmpty ?? false));
+            (fileIds?.isNotEmpty ?? files?.isNotEmpty ?? false));
     return Post(
       id: id,
       postedAt: createdAt,
