@@ -19,7 +19,7 @@ disable-model-invocation: true
 | リリース前レビュー | [release-review](../release-review/SKILL.md) スキル | §4.0 |
 | バージョン更新・ビルド・beta アップロード | [build-upload.md](build-upload.md) | §4.1 / §4.2 |
 | 審査提出・製品版昇格 | [submit-promote.md](submit-promote.md) | §4.3 |
-| GitHub Release のリリースノート | [github-release.md](github-release.md) | §4.4 |
+| リリース PR のマージとタグ・GitHub Release のリリースノート | [github-release.md](github-release.md) | §4.4 |
 | Linux 配布（AppImage） | [linux.md](linux.md) | §4.5 |
 | Windows 配布（Microsoft Store） | [windows.md](windows.md) | §4.6 |
 | リリース後の後片づけ | [aftercare.md](aftercare.md) | §4.7 |
