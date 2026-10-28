@@ -28,11 +28,15 @@ class NotificationService: UNNotificationServiceExtension {
         }
 
         self.contentHandler = contentHandler
+        // ⚠ OS がインスタンスを使い回しても、要求ごとに 1 回渡せるよう戻す。
+        deliverLock.lock()
+        delivered = false
+        deliverLock.unlock()
         bestAttemptContent =
             (request.content.mutableCopy() as? UNMutableNotificationContent)
 
         guard let bestAttempt = bestAttemptContent else {
-            contentHandler(request.content)
+            deliverOnce(request.content)
             return
         }
 
@@ -50,7 +54,8 @@ class NotificationService: UNNotificationServiceExtension {
             let token = PushKeyReader.readNseToken(account: account)
         {
             DegradedNotificationFetcher.fetchLatest(
-                host: host, token: token, account: account
+                host: host, token: token, account: account,
+                elapsedMs: elapsedMs
             ) { parsed in
                 guard let parsed = parsed,
                     let content =
@@ -72,7 +77,7 @@ class NotificationService: UNNotificationServiceExtension {
             let bodyB64 = userInfo["body"] as? String,
             let encoding = rawEncoding, encoding == "aes128gcm"
         else {
-            contentHandler(bestAttempt)
+            deliverOnce(bestAttempt)
             return
         }
 
@@ -88,7 +93,7 @@ class NotificationService: UNNotificationServiceExtension {
                 keychainStatus: Int(lookup.lastStatus),
                 triedPrefixes: lookup.triedPrefixes.joined(separator: ",")
             )
-            contentHandler(bestAttempt)
+            deliverOnce(bestAttempt)
             return
         }
 
@@ -103,7 +108,7 @@ class NotificationService: UNNotificationServiceExtension {
                 code: "nse.base64_decode_failed",
                 host: host, encoding: encoding, elapsedMs: elapsedMs()
             )
-            contentHandler(bestAttempt)
+            deliverOnce(bestAttempt)
             return
         }
 
@@ -128,7 +133,7 @@ class NotificationService: UNNotificationServiceExtension {
                 host: host, encoding: encoding, elapsedMs: elapsedMs(),
                 decryptError: reason
             )
-            contentHandler(bestAttempt)
+            deliverOnce(bestAttempt)
             return
         }
 
@@ -138,12 +143,17 @@ class NotificationService: UNNotificationServiceExtension {
                 code: "nse.parse_failed",
                 host: host, encoding: encoding, elapsedMs: elapsedMs()
             )
-            contentHandler(bestAttempt)
+            deliverOnce(bestAttempt)
             return
         }
 
         NotificationService.apply(parsed, account: account, to: bestAttempt)
-        contentHandler(bestAttempt)
+        // 縮退した通知の引き直しが、ここで出した通知を拾い直さないよう控える
+        // (#1215・v2.7 のリリース前レビュー)。
+        if let id = parsed.notificationId {
+            DegradedNotificationFetcher.noteShown(id: id, account: account)
+        }
+        deliverOnce(bestAttempt)
     }
 
     /// 復号（または引き直し）で得た内容で、通知の title / body を書き換える。
@@ -213,27 +223,43 @@ class NotificationService: UNNotificationServiceExtension {
 /// - **作成から [freshness] 秒を過ぎている。**縮退したのがチャット
 ///   （`newChatMessage`）だと通知の一覧には出ないので、無関係な古い通知を
 ///   拾ってしまう。
-/// - **前に引き直しで使った通知と同じ。**短い間隔で 2 件届いたとき、2 件目に
-///   1 件目と同じ本文を見せない（2026-10-28 pooza 判断）。
+/// - **もう出した通知と同じ。**短い間隔で 2 件届いたとき、2 件目に 1 件目と同じ
+///   本文を見せない（2026-10-28 pooza 判断）。⚠ 通常の経路で復号して出した
+///   通知も数える（[noteShown]・v2.7 のリリース前レビュー）。数えないと、直前に
+///   出したリアクションなどを縮退した通知がもう 1 件出してしまう。
 ///
-/// ⚠ 取得に失敗したときも汎用の文面のまま（今より悪くしない）。
+/// ⚠ 取得に失敗したときも汎用の文面のまま（今より悪くしない）。失敗は
+/// `nse.degraded_refetch_failed.<種類>` として [FailureRecorder] に残す（401 は
+/// トークンの写しが古い。記録しないと、汎用の文面に倒れ続けても気付けない）。
 enum DegradedNotificationFetcher {
     static let freshness: TimeInterval = 60
-    private static let suiteName = "group.jp.co.b-shock.capsicum"
-    private static let lastIdPrefix = "capsicum_nse_degraded_last_id_"
+    private static let shownIdsPrefix = "capsicum_nse_shown_ids_"
+
+    /// 控えておく id の数。⚠ 1 件だと、チャット（通知の一覧に出ない）の id で
+    /// 上書きされて、その前に出した通知を拾い直してしまう。
+    private static let shownIdsLimit = 8
 
     static func fetchLatest(
         host: String,
         token: String,
         account: String,
+        elapsedMs: @escaping () -> Int,
         completion: @escaping (ParsedPayload?) -> Void
     ) {
+        func fail(_ kind: String) {
+            NSLog("capsicum: nse: degraded refetch failed (\(kind))")
+            FailureRecorder.record(
+                code: "nse.degraded_refetch_failed.\(kind)",
+                host: host, encoding: nil, elapsedMs: elapsedMs()
+            )
+            completion(nil)
+        }
         var components = URLComponents()
         components.scheme = "https"
         components.host = host
         components.path = "/api/i/notifications"
         guard let url = components.url else {
-            completion(nil)
+            fail("url")
             return
         }
         var request = URLRequest(url: url)
@@ -243,7 +269,7 @@ enum DegradedNotificationFetcher {
         // 1 件出すだけで全部が既読になってしまう（Dart 側の #1045 と同じ）。
         let body: [String: Any] = ["i": token, "limit": 1, "markAsRead": false]
         guard let data = try? JSONSerialization.data(withJSONObject: body) else {
-            completion(nil)
+            fail("encode")
             return
         }
         request.httpBody = data
@@ -254,18 +280,47 @@ enum DegradedNotificationFetcher {
         let session = URLSession(configuration: config)
         session.dataTask(with: request) { data, response, error in
             defer { session.finishTasksAndInvalidate() }
-            guard error == nil,
-                let http = response as? HTTPURLResponse, http.statusCode == 200,
-                let data = data,
-                let list = try? JSONSerialization.jsonObject(with: data) as? [Any],
-                let latest = list.first as? [String: Any]
+            if error != nil {
+                fail("network")
+                return
+            }
+            guard let http = response as? HTTPURLResponse else {
+                fail("no_response")
+                return
+            }
+            guard http.statusCode == 200 else {
+                fail("http_\(http.statusCode)")
+                return
+            }
+            guard let data = data,
+                let list = try? JSONSerialization.jsonObject(with: data) as? [Any]
             else {
-                NSLog("capsicum: nse: degraded refetch failed")
+                fail("parse")
+                return
+            }
+            // 0 件は失敗ではない（通知を消した直後など）。汎用の文面のまま。
+            guard let latest = list.first as? [String: Any] else {
                 completion(nil)
                 return
             }
             completion(accept(latest, account: account, now: Date()))
         }.resume()
+    }
+
+    /// 通知を出した（または引き直しで使った）ことを控える。
+    static func noteShown(id: String, account: String) {
+        guard let defaults = UserDefaults(suiteName: appGroupSuiteName) else { return }
+        let key = shownIdsPrefix + account
+        var ids = defaults.stringArray(forKey: key) ?? []
+        ids.removeAll { $0 == id }
+        ids.append(id)
+        if ids.count > shownIdsLimit { ids.removeFirst(ids.count - shownIdsLimit) }
+        defaults.set(ids, forKey: key)
+    }
+
+    private static func wasShown(id: String, account: String) -> Bool {
+        let defaults = UserDefaults(suiteName: appGroupSuiteName)
+        return defaults?.stringArray(forKey: shownIdsPrefix + account)?.contains(id) ?? false
     }
 
     /// 引いた通知を使ってよいかを決め、使うなら内容を返す。
@@ -280,10 +335,8 @@ enum DegradedNotificationFetcher {
         else {
             return nil
         }
-        let defaults = UserDefaults(suiteName: suiteName)
-        let key = lastIdPrefix + account
-        if defaults?.string(forKey: key) == id { return nil }
-        defaults?.set(id, forKey: key)
+        if wasShown(id: id, account: account) { return nil }
+        noteShown(id: id, account: account)
         return PayloadParser.parseMisskeyNotification(notification)
     }
 
@@ -302,7 +355,7 @@ enum DegradedNotificationFetcher {
 /// App Group ID (`group.jp.co.b-shock.capsicum`)、キー形式は
 /// `capsicum_notif_label_{slot}_{account}`。
 enum LabelCache {
-    private static let suiteName = "group.jp.co.b-shock.capsicum"
+    private static let suiteName = appGroupSuiteName
     private static let prefix = "capsicum_notif_label_"
 
     static func read(account: String) -> (reblog: String, post: String) {
@@ -342,7 +395,7 @@ enum PushFailureKey: String {
 /// `nse.decrypt_failed` の発生源（自前/他鯖、aes128gcm 以外、タイムアウト由来か
 /// 即時失敗か）を Sentry tag/extra で見るために使う。
 enum FailureRecorder {
-    private static let suiteName = "group.jp.co.b-shock.capsicum"
+    private static let suiteName = appGroupSuiteName
 
     static func record(
         code: String,
@@ -396,7 +449,15 @@ struct ParsedPayload {
     let title: String?
     let body: String?
     let type: String?
+    /// Misskey の通知の id（`/api/i/notifications` に出るものだけ）。縮退した
+    /// 通知の引き直しが、出した通知を拾い直さないために控える (#1215)。⚠ チャット
+    /// と Mastodon は引き直しの対象にならないので持たない。
+    var notificationId: String? = nil
 }
+
+/// App Group の UserDefaults の suite 名。Dart 側は shared_preferences_foundation
+/// の suiteName 設定で同じ名前に焼いている。
+let appGroupSuiteName = "group.jp.co.b-shock.capsicum"
 
 /// Dart の [PushMessageDispatcher.parsePayload] と同じ優先順位で
 /// Mastodon / Misskey 両形式を扱う。
@@ -445,10 +506,12 @@ enum PayloadParser {
     /// Misskey の通知オブジェクト（push の `body` の中身、または
     /// `/api/i/notifications` の 1 件。どちらも同じ形）を解釈する。
     static func parseMisskeyNotification(_ inner: [String: Any]) -> ParsedPayload {
+        let id = inner["id"] as? String
         return ParsedPayload(
             title: nil,
             body: synthesizeMisskeyBody(inner),
-            type: inner["type"] as? String
+            type: inner["type"] as? String,
+            notificationId: (id?.isEmpty ?? true) ? nil : id
         )
     }
 
