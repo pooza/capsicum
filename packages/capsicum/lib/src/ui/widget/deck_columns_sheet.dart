@@ -64,9 +64,8 @@ class _DeckColumnsSheetState extends ConsumerState<DeckColumnsSheet> {
     final notifier = ref.read(deckColumnsProvider.notifier);
     final columns = ref.watch(deckColumnsProvider);
     final locked = ref.watch(deckLockedColumnsProvider);
-    final canCloseUnlocked = unlockedDeckColumnIdsToClose([
-      for (final c in columns) c.id,
-    ], locked).isNotEmpty;
+    // ⚠ メニューと同じ入口で判定する（決定済み事項 17）。
+    final canCloseUnlocked = canCloseUnlockedDeckColumns(ref);
     final accounts = ref.watch(accountManagerProvider).accounts;
     final currentKey = ref.watch(currentAccountKeyProvider);
     final selected = accounts.any((a) => a.key == _selectedAccount)

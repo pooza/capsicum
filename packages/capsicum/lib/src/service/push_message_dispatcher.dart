@@ -140,10 +140,6 @@ class PushMessageDispatcher {
     await _showNotification(title: title, body: body, payload: payload);
   }
 
-  /// HTML タグを大雑把に剥がしてプレビュー長 (既定 80 文字) に切る。
-  /// relay 側 [AnnouncementWorker#summarize_content] の Dart 版で、
-  /// FCM data に乗ってくる full HTML を Android 通知バルーンに収まる長さに
-  /// 整形する。完全レンダリングはタップ後の announcement_screen 側で行う。
   /// 復号できた通知の本文を決める。使えるものが無ければ [fallback]。
   ///
   /// 本文が空なら、見出しの置き換えで捨てたサーバーの title（「誰が・何をした」）
@@ -167,6 +163,10 @@ class PushMessageDispatcher {
     return fallback;
   }
 
+  /// HTML タグを大雑把に剥がしてプレビュー長 (既定 80 文字) に切る。
+  /// relay 側 [AnnouncementWorker#summarize_content] の Dart 版で、
+  /// FCM data に乗ってくる full HTML を Android 通知バルーンに収まる長さに
+  /// 整形する。完全レンダリングはタップ後の announcement_screen 側で行う。
   @visibleForTesting
   static String synthesizeAnnouncementBody(String html, {int max = 80}) {
     final plain = html

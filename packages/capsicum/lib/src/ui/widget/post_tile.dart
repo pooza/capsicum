@@ -1853,9 +1853,7 @@ class _PostTileState extends ConsumerState<PostTile> {
         targetPost.author,
       ),
       // 分類を添えられるバックエンドだけ (#1257)。
-      rules: (adapter as ReportSupport).supportsReportCategory
-          ? (adapter as ReportSupport).getReportRules()
-          : null,
+      rules: reportRulesFor(adapter as ReportSupport),
     );
     if (input == null) return;
 

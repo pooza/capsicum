@@ -135,4 +135,56 @@ void main() {
 
     expect(result()?.category, ReportCategory.other);
   });
+
+  // v2.7 のリリース前レビュー: 2 画面に写されていた判定を 1 つに集めた。
+  group('reportRulesFor', () {
+    test('分類を添えられるバックエンドだけルールを読む', () async {
+      final adapter = _Report(category: true);
+      final rules = await reportRulesFor(adapter);
+      expect(rules, hasLength(1));
+      expect(adapter.rulesRead, 1);
+    });
+
+    test('⚠ 添えられないバックエンドでは読まず null（分類を出さない）', () {
+      final adapter = _Report(category: false);
+      expect(reportRulesFor(adapter), isNull);
+      expect(adapter.rulesRead, 0);
+    });
+  });
+}
+
+/// [reportRulesFor] の確かめ用。分類を添えられるかと、ルールを読んだ回数だけ持つ。
+class _Report with ReportSupport {
+  _Report({required this.category});
+
+  final bool category;
+  int rulesRead = 0;
+
+  @override
+  bool get supportsReportCategory => category;
+
+  @override
+  Future<List<ReportRule>> getReportRules() async {
+    rulesRead++;
+    return const [ReportRule(id: '1', text: 'ルール')];
+  }
+
+  @override
+  Future<void> reportPost(
+    String postId,
+    String authorId, {
+    String? comment,
+    bool forward = false,
+    ReportCategory category = ReportCategory.other,
+    List<String> ruleIds = const [],
+  }) async {}
+
+  @override
+  Future<void> reportUser(
+    String userId, {
+    String? comment,
+    bool forward = false,
+    ReportCategory category = ReportCategory.other,
+    List<String> ruleIds = const [],
+  }) async {}
 }

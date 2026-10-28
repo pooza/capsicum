@@ -1850,9 +1850,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       message: '@${userAcct(widget.user)} をサーバー管理者に通報しますか？',
       forwardHost: (adapter as ReportSupport).reportForwardHost(widget.user),
       // 分類を添えられるバックエンドだけ (#1257)。
-      rules: (adapter as ReportSupport).supportsReportCategory
-          ? (adapter as ReportSupport).getReportRules()
-          : null,
+      rules: reportRulesFor(adapter as ReportSupport),
     );
     if (input == null) return;
 

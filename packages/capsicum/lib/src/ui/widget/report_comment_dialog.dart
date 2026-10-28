@@ -21,6 +21,13 @@ const reportCategoryLabels = {
   ReportCategory.violation: 'サーバーのルール違反',
 };
 
+/// [showReportCommentDialog] の `rules` に渡す値 (#1257)。分類を添えられる
+/// バックエンドだけルールを読み、それ以外は null（分類を出さない）。
+///
+/// ⚠ 投稿の通報とプロフィールの通報の 2 か所で使う。判定を写さない。
+Future<List<ReportRule>>? reportRulesFor(ReportSupport adapter) =>
+    adapter.supportsReportCategory ? adapter.getReportRules() : null;
+
 /// 通報の確認ダイアログ (#998)。理由を任意で添えられる。
 ///
 /// 返すのは入力された理由（空文字もありうる）と転送の指定で、キャンセルは null。

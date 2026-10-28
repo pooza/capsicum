@@ -2,6 +2,7 @@ import 'package:capsicum_core/capsicum_core.dart';
 
 import '../model/account.dart';
 import '../service/announcement_subscription_service.dart';
+import 'exception_scrub.dart';
 
 // お知らせを通知のタイムラインに含める (#1308・2026-10-27 pooza 判断)。
 //
@@ -30,8 +31,6 @@ Notification announcementAsNotification(Announcement announcement) =>
       unread: !announcement.read,
       announcement: announcement,
     );
-
-const announcementNotificationIdPrefix = 'announcement:';
 
 /// お知らせを差し込んだ行か（サーバーの通知ではない）。
 bool isAnnouncementRow(Notification notification) =>
@@ -148,7 +147,10 @@ Future<List<Announcement>> announcementsForNotifications(
   try {
     if (!await includeAnnouncementsInNotifications(account)) return const [];
     return await (adapter as AnnouncementSupport).getAnnouncements();
-  } catch (_) {
+  } catch (e, st) {
+    // ⚠ 握るが黙らない（v2.7 のリリース前レビュー）。常に失敗するようになっても
+    // お知らせが一覧から黙って消えるだけなので、breadcrumb には残す。
+    debugLogException('announcement_notifications: fetch failed', e, st);
     return const [];
   }
 }

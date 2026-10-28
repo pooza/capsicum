@@ -126,10 +126,11 @@ void main() {
           contains('forward: input.forward'),
           reason: 'ダイアログの結果を通報へ渡していない ＝ 押しても転送されない',
         );
-        // #1257: 分類とルールも同じ形で通す。
+        // #1257: 分類とルールも同じ形で通す。⚠ 判定は `reportRulesFor` に
+        // 集めた（v2.7 のリリース前レビュー）ので、委譲していることを見る。
         expect(
           src,
-          contains('.getReportRules()'),
+          contains('rules: reportRulesFor('),
           reason: 'ルールをダイアログへ渡していない ＝ 分類が出ない',
         );
         expect(

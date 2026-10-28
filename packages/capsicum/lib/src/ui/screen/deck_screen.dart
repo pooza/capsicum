@@ -382,6 +382,9 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
   /// ⚠ 点滅させるのは、選んだのに画面がほとんど動かない（既に見えている）場合に
   /// 「どれを選んだか」が分からなくなるため。
   void _revealAndFocus(String columnId) {
+    // ⚠ フレームの後から呼ばれることがある（まとめて閉じたあと・#1307）。その
+    // 間にデッキが閉じられていたら、破棄済みの ref を読まない。
+    if (!mounted) return;
     ref.read(deckFocusProvider.notifier).focusAndBlink(columnId);
     _reveal(columnId);
   }

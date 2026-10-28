@@ -67,7 +67,7 @@ class MastodonNotificationStreaming extends NotificationStreamingBase {
       return Notification(
         // announcement.id は通常の notification.id と名前空間が衝突しうるため
         // prefix で分離 (dispatcher の dedup set 取り違え防止)。
-        id: 'announcement:${announcement.id}',
+        id: '$announcementNotificationIdPrefix${announcement.id}',
         type: NotificationType.announcement,
         createdAt: announcement.publishedAt,
         announcement: announcement,

@@ -1,3 +1,11 @@
+/// お知らせを通知の 1 行にしたときの id の前置き（`announcement:<id>`）。
+///
+/// ⚠⚠ **サーバーの通知の id と見分けるための印**（#1308）。既読位置や続き読みの
+/// カーソルからお知らせの行を外すのにこれを見るので、ストリーミングの経路と
+/// 一覧に差し込む経路で同じものを使う（片方だけ変えると、お知らせの id を
+/// サーバーの通知の id として送ってしまう）。
+const announcementNotificationIdPrefix = 'announcement:';
+
 class Announcement {
   final String id;
   final String content;
