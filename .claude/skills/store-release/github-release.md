@@ -109,5 +109,5 @@ curl -s "https://displaycatalog.mp.microsoft.com/v7.0/products/9NP2GR7M2W6P?lang
 
 `status=completed` かつ `versionCodes` がそのリリースの build 番号なら製品版公開済み。⚠ **`edits` を開くだけなら Play 側に副作用は無い**（commit しなければ破棄される）。
 
-> ⚠️ **darwin では `ruby` を叩く前に rbenv shims を PATH 先頭に置く**（非対話 shell だと macOS 同梱 2.6 や壊れた MacPorts に落ち、`jwt` gem が見つからず「確認できない」と誤認する）。`export PATH="$HOME/.rbenv/shims:$PATH"` してから `ruby -v` が 3.x であることを確かめる。
+> ⚠️ **`jwt` gem が見つからないと言われたら、`ruby -v` を見る。**2.x なら PATH に rbenv の shims が乗っていない（macOS 同梱の 2.6 に落ちている）。「確認できない」と誤認しない。2026-10-30 に環境側で直してある（[build-upload.md](build-upload.md) §4.2 の冒頭）。
 

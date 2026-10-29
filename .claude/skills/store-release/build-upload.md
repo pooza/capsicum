@@ -39,7 +39,7 @@ flutter pub upgrade --major-versions
 > 再ビルド対応した。`export` 文と `flutter build` 文は **必ず別文**
 > （独立した行）で書き、`\` で繋いで 1 行に圧縮しないこと。
 
-⚠️ **darwin でビルドをスクリプトや Claude のツールから回すときは、冒頭で `export PATH="$HOME/.rbenv/shims:$PATH"` する。**非対話 shell では `.zshrc` の rbenv init が走らないので、`pod` が MacPorts の `/opt/local/bin/pod` に解決され、shebang の ruby が無くて `bad interpreter: /opt/local/bin/ruby3.4` で落ちる（v1.41 と v2.7.0 で踏んだ）。素の `ruby` は macOS 同梱の 2.6 に落ちる。⚠ **`ruby -v` が 2.x なら環境が壊れているのではなく PATH が違う。**
+⚠️ **darwin の非対話 shell で `pod` が `bad interpreter` で落ちる / `ruby -v` が 2.x を返すなら、PATH に rbenv の shims が乗っていない。**2026-10-30 に環境側で直した（MacPorts の残骸の `pod` / `bundle` / `ruby` を消し、`~/.zshenv` の `path` に `~/.rbenv/shims` を足した）ので、ふだんは何もしなくてよい。新しい Mac や dotfiles を作り直した Mac で再発したら、同じ 2 点を見る（v1.41 と v2.7.0 で踏んだ）。
 
 #### ビルド前に古い DerivedData を落とす（v1.63 で 22 分かかった）
 
