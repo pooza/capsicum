@@ -39,6 +39,8 @@ flutter pub upgrade --major-versions
 > 再ビルド対応した。`export` 文と `flutter build` 文は **必ず別文**
 > （独立した行）で書き、`\` で繋いで 1 行に圧縮しないこと。
 
+⚠️ **darwin でビルドをスクリプトや Claude のツールから回すときは、冒頭で `export PATH="$HOME/.rbenv/shims:$PATH"` する。**非対話 shell では `.zshrc` の rbenv init が走らないので、`pod` が MacPorts の `/opt/local/bin/pod` に解決され、shebang の ruby が無くて `bad interpreter: /opt/local/bin/ruby3.4` で落ちる（v1.41 と v2.7.0 で踏んだ）。素の `ruby` は macOS 同梱の 2.6 に落ちる。⚠ **`ruby -v` が 2.x なら環境が壊れているのではなく PATH が違う。**
+
 #### ビルド前に古い DerivedData を落とす（v1.63 で 22 分かかった）
 
 ⚠ **`~/Library/Developer/Xcode/DerivedData` は内蔵ディスクに固定で置かれ、リポジトリの場所と無関係に育つ。**⚠⚠ **Xcode は作業ディレクトリのパスごとに別エントリを作り、古いものを自動で消さない。**v1.63 のリリース時、6〜8 月分を含む `Runner-*` が 13 個・計 14G 残っており、内蔵の空きが 8.7GB まで落ちていた。その結果 `flutter clean` の `xcodebuild clean` が **502 秒**（通常の 5 倍）かかり、1 回のビルドが 22 分になった。
