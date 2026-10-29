@@ -151,6 +151,17 @@ minor 内の patch 更新（自前 3 鯖は pooza が本番へリリース日に
 
 実測（2026-10-02）: 美食丼 / デルムリン丼 / キュアスタ！の `/api/v2/instance` はいずれも `4.7.3`。
 
+### v4.7.3 → v4.7.4（セキュリティリリース・2026-10-30 トリアージ）
+
+**client 影響なし（capsicum コード変更ゼロ）**。`app/serializers/rest/`・`config/routes/api.rb`・`config/routes.rb`・`streaming/`・`app/controllers/api/` の diff は**いずれも完全に空**（フォークの `v4.7.3-bshockdon..` マージ後の HEAD で実測）。上流は 4.6.10 / 4.5.20 / 4.4.27 も同日に出している。
+
+- **passive（ログインの画面だけ・上流 #40745）**: 2 段階認証を使っておらず、最後の Web ログインから 90 日を超えたアカウントが Web でログインすると、**メールのセキュリティコード**を求めるようになった。capsicum の OAuth はブラウザの中で完結するので、コードを入れれば認可画面へ進み、いつもどおりアプリへ戻る。⚠ capsicum は毎回使い捨てのセッションで Web ログインするので、**capsicum で 90 日ログインし直していない人**も対象になる。問い合わせの切り分けは [login-troubleshooting スキル](../.claude/skills/login-troubleshooting/SKILL.md) に足した。⚠ スクリーンショットの `fedi.sh` も Web のログインを curl で辿るので、`@test` が 90 日 Web でログインしていなければここで止まる（管理画面の「一時的に無効化」で 96 時間外せる）
+- **passive（応答形状は不変・挙動の修正）**: アカウントの TL の `exclude_direct` が、フォローしていない相手のフォロワー限定投稿まで落としていた（#41019）。capsicum は `exclude_direct` を送っていない
+- **passive（性能）**: ハッシュタグ TL の `any[]` と `min_id` の組み合わせが遅かった（#41132）。capsicum は複数タグの条件つき TL（v2.2〜）で `any[]` を使うので、速くなる側
+- **none（連合）**: クロスドメインのリダイレクトの修正と鍵まわりの Hardening は ActivityPub の取得経路だけ
+
+実測: デプロイ中（2026-10-30 の時点で 3 台とも `4.7.3`）。
+
 ## 5.0 先読み（v4.7.3 → upstream main `5.0.0-alpha.1`・2026-10-20）
 
 **まだタグが無い**（RC 前）。upstream main `5204e8ab94` との tree diff で見た（718 コミット）。⚠ **RC が出たら同じ手順で引き直す**（フォーク側の試しマージ pooza/mastodon#996 と同じ時期）。5.0 の目玉は Web UI の全面刷新で、フォークの 5.0 対応（pooza/mastodon の `5.0.0` マイルストーン）もほぼそちら。
