@@ -51,6 +51,7 @@ const _darkSurfaceVariantKey = 'dark_surface_variant';
 const _notificationGroupingKey = 'notification_grouping';
 
 /// 通知一覧に出さない種別 (#1042)。`NotificationType` の `name` を並べる。
+const _disabledPreferredAppsKey = 'disabled_preferred_apps';
 const _notificationExcludedTypesKey = 'notification_excluded_types';
 
 /// デッキのカラム列 (#1091)。バックアップに含める（#1101・`settings_backup.dart`
@@ -1400,6 +1401,38 @@ class NotificationExcludedTypesNotifier
   Future<void> clear() => persist(const {});
 }
 
+/// 専用アプリで開かないことにしたサービスの id (#1345)。既定は空（全部アプリで
+/// 開く）で、外したものだけを持つ。表に足したサービスは最初から有効になる。
+final disabledPreferredAppsProvider =
+    NotifierProvider<DisabledPreferredAppsNotifier, Set<String>>(
+      DisabledPreferredAppsNotifier.new,
+    );
+
+class DisabledPreferredAppsNotifier extends PersistedNotifier<Set<String>> {
+  @override
+  Set<String> get defaultValue => const {};
+
+  /// ⚠ リンクを開く経路は `ref.read` で 1 回読むだけなので、非同期の読み込みを
+  /// 待つと起動後最初のリンクで外した設定が効かない。pre-warm 済みの値を同期で
+  /// 返す（#579 と同じ形）。
+  @override
+  Set<String> build() {
+    super.build();
+    return readSaved(sharedPrefsOrThrow) ?? defaultValue;
+  }
+
+  @override
+  Set<String>? readSaved(SharedPreferences prefs) =>
+      prefs.getStringList(_disabledPreferredAppsKey)?.toSet();
+
+  @override
+  Future<void> writeSaved(SharedPreferences prefs, Set<String> value) =>
+      prefs.setStringList(_disabledPreferredAppsKey, value.toList());
+
+  Future<void> setEnabled(String id, bool enabled) =>
+      persist(enabled ? ({...state}..remove(id)) : {...state, id});
+}
+
 /// Whether to hide posts with #実況 hashtag.
 final hideLivecureProvider = NotifierProvider<HideLivecureNotifier, bool>(
   HideLivecureNotifier.new,
@@ -2232,7 +2265,8 @@ class BackgroundImageNotifier extends FamilyNotifier<String?, String> {
 
     // Migrate legacy global setting.
     // Keep the legacy key so that other accounts can also pick it up.
-    if (saved == null) {
+    // ⚠ デッキは対象外（頼んでいない画像が突然敷かれる）。
+    if (saved == null && arg != deckBackgroundStorageKey) {
       final legacy = prefs.getString(_backgroundImagePathKey);
       if (legacy != null && File(legacy).existsSync()) {
         await prefs.setString(key, legacy);
@@ -2276,6 +2310,10 @@ class BackgroundImageNotifier extends FamilyNotifier<String?, String> {
   }
 }
 
+/// デッキの背景画像 (#1174) の保存先。アカウントの storage key の代わりに
+/// [backgroundImageProvider] / [backgroundOpacityProvider] へ渡す。
+const deckBackgroundStorageKey = 'deck';
+
 /// Per-account background image opacity.
 ///
 /// Takes an account storage key as the family parameter.
@@ -2299,7 +2337,7 @@ class BackgroundOpacityNotifier extends FamilyNotifier<double, String> {
 
     // Migrate legacy global setting.
     // Keep the legacy key so that other accounts can also pick it up.
-    if (saved == null) {
+    if (saved == null && arg != deckBackgroundStorageKey) {
       final legacy = prefs.getDouble(_backgroundOpacityKey);
       if (legacy != null) {
         await prefs.setDouble(key, legacy);
@@ -2503,6 +2541,8 @@ final backedUpPreferenceProviders = <ProviderOrFamily>[
   // 通知 (#1042 / #1048)
   notificationGroupingProvider,
   notificationExcludedTypesProvider,
+  // 専用アプリ (#1345)
+  disabledPreferredAppsProvider,
   // 履歴
   recentEmojisProvider,
   composeTemplateHistoryProvider,

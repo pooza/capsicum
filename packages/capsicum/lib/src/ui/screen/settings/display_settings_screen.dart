@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../platform/platform_info.dart';
 import '../../../provider/account_manager_provider.dart';
 import '../../../provider/preferences_provider.dart';
+import '../../widget/background_image_section.dart';
 
 class DisplaySettingsScreen extends ConsumerWidget {
   const DisplaySettingsScreen({super.key});
@@ -174,6 +175,12 @@ class DisplaySettingsScreen extends ConsumerWidget {
             onChanged: (value) => ref
                 .read(showStreamReconnectDetailProvider.notifier)
                 .setEnabled(value),
+          ),
+          // デッキは画面全体に 1 枚 (#1174)。アカウントに依らないのでここに置く。
+          // ⚠ 見出しつきなので末尾に。先頭だと後続までデッキの設定に見える。
+          const BackgroundImageSection(
+            storageKey: deckBackgroundStorageKey,
+            title: 'デッキの背景画像',
           ),
           // 常駐 (#752) / ログイン時起動 (#751) / マウスドラッグスクロール (#574) /
           // 起動時の更新確認 (#641) などデスクトップ専用の設定は「デスクトップ」

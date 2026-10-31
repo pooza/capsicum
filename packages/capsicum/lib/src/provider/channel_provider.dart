@@ -161,6 +161,59 @@ final channelProvider = FutureProvider.autoDispose.family<Channel?, String>((
   return (adapter as ChannelSupport).getChannel(id);
 }, dependencies: [currentAdapterProvider]);
 
+/// チャンネルの管理画面の分類 (#1051)。
+enum ChannelListKind {
+  featured('人気', '人気のチャンネルはありません'),
+  followed('フォロー中', 'フォロー中のチャンネルはありません'),
+  favorite('お気に入り', 'お気に入りのチャンネルはありません'),
+  owned('自分の', '自分のチャンネルはありません');
+
+  const ChannelListKind(this.label, this.emptyMessage);
+
+  final String label;
+  final String emptyMessage;
+}
+
+final channelListProvider = FutureProvider.autoDispose
+    .family<List<Channel>, ChannelListKind>((ref, kind) async {
+      final adapter = ref.watch(currentAdapterProvider);
+      if (adapter is! ChannelManagementSupport) return const [];
+      final support = adapter as ChannelManagementSupport;
+      return switch (kind) {
+        ChannelListKind.featured => support.getFeaturedChannels(),
+        ChannelListKind.followed =>
+          (adapter as ChannelSupport).getFollowedChannels(),
+        ChannelListKind.favorite => support.getFavoriteChannels(),
+        ChannelListKind.owned => support.getOwnedChannels(),
+      };
+    }, dependencies: [currentAdapterProvider]);
+
+final channelSearchProvider = FutureProvider.autoDispose
+    .family<List<Channel>, String>((ref, query) async {
+      final adapter = ref.watch(currentAdapterProvider);
+      if (adapter is! ChannelManagementSupport) return const [];
+      return (adapter as ChannelManagementSupport).searchChannels(query);
+    }, dependencies: [currentAdapterProvider]);
+
+/// チャンネルを操作したあとに、持っている一覧を取り直す (#1051)。
+///
+/// ⚠ [followedChannelsProvider] も忘れない（タブとチューザが読んでいる）。
+void invalidateChannels(WidgetRef ref) {
+  ref.invalidate(channelListProvider);
+  ref.invalidate(channelSearchProvider);
+  ref.invalidate(channelProvider);
+  ref.invalidate(followedChannelsProvider);
+}
+
+/// [invalidateChannels] のコンテナ版。通信の間に呼び出し元の行が破棄されても
+/// 取り直せるよう、通信の前に取ったコンテナへ当てる。
+void invalidateChannelsIn(ProviderContainer container) {
+  container.invalidate(channelListProvider);
+  container.invalidate(channelSearchProvider);
+  container.invalidate(channelProvider);
+  container.invalidate(followedChannelsProvider);
+}
+
 /// チャンネルのタブ / カラムに出す名前 (#1296)。
 ///
 /// `name` → フォロー中の一覧 → 1 件取得 → ID の順で引く。

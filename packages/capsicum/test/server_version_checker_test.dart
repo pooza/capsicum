@@ -97,4 +97,27 @@ void main() {
       expect(ServerVersionChecker.isBehind('4.5.0', '4.6.0'), isTrue);
     });
   });
+
+  group('ServerVersionChecker.supportsCollections (#1343)', () {
+    bool supports(String? name, String? version) =>
+        ServerVersionChecker.supportsCollections(
+          softwareName: name,
+          version: version,
+        );
+
+    test('本家は版で決まる（プリセットの NodeInfo は mastodon を名乗る）', () {
+      expect(supports('mastodon', '4.7.4'), isTrue);
+      expect(supports('mastodon', '4.5.13'), isFalse);
+    });
+
+    test('⚠ フォークは版が超えていても出さない', () {
+      expect(supports('akkoma', '4.6.0'), isFalse);
+      expect(supports('pleroma', '5.0.0'), isFalse);
+    });
+
+    test('名前が読めていなければ版で決める・版が無ければ出さない', () {
+      expect(supports(null, '4.7.4'), isTrue);
+      expect(supports('mastodon', null), isFalse);
+    });
+  });
 }

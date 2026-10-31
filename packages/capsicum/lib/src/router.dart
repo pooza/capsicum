@@ -14,6 +14,8 @@ import 'ui/screen/annict_review_screen.dart';
 import 'ui/screen/announcement_screen.dart';
 import 'ui/screen/antenna_notes_screen.dart';
 import 'ui/screen/bookmark_screen.dart';
+import 'ui/screen/channel_edit_screen.dart';
+import 'ui/screen/channel_management_screen.dart';
 import 'ui/screen/channel_timeline_screen.dart';
 import 'ui/screen/chat_invitations_screen.dart';
 import 'ui/screen/chat_new_thread_screen.dart';
@@ -65,6 +67,7 @@ import 'ui/screen/settings/account_settings_screen.dart';
 import 'ui/screen/settings/appearance_settings_screen.dart';
 import 'ui/screen/settings/desktop_settings_screen.dart';
 import 'ui/screen/settings/display_settings_screen.dart';
+import 'ui/screen/settings/preferred_apps_settings_screen.dart';
 import 'ui/screen/settings/push_notification_settings_screen.dart';
 import 'ui/screen/settings/settings_backup_screen.dart';
 import 'ui/screen/settings/supporter_screen.dart';
@@ -325,6 +328,10 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/settings/touch',
             builder: (context, state) => const TouchActionSettingsScreen(),
           ),
+          GoRoute(
+            path: '/settings/preferred-apps',
+            builder: (context, state) => const PreferredAppsSettingsScreen(),
+          ),
           // ブロック / ミュートの一覧と解除 (#1039)。設定の下だが中身は管理 UI
           // なので独立画面（#805 の様式）。
           GoRoute(
@@ -380,6 +387,20 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/server-info',
             builder: (context, state) => const ServerInfoScreen(),
+          ),
+          // チャンネルを探す・管理する (#1051)。
+          GoRoute(
+            path: '/channels/manage',
+            builder: (context, state) => const ChannelManagementScreen(),
+          ),
+          GoRoute(
+            path: '/channels/edit',
+            builder: (context, state) {
+              final channel = state.extra;
+              return ChannelEditScreen(
+                channel: channel is Channel ? channel : null,
+              );
+            },
           ),
           GoRoute(
             path: '/lists/manage',

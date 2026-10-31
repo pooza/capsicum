@@ -635,6 +635,9 @@ extension CapsicumMastodonAnnouncementExtension on MastodonAnnouncement {
       isHtml: true,
       reactions: reactions.map((r) => r.toCapsicum()).toList(),
       reactionsAllowed: reactionsAllowed,
+      startsAt: startsAt,
+      endsAt: endsAt,
+      allDay: allDay,
     );
   }
 }

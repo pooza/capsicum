@@ -185,6 +185,28 @@ Web で問題にならないのは、Misskey フロントが絵文字リスト�
 
 ⚠ **1 で照合すべき Misskey 側の実装は 1.2.1 ではなく 0.19.0。**Misskey は Play の宣言バージョンで legacy 判定して `@syuilo/aiscript-0-19-0` を動的 import する。capsicum は `/// @1.0.0` 以上を実行せずブラウザへ逃がす（#881 の gate）ので、**capsicum が実行する Play の Web 側実行系は常に 0.19.0** になる。現行 1.2.1 の `CryptoGen` / chacha20 は capsicum が実行しない領域の話。
 
+### AiScript の評価器はフォーク（`pooza/aiscript-dart` の `capsicum` ブランチ）
+
+Play のネイティブ実行（[#830](https://github.com/pooza/capsicum/issues/830)）の評価器は [pooza/aiscript-dart](https://github.com/pooza/aiscript-dart)（[LeadRDRK/aiscript-dart](https://github.com/LeadRDRK/aiscript-dart) のフォーク・MIT）。`packages/capsicum/pubspec.yaml` から git 依存で参照し、⚠ **ref は必ず SHA で固定する**。
+
+- **pub.dev 版を使えない理由**: 最終公開が 0.6.0（2023-09-22）で、依存が `petitparser ^5` / `uuid ^3`。capsicum 側は `uuid ^4`（capsicum_backends）と `petitparser ^7`（melos 経由の xml）を要求するので解決できない。上流はそこで休眠している
+- フォークで入れたのは、依存の追従（petitparser 6/7 の API: `Result.isFailure` → `is Failure`、`flatten` / `end` のメッセージを named `message:` へ）と、`Str#slice` / `Arr#slice` を JS の slice どおりにクランプする修正（Dart の `sublist` は範囲外で `RangeError` を投げる）
+- **ref を上げたら** `test/aiscript_runtime_test.dart`（smoke）と `test/flash_runtime_test.dart` を通す。依存解決だけ通って実行が壊れた状態をここで拾う
+
+#### `Math:gen_rng` を seedrandom 3.0.5 互換にしたときの罠（#896）
+
+ズレは PRNG だけでなく 3 か所にあり、**1 つでも違うと出目が揃わない**: (1) シード文字列の作り方（旧実装は `String.hashCode` で int 化）(2) 生成器（`Random(int)` → ARC4）(3) 整数化の式（`floor(rng()*(floor(max)-ceil(min)+1)+ceil(min))`。分布が等価でも、同じ乱数列から出る目が変わる）。
+
+- `prng()` の桁合わせは **JS の倍精度演算そのまま**（有効桁が埋まるまで `n=(n+x)*256`、`2^53` 超で `n/=2`）。整数で代用すると丸めが変わるので `double` で持つ
+- `mixkey` の `smear` が効き始めるのは **257 文字目から**（JS では未代入要素が `undefined*19=NaN` で、`smear ^= NaN` は ToInt32 経由の no-op になる）
+- ARC4 のコンストラクタ末尾の **`g(256)`（RC4-drop[256]）を忘れると全く別の列**になる
+- 数値シードは JS の `Number#toString` を経る（Dart の `5.0` → `"5.0"` を `"5"` に吸収する）
+- 期待値は**本物の seedrandom 3.0.5 を Node で回した実測値**。フォーク側の `test/gen_rng_test.dart` と capsicum 側の `test/flash_runtime_test.dart` に二重に置いてある（pin を上げたときに気付けるのは capsicum の CI なので）。`Math:rnd` は本家も無シードなので対象外
+
+#### `FlashRuntime.run()` が待つのはトップレベルの評価だけ（#898）
+
+`run()` が await するのは `interpreter.exec()` だけで、フォークの `Async:timeout` は素の `Timer` を仕掛けて即座に返る。⚠ **スクリプトが仕掛けた非同期処理は誰も待たない**（「run が終わった ＝ 描画が終わった」ではない）。アニメーションのコマは無シードの `Math:rnd` で描かれるので、実行完了の時点で指紋を取っても毎回変わる。Play のテレメトリやフォークを触るときに効く。
+
 ## モロヘイヤ API
 
 ### 機能フラグは `.config.features` 配下にある（top-level `.features` ではない）

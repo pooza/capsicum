@@ -7,7 +7,7 @@
 1. リリース PR（`develop` → `main`）の CI が緑であることを見て、**マージコミットで**マージする（`gh pr merge <番号> --repo pooza/capsicum --merge`）
 2. `git fetch origin` してから、**`origin/main` のマージコミットに注釈付きのタグ**を打って push する（`git tag -a vX.Y.Z <マージコミット> -F <本文のファイル>` → `git push origin vX.Y.Z`）。⚠ ローカルの `main` は古いので使わない
 3. タグのメッセージは**リリースノートの本文と同じもの**（下の体裁）。GitHub Release の本文にも同じものを入れる（メモリ `feedback_release_pr_body`。前例: `v2.6.0`）
-4. CI が作った **draft の Release に本文を入れる**。⚠⚠ **Release を先に作らない**（§4.5 の注意。CI が draft を外して公開してしまう）。⚠ **公開するのは pooza**（公開すると release_bot が Fedi へ告知する）
+4. CI が作った **draft の Release に本文を入れる**。⚠⚠ **Release を先に作らない**（§4.5 の注意。CI が draft を外して公開してしまう）。⚠ **公開するのは pooza**（公開すると release_bot が Fedi へ告知する）。⚠⚠ **公開はストアへの審査提出のお知らせとして、提出の時点で行う**（2026-10-29 pooza）。ストアで公開されるのを待たない —— 「公開を見てから」と勧めない
 
 ⚠ リリース PR の本文は、リリースノートと同じ内容なら空でよい（同メモリ）。§4.0-2 の「スクリーンショットは見送り」の 1 行は本文に残す。
 
@@ -109,5 +109,5 @@ curl -s "https://displaycatalog.mp.microsoft.com/v7.0/products/9NP2GR7M2W6P?lang
 
 `status=completed` かつ `versionCodes` がそのリリースの build 番号なら製品版公開済み。⚠ **`edits` を開くだけなら Play 側に副作用は無い**（commit しなければ破棄される）。
 
-> ⚠️ **darwin では `ruby` を叩く前に rbenv shims を PATH 先頭に置く**（非対話 shell だと macOS 同梱 2.6 や壊れた MacPorts に落ち、`jwt` gem が見つからず「確認できない」と誤認する）。`export PATH="$HOME/.rbenv/shims:$PATH"` してから `ruby -v` が 3.x であることを確かめる。
+> ⚠️ **`jwt` gem が見つからないと言われたら、`ruby -v` を見る。**2.x なら PATH に rbenv の shims が乗っていない（macOS 同梱の 2.6 に落ちている）。「確認できない」と誤認しない。2026-10-30 に環境側で直してある（[build-upload.md](build-upload.md) §4.2 の冒頭）。
 

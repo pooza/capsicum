@@ -43,6 +43,7 @@ void main() {
     'lib/src/ui/screen/templates_manage_screen.dart',
     // 行数に上限のある欄（2026-10-12 に広げた）。
     'lib/src/ui/screen/profile_edit_screen.dart',
+    'lib/src/ui/screen/channel_edit_screen.dart',
     'lib/src/ui/screen/chat_room_edit_screen.dart',
     'lib/src/ui/widget/chat_compose_row.dart',
     // リリース前レビューで漏れていたぶん（2026-10-12）。

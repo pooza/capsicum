@@ -77,6 +77,20 @@ void main() {
       expect(tagServerSoftware(SentryEvent()).tags, isNull);
     });
 
+    test('⚠ 形のおかしい名前は足さない（長すぎる・使えない文字）(#1343)', () async {
+      await _probe('long.example', 'a' * 65);
+      await _probe('space.example', 'my server');
+      await _probe('edge.example', 'a' * 64);
+
+      bool tagged(String host) => tagServerSoftware(
+        SentryEvent(tags: {'host': host}),
+      ).tags!.containsKey(softwareTag);
+
+      expect(tagged('long.example'), isFalse);
+      expect(tagged('space.example'), isFalse);
+      expect(tagged('edge.example'), isTrue, reason: '上限ちょうどは足す');
+    });
+
     test('⚠ 記録を作る側が付けた software は上書きしない', () async {
       await _probe('mine.example', 'akkoma');
 

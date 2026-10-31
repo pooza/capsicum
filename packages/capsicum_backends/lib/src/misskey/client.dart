@@ -1131,6 +1131,23 @@ class MisskeyClient {
         .toList();
   }
 
+  /// POST /api/users/search-by-username-and-host
+  ///
+  /// [host] は前方一致。`.` は自分のサーバーを指す。
+  Future<List<MisskeyUser>> searchUsersByUsernameAndHost(
+    String username,
+    String host, {
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/users/search-by-username-and-host',
+      data: createBody({'username': username, 'host': host, 'limit': ?limit}),
+    );
+    return (response.data as List)
+        .map((e) => MisskeyUser.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   /// POST /api/hashtags/search
   Future<List<String>> searchHashtags(String query, {int? limit}) async {
     final response = await dio.post(
@@ -1214,6 +1231,51 @@ class MisskeyClient {
       }),
     );
     return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// チャンネルの一覧を返す API（`channels/search` / `featured` / `my-favorites`
+  /// / `owned`）を呼ぶ (#1051)。
+  Future<List<Map<String, dynamic>>> listChannels(
+    String endpoint, {
+    Map<String, dynamic> params = const {},
+  }) async {
+    final response = await dio.post(
+      '/api/channels/$endpoint',
+      data: createBody(params),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// チャンネルへの操作（`channels/follow` / `unfollow` / `favorite` /
+  /// `unfavorite` / `mute/create` / `mute/delete`）を送る (#1051)。
+  Future<void> channelAction(String endpoint, String channelId) async {
+    await dio.post(
+      '/api/channels/$endpoint',
+      data: createBody({'channelId': channelId}),
+    );
+  }
+
+  /// POST /api/channels/create
+  Future<Map<String, dynamic>> createChannel(
+    Map<String, dynamic> params,
+  ) async {
+    final response = await dio.post(
+      '/api/channels/create',
+      data: createBody(params),
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// POST /api/channels/update
+  Future<Map<String, dynamic>> updateChannel(
+    String channelId,
+    Map<String, dynamic> params,
+  ) async {
+    final response = await dio.post(
+      '/api/channels/update',
+      data: createBody({'channelId': channelId, ...params}),
+    );
+    return response.data as Map<String, dynamic>;
   }
 
   /// POST /api/flash/featured

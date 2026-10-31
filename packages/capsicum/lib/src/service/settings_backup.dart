@@ -144,6 +144,8 @@ const exportableSettings = <BackupSetting>[
   // 版が違う端末へ持っていっても設定が丸ごと既定へ戻ることはない。
   BackupSetting('notification_grouping', BackupValueType.boolean),
   BackupSetting('notification_excluded_types', BackupValueType.textList),
+  // 専用アプリ (#1345)。⚠ 中身はサービスの id。知らない id は照合に当たらず無害。
+  BackupSetting('disabled_preferred_apps', BackupValueType.textList),
   // 履歴
   BackupSetting('recent_emojis', BackupValueType.textList),
   BackupSetting('compose_template_history', BackupValueType.textList),
