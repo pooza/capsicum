@@ -20,24 +20,27 @@ class DeckBackground extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final path = ref.watch(backgroundImageProvider(deckBackgroundStorageKey));
-    if (path == null) return child;
     final opacity = ref.watch(
       backgroundOpacityProvider(deckBackgroundStorageKey),
     );
-    return Container(
-      decoration: BoxDecoration(
-        image: DecorationImage(
-          image: FileImage(File(path)),
-          fit: BoxFit.cover,
-          opacity: opacity,
-          // ⚠ 画像が読めなくても、カラムの表示は止めない。
-          onError: (_, _) {},
-        ),
-      ),
+    final theme = Theme.of(context);
+    // ⚠ 画像の有無で木の形を変えない。変えるとカラムの State がすべて作り直される。
+    return DecoratedBox(
+      decoration: path == null
+          ? const BoxDecoration()
+          : BoxDecoration(
+              image: DecorationImage(
+                image: FileImage(File(path)),
+                fit: BoxFit.cover,
+                opacity: opacity,
+                // ⚠ 画像が読めなくても、カラムの表示は止めない。
+                onError: (_, _) {},
+              ),
+            ),
       child: Theme(
-        data: Theme.of(
-          context,
-        ).copyWith(scaffoldBackgroundColor: Colors.transparent),
+        data: path == null
+            ? theme
+            : theme.copyWith(scaffoldBackgroundColor: Colors.transparent),
         child: child,
       ),
     );

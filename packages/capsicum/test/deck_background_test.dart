@@ -31,19 +31,59 @@ void main() {
     tester.element(find.byKey(const Key('column'))),
   ).scaffoldBackgroundColor;
 
+  BoxDecoration backgroundDecoration(WidgetTester tester) =>
+      tester
+              .widget<DecoratedBox>(
+                find
+                    .descendant(
+                      of: find.byType(DeckBackground),
+                      matching: find.byType(DecoratedBox),
+                    )
+                    .first,
+              )
+              .decoration
+          as BoxDecoration;
+
   testWidgets('画像が無ければ敷かず、カラムの地色も変えない', (tester) async {
     SharedPreferences.setMockInitialValues({});
 
     await pump(tester);
 
     expect(columnColor(tester), Colors.white);
-    expect(
-      find.descendant(
-        of: find.byType(DeckBackground),
-        matching: find.byType(Container),
+    expect(backgroundDecoration(tester).image, isNull);
+  });
+
+  testWidgets('⚠ 画像の有無で木の形を変えない（カラムの State を捨てない）', (tester) async {
+    // 起動直後は画像なしで組まれ、保存値が届いて画像ありに変わる。
+    final image = await tester.runAsync(() async {
+      final file = File(
+        '${(await Directory.systemTemp.createTemp()).path}/bg.png',
+      );
+      await file.writeAsBytes(const [0]);
+      return file;
+    });
+    SharedPreferences.setMockInitialValues({
+      'background_image_path_$deckBackgroundStorageKey': image!.path,
+    });
+    await tester.pumpWidget(
+      const ProviderScope(
+        child: MaterialApp(
+          home: DeckBackground(
+            child: Scaffold(key: Key('column'), body: SizedBox()),
+          ),
+        ),
       ),
-      findsNothing,
     );
+    expect(backgroundDecoration(tester).image, isNull);
+    final before = tester.state(find.byKey(const Key('column')));
+
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
+    await tester.pump();
+
+    expect(backgroundDecoration(tester).image, isNotNull);
+    expect(tester.state(find.byKey(const Key('column'))), same(before));
   });
 
   testWidgets('⚠⚠ 画像があれば敷き、カラムを透かす', (tester) async {
@@ -65,16 +105,7 @@ void main() {
     await tester.pump();
 
     expect(columnColor(tester), Colors.transparent);
-    final decoration =
-        tester
-                .widget<Container>(
-                  find.descendant(
-                    of: find.byType(DeckBackground),
-                    matching: find.byType(Container),
-                  ),
-                )
-                .decoration!
-            as BoxDecoration;
+    final decoration = backgroundDecoration(tester);
     expect(decoration.image!.fit, BoxFit.cover);
     expect(decoration.image!.opacity, defaultBackgroundOpacity);
   });

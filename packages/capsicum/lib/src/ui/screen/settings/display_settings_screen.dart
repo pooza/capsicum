@@ -26,11 +26,6 @@ class DisplaySettingsScreen extends ConsumerWidget {
       ),
       body: ListView(
         children: [
-          // デッキは画面全体に 1 枚 (#1174)。アカウントに依らないのでここに置く。
-          const BackgroundImageSection(
-            storageKey: deckBackgroundStorageKey,
-            title: 'デッキの背景画像',
-          ),
           SwitchListTile(
             title: const Text('絶対時間で表示'),
             subtitle: const Text('投稿日時を「3分前」ではなく「2026-03-26 12:34」形式で表示します'),
@@ -180,6 +175,12 @@ class DisplaySettingsScreen extends ConsumerWidget {
             onChanged: (value) => ref
                 .read(showStreamReconnectDetailProvider.notifier)
                 .setEnabled(value),
+          ),
+          // デッキは画面全体に 1 枚 (#1174)。アカウントに依らないのでここに置く。
+          // ⚠ 見出しつきなので末尾に。先頭だと後続までデッキの設定に見える。
+          const BackgroundImageSection(
+            storageKey: deckBackgroundStorageKey,
+            title: 'デッキの背景画像',
           ),
           // 常駐 (#752) / ログイン時起動 (#751) / マウスドラッグスクロール (#574) /
           // 起動時の更新確認 (#641) などデスクトップ専用の設定は「デスクトップ」
