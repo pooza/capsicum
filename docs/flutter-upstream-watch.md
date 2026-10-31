@@ -27,6 +27,8 @@ capsicum で発生する不具合のうち、原因が Flutter framework 本体�
 
 | capsicum | 判定日 | 監視対象にしない理由 |
 |---|---|---|
+| [#1347](https://github.com/pooza/capsicum/issues/1347) | 2026-11-01 | アプリ内の機能追加（すべてのお知らせをまとめて見る）で、上流待ちではない |
+| [#1348](https://github.com/pooza/capsicum/issues/1348) | 2026-11-01 | アプリ内の機能追加（ナウプレの共有で投稿アカウントを選ぶ）で、上流待ちではない |
 
 ## close 候補
 
