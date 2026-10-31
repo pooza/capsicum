@@ -51,6 +51,7 @@ const _darkSurfaceVariantKey = 'dark_surface_variant';
 const _notificationGroupingKey = 'notification_grouping';
 
 /// 通知一覧に出さない種別 (#1042)。`NotificationType` の `name` を並べる。
+const _disabledPreferredAppsKey = 'disabled_preferred_apps';
 const _notificationExcludedTypesKey = 'notification_excluded_types';
 
 /// デッキのカラム列 (#1091)。バックアップに含める（#1101・`settings_backup.dart`
@@ -1400,6 +1401,29 @@ class NotificationExcludedTypesNotifier
   Future<void> clear() => persist(const {});
 }
 
+/// 専用アプリで開かないことにしたサービスの id (#1345)。既定は空（全部アプリで
+/// 開く）で、外したものだけを持つ。表に足したサービスは最初から有効になる。
+final disabledPreferredAppsProvider =
+    NotifierProvider<DisabledPreferredAppsNotifier, Set<String>>(
+      DisabledPreferredAppsNotifier.new,
+    );
+
+class DisabledPreferredAppsNotifier extends PersistedNotifier<Set<String>> {
+  @override
+  Set<String> get defaultValue => const {};
+
+  @override
+  Set<String>? readSaved(SharedPreferences prefs) =>
+      prefs.getStringList(_disabledPreferredAppsKey)?.toSet();
+
+  @override
+  Future<void> writeSaved(SharedPreferences prefs, Set<String> value) =>
+      prefs.setStringList(_disabledPreferredAppsKey, value.toList());
+
+  Future<void> setEnabled(String id, bool enabled) =>
+      persist(enabled ? ({...state}..remove(id)) : {...state, id});
+}
+
 /// Whether to hide posts with #実況 hashtag.
 final hideLivecureProvider = NotifierProvider<HideLivecureNotifier, bool>(
   HideLivecureNotifier.new,
@@ -2503,6 +2527,8 @@ final backedUpPreferenceProviders = <ProviderOrFamily>[
   // 通知 (#1042 / #1048)
   notificationGroupingProvider,
   notificationExcludedTypesProvider,
+  // 専用アプリ (#1345)
+  disabledPreferredAppsProvider,
   // 履歴
   recentEmojisProvider,
   composeTemplateHistoryProvider,

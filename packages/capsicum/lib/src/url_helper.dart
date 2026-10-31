@@ -15,49 +15,69 @@ Future<bool> launchUrlSafely(
   return launchUrl(uri, mode: mode);
 }
 
-/// 専用アプリで開きたいサービスのホスト・サフィックス表 (#755)。
-///
-/// 各エントリはホストの**サフィックス**として照合する（`youtube.com` は
-/// `m.youtube.com` / `music.youtube.com` にも一致）。ここに URL のホストが
-/// 一致すると、[launchInPreferredApp] はまず専用アプリでの起動を試みる。
-/// 拡張は原則この集合への追記だけで済む。
-const _preferredAppHostSuffixes = <String>{
-  // YouTube（本文中で特に体験差が大きい）
-  'youtube.com',
-  'youtu.be',
-  // Apple Music
-  'music.apple.com',
-  // Spotify
-  'open.spotify.com',
-  'spotify.link',
-  // Amazon（ショッピング / Prime Video 等はアプリ側のルーティングに委ねる）
-  'amazon.co.jp',
-  'amazon.com',
-  'amzn.to',
-  'amzn.asia',
-};
+/// 専用アプリで開くサービス (#755 / #1345)。
+class PreferredAppService {
+  const PreferredAppService(this.id, this.label, this.hostSuffixes);
 
-bool _hasPreferredApp(String host) {
-  final h = host.toLowerCase();
-  return _preferredAppHostSuffixes.any((s) => h == s || h.endsWith('.$s'));
+  /// 設定に保存する名前。⚠ 変えると、外した設定が効かなくなる。
+  final String id;
+  final String label;
+
+  /// ホストの**サフィックス**として照合する（`youtube.com` は `m.youtube.com` /
+  /// `music.youtube.com` にも一致）。
+  final Set<String> hostSuffixes;
+
+  bool matches(String host) {
+    final h = host.toLowerCase();
+    return hostSuffixes.any((s) => h == s || h.endsWith('.$s'));
+  }
 }
+
+/// 専用アプリで開くサービスの表。⚠ 拡張は原則ここへの追記だけで済む。足す候補の
+/// 調べ方は #1345。設定画面（外せる）もこの表から作る。
+const preferredAppServices = <PreferredAppService>[
+  // 本文中で特に体験差が大きい
+  PreferredAppService('youtube', 'YouTube', {'youtube.com', 'youtu.be'}),
+  PreferredAppService('apple_music', 'Apple Music', {'music.apple.com'}),
+  PreferredAppService('spotify', 'Spotify', {
+    'open.spotify.com',
+    'spotify.link',
+  }),
+  // ショッピング / Prime Video 等はアプリ側のルーティングに委ねる
+  PreferredAppService('amazon', 'Amazon', {
+    'amazon.co.jp',
+    'amazon.com',
+    'amzn.to',
+    'amzn.asia',
+  }),
+  PreferredAppService('github', 'GitHub', {'github.com'}),
+  PreferredAppService('x', 'X', {'x.com', 'twitter.com'}),
+  PreferredAppService('jump_plus', '少年ジャンプ＋', {'shonenjumpplus.com'}),
+];
+
+/// [host] を専用アプリで開くか。[disabled] は利用者が外したサービスの id。
+bool hasPreferredApp(String host, {Set<String> disabled = const {}}) =>
+    preferredAppServices.any(
+      (service) => !disabled.contains(service.id) && service.matches(host),
+    );
 
 /// 本文中の URL を、対応する専用アプリがあればそれで開く (#755)。
 ///
 /// モバイル（iOS / Android）のみ専用アプリへの誘導を試みる。ホストが
-/// [_preferredAppHostSuffixes] に一致する場合、まず
+/// [preferredAppServices] に一致する場合、まず
 /// [LaunchMode.externalNonBrowserApplication] でネイティブアプリ起動を試み、
 /// アプリ未インストール等で失敗したら [browserMode] でブラウザにフォールバック
-/// する。それ以外（非対象ホスト・デスクトップ・非 http(s)）は
-/// [launchUrlSafely] にそのまま流すため、既存挙動と等価。
+/// する。それ以外（非対象ホスト・[disabledServices] で外したサービス・デスクトップ
+/// ・非 http(s)）は [launchUrlSafely] にそのまま流す。
 Future<bool> launchInPreferredApp(
   Uri uri, {
   LaunchMode browserMode = LaunchMode.platformDefault,
+  Set<String> disabledServices = const {},
 }) async {
   final isMobile = Platform.isIOS || Platform.isAndroid;
   if (isMobile &&
       (uri.scheme == 'http' || uri.scheme == 'https') &&
-      _hasPreferredApp(uri.host)) {
+      hasPreferredApp(uri.host, disabled: disabledServices)) {
     try {
       final opened = await launchUrl(
         uri,

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../../provider/preferences_provider.dart';
 import '../../url_helper.dart';
 import 'deck_navigation.dart';
 
@@ -74,9 +75,14 @@ Future<void> openFediverseLink(
     // 開けるアプリ / ブラウザが無いと launchUrl は false を返すか throw するため、
     // 握りつぶさず「開けなかった」ことをユーザーに見せる（無反応の dead-tap 回避）。
     final messenger = ScaffoldMessenger.of(context);
+    final disabledServices = ref.read(disabledPreferredAppsProvider);
     var opened = false;
     try {
-      opened = await launchInPreferredApp(uri, browserMode: browserMode);
+      opened = await launchInPreferredApp(
+        uri,
+        browserMode: browserMode,
+        disabledServices: disabledServices,
+      );
     } catch (_) {
       opened = false;
     }

@@ -104,6 +104,15 @@ class SettingsScreen extends ConsumerWidget {
               trailing: const Icon(Icons.chevron_right),
               onTap: () => context.push('/settings/touch'),
             ),
+            // 専用アプリへの誘導はモバイルだけ (#755 / #1345)。
+            if (!isDesktop)
+              ListTile(
+                leading: const Icon(Icons.open_in_new),
+                title: const Text('リンクを開くアプリ'),
+                subtitle: const Text('サービスごとにアプリかブラウザかを選ぶ'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => context.push('/settings/preferred-apps'),
+              ),
             // デスクトップ専用設定（常駐 #752 / ログイン時起動 #751 / マウスドラッグ
             // スクロール #574 / 起動時更新確認 #641）。モバイルでは出さない。
             if (isDesktop)
