@@ -1,4 +1,3 @@
-import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -79,23 +78,13 @@ Widget buildHomeDrawer(
     child: Builder(
       builder: (innerCtx) {
         void dismiss() => Scaffold.of(innerCtx).closeDrawer();
-        // お知らせがタブとして可視なら、ドロワー / メニューの「お知らせ」項目は
-        // 出さない（重複回避）。ref.watch でタブ可視の切替に追従する。
-        final announcementsShownAsTab =
-            current != null &&
-            ref.watch(
-              isTabVisibleProvider((
-                storageKey: current.key.toStorageKey(),
-                tab: const AnnouncementsTab(),
-              )),
-            );
         final navItems = buildHomeNavItems(
           context,
           ref,
           current,
           accountState,
           unreadAnnouncements,
-          announcementsShownAsTab,
+          watchAnnouncementsShownAsTab(ref, current, inDeck: inDeck),
           onActivate: dismiss,
           inDeck: inDeck,
           columnContext: columnContext?.call(),

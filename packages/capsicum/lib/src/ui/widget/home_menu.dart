@@ -174,6 +174,25 @@ void saveLastTab(WidgetRef ref) {
   ref.read(lastTabProvider(storageKey).notifier).save(tab.toKey());
 }
 
+/// お知らせがタブとして見えていて、ドロワー / メニューの「お知らせ」項目を
+/// 省いてよいか。ref.watch でタブ可視の切替に追従する。
+///
+/// ⚠ **デッキ中は常に false** (#1346)。デッキにはタブ帯が無いので、タブに加えて
+/// いてもデッキの画面からお知らせへ行く道にならない。
+bool watchAnnouncementsShownAsTab(
+  WidgetRef ref,
+  Account? current, {
+  required bool inDeck,
+}) =>
+    !inDeck &&
+    current != null &&
+    ref.watch(
+      isTabVisibleProvider((
+        storageKey: current.key.toStorageKey(),
+        tab: const AnnouncementsTab(),
+      )),
+    );
+
 /// ドロワー / メニュー共通のナビゲーション項目を 1 箇所で構築する (#712)。
 /// feature-gate（adapter の各 Support）とモロヘイヤ有無をここで評価する。
 /// [announcementsShownAsTab] はお知らせがタブとして可視のときに true で、
@@ -442,21 +461,17 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
   AccountManagerState accountState,
   int unreadAnnouncements,
 ) {
-  final announcementsShownAsTab =
-      current != null &&
-      ref.watch(
-        isTabVisibleProvider((
-          storageKey: current.key.toStorageKey(),
-          tab: const AnnouncementsTab(),
-        )),
-      );
   final navItems = buildHomeNavItems(
     context,
     ref,
     current,
     accountState,
     unreadAnnouncements,
-    announcementsShownAsTab,
+    watchAnnouncementsShownAsTab(
+      ref,
+      current,
+      inDeck: ref.watch(mountedDeckCountProvider) > 0,
+    ),
   );
   final otherAccounts = accountState.accounts
       .where((a) => a.key != current?.key)

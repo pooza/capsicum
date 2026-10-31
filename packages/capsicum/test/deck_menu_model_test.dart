@@ -7,6 +7,7 @@ import 'package:capsicum/src/provider/deck_provider.dart';
 import 'package:capsicum/src/provider/platform_providers.dart';
 import 'package:capsicum/src/provider/preferences_provider.dart';
 import 'package:capsicum/src/ui/widget/desktop_menu_model.dart';
+import 'package:capsicum/src/ui/widget/home_drawer.dart';
 import 'package:capsicum/src/ui/widget/home_menu.dart';
 import 'package:capsicum/src/util/shared_preferences_cache.dart';
 import 'package:capsicum_backends/capsicum_backends.dart';
@@ -155,6 +156,121 @@ void main() {
           .whereType<MenuSubmenuEntry>()
           .where((s) => s.label == label)
           .firstOrNull;
+
+  // #1346: デッキにはタブ帯が無いので、タブに加えていてもお知らせへ行けない。
+  group('移動 > お知らせ', () {
+    void showAnnouncementsTab(ProviderContainer container) {
+      final storageKey = _account('me').key.toStorageKey();
+      container
+          .read(tabConfigProvider(storageKey).notifier)
+          .toggleVisibility(const AnnouncementsTab());
+      expect(
+        container.read(
+          isTabVisibleProvider((
+            storageKey: storageKey,
+            tab: const AnnouncementsTab(),
+          )),
+        ),
+        isTrue,
+        reason: '前提: タブに加えた状態を作れている',
+      );
+    }
+
+    testWidgets('前提: タブに加えていなければ、どちらの表示でも出る', (tester) async {
+      expect(
+        actionNamed(childrenOf(await buildModel(tester), '移動'), 'お知らせ'),
+        isNotNull,
+      );
+      expect(
+        actionNamed(
+          childrenOf(await buildModel(tester, inDeck: true), '移動'),
+          'お知らせ',
+        ),
+        isNotNull,
+      );
+    });
+
+    testWidgets('タブ表示では、タブに加えていれば出さない（重複回避）', (tester) async {
+      final model = await buildModel(tester, onContainer: showAnnouncementsTab);
+
+      expect(actionNamed(childrenOf(model, '移動'), 'お知らせ'), isNull);
+    });
+
+    testWidgets('⚠⚠ デッキ中は、タブに加えていても出す', (tester) async {
+      final model = await buildModel(
+        tester,
+        inDeck: true,
+        onContainer: showAnnouncementsTab,
+      );
+
+      expect(actionNamed(childrenOf(model, '移動'), 'お知らせ'), isNotNull);
+    });
+
+    Future<void> openDrawer(WidgetTester tester, {required bool inDeck}) async {
+      // ドロワーは縦に長く、項目が画面外だと ListView が組み立てない。
+      tester.view.physicalSize = const Size(800, 3000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      SharedPreferences.setMockInitialValues({});
+      initSharedPreferencesCache(await SharedPreferences.getInstance());
+      final container = ProviderContainer(
+        overrides: [
+          accountManagerProvider.overrideWith(
+            () => _TestAccountNotifier([_account('me')]),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      showAnnouncementsTab(container);
+
+      final scaffoldKey = GlobalKey<ScaffoldState>();
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            home: Consumer(
+              builder: (context, ref, _) {
+                final state = ref.watch(accountManagerProvider);
+                return Scaffold(
+                  key: scaffoldKey,
+                  drawer: buildHomeDrawer(
+                    context,
+                    ref,
+                    state.current,
+                    state,
+                    3,
+                    inDeck: inDeck,
+                  ),
+                  body: const SizedBox(),
+                );
+              },
+            ),
+          ),
+        ),
+      );
+      scaffoldKey.currentState!.openDrawer();
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+    }
+
+    testWidgets('⚠⚠ デッキのドロワーには、タブに加えていても未読の数つきで出る', (tester) async {
+      await openDrawer(tester, inDeck: true);
+
+      final tile = find.widgetWithText(ListTile, 'お知らせ');
+      expect(tile, findsOneWidget);
+      expect(
+        find.descendant(of: tile, matching: find.text('3')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('タブ表示のドロワーには、タブに加えていれば出さない', (tester) async {
+      await openDrawer(tester, inDeck: false);
+
+      expect(find.text('アカウントを追加'), findsOneWidget, reason: 'ドロワーは開いている');
+      expect(find.widgetWithText(ListTile, 'お知らせ'), findsNothing);
+    });
+  });
 
   group('表示 > 通知の絞り込み (#1042)', () {
     testWidgets('⚠ タブ表示でもデッキでも出す（通知を開いていなくても届く）', (tester) async {
