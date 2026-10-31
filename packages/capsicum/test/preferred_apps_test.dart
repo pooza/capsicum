@@ -19,7 +19,6 @@ void main() {
         'x.com',
         'twitter.com',
         'mobile.twitter.com',
-        'shonenjumpplus.com',
         'YouTube.com',
       ]) {
         expect(hasPreferredApp(host), isTrue, reason: host);

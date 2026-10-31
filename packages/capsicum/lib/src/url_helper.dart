@@ -52,7 +52,6 @@ const preferredAppServices = <PreferredAppService>[
   }),
   PreferredAppService('github', 'GitHub', {'github.com'}),
   PreferredAppService('x', 'X', {'x.com', 'twitter.com'}),
-  PreferredAppService('jump_plus', '少年ジャンプ＋', {'shonenjumpplus.com'}),
 ];
 
 /// [host] を専用アプリで開くか。[disabled] は利用者が外したサービスの id。
