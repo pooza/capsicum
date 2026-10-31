@@ -150,7 +150,7 @@ jobs:
           # linux-release.yml / windows-release.yml と同じ版に固定する。
           # unpinned だと stable の最新を拾い、出荷ツールチェーンには無い
           # deprecation / lint で CI が落ちる。開発機もこの版に揃えること (#836)。
-          flutter-version: 3.47.7
+          flutter-version: 3.47.9
       - run: flutter pub get
         if: env.HEAVY == 'true'
       - name: Generate code
