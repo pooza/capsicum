@@ -1412,6 +1412,15 @@ class DisabledPreferredAppsNotifier extends PersistedNotifier<Set<String>> {
   @override
   Set<String> get defaultValue => const {};
 
+  /// ⚠ リンクを開く経路は `ref.read` で 1 回読むだけなので、非同期の読み込みを
+  /// 待つと起動後最初のリンクで外した設定が効かない。pre-warm 済みの値を同期で
+  /// 返す（#579 と同じ形）。
+  @override
+  Set<String> build() {
+    super.build();
+    return readSaved(sharedPrefsOrThrow) ?? defaultValue;
+  }
+
   @override
   Set<String>? readSaved(SharedPreferences prefs) =>
       prefs.getStringList(_disabledPreferredAppsKey)?.toSet();

@@ -52,6 +52,9 @@ const preferredAppServices = <PreferredAppService>[
   }),
   PreferredAppService('github', 'GitHub', {'github.com'}),
   PreferredAppService('x', 'X', {'x.com', 'twitter.com'}),
+  // ⚠ iOS 向けの設定は全パスを除外している（`NOT *`）ので、iOS ではブラウザで開く。
+  PreferredAppService('ameblo', 'アメーバブログ', {'ameblo.jp'}),
+  PreferredAppService('wikipedia', 'Wikipedia', {'wikipedia.org'}),
 ];
 
 /// [host] を専用アプリで開くか。[disabled] は利用者が外したサービスの id。

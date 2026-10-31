@@ -19,6 +19,8 @@ void main() {
         'x.com',
         'twitter.com',
         'mobile.twitter.com',
+        'ameblo.jp',
+        'ja.wikipedia.org',
         'YouTube.com',
       ]) {
         expect(hasPreferredApp(host), isTrue, reason: host);
@@ -55,6 +57,17 @@ void main() {
 
       expect(ids.toSet().length, ids.length);
     });
+  });
+
+  test('⚠ 起動後最初の読み取りから、外した設定が効く', () async {
+    SharedPreferences.setMockInitialValues({
+      'disabled_preferred_apps': ['github'],
+    });
+    initSharedPreferencesCache(await SharedPreferences.getInstance());
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    expect(container.read(disabledPreferredAppsProvider), {'github'});
   });
 
   group('設定画面', () {
