@@ -32,6 +32,43 @@ void main() {
     }
   }
 
+  // #1343: Mastodon はリストの権限が無いときなどに、接続を開けたままエラーを送る。
+  group('Mastodon が購読だけを断ったとき', () {
+    Future<List<StreamConnectionState>> statesAfter(String message) async {
+      final states = <StreamConnectionState>[];
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close(force: true));
+      server.listen((request) async {
+        (await WebSocketTransformer.upgrade(request)).add(message);
+      });
+      final probe = _Probe(
+        _Backend.mastodon,
+        server.port,
+        onConnectionState: states.add,
+      );
+      final sub = probe.connect().listen((_) {});
+      addTearDown(sub.cancel);
+      await waitUntil(() => states.contains(StreamConnectionState.live));
+      expect(states, contains(StreamConnectionState.live), reason: '前提');
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      return states;
+    }
+
+    test('⚠⚠ live のままにせず exhausted を知らせる', () async {
+      final states = await statesAfter(
+        '{"error":"Not authorized to stream this list","status":401}',
+      );
+
+      expect(states.last, StreamConnectionState.exhausted);
+    });
+
+    test('前提: エラーでなければ live のまま', () async {
+      final states = await statesAfter('{"event":"delete","payload":"1"}');
+
+      expect(states.last, StreamConnectionState.live);
+    });
+  });
+
   for (final backend in _Backend.values) {
     group(backend.name, () {
       test('⚠⚠ 握手が失敗も完了もしなくても、次の接続を予約する', () async {

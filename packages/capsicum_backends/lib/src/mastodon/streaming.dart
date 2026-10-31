@@ -194,6 +194,13 @@ class MastodonStreaming with ReconnectTuning, StreamConnectionStateReporter {
     if (message is! String) return;
     try {
       final json = jsonDecode(message) as Map<String, dynamic>;
+      // ⚠ 購読を断るとき、サーバーは接続を開けたまま `{"error":…,"status":…}` を
+      // 送るだけ。握手は通っているので、見ないと `live` のまま何も流れない
+      // (#1343)。
+      if (json['error'] != null && json['event'] == null) {
+        notifyConnectionState(StreamConnectionState.exhausted);
+        return;
+      }
       if (json['event'] != 'update') return;
       final payload = json['payload'];
       final statusJson = payload is String
