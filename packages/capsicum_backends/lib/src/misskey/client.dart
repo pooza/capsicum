@@ -1131,6 +1131,23 @@ class MisskeyClient {
         .toList();
   }
 
+  /// POST /api/users/search-by-username-and-host
+  ///
+  /// [host] は前方一致。`.` は自分のサーバーを指す。
+  Future<List<MisskeyUser>> searchUsersByUsernameAndHost(
+    String username,
+    String host, {
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/users/search-by-username-and-host',
+      data: createBody({'username': username, 'host': host, 'limit': ?limit}),
+    );
+    return (response.data as List)
+        .map((e) => MisskeyUser.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   /// POST /api/hashtags/search
   Future<List<String>> searchHashtags(String query, {int? limit}) async {
     final response = await dio.post(

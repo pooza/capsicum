@@ -1564,7 +1564,18 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
 
   @override
   Future<List<User>> searchUsers(String query, {int? limit}) async {
-    final users = await client.searchUsers(query, limit: limit);
+    // ⚠ `users/search` は「ユーザー名@ホスト」を解さず 0 件を返す (#1344)。
+    // Web 版の宛先選択と同じ API へ分けて渡す。自分のサーバーは `.`。
+    final match = RegExp(r'^@?([^@\s]+)@([^@\s]+)$').firstMatch(query.trim());
+    final users = match == null
+        ? await client.searchUsers(query, limit: limit)
+        : await client.searchUsersByUsernameAndHost(
+            match.group(1)!,
+            match.group(2)!.toLowerCase() == host.toLowerCase()
+                ? '.'
+                : match.group(2)!,
+            limit: limit,
+          );
     return users
         .map((u) => u.toCapsicum(host, adminRoleIds: _adminRoleIds))
         .toList();
