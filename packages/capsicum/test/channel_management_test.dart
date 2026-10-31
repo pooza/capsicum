@@ -1,6 +1,7 @@
 import 'package:capsicum/src/model/account.dart';
 import 'package:capsicum/src/model/account_key.dart';
 import 'package:capsicum/src/provider/account_manager_provider.dart';
+import 'package:capsicum/src/provider/channel_provider.dart';
 import 'package:capsicum/src/ui/screen/channel_edit_screen.dart';
 import 'package:capsicum/src/ui/screen/channel_management_screen.dart';
 import 'package:capsicum/src/ui/widget/channel_actions_sheet.dart';
@@ -213,6 +214,10 @@ void main() {
         expect(find.text('プリキュア'), findsOneWidget);
         expect(find.text('自作'), findsNothing);
       });
+    });
+
+    test('空の表示が日本語として読める', () {
+      expect(ChannelListKind.owned.emptyMessage, '自分のチャンネルはありません');
     });
 
     testWidgets('取得に失敗したら再試行できる', (tester) async {

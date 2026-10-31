@@ -100,49 +100,53 @@ class _ChannelEditScreenState extends ConsumerState<ChannelEditScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(_isNew ? 'チャンネルを作成' : 'チャンネルを編集'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        actions: [
-          TextButton(
-            onPressed: _saving ? null : _save,
-            child: const Text('保存'),
-          ),
-        ],
-      ),
-      body: BottomSafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            TextField(
-              controller: _name,
-              maxLength: 128,
-              decoration: const InputDecoration(labelText: '名前'),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _description,
-              maxLength: 2048,
-              minLines: 3,
-              maxLines: 8,
-              style: composeTextStyle(ref),
-              decoration: const InputDecoration(labelText: '説明'),
-            ),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('センシティブなチャンネル'),
-              value: _isSensitive,
-              onChanged: (value) => setState(() => _isSensitive = value),
-            ),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('チャンネルの外へのリノートを許可'),
-              value: _allowRenoteToExternal,
-              onChanged: (value) =>
-                  setState(() => _allowRenoteToExternal = value),
+    // ⚠ 保存中に戻ると結果を一覧へ渡せず、作れていないように見えて作り直される。
+    return PopScope(
+      canPop: !_saving,
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(_isNew ? 'チャンネルを作成' : 'チャンネルを編集'),
+          backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+          actions: [
+            TextButton(
+              onPressed: _saving ? null : _save,
+              child: const Text('保存'),
             ),
           ],
+        ),
+        body: BottomSafeArea(
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              TextField(
+                controller: _name,
+                maxLength: 128,
+                decoration: const InputDecoration(labelText: '名前'),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _description,
+                maxLength: 2048,
+                minLines: 3,
+                maxLines: 8,
+                style: composeTextStyle(ref),
+                decoration: const InputDecoration(labelText: '説明'),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('センシティブなチャンネル'),
+                value: _isSensitive,
+                onChanged: (value) => setState(() => _isSensitive = value),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('チャンネルの外へのリノートを許可'),
+                value: _allowRenoteToExternal,
+                onChanged: (value) =>
+                    setState(() => _allowRenoteToExternal = value),
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -109,7 +109,7 @@ class _ChannelManagementScreenState
                     for (final kind in ChannelListKind.values)
                       _ChannelList(
                         provider: channelListProvider(kind),
-                        emptyMessage: '${kind.label}のチャンネルはありません',
+                        emptyMessage: kind.emptyMessage,
                       ),
                   ],
                 ),

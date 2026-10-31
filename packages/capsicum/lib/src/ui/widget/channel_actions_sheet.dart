@@ -24,6 +24,7 @@ Future<void> showChannelActions(
   final support = adapter as ChannelManagementSupport;
   final account = ref.read(currentAccountProvider);
   final messenger = ScaffoldMessenger.of(context);
+  final container = ProviderScope.containerOf(context, listen: false);
   final isOwner = channel.userId != null && channel.userId == account?.user.id;
 
   final action = await showModalBottomSheet<_ChannelAction>(
@@ -105,7 +106,8 @@ Future<void> showChannelActions(
     );
     return;
   }
-  // ⚠ 通信の間に画面を離れていたら `ref` を触らない（PR #1285 の Codex P2）。
-  if (context.mounted) invalidateChannels(ref);
+  // ⚠ 通信の間に行が破棄されていると `ref` は触れないので、コンテナへ当てる
+  // （PR #1285 の Codex P2）。飛ばすと、成功したのに一覧が古いまま残る。
+  invalidateChannelsIn(container);
   messenger.showSnackBar(SnackBar(content: Text(done)));
 }

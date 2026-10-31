@@ -163,14 +163,15 @@ final channelProvider = FutureProvider.autoDispose.family<Channel?, String>((
 
 /// チャンネルの管理画面の分類 (#1051)。
 enum ChannelListKind {
-  featured('人気'),
-  followed('フォロー中'),
-  favorite('お気に入り'),
-  owned('自分の');
+  featured('人気', '人気のチャンネルはありません'),
+  followed('フォロー中', 'フォロー中のチャンネルはありません'),
+  favorite('お気に入り', 'お気に入りのチャンネルはありません'),
+  owned('自分の', '自分のチャンネルはありません');
 
-  const ChannelListKind(this.label);
+  const ChannelListKind(this.label, this.emptyMessage);
 
   final String label;
+  final String emptyMessage;
 }
 
 final channelListProvider = FutureProvider.autoDispose
@@ -202,6 +203,15 @@ void invalidateChannels(WidgetRef ref) {
   ref.invalidate(channelSearchProvider);
   ref.invalidate(channelProvider);
   ref.invalidate(followedChannelsProvider);
+}
+
+/// [invalidateChannels] のコンテナ版。通信の間に呼び出し元の行が破棄されても
+/// 取り直せるよう、通信の前に取ったコンテナへ当てる。
+void invalidateChannelsIn(ProviderContainer container) {
+  container.invalidate(channelListProvider);
+  container.invalidate(channelSearchProvider);
+  container.invalidate(channelProvider);
+  container.invalidate(followedChannelsProvider);
 }
 
 /// チャンネルのタブ / カラムに出す名前 (#1296)。
