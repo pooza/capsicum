@@ -158,6 +158,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         MediaUpdateSupport,
         ProfileEditSupport,
         ChannelSupport,
+        ChannelManagementSupport,
         ClipSupport,
         FlashSupport,
         GallerySupport,
@@ -1786,14 +1787,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         limit: pageSize,
         untilId: untilId,
       );
-      channels.addAll(
-        data.map(
-          (ch) => Channel(
-            id: ch['id'] as String,
-            name: ch['name'] as String? ?? '',
-          ),
-        ),
-      );
+      channels.addAll(data.map(_channelFromJson));
       if (data.length < pageSize) break;
       untilId = data.last['id'] as String;
     }
@@ -1803,8 +1797,104 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
 
   @override
   Future<Channel> getChannel(String channelId) async {
-    final ch = await client.showChannel(channelId);
-    return Channel(id: ch['id'] as String, name: ch['name'] as String? ?? '');
+    return _channelFromJson(await client.showChannel(channelId));
+  }
+
+  Channel _channelFromJson(Map<String, dynamic> ch) => Channel(
+    id: ch['id'] as String,
+    name: ch['name'] as String? ?? '',
+    description: ch['description'] as String?,
+    userId: ch['userId'] as String?,
+    usersCount: (ch['usersCount'] as num?)?.toInt(),
+    notesCount: (ch['notesCount'] as num?)?.toInt(),
+    isFollowing: ch['isFollowing'] == true,
+    isFavorited: ch['isFavorited'] == true,
+    isMuting: ch['isMuting'] == true,
+    isSensitive: ch['isSensitive'] == true,
+    allowRenoteToExternal: ch['allowRenoteToExternal'] as bool? ?? true,
+  );
+
+  Map<String, dynamic> _channelDraftParams(ChannelDraft draft) => {
+    'name': draft.name,
+    // ⚠ 空文字ではなく null で消す（Web 版と同じ）。
+    'description': draft.description.isEmpty ? null : draft.description,
+    'isSensitive': draft.isSensitive,
+    'allowRenoteToExternal': draft.allowRenoteToExternal,
+  };
+
+  // ChannelManagementSupport
+
+  /// `channels/search` と `owned` の既定は 5 件なので、上限を明示する。
+  static const _channelListLimit = 100;
+
+  @override
+  Future<List<Channel>> searchChannels(String query) async {
+    final data = await client.listChannels(
+      'search',
+      params: {'query': query, 'limit': _channelListLimit},
+    );
+    return data.map(_channelFromJson).toList();
+  }
+
+  @override
+  Future<List<Channel>> getFeaturedChannels() async {
+    return (await client.listChannels(
+      'featured',
+    )).map(_channelFromJson).toList();
+  }
+
+  @override
+  Future<List<Channel>> getFavoriteChannels() async {
+    return (await client.listChannels(
+      'my-favorites',
+    )).map(_channelFromJson).toList();
+  }
+
+  @override
+  Future<List<Channel>> getOwnedChannels() async {
+    final data = await client.listChannels(
+      'owned',
+      params: {'limit': _channelListLimit},
+    );
+    return data.map(_channelFromJson).toList();
+  }
+
+  @override
+  Future<void> followChannel(String channelId) =>
+      client.channelAction('follow', channelId);
+
+  @override
+  Future<void> unfollowChannel(String channelId) =>
+      client.channelAction('unfollow', channelId);
+
+  @override
+  Future<void> favoriteChannel(String channelId) =>
+      client.channelAction('favorite', channelId);
+
+  @override
+  Future<void> unfavoriteChannel(String channelId) =>
+      client.channelAction('unfavorite', channelId);
+
+  @override
+  Future<void> muteChannel(String channelId) =>
+      client.channelAction('mute/create', channelId);
+
+  @override
+  Future<void> unmuteChannel(String channelId) =>
+      client.channelAction('mute/delete', channelId);
+
+  @override
+  Future<Channel> createChannel(ChannelDraft draft) async {
+    return _channelFromJson(
+      await client.createChannel(_channelDraftParams(draft)),
+    );
+  }
+
+  @override
+  Future<Channel> updateChannel(String channelId, ChannelDraft draft) async {
+    return _channelFromJson(
+      await client.updateChannel(channelId, _channelDraftParams(draft)),
+    );
   }
 
   @override

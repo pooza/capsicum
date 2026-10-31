@@ -22,3 +22,19 @@ abstract mixin class ChannelSupport {
   /// チャンネル自身が決めるので visibility は取らない。
   Future<Post> repeatPostToChannel(String postId, {required String channelId});
 }
+
+/// チャンネルを探す・購読する・作る (#1051)。
+abstract mixin class ChannelManagementSupport {
+  Future<List<Channel>> searchChannels(String query);
+  Future<List<Channel>> getFeaturedChannels();
+  Future<List<Channel>> getFavoriteChannels();
+  Future<List<Channel>> getOwnedChannels();
+  Future<void> followChannel(String channelId);
+  Future<void> unfollowChannel(String channelId);
+  Future<void> favoriteChannel(String channelId);
+  Future<void> unfavoriteChannel(String channelId);
+  Future<void> muteChannel(String channelId);
+  Future<void> unmuteChannel(String channelId);
+  Future<Channel> createChannel(ChannelDraft draft);
+  Future<Channel> updateChannel(String channelId, ChannelDraft draft);
+}

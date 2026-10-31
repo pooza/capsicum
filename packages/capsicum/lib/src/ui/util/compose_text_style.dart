@@ -16,6 +16,7 @@
 /// | プロフィールの自己紹介（`profile_edit_screen.dart`） | 当てる |
 /// | チャットの入力（`chat_compose_row.dart`） | 当てる |
 /// | チャットルームの説明（`chat_room_edit_screen.dart`） | 当てる |
+/// | チャンネルの説明（`channel_edit_screen.dart`） | 当てる |
 /// | コレクションの説明（`collections_list_screen.dart`・`collection_detail_screen.dart`） | 当てる |
 /// | 通報の理由（`report_comment_dialog.dart`） | 当てる |
 /// | メディアの説明の編集（`media_viewer_screen.dart`） | 当てる |

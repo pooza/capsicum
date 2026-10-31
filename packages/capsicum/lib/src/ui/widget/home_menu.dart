@@ -1287,7 +1287,14 @@ Future<void> showListChooser(BuildContext context, WidgetRef ref) async {
 Future<void> showChannelList(BuildContext context, WidgetRef ref) async {
   // ⚠ 一覧を引いたアカウントを開く先にも渡す（[showListChooser] と同じ理由）。
   final listedFor = ref.read(currentAccountProvider)?.key;
-  final channel = await pickFollowedChannel(context, ref);
+  final channel = await pickFollowedChannel(
+    context,
+    ref,
+    // ⚠ フォローが 0 件でも開く。ここが新しいチャンネルへの唯一の入口 (#1051)。
+    onManage: ref.read(currentAdapterProvider) is ChannelManagementSupport
+        ? () => context.push('/channels/manage')
+        : null,
+  );
   if (channel == null || !context.mounted) return;
   openChannel(context, channel.id, channel.name, account: listedFor);
 }
@@ -1297,10 +1304,14 @@ Future<void> showChannelList(BuildContext context, WidgetRef ref) async {
 /// ドロワーからのチャンネル移動 ([showChannelList]) と、投稿をチャンネルへ
 /// リノートする導線 (#895) で共用する。取得失敗・0 件は SnackBar で伝えて
 /// null を返す。
+///
+/// [onManage] を渡すと、シートの末尾に管理画面への入口を出し、0 件でもシートを
+/// 開く (#1051)。
 Future<Channel?> pickFollowedChannel(
   BuildContext context,
   WidgetRef ref, {
   String title = 'チャンネル',
+  VoidCallback? onManage,
 }) async {
   final adapter = ref.read(currentAdapterProvider);
   if (adapter is! ChannelSupport) return null;
@@ -1316,7 +1327,7 @@ Future<Channel?> pickFollowedChannel(
     }
     return null;
   }
-  if (channels.isEmpty) {
+  if (channels.isEmpty && onManage == null) {
     if (context.mounted) {
       ScaffoldMessenger.of(
         context,
@@ -1342,6 +1353,18 @@ Future<Channel?> pickFollowedChannel(
               title: Text(ch.name),
               dense: true,
               onTap: () => Navigator.pop(sheetContext, ch),
+            ),
+          if (channels.isEmpty)
+            const ListTile(dense: true, title: Text('フォロー中のチャンネルはありません')),
+          if (onManage != null)
+            ListTile(
+              leading: const Icon(Icons.search, size: 20),
+              title: const Text('チャンネルを探す・管理する'),
+              dense: true,
+              onTap: () {
+                Navigator.pop(sheetContext);
+                onManage();
+              },
             ),
         ],
       ),

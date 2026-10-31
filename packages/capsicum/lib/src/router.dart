@@ -14,6 +14,8 @@ import 'ui/screen/annict_review_screen.dart';
 import 'ui/screen/announcement_screen.dart';
 import 'ui/screen/antenna_notes_screen.dart';
 import 'ui/screen/bookmark_screen.dart';
+import 'ui/screen/channel_edit_screen.dart';
+import 'ui/screen/channel_management_screen.dart';
 import 'ui/screen/channel_timeline_screen.dart';
 import 'ui/screen/chat_invitations_screen.dart';
 import 'ui/screen/chat_new_thread_screen.dart';
@@ -380,6 +382,20 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/server-info',
             builder: (context, state) => const ServerInfoScreen(),
+          ),
+          // チャンネルを探す・管理する (#1051)。
+          GoRoute(
+            path: '/channels/manage',
+            builder: (context, state) => const ChannelManagementScreen(),
+          ),
+          GoRoute(
+            path: '/channels/edit',
+            builder: (context, state) {
+              final channel = state.extra;
+              return ChannelEditScreen(
+                channel: channel is Channel ? channel : null,
+              );
+            },
           ),
           GoRoute(
             path: '/lists/manage',

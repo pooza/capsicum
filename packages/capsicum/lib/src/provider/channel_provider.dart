@@ -161,6 +161,49 @@ final channelProvider = FutureProvider.autoDispose.family<Channel?, String>((
   return (adapter as ChannelSupport).getChannel(id);
 }, dependencies: [currentAdapterProvider]);
 
+/// チャンネルの管理画面の分類 (#1051)。
+enum ChannelListKind {
+  featured('人気'),
+  followed('フォロー中'),
+  favorite('お気に入り'),
+  owned('自分の');
+
+  const ChannelListKind(this.label);
+
+  final String label;
+}
+
+final channelListProvider = FutureProvider.autoDispose
+    .family<List<Channel>, ChannelListKind>((ref, kind) async {
+      final adapter = ref.watch(currentAdapterProvider);
+      if (adapter is! ChannelManagementSupport) return const [];
+      final support = adapter as ChannelManagementSupport;
+      return switch (kind) {
+        ChannelListKind.featured => support.getFeaturedChannels(),
+        ChannelListKind.followed =>
+          (adapter as ChannelSupport).getFollowedChannels(),
+        ChannelListKind.favorite => support.getFavoriteChannels(),
+        ChannelListKind.owned => support.getOwnedChannels(),
+      };
+    }, dependencies: [currentAdapterProvider]);
+
+final channelSearchProvider = FutureProvider.autoDispose
+    .family<List<Channel>, String>((ref, query) async {
+      final adapter = ref.watch(currentAdapterProvider);
+      if (adapter is! ChannelManagementSupport) return const [];
+      return (adapter as ChannelManagementSupport).searchChannels(query);
+    }, dependencies: [currentAdapterProvider]);
+
+/// チャンネルを操作したあとに、持っている一覧を取り直す (#1051)。
+///
+/// ⚠ [followedChannelsProvider] も忘れない（タブとチューザが読んでいる）。
+void invalidateChannels(WidgetRef ref) {
+  ref.invalidate(channelListProvider);
+  ref.invalidate(channelSearchProvider);
+  ref.invalidate(channelProvider);
+  ref.invalidate(followedChannelsProvider);
+}
+
 /// チャンネルのタブ / カラムに出す名前 (#1296)。
 ///
 /// `name` → フォロー中の一覧 → 1 件取得 → ID の順で引く。

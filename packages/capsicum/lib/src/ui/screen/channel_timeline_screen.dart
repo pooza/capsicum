@@ -6,6 +6,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/channel_provider.dart';
 import '../util/scroll_thresholds.dart';
 import '../widget/bottom_safe_area.dart';
+import '../widget/channel_actions_sheet.dart';
 import '../widget/post_tile.dart';
 import '../widget/retry_error_view.dart';
 import '../widget/simple_post_bar.dart';
@@ -149,7 +150,7 @@ class _ChannelTimelineViewState extends ConsumerState<ChannelTimelineView> {
   }
 }
 
-class ChannelTimelineScreen extends StatelessWidget {
+class ChannelTimelineScreen extends ConsumerWidget {
   final String channelId;
   final String? channelName;
 
@@ -159,12 +160,36 @@ class ChannelTimelineScreen extends StatelessWidget {
     this.channelName,
   });
 
+  /// 操作のシートは、そのときの状態（フォロー中か等）を取ってから開く (#1051)。
+  Future<void> _openActions(BuildContext context, WidgetRef ref) async {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! ChannelSupport) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final Channel channel;
+    try {
+      channel = await (adapter as ChannelSupport).getChannel(channelId);
+    } catch (_) {
+      messenger.showSnackBar(const SnackBar(content: Text('チャンネルの取得に失敗しました')));
+      return;
+    }
+    if (!context.mounted) return;
+    await showChannelActions(context, ref, channel);
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
       appBar: AppBar(
         title: Text(channelName ?? 'チャンネル'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        actions: [
+          if (ref.watch(currentAdapterProvider) is ChannelManagementSupport)
+            IconButton(
+              icon: const Icon(Icons.more_horiz),
+              tooltip: 'チャンネルの操作',
+              onPressed: () => _openActions(context, ref),
+            ),
+        ],
       ),
       body: ChannelTimelineView(channelId: channelId, channelName: channelName),
     );
