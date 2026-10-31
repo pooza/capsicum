@@ -77,6 +77,7 @@ void main() {
       '@remote.example',
       'a@b@c',
       'first last@example',
+      'キュア@春',
     ]) {
       test('"$query"', () async {
         final call = await search(query);

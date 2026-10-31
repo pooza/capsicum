@@ -1567,7 +1567,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   Future<List<User>> searchUsers(String query, {int? limit}) async {
     // ⚠ `users/search` は「ユーザー名@ホスト」を解さず 0 件を返す (#1344)。
     // Web 版の宛先選択と同じ API へ分けて渡す。自分のサーバーは `.`。
-    final match = RegExp(r'^@?([^@\s]+)@([^@\s]+)$').firstMatch(query.trim());
+    // ⚠ 分けた先はユーザー名しか見ないので、ユーザー名に使えない字を含むものは
+    // 名前や自己紹介の検索として `users/search` に残す。
+    final match = RegExp(r'^@?([\w.-]+)@([^@\s]+)$').firstMatch(query.trim());
     final users = match == null
         ? await client.searchUsers(query, limit: limit)
         : await client.searchUsersByUsernameAndHost(
