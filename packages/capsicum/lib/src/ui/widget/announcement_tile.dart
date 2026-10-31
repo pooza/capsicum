@@ -9,6 +9,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/announcement_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../service/tco_resolver.dart';
+import '../util/announcement_period.dart';
 import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
 import 'content_parser.dart';
@@ -91,6 +92,7 @@ class _AnnouncementTileState extends ConsumerState<AnnouncementTile> {
     final theme = Theme.of(context);
     final d = announcement.publishedAt;
     final dateStr = '${d.year}/${d.month}/${d.day}';
+    final period = announcementPeriodLabel(announcement);
     final baseStyle =
         theme.textTheme.bodyMedium?.copyWith(
           color: announcement.read ? theme.colorScheme.outline : null,
@@ -131,6 +133,15 @@ class _AnnouncementTileState extends ConsumerState<AnnouncementTile> {
                   ),
               ],
             ),
+            if (period != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                '掲載期間: $period',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.outline,
+                ),
+              ),
+            ],
             if (announcement.title != null) ...[
               const SizedBox(height: 4),
               Text(

@@ -26,6 +26,13 @@ class Announcement {
   /// Mastodon 5.0 で無効にできるようになった。無効のときに付け外しすると 400 になる。
   final bool reactionsAllowed;
 
+  /// 掲載期間 (#1214)。Mastodon だけが持ち、指定が無ければ null。
+  final DateTime? startsAt;
+  final DateTime? endsAt;
+
+  /// 終日のお知らせか。真なら時刻を出さない。
+  final bool allDay;
+
   const Announcement({
     required this.id,
     required this.content,
@@ -37,6 +44,9 @@ class Announcement {
     this.isHtml = false,
     this.reactions = const [],
     this.reactionsAllowed = true,
+    this.startsAt,
+    this.endsAt,
+    this.allDay = false,
   });
 
   /// 公開したあとに編集されたか (#1308)。
@@ -61,6 +71,9 @@ class Announcement {
         isHtml: isHtml,
         reactions: reactions ?? this.reactions,
         reactionsAllowed: reactionsAllowed,
+        startsAt: startsAt,
+        endsAt: endsAt,
+        allDay: allDay,
       );
 }
 
