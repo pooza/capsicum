@@ -85,11 +85,24 @@ void main() {
     final widgets = sourceFiles('lib/src/ui/widget');
     expect(widgets.length, greaterThanOrEqualTo(40), reason: '部品を拾えている');
 
+    // カラムの中に入らない部品。理由: デッキ全体に 1 枚敷く本体（#1174）と、
+    // 設定画面の欄。⚠ 黙って増やさない。
+    const outsideColumns = {
+      'deck_background.dart',
+      'background_image_section.dart',
+    };
+    expect(
+      widgets.where((f) => outsideColumns.contains(f.uri.pathSegments.last)),
+      hasLength(outsideColumns.length),
+      reason: '除外の表が実在のファイルを指している',
+    );
+
     final offenders = [
       for (final file in [...plain, ...widgets])
-        if (_backgroundWatches(
-          maskComments(file.readAsStringSync()),
-        ).isNotEmpty)
+        if (!outsideColumns.contains(file.uri.pathSegments.last) &&
+            _backgroundWatches(
+              maskComments(file.readAsStringSync()),
+            ).isNotEmpty)
           file.path,
     ];
     expect(

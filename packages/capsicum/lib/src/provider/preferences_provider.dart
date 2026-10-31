@@ -2256,7 +2256,8 @@ class BackgroundImageNotifier extends FamilyNotifier<String?, String> {
 
     // Migrate legacy global setting.
     // Keep the legacy key so that other accounts can also pick it up.
-    if (saved == null) {
+    // ⚠ デッキは対象外（頼んでいない画像が突然敷かれる）。
+    if (saved == null && arg != deckBackgroundStorageKey) {
       final legacy = prefs.getString(_backgroundImagePathKey);
       if (legacy != null && File(legacy).existsSync()) {
         await prefs.setString(key, legacy);
@@ -2300,6 +2301,10 @@ class BackgroundImageNotifier extends FamilyNotifier<String?, String> {
   }
 }
 
+/// デッキの背景画像 (#1174) の保存先。アカウントの storage key の代わりに
+/// [backgroundImageProvider] / [backgroundOpacityProvider] へ渡す。
+const deckBackgroundStorageKey = 'deck';
+
 /// Per-account background image opacity.
 ///
 /// Takes an account storage key as the family parameter.
@@ -2323,7 +2328,7 @@ class BackgroundOpacityNotifier extends FamilyNotifier<double, String> {
 
     // Migrate legacy global setting.
     // Keep the legacy key so that other accounts can also pick it up.
-    if (saved == null) {
+    if (saved == null && arg != deckBackgroundStorageKey) {
       final legacy = prefs.getDouble(_backgroundOpacityKey);
       if (legacy != null) {
         await prefs.setDouble(key, legacy);

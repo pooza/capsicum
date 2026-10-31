@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../platform/platform_info.dart';
 import '../../../provider/account_manager_provider.dart';
 import '../../../provider/preferences_provider.dart';
+import '../../widget/background_image_section.dart';
 
 class DisplaySettingsScreen extends ConsumerWidget {
   const DisplaySettingsScreen({super.key});
@@ -25,6 +26,11 @@ class DisplaySettingsScreen extends ConsumerWidget {
       ),
       body: ListView(
         children: [
+          // デッキは画面全体に 1 枚 (#1174)。アカウントに依らないのでここに置く。
+          const BackgroundImageSection(
+            storageKey: deckBackgroundStorageKey,
+            title: 'デッキの背景画像',
+          ),
           SwitchListTile(
             title: const Text('絶対時間で表示'),
             subtitle: const Text('投稿日時を「3分前」ではなく「2026-03-26 12:34」形式で表示します'),

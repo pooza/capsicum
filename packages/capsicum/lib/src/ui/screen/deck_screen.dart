@@ -19,6 +19,7 @@ import '../util/deck_navigation.dart';
 import '../util/mouse_drag_scroll_behavior.dart';
 import '../util/provider_scope_carrier.dart';
 import '../widget/bottom_safe_area.dart';
+import '../widget/deck_background.dart';
 import '../widget/deck_column_focus.dart';
 import '../widget/deck_column_strip.dart';
 import '../widget/deck_column_view.dart';
@@ -918,73 +919,75 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
       body: _withBottomBars(
         strip,
         postBar,
-        columns.isEmpty
-            ? Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text('カラムがありません'),
-                    const SizedBox(height: 12),
-                    FilledButton.icon(
-                      icon: const Icon(Icons.add),
-                      label: const Text('カラムを追加'),
-                      onPressed: () => showDeckColumnsSheet(context),
-                    ),
-                  ],
-                ),
-              )
-            : LayoutBuilder(
-                builder: (context, constraints) {
-                  final layout = computeDeckLayout(
-                    availableWidth: constraints.maxWidth,
-                    columnCount: columns.length,
-                    minColumnWidth: minColumnWidth,
-                  );
-                  // ⚠⚠ **幅が縮んで 1 本しか見えなくなったら、フォーカスを見えて
-                  // いるカラムへ揃える**（2 回目の差分レビュー・2026-10-06）。
-                  // 同期はスクロールの通知でしか走らないので、広い幅で右側の
-                  // カラムにフォーカスを置いたまま縮めると、宛先（検索・通知・
-                  // 簡易投稿バー・⌘N）が画面の外のカラムに残る。⚠ この幅では
-                  // 枠を出さない（#1243）ので、ずれていても見分けられない。
-                  final narrowed =
-                      layout.visibleColumns == 1 &&
-                      (_layout?.visibleColumns ?? 1) != 1;
-                  _layout = layout;
-                  if (narrowed) _syncFocusToVisibleColumn();
-                  _restoreInitialPositionOnce();
-                  return SingleChildScrollView(
-                    controller: _scrollController,
-                    scrollDirection: Axis.horizontal,
-                    physics: DeckSnapScrollPhysics(
-                      columnWidth: layout.columnWidth,
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        for (final (column, child) in columnWidgets)
-                          SizedBox(
-                            // ⚠ 列内の安定 id をキーにする（決定済み事項 6-2）。
-                            // 中身（アカウント + 種別）は重複しうるので使えない。
-                            key: ValueKey(column.id),
-                            width: layout.columnWidth,
-                            height: constraints.maxHeight,
-                            // フォーカス中の枠と、押されたときのフォーカス移動
-                            // (#1172)。⚠⚠ **枠は、同時に見えているカラムが
-                            // 2 本以上のときだけ出す**（決定済み事項 10・#1243）。
-                            // 1 本しか見えない幅では、見えているカラムが
-                            // フォーカスなので、枠は情報を足さずうるさいだけになる。
-                            // ⚠ 点滅（押した操作が効いた合図）はこの幅でも出る。
-                            child: DeckColumnFocusRing(
-                              columnId: column.id,
-                              showRing: layout.visibleColumns > 1,
-                              child: child,
+        DeckBackground(
+          child: columns.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text('カラムがありません'),
+                      const SizedBox(height: 12),
+                      FilledButton.icon(
+                        icon: const Icon(Icons.add),
+                        label: const Text('カラムを追加'),
+                        onPressed: () => showDeckColumnsSheet(context),
+                      ),
+                    ],
+                  ),
+                )
+              : LayoutBuilder(
+                  builder: (context, constraints) {
+                    final layout = computeDeckLayout(
+                      availableWidth: constraints.maxWidth,
+                      columnCount: columns.length,
+                      minColumnWidth: minColumnWidth,
+                    );
+                    // ⚠⚠ **幅が縮んで 1 本しか見えなくなったら、フォーカスを見えて
+                    // いるカラムへ揃える**（2 回目の差分レビュー・2026-10-06）。
+                    // 同期はスクロールの通知でしか走らないので、広い幅で右側の
+                    // カラムにフォーカスを置いたまま縮めると、宛先（検索・通知・
+                    // 簡易投稿バー・⌘N）が画面の外のカラムに残る。⚠ この幅では
+                    // 枠を出さない（#1243）ので、ずれていても見分けられない。
+                    final narrowed =
+                        layout.visibleColumns == 1 &&
+                        (_layout?.visibleColumns ?? 1) != 1;
+                    _layout = layout;
+                    if (narrowed) _syncFocusToVisibleColumn();
+                    _restoreInitialPositionOnce();
+                    return SingleChildScrollView(
+                      controller: _scrollController,
+                      scrollDirection: Axis.horizontal,
+                      physics: DeckSnapScrollPhysics(
+                        columnWidth: layout.columnWidth,
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          for (final (column, child) in columnWidgets)
+                            SizedBox(
+                              // ⚠ 列内の安定 id をキーにする（決定済み事項 6-2）。
+                              // 中身（アカウント + 種別）は重複しうるので使えない。
+                              key: ValueKey(column.id),
+                              width: layout.columnWidth,
+                              height: constraints.maxHeight,
+                              // フォーカス中の枠と、押されたときのフォーカス移動
+                              // (#1172)。⚠⚠ **枠は、同時に見えているカラムが
+                              // 2 本以上のときだけ出す**（決定済み事項 10・#1243）。
+                              // 1 本しか見えない幅では、見えているカラムが
+                              // フォーカスなので、枠は情報を足さずうるさいだけになる。
+                              // ⚠ 点滅（押した操作が効いた合図）はこの幅でも出る。
+                              child: DeckColumnFocusRing(
+                                columnId: column.id,
+                                showRing: layout.visibleColumns > 1,
+                                child: child,
+                              ),
                             ),
-                          ),
-                      ],
-                    ),
-                  );
-                },
-              ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+        ),
       ),
     );
     return _DeckRouteProbe(
