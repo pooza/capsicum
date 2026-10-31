@@ -127,6 +127,8 @@ SharedPreferences は **Android / iOS とも OS のバックアップ対象**で
 
 保存先を移すときは**旧値を移行しない**。移行すると複製された値がそのまま生き残り、直したい事象が消えない。旧キーは掃除だけする。正本は [`device_install_id.dart`](../packages/capsicum/lib/src/service/device_install_id.dart)。
 
+⚠ **iOS の通知拡張が読むトークンの写し（[#1215](https://github.com/pooza/capsicum/issues/1215)・`push_key_store.dart` の `saveNseToken`）は `first_unlock` で、本体（`account_storage.dart` の `unlocked`）より緩い。**ロック中に届く通知を処理するための意図した緩め方で、写しはログアウト・削除のときに本体と一緒に消える。
+
 ### 設定キーを `preferences_provider.dart` の外に置くと、バックアップの網羅検査から消える
 
 [`settings_backup_coverage_test.dart`](../packages/capsicum/test/settings_backup_coverage_test.dart) は「設定キーが、バックアップに含める / 含めないのどちらかへ必ず分類されている」ことを見ているが、**走査するのは `lib/src/provider/preferences_provider.dart` の 1 ファイルだけ**。新しい設定キーを別のファイルに定義すると、**分類されていなくても緑のまま通る**。

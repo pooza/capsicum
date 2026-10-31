@@ -17,8 +17,11 @@ SentryEvent tagServerSoftware(SentryEvent event) {
   if (host == null || host.isEmpty || host == '-') return event;
   final software = knownSoftwareName(host);
   if (software == null) return event;
+  // ⚠ 名前はサーバーが名乗る文字列なので、形を確かめる (#1343)。
+  if (!_softwareTagValue.hasMatch(software)) return event;
   event.tags = {...tags, softwareTag: software};
   return event;
 }
 
 const softwareTag = 'software';
+final _softwareTagValue = RegExp(r'^[a-z0-9._-]{1,64}$');

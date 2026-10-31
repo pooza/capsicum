@@ -106,6 +106,19 @@ class ServerVersionChecker {
     return true;
   }
 
+  /// Mastodon のコレクション機能（4.6〜・#810）が使えるか。版が未取得なら false。
+  ///
+  /// ⚠ Akkoma などのフォークは版の数え方が別なので、版が 4.6 を超えても機能が
+  /// あるとは限らない (#1343)。名前が読めていて本家でなければ false。
+  static bool supportsCollections({
+    required String? softwareName,
+    required String? version,
+  }) {
+    if (version == null) return false;
+    if (softwareName != null && softwareName != 'mastodon') return false;
+    return isAtLeast(version, '4.6.0');
+  }
+
   static List<int> _parts(String v) =>
       baseVersion(v).split('.').map((s) => int.tryParse(s) ?? 0).toList();
 }

@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:capsicum_backends/capsicum_backends.dart'
+    show knownSoftwareName;
 import 'package:capsicum_core/capsicum_core.dart' as cc;
 import 'package:capsicum_core/capsicum_core.dart' hide Page;
 import 'package:flutter/material.dart';
@@ -1714,9 +1716,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   /// 再取得されるため、恒久的に消えるわけではない）。
   bool get _supportsCollections {
     if (ref.read(currentAdapterProvider) is! CollectionsSupport) return false;
-    final version = ref.read(currentAccountProvider)?.softwareVersion;
-    if (version == null) return false;
-    return ServerVersionChecker.isAtLeast(version, '4.6.0');
+    final account = ref.read(currentAccountProvider);
+    if (account == null) return false;
+    return ServerVersionChecker.supportsCollections(
+      softwareName: knownSoftwareName(account.key.host),
+      version: account.softwareVersion,
+    );
   }
 
   /// アバター/ヘッダー画像をメディアビューアで全画面表示する。alt テキスト
