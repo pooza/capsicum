@@ -140,6 +140,81 @@ void main() {
       expect(find.text('編集の画面:新規'), findsOneWidget);
     });
 
+    group('⚠ 作成を終えて戻ったとき', () {
+      /// 管理画面と、結果を返して閉じるだけの編集画面を開く。
+      Future<void> pumpWithEdit(WidgetTester tester, bool saved) async {
+        final router = GoRouter(
+          routes: [
+            GoRoute(
+              path: '/',
+              builder: (_, _) => const ChannelManagementScreen(),
+            ),
+            GoRoute(
+              path: '/channels/edit',
+              builder: (context, _) => Scaffold(
+                body: TextButton(
+                  onPressed: () => context.pop(saved),
+                  child: const Text('閉じる'),
+                ),
+              ),
+            ),
+          ],
+        );
+        addTearDown(router.dispose);
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              accountManagerProvider.overrideWith(
+                () => _AccountNotifier(account()),
+              ),
+            ],
+            child: MaterialApp.router(routerConfig: router),
+          ),
+        );
+        await tester.pumpAndSettle();
+      }
+
+      Future<void> createAndReturn(WidgetTester tester) async {
+        await tester.tap(find.byTooltip('新規作成'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('閉じる'));
+        await tester.pumpAndSettle();
+      }
+
+      testWidgets('どのタブにいても「自分の」へ移り、作ったものが見える', (tester) async {
+        await pumpWithEdit(tester, true);
+        await tester.tap(find.widgetWithText(Tab, 'お気に入り'));
+        await tester.pumpAndSettle();
+        expect(find.text('お気に入りのチャンネルはありません'), findsOneWidget);
+
+        await createAndReturn(tester);
+
+        expect(find.text('自作'), findsOneWidget);
+      });
+
+      testWidgets('検索中でも検索をやめて「自分の」へ移る', (tester) async {
+        when(() => adapter.searchChannels('x')).thenAnswer((_) async => []);
+        await pumpWithEdit(tester, true);
+        await tester.enterText(find.byType(TextField), 'x');
+        await tester.testTextInput.receiveAction(TextInputAction.search);
+        await tester.pumpAndSettle();
+
+        await createAndReturn(tester);
+
+        expect(find.byType(TabBar), findsOneWidget);
+        expect(find.text('自作'), findsOneWidget);
+      });
+
+      testWidgets('保存せずに戻ったらタブを動かさない', (tester) async {
+        await pumpWithEdit(tester, false);
+
+        await createAndReturn(tester);
+
+        expect(find.text('プリキュア'), findsOneWidget);
+        expect(find.text('自作'), findsNothing);
+      });
+    });
+
     testWidgets('取得に失敗したら再試行できる', (tester) async {
       when(
         () => adapter.getFeaturedChannels(),

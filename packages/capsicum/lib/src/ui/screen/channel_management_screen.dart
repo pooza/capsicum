@@ -21,19 +21,29 @@ class ChannelManagementScreen extends ConsumerStatefulWidget {
 }
 
 class _ChannelManagementScreenState
-    extends ConsumerState<ChannelManagementScreen> {
+    extends ConsumerState<ChannelManagementScreen>
+    with SingleTickerProviderStateMixin {
   final _search = TextEditingController();
+  late final TabController _tabs = TabController(
+    length: ChannelListKind.values.length,
+    vsync: this,
+  );
   String _query = '';
 
   @override
   void dispose() {
+    _tabs.dispose();
     _search.dispose();
     super.dispose();
   }
 
   Future<void> _create() async {
     final saved = await context.push<bool>('/channels/edit');
-    if (saved == true && mounted) invalidateChannels(ref);
+    if (saved != true || !mounted) return;
+    invalidateChannels(ref);
+    // 作ったものが見えるタブへ移る。他のタブのままだと、作れていないように見える。
+    _clearSearch();
+    _tabs.animateTo(ChannelListKind.values.indexOf(ChannelListKind.owned));
   }
 
   void _clearSearch() {
@@ -43,70 +53,69 @@ class _ChannelManagementScreenState
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: ChannelListKind.values.length,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('チャンネル'),
-          backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.add),
-              tooltip: '新規作成',
-              onPressed: _create,
-            ),
-          ],
-        ),
-        body: BottomSafeArea(
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                child: TextField(
-                  controller: _search,
-                  textInputAction: TextInputAction.search,
-                  decoration: InputDecoration(
-                    hintText: 'チャンネルを検索',
-                    prefixIcon: const Icon(Icons.search),
-                    suffixIcon: _query.isEmpty
-                        ? null
-                        : IconButton(
-                            icon: const Icon(Icons.clear),
-                            tooltip: '検索をやめる',
-                            onPressed: _clearSearch,
-                          ),
-                  ),
-                  onSubmitted: (value) => setState(() => _query = value.trim()),
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('チャンネル'),
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.add),
+            tooltip: '新規作成',
+            onPressed: _create,
+          ),
+        ],
+      ),
+      body: BottomSafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              child: TextField(
+                controller: _search,
+                textInputAction: TextInputAction.search,
+                decoration: InputDecoration(
+                  hintText: 'チャンネルを検索',
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: _query.isEmpty
+                      ? null
+                      : IconButton(
+                          icon: const Icon(Icons.clear),
+                          tooltip: '検索をやめる',
+                          onPressed: _clearSearch,
+                        ),
                 ),
+                onSubmitted: (value) => setState(() => _query = value.trim()),
               ),
-              if (_query.isNotEmpty)
-                Expanded(
-                  child: _ChannelList(
-                    provider: channelSearchProvider(_query),
-                    emptyMessage: '見つかりませんでした',
-                  ),
-                )
-              else ...[
-                TabBar(
-                  tabs: [
+            ),
+            if (_query.isNotEmpty)
+              Expanded(
+                child: _ChannelList(
+                  provider: channelSearchProvider(_query),
+                  emptyMessage: '見つかりませんでした',
+                ),
+              )
+            else ...[
+              TabBar(
+                controller: _tabs,
+                tabs: [
+                  for (final kind in ChannelListKind.values)
+                    Tab(text: kind.label),
+                ],
+              ),
+              Expanded(
+                child: TabBarView(
+                  controller: _tabs,
+                  children: [
                     for (final kind in ChannelListKind.values)
-                      Tab(text: kind.label),
+                      _ChannelList(
+                        provider: channelListProvider(kind),
+                        emptyMessage: '${kind.label}のチャンネルはありません',
+                      ),
                   ],
                 ),
-                Expanded(
-                  child: TabBarView(
-                    children: [
-                      for (final kind in ChannelListKind.values)
-                        _ChannelList(
-                          provider: channelListProvider(kind),
-                          emptyMessage: '${kind.label}のチャンネルはありません',
-                        ),
-                    ],
-                  ),
-                ),
-              ],
+              ),
             ],
-          ),
+          ],
         ),
       ),
     );
