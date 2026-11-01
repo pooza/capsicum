@@ -24,12 +24,17 @@ import 'support/source_files.dart';
 /// 連携もできなかった。
 ///
 /// ⚠ 対象外: `main.dart`（共有インテント）と `splash_screen.dart`（起動時）は
-/// アプリの入口から開くので、ルートのスコープで正しい。
+/// アプリの入口から開くので、ルートのスコープで正しい。`share_account_screen.dart`
+/// （#1348）も共有インテントの続きで、選んだアカウントへ切り替えてから開く。
 void main() {
   final libDir = Directory('lib');
   final sources = sourceFiles(libDir.path);
 
-  const allowlist = ['lib/main.dart', 'src/ui/screen/splash_screen.dart'];
+  const allowlist = [
+    'lib/main.dart',
+    'src/ui/screen/splash_screen.dart',
+    'src/ui/screen/share_account_screen.dart',
+  ];
 
   // ⚠ 型引数は入れ子になる（`push<List<Attachment>>(`）。`<[^>]*>` だと最初の
   // `>` で切れて当たらない（歯の確認で実際に取りこぼした）。

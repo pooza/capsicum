@@ -75,6 +75,7 @@ import 'ui/screen/settings/settings_backup_screen.dart';
 import 'ui/screen/settings/supporter_screen.dart';
 import 'ui/screen/settings/touch_action_settings_screen.dart';
 import 'ui/screen/settings_screen.dart';
+import 'ui/screen/share_account_screen.dart';
 import 'ui/screen/splash_screen.dart';
 import 'ui/screen/templates_manage_screen.dart';
 import 'ui/screen/unified_notification_screen.dart';
@@ -450,6 +451,21 @@ final routerProvider = Provider<GoRouter>((ref) {
                 ),
               );
             },
+          ),
+          // 共有されたナウプレを投稿するアカウントを選ぶ (#1348)。
+          GoRoute(
+            path: '/share/account',
+            // ⚠ `extra` はプロセスをまたいで残らない (#1083-F)。共有の中身が
+            // 無ければ選ぶものが無いので、ホームへ戻す。
+            redirect: (context, state) {
+              final extra = state.extra;
+              return extra is Map && extra['sharedText'] is String
+                  ? null
+                  : '/home';
+            },
+            builder: (context, state) => ShareAccountScreen(
+              sharedText: (state.extra as Map?)?['sharedText'] as String? ?? '',
+            ),
           ),
           // Play を探す・自分の Play を削除する (#1351)。
           GoRoute(
