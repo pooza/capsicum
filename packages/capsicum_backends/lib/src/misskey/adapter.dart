@@ -1829,14 +1829,31 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   /// `channels/search` と `owned` の既定は 5 件なので、上限を明示する。
   static const _channelListLimit = 100;
 
-  @override
-  Future<List<Channel>> searchChannels(String query) async {
-    final data = await client.listChannels(
-      'search',
-      params: {'query': query, 'limit': _channelListLimit},
-    );
-    return data.map(_channelFromJson).toList();
+  /// 1 回の表示で追うページの上限。広い語の検索でサーバーを叩き続けない。
+  static const _channelListMaxPages = 10;
+
+  /// `untilId` で最後まで（[_channelListMaxPages] まで）読む (#1353)。
+  Future<List<Channel>> _pagedChannels(
+    String endpoint,
+    Map<String, dynamic> params,
+  ) async {
+    final channels = <Channel>[];
+    String? untilId;
+    for (var page = 0; page < _channelListMaxPages; page++) {
+      final data = await client.listChannels(
+        endpoint,
+        params: {...params, 'limit': _channelListLimit, 'untilId': ?untilId},
+      );
+      channels.addAll(data.map(_channelFromJson));
+      if (data.length < _channelListLimit) break;
+      untilId = data.last['id'] as String;
+    }
+    return channels;
   }
+
+  @override
+  Future<List<Channel>> searchChannels(String query) =>
+      _pagedChannels('search', {'query': query});
 
   @override
   Future<List<Channel>> getFeaturedChannels() async {
@@ -1853,13 +1870,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<List<Channel>> getOwnedChannels() async {
-    final data = await client.listChannels(
-      'owned',
-      params: {'limit': _channelListLimit},
-    );
-    return data.map(_channelFromJson).toList();
-  }
+  Future<List<Channel>> getOwnedChannels() => _pagedChannels('owned', const {});
 
   @override
   Future<void> followChannel(String channelId) =>
@@ -1886,18 +1897,12 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       client.channelAction('mute/delete', channelId);
 
   @override
-  Future<Channel> createChannel(ChannelDraft draft) async {
-    return _channelFromJson(
-      await client.createChannel(_channelDraftParams(draft)),
-    );
-  }
+  Future<void> createChannel(ChannelDraft draft) =>
+      client.createChannel(_channelDraftParams(draft));
 
   @override
-  Future<Channel> updateChannel(String channelId, ChannelDraft draft) async {
-    return _channelFromJson(
-      await client.updateChannel(channelId, _channelDraftParams(draft)),
-    );
-  }
+  Future<void> updateChannel(String channelId, ChannelDraft draft) =>
+      client.updateChannel(channelId, _channelDraftParams(draft));
 
   @override
   Future<List<Post>> getChannelTimeline(

@@ -50,8 +50,10 @@ const _darkSurfaceVariantKey = 'dark_surface_variant';
 /// 通知を束ねて出すか (#1048)。
 const _notificationGroupingKey = 'notification_grouping';
 
-/// 通知一覧に出さない種別 (#1042)。`NotificationType` の `name` を並べる。
+/// 専用アプリで開かないサービス (#1345)。
 const _disabledPreferredAppsKey = 'disabled_preferred_apps';
+
+/// 通知一覧に出さない種別 (#1042)。`NotificationType` の `name` を並べる。
 const _notificationExcludedTypesKey = 'notification_excluded_types';
 
 /// デッキのカラム列 (#1091)。バックアップに含める（#1101・`settings_backup.dart`

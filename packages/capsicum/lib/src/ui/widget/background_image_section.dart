@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/platform_providers.dart';
 import '../../provider/preferences_provider.dart';
+import '../../service/sentry_op_failure.dart';
+import '../util/op_error.dart';
 import 'section_header.dart';
 
 /// 背景画像の設定欄。アカウント設定（アカウントごと）と表示設定（デッキ・#1174）
@@ -18,6 +20,28 @@ class BackgroundImageSection extends ConsumerWidget {
 
   final String storageKey;
   final String title;
+
+  /// ⚠ 選択やコピーの失敗を黙らせない (#1353)。押しても何も起きないように見える。
+  Future<void> _pickImage(BuildContext context, WidgetRef ref) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final file = await ref.read(mediaPickerProvider).pickImage();
+      if (file == null) return;
+      await ref
+          .read(backgroundImageProvider(storageKey).notifier)
+          .setImage(file.path);
+    } catch (e, st) {
+      reportOpFailure(
+        tagKey: 'background_image.op',
+        operation: 'pick',
+        error: e,
+        stackTrace: st,
+      );
+      messenger.showSnackBar(
+        SnackBar(content: Text('背景画像を設定できませんでした\n${summarizeOpError(e)}')),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -77,16 +101,7 @@ class BackgroundImageSection extends ConsumerWidget {
               Row(
                 children: [
                   ElevatedButton.icon(
-                    onPressed: () async {
-                      final file = await ref
-                          .read(mediaPickerProvider)
-                          .pickImage();
-                      if (file != null) {
-                        await ref
-                            .read(backgroundImageProvider(storageKey).notifier)
-                            .setImage(file.path);
-                      }
-                    },
+                    onPressed: () => _pickImage(context, ref),
                     icon: const Icon(Icons.image, size: 16),
                     label: Text(imagePath != null ? '変更' : '画像を選択'),
                   ),

@@ -66,33 +66,53 @@ Future<void> showChannelActions(
 
   if (action == _ChannelAction.edit) {
     final saved = await context.push<bool>('/channels/edit', extra: channel);
-    if (saved == true && context.mounted) invalidateChannels(ref);
+    // ⚠ 編集の間に行が破棄されていることがあるので、下の操作と同じくコンテナへ当てる。
+    if (saved == true) invalidateChannelsIn(container);
     return;
   }
 
-  final (operation, done, failed) = switch (action) {
+  final id = channel.id;
+  final (operation, run, done, failed) = switch (action) {
     _ChannelAction.follow =>
       channel.isFollowing
-          ? ('unfollow', 'フォローを解除しました', 'フォロー解除に失敗しました')
-          : ('follow', 'フォローしました', 'フォローに失敗しました'),
+          ? (
+              'unfollow',
+              () => support.unfollowChannel(id),
+              'フォローを解除しました',
+              'フォロー解除に失敗しました',
+            )
+          : (
+              'follow',
+              () => support.followChannel(id),
+              'フォローしました',
+              'フォローに失敗しました',
+            ),
     _ChannelAction.favorite =>
       channel.isFavorited
-          ? ('unfavorite', 'お気に入りから外しました', 'お気に入りから外せませんでした')
-          : ('favorite', 'お気に入りに追加しました', 'お気に入りに追加できませんでした'),
+          ? (
+              'unfavorite',
+              () => support.unfavoriteChannel(id),
+              'お気に入りから外しました',
+              'お気に入りから外せませんでした',
+            )
+          : (
+              'favorite',
+              () => support.favoriteChannel(id),
+              'お気に入りに追加しました',
+              'お気に入りに追加できませんでした',
+            ),
     _ =>
       channel.isMuting
-          ? ('unmute', 'ミュートを解除しました', 'ミュート解除に失敗しました')
-          : ('mute', 'ミュートしました', 'ミュートに失敗しました'),
+          ? (
+              'unmute',
+              () => support.unmuteChannel(id),
+              'ミュートを解除しました',
+              'ミュート解除に失敗しました',
+            )
+          : ('mute', () => support.muteChannel(id), 'ミュートしました', 'ミュートに失敗しました'),
   };
   try {
-    await switch (operation) {
-      'follow' => support.followChannel(channel.id),
-      'unfollow' => support.unfollowChannel(channel.id),
-      'favorite' => support.favoriteChannel(channel.id),
-      'unfavorite' => support.unfavoriteChannel(channel.id),
-      'mute' => support.muteChannel(channel.id),
-      _ => support.unmuteChannel(channel.id),
-    };
+    await run();
   } catch (e, st) {
     reportOpFailure(
       tagKey: 'channel.op',

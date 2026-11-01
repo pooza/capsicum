@@ -1256,26 +1256,21 @@ class MisskeyClient {
   }
 
   /// POST /api/channels/create
-  Future<Map<String, dynamic>> createChannel(
-    Map<String, dynamic> params,
-  ) async {
-    final response = await dio.post(
-      '/api/channels/create',
-      data: createBody(params),
-    );
-    return response.data as Map<String, dynamic>;
+  ///
+  /// ⚠ 応答を読まない (#1353)。読むと、保存できたのに形の違いで失敗と出る。
+  Future<void> createChannel(Map<String, dynamic> params) async {
+    await dio.post('/api/channels/create', data: createBody(params));
   }
 
   /// POST /api/channels/update
-  Future<Map<String, dynamic>> updateChannel(
+  Future<void> updateChannel(
     String channelId,
     Map<String, dynamic> params,
   ) async {
-    final response = await dio.post(
+    await dio.post(
       '/api/channels/update',
       data: createBody({'channelId': channelId, ...params}),
     );
-    return response.data as Map<String, dynamic>;
   }
 
   /// POST /api/flash/featured

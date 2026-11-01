@@ -105,6 +105,20 @@ class _ChannelEditScreenState extends ConsumerState<ChannelEditScreen> {
       canPop: !_saving,
       child: Scaffold(
         appBar: AppBar(
+          // ⚠ [PopScope] が止めているので、押せるように見せない。
+          leading: _saving
+              ? const IconButton(
+                  onPressed: null,
+                  tooltip: '保存中は戻れません',
+                  icon: BackButtonIcon(),
+                )
+              : null,
+          bottom: _saving
+              ? const PreferredSize(
+                  preferredSize: Size.fromHeight(4),
+                  child: LinearProgressIndicator(),
+                )
+              : null,
           title: Text(_isNew ? 'チャンネルを作成' : 'チャンネルを編集'),
           backgroundColor: Theme.of(context).colorScheme.inversePrimary,
           actions: [

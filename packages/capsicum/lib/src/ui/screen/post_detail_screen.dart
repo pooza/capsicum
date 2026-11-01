@@ -324,9 +324,8 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen>
     required bool showJump,
   }) {
     final storageKey = ref.watch(currentAccountProvider)?.key.toStorageKey();
-    // ⚠ デッキのカラムとして埋め込むときは背景画像を敷かない (#1250)。デッキは
-    // どのカラムにも敷いておらず、ここだけ出ていた。デッキでの見せ方は #1174 で
-    // 保留中なので、決まるまでは「全カラムで出さない」に揃える。
+    // ⚠ デッキのカラムとして埋め込むときは背景画像を敷かない (#1250)。デッキの
+    // 背景は画面全体に 1 枚で（#1174）、カラムごとには敷かない。
     final bgPath = storageKey != null && !widget.embedded
         ? ref.watch(backgroundImageProvider(storageKey))
         : null;
