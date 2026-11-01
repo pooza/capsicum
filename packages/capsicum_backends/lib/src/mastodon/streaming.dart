@@ -8,6 +8,19 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import '../reconnecting_socket.dart';
 import 'extensions.dart';
 
+/// サーバーが購読を断った (#1353)。観測へ流すための例外で、投げない。
+///
+/// ⚠ 応答の `error` の文面は載せない（サーバーの書いた文字列）。status だけで
+/// 切り分けられる。
+class StreamSubscriptionRefused implements Exception {
+  const StreamSubscriptionRefused(this.status);
+
+  final int? status;
+
+  @override
+  String toString() => 'StreamSubscriptionRefused: status=${status ?? '-'}';
+}
+
 /// 購読する `stream` と、必要な追加パラメータ。対応しないタブは null (#1098)。
 ///
 /// ⚠ **Mastodon の `hashtag` ストリームはタグを 1 つしか取らない。**capsicum の
@@ -121,6 +134,13 @@ class MastodonStreaming with ReconnectTuning, StreamConnectionStateReporter {
   static const _seenIdsLimit = 500;
   bool _disposed = false;
 
+  /// この接続に載せた購読の数と、そのうち断られた数 (#1353)。
+  int _subscriptionCount = 1;
+  int _refusedInConnection = 0;
+
+  /// 観測へ流した応答の status。
+  final _reportedRefusals = <int?>{};
+
   @override
   bool get isStreamDisposed => _disposed;
 
@@ -152,6 +172,7 @@ class MastodonStreaming with ReconnectTuning, StreamConnectionStateReporter {
     final subscriptions = target == null
         ? mastodonHashtagSubscriptions(tab)
         : null;
+    _subscriptionCount = subscriptions?.length ?? 1;
     final uri = Uri(
       scheme: 'wss',
       host: host,
@@ -182,12 +203,44 @@ class MastodonStreaming with ReconnectTuning, StreamConnectionStateReporter {
       onConnectionEvent: reportConnectionEvent,
       onConnecting: () {
         _seenIds.clear();
+        _refusedInConnection = 0;
         notifyConnectionState(StreamConnectionState.connecting);
       },
       onClosed: onDisconnect,
       channelFactory: channelFactory,
     )..connect();
     return _controller!.stream;
+  }
+
+  /// 購読を断られた (#1353)。
+  ///
+  /// - 5xx（と status の無い応答）: サーバー側の一時的な失敗なので、接続を閉じて
+  ///   通常の再接続に乗せる
+  /// - それ以外（4xx）: 張り直しても同じなので [StreamConnectionState.rejected]
+  ///
+  /// ⚠ 複数タグでは、1 本断られても残りのタグは流れている。全部断られるまで
+  /// カラムを赤くしない。応答にはどのタグかが無いので、数で見る。
+  void _onSubscriptionRefused(Object? rawStatus) {
+    final status = rawStatus is num ? rawStatus.toInt() : null;
+    // ⚠ 断られるたびに送らない。同じ接続が再接続のたびに同じ応答を受ける。
+    if (_reportedRefusals.add(status)) {
+      try {
+        onStreamError?.call(
+          StreamSubscriptionRefused(status),
+          StackTrace.current,
+        );
+      } catch (_) {
+        // 観測経路の失敗で本筋を止めない。
+      }
+    }
+    if (status == null || status >= 500) {
+      _socket?.closeAndRetry();
+      return;
+    }
+    _refusedInConnection++;
+    if (_refusedInConnection >= _subscriptionCount) {
+      notifyConnectionState(StreamConnectionState.rejected);
+    }
   }
 
   void _onMessage(dynamic message) {
@@ -198,7 +251,7 @@ class MastodonStreaming with ReconnectTuning, StreamConnectionStateReporter {
       // 送るだけ。握手は通っているので、見ないと `live` のまま何も流れない
       // (#1343)。
       if (json['error'] != null && json['event'] == null) {
-        notifyConnectionState(StreamConnectionState.exhausted);
+        _onSubscriptionRefused(json['status']);
         return;
       }
       if (json['event'] != 'update') return;

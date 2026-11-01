@@ -145,6 +145,13 @@ void main() {
       }
     });
 
+    test('⚠⚠ アカウントを横断するカラム（すべてのお知らせ）にも出さない (#1347)', () {
+      expect(
+        canComposeFromColumn(const AllAnnouncementsTab(), _PlainAdapter()),
+        isFalse,
+      );
+    });
+
     test('⚠⚠ アカウントを横断するカラム（すべての通知）には出さない (#1255)', () {
       expect(
         canComposeFromColumn(const AllNotificationsTab(), _PlainAdapter()),

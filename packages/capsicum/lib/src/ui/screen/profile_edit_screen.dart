@@ -15,6 +15,7 @@ import '../../provider/server_config_provider.dart';
 import '../../service/sentry_op_failure.dart';
 import '../../util/upstream_error_message.dart';
 import '../util/compose_text_style.dart';
+import '../util/provider_scope_carrier.dart';
 import '../widget/bottom_safe_area.dart';
 
 class ProfileEditScreen extends ConsumerStatefulWidget {
@@ -265,7 +266,9 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
         headerDescription: _changedAlt(_bannerAltController, _loadedBannerAlt),
       );
 
-      accountManager.updateCurrentUser(updatedUser);
+      if (account != null) {
+        accountManager.updateUserOf(account.key, updatedUser);
+      }
 
       if (mounted) context.pop(updatedUser);
     } on ProfileUpdatePartialException catch (e) {
@@ -275,7 +278,9 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
       // ⚠ ここも同じ理由で掴んでおいたものを使う (#1064)。部分成功
       // （本文は保存済み・画像削除だけ失敗）は**保存済み分の反映が要る**ので、
       // ここで投げるとローカルだけ古いまま残る。
-      accountManager.updateCurrentUser(e.user);
+      if (account != null) {
+        accountManager.updateUserOf(account.key, e.user);
+      }
       reportOpFailure(
         tagKey: 'profile.op',
         operation: 'save_partial',
@@ -450,6 +455,19 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
                     _buildFieldsSection(),
                     const SizedBox(height: 24),
                     _buildPrivacySection(),
+                    if (ref.watch(currentAdapterProvider)
+                        is AvatarDecorationSupport)
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.auto_awesome_outlined),
+                        title: const Text('アイコンデコレーション'),
+                        trailing: const Icon(Icons.chevron_right),
+                        // ⚠ 開いた側のアカウントのスコープを運ぶ (#1150)。
+                        onTap: () => context.push(
+                          '/profile/decorations',
+                          extra: extraWithProviderScope(context),
+                        ),
+                      ),
                   ],
                 ),
               ),

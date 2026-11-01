@@ -36,6 +36,7 @@ import 'src/service/fcm_service.dart';
 import 'src/service/launch_at_login_service.dart';
 import 'src/service/notification_init.dart';
 import 'src/service/notification_label_cache.dart';
+import 'src/service/post_account_idle_tracker.dart';
 import 'src/service/push_diagnostic_codes.dart';
 import 'src/service/push_failure_recorder.dart';
 import 'src/service/push_key_store.dart';
@@ -45,6 +46,7 @@ import 'src/service/share_intent_service.dart';
 import 'src/service/timeline_cache.dart';
 import 'src/service/window_state_service.dart';
 import 'src/service/wns_service.dart';
+import 'src/ui/screen/share_account_screen.dart';
 import 'src/ui/util/deck_notification_fallback.dart';
 import 'src/util/action_labels.dart';
 import 'src/util/exception_scrub.dart';
@@ -1431,6 +1433,8 @@ class _CapsicumAppState extends ConsumerState<CapsicumApp>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // 間が空いてから投稿するときの確認 (#1306)。
+    postAccountIdleTracker.start();
     // desktop 3 OS のみ、WebSocket 通知ストリーミング → OS ローカル通知の
     // ディスパッチャを常駐起動する (#569 / #675)。read で provider を alive に
     // して accountManagerProvider の listen（全ログイン垢の並列購読）を維持する。
@@ -1493,14 +1497,18 @@ class _CapsicumAppState extends ConsumerState<CapsicumApp>
     if (context == null) return;
     final router = GoRouter.of(context);
     final extra = {'sharedText': sharedText};
+    // アカウントが 2 つ以上なら、投稿フォームの前に選ばせる (#1348)。
+    final destination = shareDestination(
+      ref.read(accountManagerProvider).accounts.length,
+    );
     // ⚠ ホームとデッキの上には積む。`go` で置き換えると、デッキを開いていた
     // ときに /deck ごと消え、投稿の後もタブ表示に落ちる (#1319)。積んでおけば
     // 投稿フォームは閉じる先を持つので、投稿の後はデッキへ戻る。判定は
     // 通知タップの経路と同じ [_canPushOver]。
     if (_canPushOver(router.state.matchedLocation)) {
-      router.push('/compose', extra: extra);
+      router.push(destination, extra: extra);
     } else {
-      router.go('/compose', extra: extra);
+      router.go(destination, extra: extra);
     }
   }
 

@@ -460,6 +460,12 @@ class _DeckColumnCandidatesState extends ConsumerState<_DeckColumnCandidates> {
               .any((c) => c.tab is AllNotificationsTab))
         const AllNotificationsTab(),
       const AnnouncementsTab(),
+      // すべてのお知らせ (#1347)。条件は「すべての通知」と同じ。
+      if (ref.watch(accountManagerProvider).accounts.length > 1 &&
+          !ref
+              .watch(deckColumnsProvider)
+              .any((c) => c.tab is AllAnnouncementsTab))
+        const AllAnnouncementsTab(),
       // 検索 (#1216・決定済み事項 9-2-2)。⚠ **荷物を持たないので候補に出せる** ——
       // 語は実行時に入力する道具で、`AllNotificationsTab` と同じ性質。
       // ⚠⚠ **ここから足すと重複できる**（`add` は 6-2 のまま重複を許す）ので、

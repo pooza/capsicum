@@ -11,10 +11,12 @@ import '../../provider/entitlement_status_provider.dart';
 import '../../provider/platform_providers.dart';
 import '../../service/entitlement_notice_service.dart';
 import '../../service/push_registration_service.dart';
+import '../../service/sentry_user_tags.dart';
 import '../../util/exception_scrub.dart';
 import '../../util/startup_trace.dart';
 import '../util/deck_notification_fallback.dart';
 import 'eula_screen.dart';
+import 'share_account_screen.dart';
 
 class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
@@ -68,6 +70,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
     // restoreSessions() が完走した。通知タップ routing が accounts の
     // インクリメンタル更新と race しないよう、完了 signal を立てる。
     ref.read(sessionsRestoredProvider.notifier).state = true;
+    ref.read(sentryUserTagsProvider);
 
     // Firebase 初期化を待ってからプッシュ通知登録（ベストエフォート）。
     // 起動時点のアカウント一覧をクロージャーで固定すると、Firebase 初期化中
@@ -140,7 +143,8 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
     final shared = pendingSharedText;
     if (shared != null && hasAccount) {
       pendingSharedText = null;
-      final nextRoute = '/compose';
+      // アカウントが 2 つ以上なら、投稿フォームの前に選ばせる (#1348)。
+      final nextRoute = shareDestination(accountState.accounts.length);
       final extra = <String, dynamic>{'sharedText': shared};
       if (!eulaAccepted) {
         // EULA must be accepted first; shared text is lost in this edge case.

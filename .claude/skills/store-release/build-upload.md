@@ -150,6 +150,8 @@ cd ..
 > ⚠ 次のビルドでアーカイブが上書きされると取り戻せない。⚠ 以前は失敗が警告 1 行で流れるだけで、
 > `sentry-cli` は対象が無くても 0 で終わるので、「上げたつもり」が見分けられなかった。
 
+> ⚠️ **`fastlane beta` が `Failed to create URL for 'CDUploaderStateInfoResumeFilePath'` で exit 1 になっても、上がっていることがある**（2026-10-31 の v2.8.0・Xcode 27.2 + fastlane 2.232.2 で iOS / macOS とも）。altool が ERROR 行を 1 つ出したうえで `UPLOAD SUCCEEDED` を返し、fastlane がその ERROR 行を失敗と読む。⚠ **`[altool]` の行に `UPLOAD SUCCEEDED` があるかで判定し、作り直さない。**`.claude/scripts/asc-status.rb builds` に出るまで数分待つ。やり直しても同じエラーになる（再現した）。
+
 > ⚠️ **`fastlane beta` は「アップロード完了」と「処理待ちの終了」を分けて扱うこと。**
 > `Successfully uploaded the new binary to App Store Connect` が出た時点でバイナリは
 > ASC に渡っており、以降の `Waiting for the build to show up in the build list` は

@@ -134,6 +134,7 @@ bool misskeyRejectedExcludeTypes(Object? body) {
 class MisskeyAdapter extends DecentralizedBackendAdapter
     with
         AchievementSupport,
+        AvatarDecorationSupport,
         BookmarkSupport,
         ThreadMuteSupport,
         RepostMuteSupport,
@@ -245,6 +246,8 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     'read:flash',
     'read:flash-likes',
     'write:flash-likes',
+    // 自分の Play の削除 (#1351)。旧トークンは 403 で、再ログインを案内する。
+    'write:flash',
     'read:reactions',
     'write:reactions',
     'write:report-abuse',
@@ -1829,14 +1832,31 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   /// `channels/search` と `owned` の既定は 5 件なので、上限を明示する。
   static const _channelListLimit = 100;
 
-  @override
-  Future<List<Channel>> searchChannels(String query) async {
-    final data = await client.listChannels(
-      'search',
-      params: {'query': query, 'limit': _channelListLimit},
-    );
-    return data.map(_channelFromJson).toList();
+  /// 1 回の表示で追うページの上限。広い語の検索でサーバーを叩き続けない。
+  static const _channelListMaxPages = 10;
+
+  /// `untilId` で最後まで（[_channelListMaxPages] まで）読む (#1353)。
+  Future<List<Channel>> _pagedChannels(
+    String endpoint,
+    Map<String, dynamic> params,
+  ) async {
+    final channels = <Channel>[];
+    String? untilId;
+    for (var page = 0; page < _channelListMaxPages; page++) {
+      final data = await client.listChannels(
+        endpoint,
+        params: {...params, 'limit': _channelListLimit, 'untilId': ?untilId},
+      );
+      channels.addAll(data.map(_channelFromJson));
+      if (data.length < _channelListLimit) break;
+      untilId = data.last['id'] as String;
+    }
+    return channels;
   }
+
+  @override
+  Future<List<Channel>> searchChannels(String query) =>
+      _pagedChannels('search', {'query': query});
 
   @override
   Future<List<Channel>> getFeaturedChannels() async {
@@ -1853,13 +1873,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<List<Channel>> getOwnedChannels() async {
-    final data = await client.listChannels(
-      'owned',
-      params: {'limit': _channelListLimit},
-    );
-    return data.map(_channelFromJson).toList();
-  }
+  Future<List<Channel>> getOwnedChannels() => _pagedChannels('owned', const {});
 
   @override
   Future<void> followChannel(String channelId) =>
@@ -1886,18 +1900,12 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       client.channelAction('mute/delete', channelId);
 
   @override
-  Future<Channel> createChannel(ChannelDraft draft) async {
-    return _channelFromJson(
-      await client.createChannel(_channelDraftParams(draft)),
-    );
-  }
+  Future<void> createChannel(ChannelDraft draft) =>
+      client.createChannel(_channelDraftParams(draft));
 
   @override
-  Future<Channel> updateChannel(String channelId, ChannelDraft draft) async {
-    return _channelFromJson(
-      await client.updateChannel(channelId, _channelDraftParams(draft)),
-    );
-  }
+  Future<void> updateChannel(String channelId, ChannelDraft draft) =>
+      client.updateChannel(channelId, _channelDraftParams(draft));
 
   @override
   Future<List<Post>> getChannelTimeline(
@@ -1962,6 +1970,20 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     );
     return data.map(_mapFlash).toList();
   }
+
+  @override
+  Future<List<Flash>> searchFlashes(String text, {TimelineQuery? query}) async {
+    final data = await client.searchFlashes(
+      text,
+      sinceId: query?.sinceId,
+      untilId: query?.maxId,
+      limit: query?.limit,
+    );
+    return data.map(_mapFlash).toList();
+  }
+
+  @override
+  Future<void> deleteFlash(String flashId) => client.deleteFlash(flashId);
 
   @override
   Future<List<LikedFlashEntry>> getLikedFlashes({TimelineQuery? query}) async {
@@ -2471,6 +2493,81 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     );
     return user.toCapsicum(host, adminRoleIds: _adminRoleIds);
   }
+
+  // AvatarDecorationSupport
+
+  @override
+  Future<List<AvatarDecorationOption>> getAvatarDecorationOptions() async {
+    final data = await client.getAvatarDecorations();
+    return data
+        .map(
+          (d) => AvatarDecorationOption(
+            id: d['id'] as String? ?? '',
+            name: d['name'] as String? ?? '',
+            description: d['description'] as String?,
+            url: d['url'] as String? ?? '',
+          ),
+        )
+        .where((d) => d.id.isNotEmpty && d.url.isNotEmpty)
+        .toList();
+  }
+
+  /// ⚠⚠ **手元の値ではなく、サーバーの今の値から組み立てる。**配列ごと置き換わる
+  /// ので、手元が古いと、モロヘイヤのタグセット連動（#24 / #219）が付けたものや
+  /// Web で変えたものを消してしまう。
+  @override
+  Future<User> attachAvatarDecoration(String id) async {
+    final me = (await client.getI()).toCapsicum(
+      host,
+      adminRoleIds: _adminRoleIds,
+    );
+    final current = me.avatarDecorations;
+    if (current.any((d) => d.id == id)) return me;
+    final limit = await client.getAvatarDecorationLimit();
+    final List<AvatarDecoration> kept;
+    if (limit != null && current.length >= limit) {
+      // ⚠ 1 つだけのサーバーでは、外してから付ける手間を掛けさせない。
+      if (limit != 1) throw AvatarDecorationLimitReached(limit);
+      kept = const [];
+    } else {
+      kept = current;
+    }
+    final user = await client.updateI(
+      avatarDecorations: [
+        ...kept.map(_decorationParams),
+        {'id': id},
+      ],
+    );
+    final updated = user.toCapsicum(host, adminRoleIds: _adminRoleIds);
+    // ⚠ 権限のないものは、エラーにならず黙って落とされる。
+    if (!updated.avatarDecorations.any((d) => d.id == id)) {
+      throw const AvatarDecorationRejected();
+    }
+    return updated;
+  }
+
+  @override
+  Future<User> detachAvatarDecoration(String id) async {
+    final current = (await client.getI())
+        .toCapsicum(host, adminRoleIds: _adminRoleIds)
+        .avatarDecorations;
+    final user = await client.updateI(
+      avatarDecorations: current
+          .where((d) => d.id != id)
+          .map(_decorationParams)
+          .toList(),
+    );
+    return user.toCapsicum(host, adminRoleIds: _adminRoleIds);
+  }
+
+  /// ⚠ 省略した値は既定に戻るので、今の調整値を必ず添える。
+  Map<String, Object> _decorationParams(AvatarDecoration d) => {
+    'id': d.id,
+    'angle': d.angle,
+    'flipH': d.flipH,
+    'offsetX': d.offsetX,
+    'offsetY': d.offsetY,
+  };
 
   // ReportSupport
 

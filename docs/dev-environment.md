@@ -10,7 +10,7 @@ v1.24（[CLAUDE.md](CLAUDE.md#デスクトップ対応) のデスクトップ対
 
 ## Flutter SDK のバージョン固定
 
-**全開発機・CI で同一の Flutter stable 版を使う**（現在 **3.47.7**）。版が揃っていないと `flutter pub get` のたびに `pubspec.lock` が書き換わり（SDK 同梱の `meta` / `test` / `test_api` / `test_core`）、端末間で ping-pong する（[#836](https://github.com/pooza/capsicum/issues/836)）。
+**全開発機・CI で同一の Flutter stable 版を使う**（現在 **3.47.9**）。版が揃っていないと `flutter pub get` のたびに `pubspec.lock` が書き換わり（SDK 同梱の `meta` / `test` / `test_api` / `test_core`）、端末間で ping-pong する（[#836](https://github.com/pooza/capsicum/issues/836)）。
 
 - CI 側の正本は `.github/workflows/` の `flutter-version`（analyze.yml / linux-release.yml / windows-release.yml の 3 箇所。**必ず 3 つ同時に更新する**）
 - 開発機は Flutter SDK の clone で `git checkout <version>` して揃える
@@ -23,7 +23,7 @@ v1.24（[CLAUDE.md](CLAUDE.md#デスクトップ対応) のデスクトップ対
 ```sh
 cd <Flutter SDK の clone>     # 例: /opt/flutter
 git fetch --tags origin
-git checkout <基準版>          # 例: 3.47.7
+git checkout <基準版>          # 例: 3.47.9
 flutter --version              # ここで bootstrap が走る
 
 cd <capsicum>

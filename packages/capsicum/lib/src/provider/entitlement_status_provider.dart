@@ -7,6 +7,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../service/entitlement_token_store.dart';
 import '../service/push_relay_client.dart';
+import '../service/sentry_user_tags.dart';
 import '../util/exception_scrub.dart';
 import 'account_manager_provider.dart';
 import 'supporter_status_provider.dart';
@@ -160,10 +161,16 @@ class EntitlementStatus {
   const EntitlementStatus({
     this.view = EntitlementView.absent,
     this.expiresAt,
+    this.relayStatus,
     this.isRefreshing = false,
   });
 
   final EntitlementView view;
+
+  /// relay の語彙のままの `status`。⚠ UI で比べない（[EntitlementView] の doc）。
+  /// [view] に畳むと `unverified` と `active` が区別できないので、Sentry のタグの
+  /// ために持つ (#1358)。
+  final String? relayStatus;
 
   /// relay が持っている期限（文字列のまま。⚠ 表示にしか使わない）。
   final String? expiresAt;
@@ -180,6 +187,7 @@ class EntitlementStatus {
     expiresAt: identical(expiresAt, _keep)
         ? this.expiresAt
         : expiresAt as String?,
+    relayStatus: relayStatus,
     isRefreshing: isRefreshing ?? this.isRefreshing,
   );
 
@@ -207,6 +215,9 @@ class EntitlementStatusNotifier extends Notifier<EntitlementStatus> {
     // ⚠ 接続できていなかったプリセットのアカウントが背景で復帰した回も、
     // ここを通る。
     ref.listen<bool>(hasPresetAccountProvider, (_, _) => refresh());
+    // ⚠ **外から `ref.listen` しない (#1358)。**読むだけで notifier が作られ、
+    // 起動のたびに relay への問い合わせが 1 本増える。
+    listenSelf((_, next) => writeRelayEntitlementTag(next));
     scheduleMicrotask(refresh);
     return const EntitlementStatus(isRefreshing: true);
   }
@@ -330,6 +341,7 @@ class EntitlementStatusNotifier extends Notifier<EntitlementStatus> {
     state = EntitlementStatus(
       view: entitlementViewOf(local.status),
       expiresAt: local.expiresAt,
+      relayStatus: local.status,
       isRefreshing: true,
     );
 
@@ -358,6 +370,7 @@ class EntitlementStatusNotifier extends Notifier<EntitlementStatus> {
           reason: json['reason'] as String?,
         ),
         expiresAt: fresh?.expiresAt ?? local.expiresAt,
+        relayStatus: fresh?.status ?? local.status,
       );
     } catch (e, st) {
       // ⚠⚠ **relay に届かなかっただけの回は送らない**（リリース前レビュー

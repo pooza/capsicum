@@ -79,6 +79,24 @@ class MisskeyClient {
     return MisskeyUser.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// POST /api/get-avatar-decorations (#1349)。認証不要。
+  Future<List<Map<String, dynamic>>> getAvatarDecorations() async {
+    final response = await dio.post(
+      '/api/get-avatar-decorations',
+      data: createBody(),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/i の `policies.avatarDecorationLimit` (#1349)。読めなければ null。
+  Future<int?> getAvatarDecorationLimit() async {
+    final response = await dio.post('/api/i', data: createBody());
+    final data = response.data as Map<String, dynamic>;
+    final policies = data['policies'];
+    if (policies is! Map) return null;
+    return (policies['avatarDecorationLimit'] as num?)?.toInt();
+  }
+
   /// POST /api/i の `unreadNotificationsCount` (#1207)。
   ///
   /// ⚠ [MisskeyUser] には載せていない（自分についてしか返らない値で、他人の
@@ -1256,26 +1274,21 @@ class MisskeyClient {
   }
 
   /// POST /api/channels/create
-  Future<Map<String, dynamic>> createChannel(
-    Map<String, dynamic> params,
-  ) async {
-    final response = await dio.post(
-      '/api/channels/create',
-      data: createBody(params),
-    );
-    return response.data as Map<String, dynamic>;
+  ///
+  /// ⚠ 応答を読まない (#1353)。読むと、保存できたのに形の違いで失敗と出る。
+  Future<void> createChannel(Map<String, dynamic> params) async {
+    await dio.post('/api/channels/create', data: createBody(params));
   }
 
   /// POST /api/channels/update
-  Future<Map<String, dynamic>> updateChannel(
+  Future<void> updateChannel(
     String channelId,
     Map<String, dynamic> params,
   ) async {
-    final response = await dio.post(
+    await dio.post(
       '/api/channels/update',
       data: createBody({'channelId': channelId, ...params}),
     );
-    return response.data as Map<String, dynamic>;
   }
 
   /// POST /api/flash/featured
@@ -1320,6 +1333,34 @@ class MisskeyClient {
       }),
     );
     return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/flash/search
+  ///
+  /// ⚠ `limit` の既定は 5 件なので、呼ぶ側が明示する (#1351)。
+  Future<List<Map<String, dynamic>>> searchFlashes(
+    String query, {
+    String? sinceId,
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/flash/search',
+      data: createBody({
+        'query': query,
+        'sinceId': ?sinceId,
+        'untilId': ?untilId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/flash/delete
+  ///
+  /// `write:flash` スコープが要る (#1351)。旧トークンは 403 になる。
+  Future<void> deleteFlash(String flashId) async {
+    await dio.post('/api/flash/delete', data: createBody({'flashId': flashId}));
   }
 
   /// POST /api/flash/my-likes
@@ -1750,8 +1791,11 @@ class MisskeyClient {
     bool? isExplorable,
     List<Object>? mutedWords,
     List<Object>? hardMutedWords,
+    List<Map<String, Object>>? avatarDecorations,
   }) async {
     final params = <String, dynamic>{
+      // ⚠ 配列ごと置き換わる (#1349)。空なら全部外す。
+      'avatarDecorations': ?avatarDecorations,
       'avatarId': ?avatarId,
       'bannerId': ?bannerId,
       'fields': ?fields,

@@ -14,6 +14,11 @@ enum StreamConnectionState {
   /// 再接続上限に到達して諦めた状態。pull-to-refresh / タブ再選択で復帰する。
   exhausted,
 
+  /// サーバーが購読を断った (#1353)。接続は生きているが、断られた理由が解消する
+  /// まで何も流れない。⚠ 再接続しても同じなので、自動では張り直さない。
+  /// pull-to-refresh / タブ再選択でやり直す。
+  rejected,
+
   /// ユーザーが設定でライブ更新を無効化している状態 (#854)。streaming を張らず、
   /// 更新は pull-to-refresh / タブ再選択の REST 取得のみ。エラーではない。
   disabled,

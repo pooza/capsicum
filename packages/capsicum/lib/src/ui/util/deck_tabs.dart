@@ -47,6 +47,7 @@ String deckOnlyTabLabel(
   ChatUserTab() => 'メッセージ',
   SearchTab() => '検索',
   AllNotificationsTab() => 'すべての通知',
+  AllAnnouncementsTab() => 'すべてのお知らせ',
 };
 
 /// カラムの種別のアイコン。カラム編集のシートと、下の帯 (#1241) が共有する。
@@ -76,6 +77,7 @@ IconData deckOnlyTabIcon(DeckOnlyTab tab) => switch (tab) {
   ChatUserTab() => Icons.chat_bubble_outline,
   SearchTab() => Icons.search,
   AllNotificationsTab() => Icons.notifications_active_outlined,
+  AllAnnouncementsTab() => Icons.campaign_outlined,
 };
 
 /// ユーザー一覧の取得。アダプタが対応していなければ null。

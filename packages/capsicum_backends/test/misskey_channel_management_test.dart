@@ -93,6 +93,27 @@ void main() {
       expect(http.calls.single.data, containsPair('limit', 100));
     });
 
+    // #1353: 1 ページ目で切れていた。
+    test('⚠ 検索と自分のチャンネルは untilId で続きを読む', () async {
+      final page = [
+        for (var i = 0; i < 100; i++) {..._channelJson, 'id': 'c$i'},
+      ];
+      final http = await install(page);
+
+      final found = await adapter.searchChannels('キュア');
+
+      expect(http.calls.first.data, isNot(contains('untilId')));
+      expect(http.calls[1].data, containsPair('untilId', 'c99'));
+      expect(http.calls[1].data, containsPair('query', 'キュア'));
+      // ⚠ 広い語で叩き続けないよう、ページ数に上限がある。
+      expect(http.calls, hasLength(10));
+      expect(found, hasLength(1000));
+
+      http.calls.clear();
+      await adapter.getOwnedChannels();
+      expect(http.calls[1].data, containsPair('untilId', 'c99'));
+    });
+
     test('⚠ 自分のチャンネルも limit を送る', () async {
       final http = await install([_channelJson]);
 
@@ -145,9 +166,8 @@ void main() {
     test('作成', () async {
       final http = await install(_channelJson);
 
-      final created = await adapter.createChannel(draft);
+      await adapter.createChannel(draft);
 
-      expect(created.id, 'c1');
       expect(http.calls.single.path, endsWith('/api/channels/create'));
       expect(http.calls.single.data, containsPair('name', '名前'));
       expect(http.calls.single.data, containsPair('description', '説明'));

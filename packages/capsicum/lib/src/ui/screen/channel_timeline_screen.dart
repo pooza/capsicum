@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../provider/channel_provider.dart';
+import '../../service/sentry_op_failure.dart';
+import '../util/op_error.dart';
 import '../util/scroll_thresholds.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/channel_actions_sheet.dart';
@@ -150,7 +152,7 @@ class _ChannelTimelineViewState extends ConsumerState<ChannelTimelineView> {
   }
 }
 
-class ChannelTimelineScreen extends ConsumerWidget {
+class ChannelTimelineScreen extends ConsumerStatefulWidget {
   final String channelId;
   final String? channelName;
 
@@ -160,24 +162,49 @@ class ChannelTimelineScreen extends ConsumerWidget {
     this.channelName,
   });
 
+  @override
+  ConsumerState<ChannelTimelineScreen> createState() =>
+      _ChannelTimelineScreenState();
+}
+
+class _ChannelTimelineScreenState extends ConsumerState<ChannelTimelineScreen> {
+  /// シートを開くまでの通信中。連打でシートが重ならないようにする (#1353)。
+  bool _openingActions = false;
+
   /// 操作のシートは、そのときの状態（フォロー中か等）を取ってから開く (#1051)。
-  Future<void> _openActions(BuildContext context, WidgetRef ref) async {
+  Future<void> _openActions() async {
+    if (_openingActions) return;
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! ChannelSupport) return;
     final messenger = ScaffoldMessenger.of(context);
+    final account = ref.read(currentAccountProvider);
+    _openingActions = true;
     final Channel channel;
     try {
-      channel = await (adapter as ChannelSupport).getChannel(channelId);
-    } catch (_) {
-      messenger.showSnackBar(const SnackBar(content: Text('チャンネルの取得に失敗しました')));
+      channel = await (adapter as ChannelSupport).getChannel(widget.channelId);
+    } catch (e, st) {
+      _openingActions = false;
+      reportOpFailure(
+        tagKey: 'channel.op',
+        operation: 'show',
+        error: e,
+        stackTrace: st,
+        account: account,
+      );
+      messenger.showSnackBar(
+        SnackBar(content: Text('チャンネルの取得に失敗しました\n${summarizeOpError(e)}')),
+      );
       return;
     }
-    if (!context.mounted) return;
+    _openingActions = false;
+    if (!mounted) return;
     await showChannelActions(context, ref, channel);
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
+    final channelId = widget.channelId;
+    final channelName = widget.channelName;
     return Scaffold(
       appBar: AppBar(
         title: Text(channelName ?? 'チャンネル'),
@@ -187,7 +214,7 @@ class ChannelTimelineScreen extends ConsumerWidget {
             IconButton(
               icon: const Icon(Icons.more_horiz),
               tooltip: 'チャンネルの操作',
-              onPressed: () => _openActions(context, ref),
+              onPressed: _openActions,
             ),
         ],
       ),

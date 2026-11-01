@@ -123,6 +123,7 @@ void main() {
       expect(payloadFreeDeckOnlyTabs(source).toSet(), {
         'SearchTab',
         'AllNotificationsTab',
+        'AllAnnouncementsTab',
       });
       expect(payloadDeckOnlyTabs(source), contains('ProfileTab'));
     });
@@ -217,9 +218,12 @@ $synthetic
     }
 
     test('#1216 の前は `SearchTab` が候補から漏れていた', () {
-      expect(missingFromCandidates(read(tabTypePath), before(sheetPath)), [
-        'SearchTab',
-      ]);
+      // ⚠ 種別の表は今のものなので、当時に無かった種別（#1347 の
+      // `AllAnnouncementsTab` など）も漏れとして出る。見るのは `SearchTab` だけ。
+      expect(
+        missingFromCandidates(read(tabTypePath), before(sheetPath)),
+        contains('SearchTab'),
+      );
     });
 
     test('⚠ `AllNotificationsTab` は当時も出ていた（退行していない側）', () {

@@ -27,7 +27,7 @@ bool canComposeFromColumn(TabType tab, DecentralizedBackendAdapter? adapter) {
     // この入口は「このカラムのアカウントで投稿する」もので、誰として投稿するかを
     // 見出しが見せている前提で置いてある（決定済み事項 10）。全アカウントの通知が
     // 混ざるカラムでは、見出しのアカウントは中身と対応しないので前提が崩れる。
-    AllNotificationsTab() => false,
+    AllNotificationsTab() || AllAnnouncementsTab() => false,
     // ⚠ 以下は「カラムのアカウントのもの」を出しているカラム。見出しのアカウント
     // と中身が対応するので、入口を出す（#1255 より前の挙動のまま）。
     TimelineTab() ||
