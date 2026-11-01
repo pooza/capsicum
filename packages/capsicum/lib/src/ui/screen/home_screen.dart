@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
 import '../../../main.dart' show appLaunchStopwatch;
+import '../../platform/platform_info.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/announcement_provider.dart';
 import '../../provider/deck_provider.dart';
@@ -20,6 +21,7 @@ import '../../provider/server_config_provider.dart';
 import '../../provider/tab_selection_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../../provider/update_check_provider.dart';
+import '../../service/foreground_ticker.dart';
 import '../../service/secure_storage_health.dart';
 import '../../service/update_checker.dart';
 import '../../url_helper.dart';
@@ -134,6 +136,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   /// 走り、`_throttleTimer` も止まらない）。initState で掴んでおくこと。
   StateController<Future<void> Function()?>? _refreshNotifier;
 
+  /// モバイルで前面に居続ける間、お知らせを取り直す (#910)。
+  ///
+  /// ⚠ デスクトップは streaming の announcement イベントで届くので持たない。
+  /// モバイルはそのために常時接続を張らない（電池に見合わない・#888）ので、
+  /// 間隔の長い REST 1 本で済ませる。お知らせは急ぎの情報ではない。
+  ForegroundTicker? _announcementTicker;
+  static const _announcementRefreshInterval = Duration(minutes: 15);
+
   @override
   void initState() {
     super.initState();
@@ -144,6 +154,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     // 既読位置をサーバーへ送っていた**（#25 の初版から）。
     ref.listenManual(homeMarkerSaverProvider, (_, _) {});
     WidgetsBinding.instance.addObserver(this);
+    if (!isDesktop) {
+      _announcementTicker = ForegroundTicker(
+        interval: _announcementRefreshInterval,
+        onTick: () =>
+            unawaited(ref.read(announcementProvider.notifier).refresh()),
+      )..start();
+    }
     // Shell 上のデスクトップメニュー (#834) の「タイムラインを更新」/ Ctrl+R が
     // 現在表示中のタイムラインをリフレッシュできるよう、自身の
     // [_refreshCurrentTimeline] を provider に登録する。dispose で解除する。
@@ -227,6 +244,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       });
     }
     WidgetsBinding.instance.removeObserver(this);
+    _announcementTicker?.stop();
     _itemPositionsListener.itemPositions.removeListener(_onPositionsChanged);
     _throttleTimer?.cancel();
     super.dispose();
@@ -234,6 +252,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState lifecycleState) {
+    _announcementTicker?.handleLifecycle(lifecycleState);
     // フォアグラウンド復帰時にサーバーメタデータの鮮度を取り直す。バージョン
     // 表示 (#774) とモロヘイヤ機能フラグ (#775) は起動時に一度きり probe され
     // 再起動まで古いままだった。いずれも TTL 内なら no-op。
@@ -247,8 +266,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           .read(accountManagerProvider.notifier)
           .refreshOfflineRestoresOnResume();
       // 背面に居た間に増えたお知らせを取り直す (#888)。以前はアカウントを切り
-      // 替えるまで反映されなかった。常駐タイマーは持たず、復帰・画面を開いた
-      // とき・streaming 受信の 3 つの機会で取り直す方針。
+      // 替えるまで反映されなかった。ほかの機会は、画面を開いたとき・streaming
+      // 受信と、モバイルで前面に居続ける間の [_announcementTicker] (#910)。
       unawaited(ref.read(announcementProvider.notifier).refresh());
       // カスタム絵文字が失敗状態のまま止まっていたら取り直す (#988)。provider
       // 内の自動再取得（数秒）を使い切っても戻らなかった分の受け皿。成功して
