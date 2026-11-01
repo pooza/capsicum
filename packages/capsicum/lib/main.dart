@@ -36,6 +36,7 @@ import 'src/service/fcm_service.dart';
 import 'src/service/launch_at_login_service.dart';
 import 'src/service/notification_init.dart';
 import 'src/service/notification_label_cache.dart';
+import 'src/service/post_account_idle_tracker.dart';
 import 'src/service/push_diagnostic_codes.dart';
 import 'src/service/push_failure_recorder.dart';
 import 'src/service/push_key_store.dart';
@@ -1432,6 +1433,8 @@ class _CapsicumAppState extends ConsumerState<CapsicumApp>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // 間が空いてから投稿するときの確認 (#1306)。
+    postAccountIdleTracker.start();
     // desktop 3 OS のみ、WebSocket 通知ストリーミング → OS ローカル通知の
     // ディスパッチャを常駐起動する (#569 / #675)。read で provider を alive に
     // して accountManagerProvider の listen（全ログイン垢の並列購読）を維持する。

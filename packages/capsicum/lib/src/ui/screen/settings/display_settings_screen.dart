@@ -176,6 +176,14 @@ class DisplaySettingsScreen extends ConsumerWidget {
                 .read(showStreamReconnectDetailProvider.notifier)
                 .setEnabled(value),
           ),
+          SwitchListTile(
+            title: const Text('デッキで間が空いたら投稿先を確かめる'),
+            subtitle: const Text('30 分以上操作がなかったあとの最初の投稿で、投稿先を確認します'),
+            value: ref.watch(confirmPostAccountAfterIdleProvider),
+            onChanged: (value) => ref
+                .read(confirmPostAccountAfterIdleProvider.notifier)
+                .setEnabled(value),
+          ),
           // デッキは画面全体に 1 枚 (#1174)。アカウントに依らないのでここに置く。
           // ⚠ 見出しつきなので末尾に。先頭だと後続までデッキの設定に見える。
           const BackgroundImageSection(

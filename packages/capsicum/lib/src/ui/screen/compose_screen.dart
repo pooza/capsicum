@@ -51,6 +51,7 @@ import '../util/hashtag_body.dart';
 import '../util/image_crop_geometry.dart';
 import '../util/livecure_snackbar.dart';
 import '../util/pop_or_go.dart';
+import '../util/post_account_confirm.dart';
 import '../util/post_scope_display.dart';
 import '../util/program_schedule_display.dart';
 import '../util/provider_scope_carrier.dart';
@@ -4273,6 +4274,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       );
       if (proceed != true) return;
     }
+
+    if (!mounted) return;
+    if (!await confirmPostAccountIfNeeded(context, ref) || !mounted) return;
 
     if (await ref.read(confirmBeforePostProvider.notifier).readPersisted()) {
       if (!mounted) return;

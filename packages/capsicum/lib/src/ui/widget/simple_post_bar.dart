@@ -12,6 +12,7 @@ import '../../provider/timeline_provider.dart';
 import '../../util/reentrancy_guard.dart';
 import '../util/hashtag_body.dart';
 import '../util/livecure_snackbar.dart';
+import '../util/post_account_confirm.dart';
 import '../util/provider_scope_carrier.dart';
 import '../util/shortcode_warning_controller.dart';
 import '../util/visible_timeline.dart';
@@ -153,6 +154,8 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar>
   Future<void> _submitInternal() async {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
+
+    if (!await confirmPostAccountIfNeeded(context, ref) || !mounted) return;
 
     if (await ref.read(confirmBeforePostProvider.notifier).readPersisted()) {
       if (!mounted) return;
