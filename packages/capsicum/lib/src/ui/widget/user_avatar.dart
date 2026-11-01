@@ -116,15 +116,26 @@ class UserAvatar extends ConsumerWidget {
       );
     }
 
-    // Misskey Web では left: (-50 + offsetX)% — 親要素(アバター)サイズに対する割合
-    final offsetX = decoration.offsetX / 100 * avatarSize;
-    final offsetY = decoration.offsetY / 100 * avatarSize;
+    final offset = decorationOffset(decoration, avatarSize);
 
     return Positioned(
-      left: padding + (avatarSize - decoSize) / 2 + offsetX,
-      top: padding + (avatarSize - decoSize) / 2 + offsetY,
+      left: padding + (avatarSize - decoSize) / 2 + offset.dx,
+      top: padding + (avatarSize - decoSize) / 2 + offset.dy,
       child: IgnorePointer(child: image),
     );
+  }
+
+  /// デコレーションの位置調整の移動量 (#1357)。
+  ///
+  /// Misskey Web は `translate: ${offsetX * 100}% ${offsetY * 100}%` で動かす。
+  /// 値は ±0.25 の割合で、`%` の基準はデコレーション自身の幅（アバターの 200%）。
+  @visibleForTesting
+  static Offset decorationOffset(
+    AvatarDecoration decoration,
+    double avatarSize,
+  ) {
+    final decoSize = avatarSize * 2.0;
+    return Offset(decoration.offsetX * decoSize, decoration.offsetY * decoSize);
   }
 }
 
