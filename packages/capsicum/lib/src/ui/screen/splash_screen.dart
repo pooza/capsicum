@@ -11,6 +11,7 @@ import '../../provider/entitlement_status_provider.dart';
 import '../../provider/platform_providers.dart';
 import '../../service/entitlement_notice_service.dart';
 import '../../service/push_registration_service.dart';
+import '../../service/sentry_user_tags.dart';
 import '../../util/exception_scrub.dart';
 import '../../util/startup_trace.dart';
 import '../util/deck_notification_fallback.dart';
@@ -68,6 +69,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
     // restoreSessions() が完走した。通知タップ routing が accounts の
     // インクリメンタル更新と race しないよう、完了 signal を立てる。
     ref.read(sessionsRestoredProvider.notifier).state = true;
+    ref.read(sentryUserTagsProvider);
 
     // Firebase 初期化を待ってからプッシュ通知登録（ベストエフォート）。
     // 起動時点のアカウント一覧をクロージャーで固定すると、Firebase 初期化中
