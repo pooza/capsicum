@@ -571,7 +571,8 @@ ProviderListenable<AsyncValue<TimelineState>>? deckLiveTimeline(
 bool deckColumnStreamStalled(TimelineState state) =>
     state.streamConnectionState != StreamConnectionState.disabled &&
     (state.streamReconnectExhausted ||
-        state.streamConnectionState == StreamConnectionState.exhausted);
+        state.streamConnectionState == StreamConnectionState.exhausted ||
+        state.streamConnectionState == StreamConnectionState.rejected);
 
 /// 止まったカラムの帯 (#1342)。テストから見つけるための目印。
 const deckStalledBannerKey = Key('deck_stalled_banner');
@@ -584,9 +585,16 @@ const deckStalledBannerKey = Key('deck_stalled_banner');
 /// 「再接続」は引っ張って更新と同じ。デスクトップでは引く操作がしにくいので、
 /// 押せる入口として置く。
 class DeckStalledBanner extends StatelessWidget {
-  const DeckStalledBanner({super.key, required this.onReconnect});
+  const DeckStalledBanner({
+    super.key,
+    required this.onReconnect,
+    this.state = StreamConnectionState.exhausted,
+  });
 
   final VoidCallback onReconnect;
+
+  /// 帯の文面を引く状態。断られたカラムに「再試行中」と出さないために見る (#1353)。
+  final StreamConnectionState state;
 
   @override
   Widget build(BuildContext context) {
@@ -608,10 +616,7 @@ class DeckStalledBanner extends StatelessWidget {
             Expanded(
               child: Text(
                 streamConnectionTooltip(
-                  streamConnectionDisplay(
-                    context,
-                    StreamConnectionState.exhausted,
-                  ).label,
+                  streamConnectionDisplay(context, state).label,
                 ),
                 style: style,
               ),
@@ -861,7 +866,14 @@ class _DeckTimelineBodyState extends ConsumerState<_DeckTimelineBody> {
             // 止まったカラムの帯 (#1342)。「再接続」はメニュー / `Ctrl+R` と同じく
             // 引っ張って更新の弧を通す。
             if (deckColumnStreamStalled(state))
-              DeckStalledBanner(onReconnect: _showRefresh),
+              DeckStalledBanner(
+                onReconnect: _showRefresh,
+                state:
+                    state.streamConnectionState ==
+                        StreamConnectionState.rejected
+                    ? StreamConnectionState.rejected
+                    : StreamConnectionState.exhausted,
+              ),
             if (state.pendingCount > 0 && widget.flushPending != null)
               TextButton(
                 onPressed: () => widget.flushPending!(ref),
