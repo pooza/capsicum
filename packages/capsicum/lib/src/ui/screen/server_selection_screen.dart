@@ -35,9 +35,13 @@ class ServerSelectionScreen extends ConsumerStatefulWidget {
 }
 
 class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
-  late final _hostController = TextEditingController(
-    text: widget.initialHost ?? '',
-  );
+  /// 接続し直す先 (#1007)。⚠ 入力欄へ埋めると一覧の下に隠れるので、先頭に出す。
+  late final String? _reconnectHost = switch (widget.initialHost?.trim()) {
+    null || '' => null,
+    final host => host,
+  };
+
+  final _hostController = TextEditingController();
   bool _isProbing = false;
   String? _error;
 
@@ -243,8 +247,42 @@ class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
     _connectTo(host);
   }
 
+  /// 押したのは「このアカウントに接続し直す」なので、それを最初に出す (#1007)。
+  Widget _reconnectSection(BuildContext context, String host) {
+    final theme = Theme.of(context);
+    final error = _error;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          '$host に接続し直す',
+          textAlign: TextAlign.center,
+          style: theme.textTheme.titleMedium,
+        ),
+        const SizedBox(height: 12),
+        FilledButton(
+          onPressed: () => _connectTo(host),
+          child: const Text('接続'),
+        ),
+        // ⚠ 下の入力欄の errorText は画面の外になる。
+        if (error != null) ...[
+          const SizedBox(height: 8),
+          Text(
+            error,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.error,
+            ),
+          ),
+        ],
+        const Divider(height: 32),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final reconnectHost = _reconnectHost;
     return Scaffold(
       appBar: AppBar(),
       body: BottomSafeArea(
@@ -258,6 +296,8 @@ class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
                     child: Image.asset('assets/images/logo.png', height: 96),
                   ),
                   const SizedBox(height: 16),
+                  if (reconnectHost != null)
+                    _reconnectSection(context, reconnectHost),
                   Center(
                     child: Text(
                       'プリセットサーバーを選択',
@@ -297,7 +337,7 @@ class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
                     decoration: InputDecoration(
                       labelText: 'その他のサーバー',
                       hintText: 'example.com',
-                      errorText: _error,
+                      errorText: reconnectHost == null ? _error : null,
                       prefixIcon: const Icon(Icons.dns),
                     ),
                     keyboardType: TextInputType.url,
