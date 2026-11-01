@@ -24,6 +24,7 @@ import '../screen/post_detail_screen.dart';
 import '../screen/post_list_screen.dart';
 import '../screen/profile_screen.dart';
 import '../screen/search_screen.dart';
+import '../screen/unified_announcement_view.dart';
 import '../screen/unified_notification_screen.dart';
 import '../screen/user_list_screen.dart';
 import '../util/deck_compose.dart';
@@ -141,6 +142,7 @@ class DeckColumnView extends ConsumerWidget {
       // fan-out する）。カラムがアカウントを 1 つ持つのはスコープと簡易投稿バーの
       // 宛先のためだけ。
       AllNotificationsTab() => const UnifiedNotificationScreen(embedded: true),
+      AllAnnouncementsTab() => const UnifiedAnnouncementView(),
       NotificationsTab() => const NotificationView(),
       AnnouncementsTab() => const AnnouncementView(),
       // メッセージはフィードを持たない遷移トリガー (#439) なので、カラムにならない。

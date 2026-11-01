@@ -53,6 +53,7 @@ sealed class TabType {
     // 載せられないので、ここで先に返す。
     if (key == 'search') return const SearchTab();
     if (key == 'all_notifications') return const AllNotificationsTab();
+    if (key == 'all_announcements') return const AllAnnouncementsTab();
 
     final colon = key.indexOf(':');
     if (colon < 0) return null;
@@ -292,6 +293,26 @@ class AllNotificationsTab extends DeckOnlyTab {
 
   @override
   int get hashCode => 'all_notifications'.hashCode;
+}
+
+/// すべてのアカウントのお知らせ (#1347)。性質は [AllNotificationsTab] と同じ。
+///
+/// お知らせはふつう少なく、アカウントごとにカラムを並べるとほとんど空のカラムで
+/// 幅を使う。これを 1 本にまとめるためのカラム。
+class AllAnnouncementsTab extends DeckOnlyTab {
+  const AllAnnouncementsTab();
+
+  @override
+  bool get spansAccounts => true;
+
+  @override
+  String toKey() => 'all_announcements';
+
+  @override
+  bool operator ==(Object other) => other is AllAnnouncementsTab;
+
+  @override
+  int get hashCode => 'all_announcements'.hashCode;
 }
 
 /// 投稿のスレッド (#1148)。

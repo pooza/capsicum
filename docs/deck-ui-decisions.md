@@ -259,7 +259,7 @@ actions: [
 | **荷物を持たない**（引数なしで構築できる） | ✅ 出す | **それ自体で成立する道具。**何を開くかが決まっている |
 | 荷物を持つ（対象の ID が要る） | ❌ 出さない | ⚠ **シートから「足す」ことに意味がない** —— 何を開くか決まっていない |
 
-**2026-10-04 時点で前者は 2 つだけ**（`SearchTab` / `AllNotificationsTab`）。後者は `PostThreadTab` / `ProfileTab` / `UserListTab` / `QuotesTab` / `AchievementsTab` / `CollectionsTab` / `CollectionTab` / `GalleryPostTab` / `FlashTab` / `ChatUserTab` の 10。
+**2026-10-04 時点で前者は 2 つだけ**（`SearchTab` / `AllNotificationsTab`。2026-11-02 に [#1347](https://github.com/pooza/capsicum/issues/1347) の `AllAnnouncementsTab` を足した）。後者は `PostThreadTab` / `ProfileTab` / `UserListTab` / `QuotesTab` / `AchievementsTab` / `CollectionsTab` / `CollectionTab` / `GalleryPostTab` / `FlashTab` / `ChatUserTab` の 10。
 
 - ⚠ **`AllNotificationsTab` には追加の条件がある**（アカウントが 2 つ以上・決定済み事項 7-3）。**1 つなら上の「通知」と中身が同じ**になるため。⚠ **この条件は構造では出てこない**ので、例外として残す
 - ⚠⚠ **検査で固定した**（`test/deck_sheet_candidates_guard_test.dart`）。`tab_type.dart` から「引数なしの `DeckOnlyTab`」を走査し、**全部が `_localCandidates` に実在する**ことを見る。**荷物を持たない種別を足したら落ちる**ので、そのときにこの節へ判断を書き足す
