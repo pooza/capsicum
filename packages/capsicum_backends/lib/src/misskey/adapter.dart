@@ -245,6 +245,8 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     'read:flash',
     'read:flash-likes',
     'write:flash-likes',
+    // 自分の Play の削除 (#1351)。旧トークンは 403 で、再ログインを案内する。
+    'write:flash',
     'read:reactions',
     'write:reactions',
     'write:report-abuse',
@@ -1967,6 +1969,20 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     );
     return data.map(_mapFlash).toList();
   }
+
+  @override
+  Future<List<Flash>> searchFlashes(String text, {TimelineQuery? query}) async {
+    final data = await client.searchFlashes(
+      text,
+      sinceId: query?.sinceId,
+      untilId: query?.maxId,
+      limit: query?.limit,
+    );
+    return data.map(_mapFlash).toList();
+  }
+
+  @override
+  Future<void> deleteFlash(String flashId) => client.deleteFlash(flashId);
 
   @override
   Future<List<LikedFlashEntry>> getLikedFlashes({TimelineQuery? query}) async {

@@ -35,6 +35,18 @@ abstract mixin class FlashSupport {
   /// スコープ不足を検出して degrade できるようにしておくこと。
   Future<List<Flash>> getMyFlashes({TimelineQuery? query}) async => const [];
 
+  /// Flash を探す (#1351)。
+  ///
+  /// Misskey の `POST /api/flash/search` 相当。**認証不要**。世代の合わない
+  /// Flash も混ざるので、実行前の判定は一覧と同じものを通す。
+  Future<List<Flash>> searchFlashes(
+    String text, {
+    TimelineQuery? query,
+  }) async => const [];
+
+  /// 自分の Flash を削除する (#1351)（`write:flash` スコープ）。
+  Future<void> deleteFlash(String flashId) async {}
+
   /// 認証ユーザーが like 済みの Flash 一覧。
   ///
   /// Misskey の `POST /api/flash/my-likes` 相当（`read:flash-likes` スコープ）。

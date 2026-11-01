@@ -142,6 +142,40 @@ void main() {
       expect(perms, contains('write:flash-likes'));
       expect(perms, contains('read:flash-likes'));
       expect(perms, contains('read:flash'));
+      expect(perms, contains('write:flash'));
+    });
+
+    // #1351: 検索の既定は 5 件。
+    test('search は query と limit と続きの起点を送る', () async {
+      final adapter = await MisskeyAdapter.create('misskey.example');
+      final http = _RoutingAdapter({
+        'flash/search': (200, [_flash]),
+      });
+      adapter.client.dio.httpClientAdapter = http;
+
+      final found = await adapter.searchFlashes(
+        'おみくじ',
+        query: const TimelineQuery(maxId: 'x', limit: 100),
+      );
+
+      expect(found.single.id, 'flash1');
+      final body = http.sentBodies['flash/search'];
+      expect(body, containsPair('query', 'おみくじ'));
+      expect(body, containsPair('limit', 100));
+      expect(body, containsPair('untilId', 'x'));
+    });
+
+    test('delete は flashId を送る', () async {
+      final adapter = await MisskeyAdapter.create('misskey.example');
+      final http = _RoutingAdapter({'flash/delete': (200, '')});
+      adapter.client.dio.httpClientAdapter = http;
+
+      await adapter.deleteFlash('flash1');
+
+      expect(
+        http.sentBodies['flash/delete'],
+        containsPair('flashId', 'flash1'),
+      );
     });
 
     test('script 欠落でも一覧表示は成立させる（空文字に倒す）', () async {

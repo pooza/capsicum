@@ -37,6 +37,7 @@ import 'ui/screen/eula_screen.dart';
 import 'ui/screen/favorites_screen.dart';
 import 'ui/screen/filter_edit_screen.dart';
 import 'ui/screen/filter_list_screen.dart';
+import 'ui/screen/flash_browser_screen.dart';
 import 'ui/screen/flash_view_screen.dart';
 import 'ui/screen/follow_requests_screen.dart';
 import 'ui/screen/followed_hashtags_screen.dart';
@@ -448,6 +449,11 @@ final routerProvider = Provider<GoRouter>((ref) {
                 ),
               );
             },
+          ),
+          // Play を探す・自分の Play を削除する (#1351)。
+          GoRoute(
+            path: '/plays',
+            builder: (context, state) => const FlashBrowserScreen(),
           ),
           GoRoute(
             path: '/play',

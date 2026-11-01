@@ -1317,6 +1317,34 @@ class MisskeyClient {
     return (response.data as List).cast<Map<String, dynamic>>();
   }
 
+  /// POST /api/flash/search
+  ///
+  /// ⚠ `limit` の既定は 5 件なので、呼ぶ側が明示する (#1351)。
+  Future<List<Map<String, dynamic>>> searchFlashes(
+    String query, {
+    String? sinceId,
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/flash/search',
+      data: createBody({
+        'query': query,
+        'sinceId': ?sinceId,
+        'untilId': ?untilId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/flash/delete
+  ///
+  /// `write:flash` スコープが要る (#1351)。旧トークンは 403 になる。
+  Future<void> deleteFlash(String flashId) async {
+    await dio.post('/api/flash/delete', data: createBody({'flashId': flashId}));
+  }
+
   /// POST /api/flash/my-likes
   ///
   /// `{ id, flash }` の配列を返す。`id` は **ライクエントリ ID** であり
