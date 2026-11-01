@@ -134,6 +134,7 @@ bool misskeyRejectedExcludeTypes(Object? body) {
 class MisskeyAdapter extends DecentralizedBackendAdapter
     with
         AchievementSupport,
+        AvatarDecorationSupport,
         BookmarkSupport,
         ThreadMuteSupport,
         RepostMuteSupport,
@@ -2492,6 +2493,81 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     );
     return user.toCapsicum(host, adminRoleIds: _adminRoleIds);
   }
+
+  // AvatarDecorationSupport
+
+  @override
+  Future<List<AvatarDecorationOption>> getAvatarDecorationOptions() async {
+    final data = await client.getAvatarDecorations();
+    return data
+        .map(
+          (d) => AvatarDecorationOption(
+            id: d['id'] as String? ?? '',
+            name: d['name'] as String? ?? '',
+            description: d['description'] as String?,
+            url: d['url'] as String? ?? '',
+          ),
+        )
+        .where((d) => d.id.isNotEmpty && d.url.isNotEmpty)
+        .toList();
+  }
+
+  /// ⚠⚠ **手元の値ではなく、サーバーの今の値から組み立てる。**配列ごと置き換わる
+  /// ので、手元が古いと、モロヘイヤのタグセット連動（#24 / #219）が付けたものや
+  /// Web で変えたものを消してしまう。
+  @override
+  Future<User> attachAvatarDecoration(String id) async {
+    final me = (await client.getI()).toCapsicum(
+      host,
+      adminRoleIds: _adminRoleIds,
+    );
+    final current = me.avatarDecorations;
+    if (current.any((d) => d.id == id)) return me;
+    final limit = await client.getAvatarDecorationLimit();
+    final List<AvatarDecoration> kept;
+    if (limit != null && current.length >= limit) {
+      // ⚠ 1 つだけのサーバーでは、外してから付ける手間を掛けさせない。
+      if (limit != 1) throw AvatarDecorationLimitReached(limit);
+      kept = const [];
+    } else {
+      kept = current;
+    }
+    final user = await client.updateI(
+      avatarDecorations: [
+        ...kept.map(_decorationParams),
+        {'id': id},
+      ],
+    );
+    final updated = user.toCapsicum(host, adminRoleIds: _adminRoleIds);
+    // ⚠ 権限のないものは、エラーにならず黙って落とされる。
+    if (!updated.avatarDecorations.any((d) => d.id == id)) {
+      throw const AvatarDecorationRejected();
+    }
+    return updated;
+  }
+
+  @override
+  Future<User> detachAvatarDecoration(String id) async {
+    final current = (await client.getI())
+        .toCapsicum(host, adminRoleIds: _adminRoleIds)
+        .avatarDecorations;
+    final user = await client.updateI(
+      avatarDecorations: current
+          .where((d) => d.id != id)
+          .map(_decorationParams)
+          .toList(),
+    );
+    return user.toCapsicum(host, adminRoleIds: _adminRoleIds);
+  }
+
+  /// ⚠ 省略した値は既定に戻るので、今の調整値を必ず添える。
+  Map<String, Object> _decorationParams(AvatarDecoration d) => {
+    'id': d.id,
+    'angle': d.angle,
+    'flipH': d.flipH,
+    'offsetX': d.offsetX,
+    'offsetY': d.offsetY,
+  };
 
   // ReportSupport
 

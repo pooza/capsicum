@@ -13,6 +13,7 @@ import 'ui/screen/annict_record_screen.dart';
 import 'ui/screen/annict_review_screen.dart';
 import 'ui/screen/announcement_screen.dart';
 import 'ui/screen/antenna_notes_screen.dart';
+import 'ui/screen/avatar_decoration_screen.dart';
 import 'ui/screen/bookmark_screen.dart';
 import 'ui/screen/channel_edit_screen.dart';
 import 'ui/screen/channel_management_screen.dart';
@@ -546,6 +547,14 @@ final routerProvider = Provider<GoRouter>((ref) {
             // ⚠ 開いた側（デッキのカラム）のアカウントを編集する (#1150)。
             builder: (context, state) =>
                 withExtraProviderScope(state.extra, const ProfileEditScreen()),
+          ),
+          // アイコンデコレーションの付け外し (#1349)。
+          GoRoute(
+            path: '/profile/decorations',
+            builder: (context, state) => withExtraProviderScope(
+              state.extra,
+              const AvatarDecorationScreen(),
+            ),
           ),
           // ⚠⚠ **`extra` はプロセスをまたいで残らない (#1083-F)。**この 2 本は
           // 「タイトルと fetcher（クロージャ）」を `extra` で渡す汎用画面なので、

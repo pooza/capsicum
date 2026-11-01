@@ -79,6 +79,24 @@ class MisskeyClient {
     return MisskeyUser.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// POST /api/get-avatar-decorations (#1349)。認証不要。
+  Future<List<Map<String, dynamic>>> getAvatarDecorations() async {
+    final response = await dio.post(
+      '/api/get-avatar-decorations',
+      data: createBody(),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/i の `policies.avatarDecorationLimit` (#1349)。読めなければ null。
+  Future<int?> getAvatarDecorationLimit() async {
+    final response = await dio.post('/api/i', data: createBody());
+    final data = response.data as Map<String, dynamic>;
+    final policies = data['policies'];
+    if (policies is! Map) return null;
+    return (policies['avatarDecorationLimit'] as num?)?.toInt();
+  }
+
   /// POST /api/i の `unreadNotificationsCount` (#1207)。
   ///
   /// ⚠ [MisskeyUser] には載せていない（自分についてしか返らない値で、他人の
@@ -1773,8 +1791,11 @@ class MisskeyClient {
     bool? isExplorable,
     List<Object>? mutedWords,
     List<Object>? hardMutedWords,
+    List<Map<String, Object>>? avatarDecorations,
   }) async {
     final params = <String, dynamic>{
+      // ⚠ 配列ごと置き換わる (#1349)。空なら全部外す。
+      'avatarDecorations': ?avatarDecorations,
       'avatarId': ?avatarId,
       'bannerId': ?bannerId,
       'fields': ?fields,
