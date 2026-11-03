@@ -48,6 +48,9 @@ void main() {
     when(
       () => adapter.getMyFlashes(query: any(named: 'query')),
     ).thenAnswer((_) async => [_flash('m1', '自作の Play')]);
+    when(() => adapter.getLikedFlashes(query: any(named: 'query'))).thenAnswer(
+      (_) async => [(likeId: 'like1', flash: _flash('l1', '日課の Play'))],
+    );
     when(() => adapter.deleteFlash(any())).thenAnswer((_) async {});
   });
 
@@ -78,8 +81,50 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  testWidgets('#1360: 最初に開くのは「いいねした」で、並びはいいねした・自分の・人気', (tester) async {
+    await pump(tester);
+
+    final labels = tester
+        .widgetList<Tab>(find.byType(Tab))
+        .map((tab) => tab.text)
+        .toList();
+    expect(labels, ['いいねした', '自分の', '人気']);
+    expect(find.text('日課の Play'), findsOneWidget);
+    expect(find.text('人気の Play'), findsNothing);
+    expect(find.byTooltip('削除'), findsNothing);
+  });
+
+  testWidgets('#1360: いいねが無いときは、いいねすると並ぶことを案内する', (tester) async {
+    when(
+      () => adapter.getLikedFlashes(query: any(named: 'query')),
+    ).thenAnswer((_) async => []);
+    await pump(tester);
+
+    expect(find.textContaining('日課の Play にいいねすると'), findsOneWidget);
+  });
+
+  testWidgets('⚠ #1360: いいねの次のページは、いいねの ID をカーソルにする', (tester) async {
+    final firstPage = [
+      for (var i = 0; i < 100; i++)
+        (likeId: 'like$i', flash: _flash('f$i', 'Play $i')),
+    ];
+    final queries = <TimelineQuery?>[];
+    when(() => adapter.getLikedFlashes(query: any(named: 'query'))).thenAnswer((
+      invocation,
+    ) async {
+      final query = invocation.namedArguments[#query] as TimelineQuery?;
+      queries.add(query);
+      return query?.maxId == null ? firstPage : [];
+    });
+    await pump(tester);
+
+    expect(queries.map((q) => q?.maxId), [null, 'like99']);
+  });
+
   testWidgets('人気のタブには削除が無い', (tester) async {
     await pump(tester);
+    await tester.tap(find.text('人気'));
+    await tester.pumpAndSettle();
 
     expect(find.text('人気の Play'), findsOneWidget);
     expect(find.byTooltip('削除'), findsNothing);

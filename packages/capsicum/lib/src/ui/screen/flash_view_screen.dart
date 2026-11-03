@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../../provider/flash_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../service/sentry_play_result.dart';
@@ -496,6 +497,10 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
     final flashes = raw as FlashSupport;
 
     final wasLiked = _isLiked;
+    // ⚠ 通信の間に画面が閉じても「いいねした」の一覧を取り直せるよう、先に取る (#1360)。
+    final container = ProviderScope.containerOf(context, listen: false);
+    void refreshLikedList() =>
+        container.invalidate(flashListProvider(FlashListKind.liked));
     setState(() {
       _toggling = true;
       _isLiked = !wasLiked;
@@ -507,14 +512,18 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
       } else {
         await flashes.likeFlash(widget.flash.id);
       }
+      refreshLikedList();
     } catch (e, st) {
       final code = misskeyApiErrorCode(e);
       // 非べき等な結果コードは「成功」として楽観状態を確定させる (#873)。stale な
       // _isLiked でタップした結果がサーバー真値と一致しただけなので、巻き戻さず・
       // Sentry にも流さない（失敗ではない）。ALREADY_LIKED=既にいいね済み、
       // NOT_LIKED=既に未いいね。
-      if (!wasLiked && code == 'ALREADY_LIKED') return;
-      if (wasLiked && code == 'NOT_LIKED') return;
+      if ((!wasLiked && code == 'ALREADY_LIKED') ||
+          (wasLiked && code == 'NOT_LIKED')) {
+        refreshLikedList();
+        return;
+      }
 
       if (!mounted) return;
       // ここから先は本当に反映されなかったので楽観状態を巻き戻す。

@@ -5,10 +5,15 @@ import '../service/sentry_op_failure.dart';
 import '../util/oauth_scope_error.dart';
 import 'account_manager_provider.dart';
 
-/// Play の画面の分類 (#1351)。
+/// Play の画面の分類 (#1351)。並びがそのままタブの順になる。
+///
+/// ⚠ 先頭は「いいねした」（#1360）。日課で回す Play にいいねしてもらい、
+/// 手元の一覧として使う運用を軸にする。人気（featured）はいいね 0 件の Play を
+/// 返さないので、人の少ないサーバーでは新しい Play ほど出てこない。
 enum FlashListKind {
-  featured('人気', '人気の Play はありません'),
-  mine('自分の', '自分の Play はありません');
+  liked('いいねした', 'いいねした Play はありません\n日課の Play にいいねすると、ここに並びます'),
+  mine('自分の', '自分の Play はありません'),
+  featured('人気', '人気の Play はありません');
 
   const FlashListKind(this.label, this.emptyMessage);
 
@@ -32,6 +37,23 @@ Future<List<Flash>> _pagedFlashes(
     flashes.addAll(data);
     if (data.length < _pageSize) break;
     maxId = data.last.id;
+  }
+  return flashes;
+}
+
+/// いいねした Play を最後まで読む（#1360）。
+///
+/// ⚠ カーソルは Flash の ID ではなく、いいねの ID（[LikedFlashEntry.likeId]）。
+Future<List<Flash>> _pagedLikedFlashes(FlashSupport support) async {
+  final flashes = <Flash>[];
+  String? maxId;
+  for (var page = 0; page < _maxPages; page++) {
+    final data = await support.getLikedFlashes(
+      query: TimelineQuery(maxId: maxId, limit: _pageSize),
+    );
+    flashes.addAll(data.map((e) => e.flash));
+    if (data.length < _pageSize) break;
+    maxId = data.last.likeId;
   }
   return flashes;
 }
@@ -71,10 +93,11 @@ final flashListProvider = FutureProvider.autoDispose
         ref,
         kind.name,
         () => switch (kind) {
-          FlashListKind.featured => support.getFeaturedFlashes(),
+          FlashListKind.liked => _pagedLikedFlashes(support),
           FlashListKind.mine => _pagedFlashes(
             (query) => support.getMyFlashes(query: query),
           ),
+          FlashListKind.featured => support.getFeaturedFlashes(),
         },
       );
     }, dependencies: [currentAdapterProvider, currentAccountProvider]);
