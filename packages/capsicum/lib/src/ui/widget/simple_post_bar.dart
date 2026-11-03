@@ -9,6 +9,7 @@ import '../../provider/platform_providers.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
+import '../../service/post_account_idle_tracker.dart';
 import '../../util/reentrancy_guard.dart';
 import '../util/hashtag_body.dart';
 import '../util/livecure_snackbar.dart';
@@ -155,9 +156,12 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar>
     final text = _controller.text.trim();
     if (text.isEmpty) return;
 
-    if (!await confirmPostAccountIfNeeded(context, ref) || !mounted) return;
+    final accountCheck = await confirmPostAccountIfNeeded(context, ref);
+    if (accountCheck == PostAccountConfirmResult.cancelled || !mounted) return;
 
-    if (await ref.read(confirmBeforePostProvider.notifier).readPersisted()) {
+    // ⚠ 投稿先を尋ねたばかりなら重ねない (#1306)。
+    if (accountCheck == PostAccountConfirmResult.notAsked &&
+        await ref.read(confirmBeforePostProvider.notifier).readPersisted()) {
       if (!mounted) return;
       final confirmed = await showDialog<bool>(
         context: context,
@@ -190,6 +194,8 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar>
       final posted = await adapter.postStatus(
         PostDraft(content: content, channelId: widget.channelId),
       );
+      // ⚠ 送れたなら投稿先は分かって書いている。尋ねる印を下ろす (#1306)。
+      postAccountIdleTracker.clear();
       if (mounted) {
         _controller.clear();
         if (widget.channelId == null && posted != null) {

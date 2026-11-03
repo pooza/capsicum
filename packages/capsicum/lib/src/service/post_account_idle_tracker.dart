@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 
@@ -30,6 +31,22 @@ class PostAccountIdleTracker {
 
   void clear() => _pending = false;
 
+  /// テストで、アプリ全体の 1 つ（[postAccountIdleTracker]）を起動直後に戻す。
+  @visibleForTesting
+  void reset() {
+    _pending = true;
+    _lastActivity = null;
+  }
+
+  /// 操作として数えるポインタの入力。
+  ///
+  /// ⚠ **ホイールとトラックパッドも数える。**デスクトップではタップせずに読み進める
+  /// ので、押下だけでは 30 分スクロールし続けても「途切れた」扱いになっていた。
+  static bool isActivity(PointerEvent event) =>
+      event is PointerDownEvent ||
+      event is PointerScrollEvent ||
+      event is PointerPanZoomStartEvent;
+
   bool _started = false;
 
   /// アプリ全体の入力を見始める。⚠ 投稿フォームはデッキの上に積む別の画面なので、
@@ -38,7 +55,7 @@ class PostAccountIdleTracker {
     if (_started) return;
     _started = true;
     GestureBinding.instance.pointerRouter.addGlobalRoute((event) {
-      if (event is PointerDownEvent) noteActivity();
+      if (isActivity(event)) noteActivity();
     });
     HardwareKeyboard.instance.addHandler((_) {
       noteActivity();

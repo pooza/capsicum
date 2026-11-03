@@ -87,6 +87,16 @@ class DisplaySettingsScreen extends ConsumerWidget {
             onChanged: (_) =>
                 ref.read(confirmBeforePostProvider.notifier).toggle(),
           ),
+          // ⚠ 起動直後も「再開」として尋ねる（PostAccountIdleTracker の `_pending`）
+          // ので、説明にも書く (#1306)。
+          SwitchListTile(
+            title: const Text('デッキで間が空いたら投稿先を確認する'),
+            subtitle: const Text('起動直後と、30 分以上操作がなかったあとの最初の投稿で、投稿先を確認します'),
+            value: ref.watch(confirmPostAccountAfterIdleProvider),
+            onChanged: (value) => ref
+                .read(confirmPostAccountAfterIdleProvider.notifier)
+                .setEnabled(value),
+          ),
           SwitchListTile(
             title: const Text('カスタム絵文字を隙間なく並べる'),
             subtitle: const Text(
@@ -174,14 +184,6 @@ class DisplaySettingsScreen extends ConsumerWidget {
             value: ref.watch(showStreamReconnectDetailProvider),
             onChanged: (value) => ref
                 .read(showStreamReconnectDetailProvider.notifier)
-                .setEnabled(value),
-          ),
-          SwitchListTile(
-            title: const Text('デッキで間が空いたら投稿先を確かめる'),
-            subtitle: const Text('30 分以上操作がなかったあとの最初の投稿で、投稿先を確認します'),
-            value: ref.watch(confirmPostAccountAfterIdleProvider),
-            onChanged: (value) => ref
-                .read(confirmPostAccountAfterIdleProvider.notifier)
                 .setEnabled(value),
           ),
           // デッキは画面全体に 1 枚 (#1174)。アカウントに依らないのでここに置く。
