@@ -9,6 +9,7 @@ import '../../model/account.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../util/now_playing_formatter.dart';
 import '../widget/bottom_safe_area.dart';
+import '../widget/emoji_text.dart';
 import '../widget/server_badge.dart';
 import '../widget/user_avatar.dart';
 
@@ -17,6 +18,9 @@ String shareDestination(int accountCount) =>
     accountCount >= 2 ? '/share/account' : '/compose';
 
 /// 共有されたナウプレを投稿するアカウントを選ぶ (#1348)。
+///
+/// ⚠ 共有から来たテキストは、URL でなくてもナウプレとして組む（投稿フォームの
+/// `_initSharedNowPlaying`）。見出しを中身で呼び分けない。
 ///
 /// ⚠⚠ **投稿フォームの中で切り替えない。**本文の整形（モロヘイヤ）・下書きの
 /// スロット・公開範囲の既定は、開いたときのアカウントを前提にしている。
@@ -112,7 +116,14 @@ class _ShareAccountScreenState extends ConsumerState<ShareAccountScreen> {
             for (final account in state.accounts)
               ListTile(
                 leading: UserAvatar(user: account.user, size: 40),
-                title: Text(_nameOf(account.user)),
+                // ⚠ 表示名のカスタム絵文字を `:shortcode:` のまま出さない。
+                title: EmojiText(
+                  _nameOf(account.user),
+                  emojis: account.user.emojis,
+                  fallbackHost: account.user.host,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
                 subtitle: Row(
                   children: [
                     ServerFavicon(host: account.key.host),
