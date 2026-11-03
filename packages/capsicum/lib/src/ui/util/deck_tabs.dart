@@ -77,7 +77,8 @@ IconData deckOnlyTabIcon(DeckOnlyTab tab) => switch (tab) {
   ChatUserTab() => Icons.chat_bubble_outline,
   SearchTab() => Icons.search,
   AllNotificationsTab() => Icons.notifications_active_outlined,
-  AllAnnouncementsTab() => Icons.campaign_outlined,
+  // ⚠ 1 アカウントのお知らせ（campaign_outlined）と見分ける。すべての通知と同じ形。
+  AllAnnouncementsTab() => Icons.campaign,
 };
 
 /// ユーザー一覧の取得。アダプタが対応していなければ null。

@@ -1,6 +1,7 @@
 import 'package:capsicum/src/model/account.dart';
 import 'package:capsicum/src/model/account_key.dart';
 import 'package:capsicum/src/provider/account_manager_provider.dart';
+import 'package:capsicum/src/provider/announcement_provider.dart';
 import 'package:capsicum/src/provider/unified_announcement_provider.dart';
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
@@ -55,11 +56,14 @@ void main() {
     return container.read(unifiedAnnouncementProvider.future);
   }
 
-  test('⚠ 同じサーバーは 1 回だけ引き、同じお知らせを 2 回出さない', () async {
+  test('⚠⚠ 同じサーバーの全アカウントを引き、同じお知らせは 1 件に束ねる', () async {
     final first = _Adapter();
     final second = _Adapter();
     when(
       () => first.getAnnouncements(),
+    ).thenAnswer((_) async => [_announcement('a', 1)]);
+    when(
+      () => second.getAnnouncements(),
     ).thenAnswer((_) async => [_announcement('a', 1)]);
 
     final state = await load([
@@ -68,8 +72,51 @@ void main() {
     ]);
 
     expect(state.items.single.announcement.id, 'a');
-    expect(state.items.single.accounts, hasLength(2));
-    verifyNever(() => second.getAnnouncements());
+    expect(state.items.single.accounts.map((a) => a.key.username), [
+      'me',
+      'sub',
+    ]);
+    verify(() => second.getAnnouncements()).called(1);
+  });
+
+  test('⚠⚠ 2 つ目のアカウント宛てのお知らせ（Misskey）も出す', () async {
+    final first = _Adapter();
+    final second = _Adapter();
+    when(
+      () => first.getAnnouncements(),
+    ).thenAnswer((_) async => [_announcement('all', 1)]);
+    when(() => second.getAnnouncements()).thenAnswer(
+      (_) async => [_announcement('all', 1), _announcement('mine', 2)],
+    );
+
+    final state = await load([
+      _account('me', 'one.example', first),
+      _account('sub', 'one.example', second),
+    ]);
+
+    final mine = state.items.singleWhere((i) => i.announcement.id == 'mine');
+    expect(mine.accounts.map((a) => a.key.username), ['sub']);
+    expect(state.items, hasLength(2));
+  });
+
+  test('⚠⚠ どれか 1 つのアカウントで未読なら未読にする', () async {
+    final first = _Adapter();
+    final second = _Adapter();
+    when(
+      () => first.getAnnouncements(),
+    ).thenAnswer((_) async => [_announcement('a', 1, read: true)]);
+    when(
+      () => second.getAnnouncements(),
+    ).thenAnswer((_) async => [_announcement('a', 1)]);
+
+    final state = await load([
+      _account('me', 'one.example', first),
+      _account('sub', 'one.example', second),
+    ]);
+
+    final item = state.items.single;
+    expect(item.announcement.read, isFalse);
+    expect(item.unreadAccounts.map((a) => a.key.username), ['sub']);
   });
 
   test('未読を先に、その中は新しい順に並べる', () async {
@@ -128,24 +175,94 @@ void main() {
     expect(byHost, isEmpty);
   });
 
-  test('⚠⚠ 既読は同じサーバーの全アカウントへ送る', () async {
+  test('⚠ 0 件のサーバーと落ちたサーバーだけなら、エラーにせず空を出す', () async {
+    final empty = _Adapter();
+    final down = _Adapter();
+    when(() => empty.getAnnouncements()).thenAnswer((_) async => []);
+    when(() => down.getAnnouncements()).thenThrow(StateError('boom'));
+
+    final state = await load([
+      _account('a', 'empty.example', empty),
+      _account('b', 'down.example', down),
+    ]);
+
+    expect(state.items, isEmpty);
+    expect(state.failedHosts, ['down.example']);
+  });
+
+  test('⚠⚠ 既読はまだ既読でないアカウントへ送る', () async {
     final first = _Adapter();
     final second = _Adapter();
+    final already = _Adapter();
     when(() => first.dismissAnnouncement('a')).thenAnswer((_) async {});
     when(() => second.dismissAnnouncement('a')).thenAnswer((_) async {});
 
-    await dismissUnifiedAnnouncement(
+    final failures = await dismissUnifiedAnnouncement(
       UnifiedAnnouncement(
         host: 'one.example',
         announcement: _announcement('a', 1),
         accounts: [
           _account('me', 'one.example', first),
           _account('sub', 'one.example', second),
+          _account('read', 'one.example', already),
+        ],
+        unreadAccounts: [
+          _account('me', 'one.example', first),
+          _account('sub', 'one.example', second),
         ],
       ),
     );
 
+    expect(failures, isEmpty);
     verify(() => first.dismissAnnouncement('a')).called(1);
     verify(() => second.dismissAnnouncement('a')).called(1);
+    verifyNever(() => already.dismissAnnouncement(any()));
+  });
+
+  test('⚠ 既読の失敗は、失敗したアカウントで返す（計装のホストを取り違えない）', () async {
+    final ok = _Adapter();
+    final down = _Adapter();
+    when(() => ok.dismissAnnouncement('a')).thenAnswer((_) async {});
+    when(() => down.dismissAnnouncement('a')).thenThrow(StateError('boom'));
+    final okAccount = _account('me', 'one.example', ok);
+    final downAccount = _account('sub', 'one.example', down);
+
+    final failures = await dismissUnifiedAnnouncement(
+      UnifiedAnnouncement(
+        host: 'one.example',
+        announcement: _announcement('a', 1),
+        accounts: [okAccount, downAccount],
+        unreadAccounts: [okAccount, downAccount],
+      ),
+    );
+
+    expect(failures.single.account, same(downAccount));
+    verify(() => ok.dismissAnnouncement('a')).called(1);
+  });
+
+  test('⚠ 1 アカウントの画面で既読にしたら、すべてのお知らせも取り直す', () async {
+    final adapter = _Adapter();
+    when(
+      () => adapter.getAnnouncements(),
+    ).thenAnswer((_) async => [_announcement('a', 1)]);
+    when(() => adapter.dismissAnnouncement('a')).thenAnswer((_) async {});
+    final container = ProviderContainer(
+      overrides: [
+        accountManagerProvider.overrideWith(
+          () => _AccountNotifier([_account('me', 'one.example', adapter)]),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    container.listen(unifiedAnnouncementProvider, (_, _) {});
+    container.listen(announcementProvider, (_, _) {});
+    await container.read(unifiedAnnouncementProvider.future);
+    await container.read(announcementProvider.future);
+    clearInteractions(adapter);
+
+    await container.read(announcementProvider.notifier).dismiss('a');
+    await container.read(unifiedAnnouncementProvider.future);
+
+    verify(() => adapter.getAnnouncements()).called(1);
   });
 }

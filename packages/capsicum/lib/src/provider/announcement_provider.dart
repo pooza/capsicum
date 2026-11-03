@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../service/sentry_op_failure.dart';
 import 'account_manager_provider.dart';
+import 'unified_announcement_provider.dart';
 
 /// Announcement list state.
 class AnnouncementState {
@@ -58,6 +59,10 @@ class AnnouncementNotifier extends AutoDisposeAsyncNotifier<AnnouncementState> {
   ///
   /// 失敗は握り潰す（お知らせは補助的な情報で、失敗時は現状維持でよい）。
   Future<void> refresh() async {
+    // ⚠ すべてのお知らせのカラム (#1347) も同じ機会で取り直す（復帰・#910 の
+    // 取り直し・streaming）。誰も見ていなければ autoDispose で片づくだけで、
+    // 取りには行かない。
+    ref.invalidate(unifiedAnnouncementProvider);
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! AnnouncementSupport) return;
     // 「画面を開いた」「フォアグラウンド復帰」「streaming 受信」は同時に起きうる
@@ -87,6 +92,8 @@ class AnnouncementNotifier extends AutoDisposeAsyncNotifier<AnnouncementState> {
     if (adapter == null || adapter is! AnnouncementSupport) return;
 
     await (adapter as AnnouncementSupport).dismissAnnouncement(id);
+    // ⚠ すべてのお知らせのカラム (#1347) に未読のまま残さない。
+    ref.invalidate(unifiedAnnouncementProvider);
 
     final current = state.valueOrNull;
     if (current == null) return;

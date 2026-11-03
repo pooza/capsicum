@@ -11,13 +11,20 @@ class UnifiedAnnouncement {
     required this.host,
     required this.announcement,
     required this.accounts,
+    this.unreadAccounts = const [],
   });
 
   final String host;
+
+  /// ⚠ [Announcement.read] は「[unreadAccounts] が空か」に付け直してある。
   final Announcement announcement;
 
-  /// このサーバーのアカウント。⚠ 既読はアカウントごとに付くので、全員へ送る。
+  /// このお知らせが**実際に返ってきた**アカウント。⚠ Misskey はアカウント宛ての
+  /// お知らせがあるので、同じサーバーでも全員が持っているとは限らない。
   final List<Account> accounts;
+
+  /// [accounts] のうち、まだ既読を付けていないもの。⚠ 既読はアカウントごとに付く。
+  final List<Account> unreadAccounts;
 }
 
 class UnifiedAnnouncementState {
@@ -29,13 +36,12 @@ class UnifiedAnnouncementState {
   final List<UnifiedAnnouncement> items;
 
   /// 取得できなかったサーバー。⚠ 全部が失敗でなければ、取れた分は出す。
+  /// ⚠ 同じサーバーのアカウントが 1 つでも落ちたら載せる（そのアカウント宛ての
+  /// お知らせが欠けている）。
   final List<String> failedHosts;
 }
 
 /// [accounts] をお知らせに対応するものだけに絞り、サーバーごとに束ねる。
-///
-/// ⚠ お知らせはサーバー単位なので、同じサーバーのアカウントが複数あっても中身は
-/// 同じになる。引くのは先頭の 1 つだけで、同じお知らせを 2 回出さない。
 Map<String, List<Account>> announcementAccountsByHost(List<Account> accounts) {
   final byHost = <String, List<Account>>{};
   for (final account in accounts) {
@@ -46,35 +52,31 @@ Map<String, List<Account>> announcementAccountsByHost(List<Account> accounts) {
 }
 
 /// すべてのアカウントのお知らせ (#1347)。未読を先に出す。
+///
+/// ⚠⚠ **同じサーバーでも全アカウントを引く。**Misskey の `/api/announcements` は
+/// 「全員宛て ＋ 自分宛て」を返し、既読もアカウントごとに付く（Mastodon も既読は
+/// アカウントごと）。先頭の 1 つだけだと、2 つ目のアカウント宛てのお知らせが
+/// 出ず、2 つ目だけ未読のものが既読に見える。(サーバー, ID) で 1 件に束ねる。
 final unifiedAnnouncementProvider =
     FutureProvider.autoDispose<UnifiedAnnouncementState>((ref) async {
       final accounts = ref.watch(
         accountManagerProvider.select((state) => state.accounts),
       );
-      final byHost = announcementAccountsByHost(accounts);
+      final targets = announcementAccountsByHost(
+        accounts,
+      ).values.expand((e) => e).toList();
 
-      final items = <UnifiedAnnouncement>[];
-      final failedHosts = <String>[];
       final failures =
           <({Account account, Object error, StackTrace stackTrace})>[];
-      await Future.wait(
-        byHost.entries.map((entry) async {
-          final first = entry.value.first;
+      // ⚠ 並列に引くが、束ねるのはアカウントの並び順で行う（返ってきた順にしない）。
+      final results = await Future.wait(
+        targets.map((account) async {
           try {
-            final announcements = await (first.adapter as AnnouncementSupport)
+            return await (account.adapter as AnnouncementSupport)
                 .getAnnouncements();
-            items.addAll(
-              announcements.map(
-                (a) => UnifiedAnnouncement(
-                  host: entry.key,
-                  announcement: a,
-                  accounts: entry.value,
-                ),
-              ),
-            );
           } catch (e, st) {
-            failedHosts.add(entry.key);
-            failures.add((account: first, error: e, stackTrace: st));
+            failures.add((account: account, error: e, stackTrace: st));
+            return null;
           }
         }),
       );
@@ -83,16 +85,50 @@ final unifiedAnnouncementProvider =
           tagKey: 'announcement.list',
           operation: 'unified_fetch',
           failures: failures,
-          totalAccounts: byHost.length,
+          totalAccounts: targets.length,
         );
       }
-      if (items.isEmpty && failures.isNotEmpty) {
+      // ⚠ 全部が落ちたときだけエラーにする。取れたサーバーが 0 件なだけなら
+      // 「お知らせはありません」＋取れなかったサーバーを出す。
+      if (failures.isNotEmpty && failures.length == targets.length) {
         Error.throwWithStackTrace(
           failures.first.error,
           failures.first.stackTrace,
         );
       }
-      // ⚠ 並列に積むので、返ってきた順にならないよう整える。
+
+      final merged =
+          <
+            (String, String),
+            ({
+              Announcement announcement,
+              List<Account> accounts,
+              List<Account> unread,
+            })
+          >{};
+      for (var i = 0; i < targets.length; i++) {
+        final account = targets[i];
+        for (final a in results[i] ?? const <Announcement>[]) {
+          final entry = merged.putIfAbsent(
+            (account.key.host, a.id),
+            () => (announcement: a, accounts: <Account>[], unread: <Account>[]),
+          );
+          entry.accounts.add(account);
+          if (!a.read) entry.unread.add(account);
+        }
+      }
+      final items = [
+        for (final MapEntry(key: (host, _), :value) in merged.entries)
+          UnifiedAnnouncement(
+            host: host,
+            // ⚠ どれか 1 つでも未読なら未読（既読を付ける口を出す）。
+            announcement: value.announcement.copyWith(
+              read: value.unread.isEmpty,
+            ),
+            accounts: value.accounts,
+            unreadAccounts: value.unread,
+          ),
+      ];
       items.sort((a, b) {
         final read = (a.announcement.read ? 1 : 0).compareTo(
           b.announcement.read ? 1 : 0,
@@ -100,18 +136,39 @@ final unifiedAnnouncementProvider =
         if (read != 0) return read;
         return b.announcement.publishedAt.compareTo(a.announcement.publishedAt);
       });
-      failedHosts.sort();
+      final failedHosts =
+          failures.map((f) => f.account.key.host).toSet().toList()..sort();
       return UnifiedAnnouncementState(items: items, failedHosts: failedHosts);
     });
 
-/// 既読を付ける。⚠ 同じサーバーの全アカウントへ送る（どれか 1 つだけだと、別の
+/// 既読を付ける。⚠ まだ既読でない全アカウントへ送る（どれか 1 つだけだと、別の
 /// アカウントへ切り替えたときに同じお知らせが未読で戻ってくる）。
-Future<void> dismissUnifiedAnnouncement(UnifiedAnnouncement item) async {
+///
+/// 失敗したアカウントを返す（空なら全部成功）。⚠ 計装は失敗した**そのアカウント**の
+/// ホストで付ける（画面の現在のアカウントではない）ので、呼び出し側へ返す。
+Future<List<({Account account, Object error, StackTrace stackTrace})>>
+dismissUnifiedAnnouncement(UnifiedAnnouncement item) async {
+  final failures = <({Account account, Object error, StackTrace stackTrace})>[];
   await Future.wait(
-    item.accounts.map(
-      (account) => (account.adapter as AnnouncementSupport).dismissAnnouncement(
-        item.announcement.id,
-      ),
-    ),
+    item.unreadAccounts.map((account) async {
+      try {
+        await (account.adapter as AnnouncementSupport).dismissAnnouncement(
+          item.announcement.id,
+        );
+      } catch (e, st) {
+        failures.add((account: account, error: e, stackTrace: st));
+      }
+    }),
   );
+  return failures;
 }
+
+/// ルートの [ProviderContainer] (#1347)。
+///
+/// ⚠ 依存を持たない provider はルートに載るので、デッキのカラムのスコープ
+/// （`deck_screen.dart` の `_containerFor`）から読んでもルートが返る。カラムの
+/// スコープの `announcementProvider` はそのカラムのアカウントのもので、未読の
+/// バッジを持つ現在のアカウントのものではない。
+final rootProviderContainerProvider = Provider<ProviderContainer>(
+  (ref) => ref.container,
+);
