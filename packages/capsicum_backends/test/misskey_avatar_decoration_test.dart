@@ -167,6 +167,33 @@ void main() {
     );
   });
 
+  test('⚠⚠ 上限 1 で入れ替えが落とされたら、外したものを調整値ごと付け直す', () async {
+    final server = await install(
+      _Server(decorations: [_adjusted], dropped: {'locked'}),
+    );
+
+    await expectLater(
+      adapter.attachAvatarDecoration('locked'),
+      throwsA(
+        isA<AvatarDecorationRejected>().having(
+          (e) => e.user.avatarDecorations.map((d) => d.id),
+          'user のデコ',
+          ['keep'],
+        ),
+      ),
+    );
+    expect(server.lastUpdate, [
+      {
+        'id': 'keep',
+        'angle': 0.1,
+        'flipH': true,
+        'offsetX': 0.2,
+        'offsetY': -0.2,
+      },
+    ]);
+    expect(server.decorations.single['id'], 'keep');
+  });
+
   test('上限が読めなくても送る（判定はサーバーに任せる）', () async {
     final server = await install(
       _Server(decorations: [_adjusted], limit: null),

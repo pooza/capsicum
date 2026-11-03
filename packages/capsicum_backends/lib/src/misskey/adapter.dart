@@ -2541,7 +2541,17 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     final updated = user.toCapsicum(host, adminRoleIds: _adminRoleIds);
     // ⚠ 権限のないものは、エラーにならず黙って落とされる。
     if (!updated.avatarDecorations.any((d) => d.id == id)) {
-      throw const AvatarDecorationRejected();
+      // ⚠⚠ 入れ替えのために外したものは、この保存で消えている。調整値ごと
+      // 付け直す（付け直さないと、使えないものを選んだだけで今のものを失う）。
+      if (kept.length == current.length) {
+        throw AvatarDecorationRejected(updated);
+      }
+      final restored = await client.updateI(
+        avatarDecorations: current.map(_decorationParams).toList(),
+      );
+      throw AvatarDecorationRejected(
+        restored.toCapsicum(host, adminRoleIds: _adminRoleIds),
+      );
     }
     return updated;
   }

@@ -19,8 +19,13 @@ class AvatarDecorationOption {
 ///
 /// ⚠ 権限のないものはエラーにならず黙って捨てられるので、保存の応答で確かめた
 /// 結果として投げる。
+///
+/// [user] はサーバーの今の状態。⚠ 入れ替えのために外したものは付け直してあるが、
+/// 呼び出し側はこれで手元の値を揃えること（付け直しが部分的に落ちることもある）。
 class AvatarDecorationRejected implements Exception {
-  const AvatarDecorationRejected();
+  const AvatarDecorationRejected(this.user);
+
+  final User user;
 }
 
 /// これ以上付けられない (#1349)。先にどれかを外す必要がある。

@@ -125,7 +125,7 @@ void main() {
   testWidgets('⚠⚠ 黙って落とされたら、付いたように見せない', (tester) async {
     when(
       () => adapter.attachAvatarDecoration('a'),
-    ).thenThrow(const AvatarDecorationRejected());
+    ).thenThrow(const AvatarDecorationRejected(User(id: 'me', username: 'me')));
     await pump(tester, account('me'));
 
     await tester.tap(find.text('かぼちゃ'));

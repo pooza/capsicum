@@ -55,7 +55,10 @@ class _AvatarDecorationScreenState
           : await support.attachAvatarDecoration(option.id);
       if (account != null) accounts.updateUserOf(account.key, user);
       if (mounted) setState(() => _localUser = user);
-    } on AvatarDecorationRejected {
+    } on AvatarDecorationRejected catch (e) {
+      // ⚠ サーバーの今の状態で揃える（入れ替えで外したものは付け直してある）。
+      if (account != null) accounts.updateUserOf(account.key, e.user);
+      if (mounted) setState(() => _localUser = e.user);
       messenger.showSnackBar(
         SnackBar(content: Text('「${option.name}」はこのアカウントでは使えません')),
       );
