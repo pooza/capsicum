@@ -497,10 +497,10 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
     final flashes = raw as FlashSupport;
 
     final wasLiked = _isLiked;
-    // ⚠ 通信の間に画面が閉じても「いいねした」の一覧を取り直せるよう、先に取る (#1360)。
+    // ⚠ 通信の間に画面が閉じても「いつもの」の一覧を取り直せるよう、先に取る (#1360)。
     final container = ProviderScope.containerOf(context, listen: false);
-    void refreshLikedList() =>
-        container.invalidate(flashListProvider(FlashListKind.liked));
+    void refreshUsualList() =>
+        container.invalidate(flashListProvider(FlashListKind.usual));
     setState(() {
       _toggling = true;
       _isLiked = !wasLiked;
@@ -512,7 +512,7 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
       } else {
         await flashes.likeFlash(widget.flash.id);
       }
-      refreshLikedList();
+      refreshUsualList();
     } catch (e, st) {
       final code = misskeyApiErrorCode(e);
       // 非べき等な結果コードは「成功」として楽観状態を確定させる (#873)。stale な
@@ -521,7 +521,7 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
       // NOT_LIKED=既に未いいね。
       if ((!wasLiked && code == 'ALREADY_LIKED') ||
           (wasLiked && code == 'NOT_LIKED')) {
-        refreshLikedList();
+        refreshUsualList();
         return;
       }
 

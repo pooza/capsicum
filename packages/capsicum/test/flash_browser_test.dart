@@ -81,26 +81,50 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('#1360: 最初に開くのは「いいねした」で、並びはいいねした・自分の・人気', (tester) async {
+  testWidgets('#1360: 最初に開くのは「いつもの」で、並びはいつもの・自分の・人気', (tester) async {
     await pump(tester);
 
     final labels = tester
         .widgetList<Tab>(find.byType(Tab))
         .map((tab) => tab.text)
         .toList();
-    expect(labels, ['いいねした', '自分の', '人気']);
-    expect(find.text('日課の Play'), findsOneWidget);
+    expect(labels, ['いつもの', '自分の', '人気']);
     expect(find.text('人気の Play'), findsNothing);
     expect(find.byTooltip('削除'), findsNothing);
   });
 
-  testWidgets('#1360: いいねが無いときは、いいねすると並ぶことを案内する', (tester) async {
+  testWidgets('⚠ #1360: 「いつもの」は自分の Play を先に、いいねした Play を続けて並べる', (
+    tester,
+  ) async {
+    await pump(tester);
+
+    final titles = tester
+        .widgetList<ListTile>(find.byType(ListTile))
+        .map((tile) => (tile.title! as Text).data)
+        .toList();
+    // ⚠ Misskey は自分の Play へのいいねを断るので、自作は「自分の」から混ぜる。
+    expect(titles, ['自作の Play', '日課の Play']);
+  });
+
+  testWidgets('#1360: 「いつもの」は同じ Play を 2 回並べない', (tester) async {
+    when(() => adapter.getLikedFlashes(query: any(named: 'query'))).thenAnswer(
+      (_) async => [(likeId: 'like1', flash: _flash('m1', '自作の Play'))],
+    );
+    await pump(tester);
+
+    expect(find.text('自作の Play'), findsOneWidget);
+  });
+
+  testWidgets('#1360: どちらも無いときは、いいねするか作ると並ぶことを案内する', (tester) async {
     when(
       () => adapter.getLikedFlashes(query: any(named: 'query')),
     ).thenAnswer((_) async => []);
+    when(
+      () => adapter.getMyFlashes(query: any(named: 'query')),
+    ).thenAnswer((_) async => []);
     await pump(tester);
 
-    expect(find.textContaining('日課の Play にいいねすると'), findsOneWidget);
+    expect(find.textContaining('日課の Play にいいねするか自分で作ると'), findsOneWidget);
   });
 
   testWidgets('⚠ #1360: いいねの次のページは、いいねの ID をカーソルにする', (tester) async {
