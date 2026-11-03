@@ -6,6 +6,7 @@ import 'package:capsicum/src/platform/notification_subsystem/notification_subsys
 import 'package:capsicum/src/provider/account_manager_provider.dart';
 import 'package:capsicum/src/provider/announcement_provider.dart';
 import 'package:capsicum/src/provider/platform_providers.dart';
+import 'package:capsicum/src/provider/unified_announcement_provider.dart';
 import 'package:capsicum/src/service/desktop_notification_dispatcher.dart';
 import 'package:capsicum/src/service/notification_dedup_channel.dart';
 import 'package:capsicum_backends/capsicum_backends.dart';
@@ -120,6 +121,9 @@ class _CountingAnnouncementNotifier extends AnnouncementNotifier {
   Future<void> refresh() async => refreshCount++;
 }
 
+/// すべてのお知らせ (#1347) を取り直した回数。
+int _unifiedBuilds = 0;
+
 /// listener 発火とストリーム配信のためにマイクロタスクを 1 巡させる。
 Future<void> _settle() => Future<void>.delayed(Duration.zero);
 
@@ -133,12 +137,17 @@ void main() {
     subsystem = _RecordingSubsystem();
     dedupChannel = _FakeDedupChannel();
     _CountingAnnouncementNotifier.refreshCount = 0;
+    _unifiedBuilds = 0;
     container = ProviderContainer(
       overrides: [
         notificationSubsystemProvider.overrideWithValue(subsystem),
         accountManagerProvider.overrideWith(_TestAccountNotifier.new),
         notificationDedupChannelProvider.overrideWithValue(dedupChannel),
         announcementProvider.overrideWith(_CountingAnnouncementNotifier.new),
+        unifiedAnnouncementProvider.overrideWith((ref) async {
+          _unifiedBuilds++;
+          return const UnifiedAnnouncementState();
+        }),
       ],
     );
     notifier =
@@ -405,6 +414,24 @@ void main() {
       await _settle();
 
       expect(subsystem.shown.length, 1);
+    });
+
+    // ⚠ すべてのお知らせ (#1347) は全アカウントのものなので、他垢のイベントでも
+    // 取り直す（Codex の指摘・v2.9 のリリース PR）。
+    test('非アクティブ垢のお知らせでも、すべてのお知らせは取り直す', () async {
+      final a = _makeAccount('alice', 'h1');
+      final b = _makeAccount('bob', 'h2');
+      notifier.setAccounts([a.account, b.account]);
+      container.listen(unifiedAnnouncementProvider, (_, _) {});
+      await _settle();
+      final before = _unifiedBuilds;
+
+      b.controller.add(_announcement('ann1'));
+      await _settle();
+      // invalidate は印を付けるだけで、作り直すのは次に読まれたとき。
+      await container.read(unifiedAnnouncementProvider.future);
+
+      expect(_unifiedBuilds, greaterThan(before));
     });
 
     // 一覧は表示中アカウントのものなので、他垢のイベントでは触らない (#888)。

@@ -13,6 +13,7 @@ import '../platform/platform_info.dart';
 import '../provider/account_manager_provider.dart';
 import '../provider/announcement_provider.dart';
 import '../provider/platform_providers.dart';
+import '../provider/unified_announcement_provider.dart';
 import '../ui/util/moderation_notification_text.dart';
 import '../ui/util/notification_type_display.dart';
 import '../ui/widget/content_parser.dart';
@@ -290,6 +291,9 @@ class DesktopNotificationDispatcher {
   /// （他アカウント宛ては OS 通知だけ出て一覧は触らない）。
   void _refreshAnnouncementsIfNeeded(Account account, Notification n) {
     if (n.type != NotificationType.announcement) return;
+    // ⚠ すべてのお知らせのカラム (#1347) は全アカウントのものなので、表示中の
+    // アカウントかを見る前に取り直す。invalidate は生きていなければ何もしない。
+    _ref.invalidate(unifiedAnnouncementProvider);
     if (_ref.read(currentAccountProvider)?.key != account.key) return;
     // 生きているときだけ反映する (#915 → #919)。announcementProvider は
     // autoDispose なので、誰も watch していない状態で `.notifier` を read すると
