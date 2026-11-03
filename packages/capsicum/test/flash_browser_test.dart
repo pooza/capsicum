@@ -145,6 +145,26 @@ void main() {
     expect(queries.map((q) => q?.maxId), [null, 'like99']);
   });
 
+  testWidgets('⚠ #1360: 「いつもの」も古いトークンの 403 は再ログインを案内する', (tester) async {
+    final options = RequestOptions(path: '/api/flash/my-likes');
+    when(() => adapter.getLikedFlashes(query: any(named: 'query'))).thenThrow(
+      DioException(
+        requestOptions: options,
+        type: DioExceptionType.badResponse,
+        response: Response(
+          requestOptions: options,
+          statusCode: 403,
+          data: {
+            'error': {'code': 'PERMISSION_DENIED'},
+          },
+        ),
+      ),
+    );
+    await pump(tester);
+
+    expect(find.text('権限が不足しています。再ログインしてください'), findsOneWidget);
+  });
+
   testWidgets('人気のタブには削除が無い', (tester) async {
     await pump(tester);
     await tester.tap(find.text('人気'));

@@ -65,11 +65,15 @@ Future<List<Flash>> _pagedLikedFlashes(FlashSupport support) async {
 ///
 /// ⚠ 同じ Play は 1 回だけ出す（自分の Play にはいいねできないので通常は重ならない
 /// が、作者が変わる経路をここで仮定しない）。
+///
+/// ⚠ レコードの `.wait` を使わない。失敗を `ParallelWaitError` に包むので、
+/// 古いトークンの 403 が [isOAuthScopeError] をすり抜け、再ログインの案内が
+/// 消えて Sentry へ流れる。`Future.wait` は最初の失敗をそのまま投げ直す。
 Future<List<Flash>> _usualFlashes(FlashSupport support) async {
-  final (mine, liked) = await (
+  final [mine, liked] = await Future.wait([
     _pagedFlashes((query) => support.getMyFlashes(query: query)),
     _pagedLikedFlashes(support),
-  ).wait;
+  ]);
   final seen = <String>{};
   return [
     for (final flash in [...mine, ...liked])
