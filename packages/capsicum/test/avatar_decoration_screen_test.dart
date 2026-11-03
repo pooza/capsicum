@@ -4,6 +4,7 @@ import 'package:capsicum/src/provider/account_manager_provider.dart';
 import 'package:capsicum/src/ui/screen/avatar_decoration_screen.dart';
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -133,6 +134,30 @@ void main() {
 
     expect(find.text('「かぼちゃ」はこのアカウントでは使えません'), findsOneWidget);
     expect(find.byIcon(Icons.check_circle), findsNothing);
+  });
+
+  testWidgets('⚠ 保存の回数制限（i/update は 1 時間 20 回）は専用の文言で知らせる', (tester) async {
+    final options = RequestOptions(path: '/api/i/update');
+    when(() => adapter.attachAvatarDecoration('a')).thenThrow(
+      DioException(
+        requestOptions: options,
+        type: DioExceptionType.badResponse,
+        response: Response(
+          requestOptions: options,
+          statusCode: 429,
+          data: {
+            'error': {'code': 'RATE_LIMIT_EXCEEDED'},
+          },
+        ),
+      ),
+    );
+    await pump(tester, account('me'));
+
+    await tester.tap(find.text('かぼちゃ'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('短い間に保存しすぎました'), findsOneWidget);
+    expect(find.textContaining('保存できませんでした'), findsNothing);
   });
 
   test('updateUserOf: 指定のアカウントだけを書き換える', () {

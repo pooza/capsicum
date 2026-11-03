@@ -16,8 +16,24 @@ final avatarDecorationOptionsProvider =
     FutureProvider.autoDispose<List<AvatarDecorationOption>>((ref) async {
       final adapter = ref.watch(currentAdapterProvider);
       if (adapter is! AvatarDecorationSupport) return const [];
-      return (adapter as AvatarDecorationSupport).getAvatarDecorationOptions();
-    }, dependencies: [currentAdapterProvider]);
+      // ⚠ 通信の前に取る。通信の間に provider が破棄されると `ref` を読めない。
+      final account = ref.read(currentAccountProvider);
+      try {
+        return await (adapter as AvatarDecorationSupport)
+            .getAvatarDecorationOptions();
+      } catch (e, st) {
+        if (!isOAuthScopeError(e)) {
+          reportOpFailure(
+            tagKey: 'avatar_decoration.list',
+            operation: 'options',
+            error: e,
+            stackTrace: st,
+            account: account,
+          );
+        }
+        rethrow;
+      }
+    }, dependencies: [currentAdapterProvider, currentAccountProvider]);
 
 /// アイコンデコレーションの付け外し (#1349)。
 ///
@@ -64,7 +80,13 @@ class _AvatarDecorationScreenState
       );
     } on AvatarDecorationLimitReached catch (e) {
       messenger.showSnackBar(
-        SnackBar(content: Text('付けられるのは ${e.limit} 個までです。先にどれかを外してください')),
+        SnackBar(
+          content: Text(
+            e.limit == 0
+                ? 'このアカウントではデコレーションを付けられません'
+                : '付けられるのは ${e.limit} 個までです。先にどれかを外してください',
+          ),
+        ),
       );
     } catch (e, st) {
       if (isOAuthScopeError(e)) {
@@ -74,6 +96,11 @@ class _AvatarDecorationScreenState
       } else if (misskeyApiErrorCode(e) == 'RESTRICTED_BY_ROLE') {
         messenger.showSnackBar(
           const SnackBar(content: Text('付けられる数を超えています。先にどれかを外してください')),
+        );
+      } else if (misskeyApiErrorCode(e) == 'RATE_LIMIT_EXCEEDED') {
+        // ⚠ i/update は 1 時間に 20 回まで。付け替えを続けると当たる既知の条件。
+        messenger.showSnackBar(
+          const SnackBar(content: Text('短い間に保存しすぎました。しばらく待ってから試してください')),
         );
       } else {
         reportOpFailure(
