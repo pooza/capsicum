@@ -171,6 +171,8 @@ minor 内の patch 更新（自前 3 鯖は pooza が本番へリリース日に
 - **none（サーバーの運用）**: `Forwarded` ヘッダーより `X-Forwarded-For` を優先する（GHSA-qp4r-p842-mw5c）。同梱の `dist/nginx.conf` は `proxy_set_header Forwarded "";` を 2 箇所足した。⚠ 反映は chubo2 側
 - **none（招待）**: 招待で入った人がアカウントを消しても、招待の使用回数が減らなくなった（#41458）。capsicum は招待 API を叩かない
 
+実測（2026-11-04）: 美食丼 / デルムリン丼 / キュアスタ！の `/api/v2/instance` はいずれも `4.7.5`。
+
 ## 5.0 先読み（v4.7.3 → upstream main `5.0.0-alpha.1`・2026-10-20）
 
 **まだタグが無い**（RC 前）。upstream main `5204e8ab94` との tree diff で見た（718 コミット）。⚠ **RC が出たら同じ手順で引き直す**（フォーク側の試しマージ pooza/mastodon#996 と同じ時期）。5.0 の目玉は Web UI の全面刷新で、フォークの 5.0 対応（pooza/mastodon の `5.0.0` マイルストーン）もほぼそちら。
