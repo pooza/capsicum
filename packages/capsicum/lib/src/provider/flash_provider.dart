@@ -120,7 +120,10 @@ final flashListProvider = FutureProvider.autoDispose
           FlashListKind.mine => _pagedFlashes(
             (query) => support.getMyFlashes(query: query),
           ),
-          FlashListKind.featured => support.getFeaturedFlashes(),
+          // ⚠ 既定は 10 件。featured は offset 方式で 1 回 100 件まで。
+          FlashListKind.featured => support.getFeaturedFlashes(
+            query: const TimelineQuery(limit: _pageSize),
+          ),
         },
       );
     }, dependencies: [currentAdapterProvider, currentAccountProvider]);

@@ -1,5 +1,6 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/account_manager_provider.dart';
@@ -58,6 +59,8 @@ class _FlashBrowserScreenState extends ConsumerState<FlashBrowserScreen>
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
               child: TextField(
                 controller: _search,
+                // ⚠ flash/search の query は 100 文字まで。超えると 400 になる。
+                inputFormatters: [LengthLimitingTextInputFormatter(100)],
                 textInputAction: TextInputAction.search,
                 decoration: InputDecoration(
                   hintText: 'Play を検索',
