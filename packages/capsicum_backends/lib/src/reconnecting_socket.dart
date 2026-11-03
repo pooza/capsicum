@@ -325,6 +325,17 @@ class ReconnectingSocket {
         });
   }
 
+  /// いまの接続を閉じ、切れたときと同じ規則で張り直す (#1353)。
+  ///
+  /// ⚠ [connect] を直接呼ばない。待ち時間と失敗の数え方を通さないと、断り続ける
+  /// 相手へ打ち続ける。
+  void closeAndRetry() {
+    final channel = _channel;
+    if (_disposed || channel == null) return;
+    channel.sink.close();
+    _failed(channel, null, null);
+  }
+
   /// [channel] が切れた / つながらなかった。[error] は切断だけなら null。
   void _failed(WebSocketChannel channel, Object? error, StackTrace? stack) {
     if (_disposed) return;

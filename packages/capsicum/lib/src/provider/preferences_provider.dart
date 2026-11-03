@@ -27,6 +27,7 @@ const _hideLivecureKey = 'hide_livecure';
 const _mfmAnimationKey = 'mfm_animation_enabled';
 const _themeModeKey = 'theme_mode';
 const _absoluteTimeKey = 'absolute_time';
+const _confirmPostAccountAfterIdleKey = 'confirm_post_account_after_idle';
 const _blurAllImagesKey = 'blur_all_images';
 const _hideInstanceTickerKey = 'hide_instance_ticker';
 const _restoreReadPositionKey = 'restore_read_position';
@@ -50,8 +51,10 @@ const _darkSurfaceVariantKey = 'dark_surface_variant';
 /// 通知を束ねて出すか (#1048)。
 const _notificationGroupingKey = 'notification_grouping';
 
-/// 通知一覧に出さない種別 (#1042)。`NotificationType` の `name` を並べる。
+/// 専用アプリで開かないサービス (#1345)。
 const _disabledPreferredAppsKey = 'disabled_preferred_apps';
+
+/// 通知一覧に出さない種別 (#1042)。`NotificationType` の `name` を並べる。
 const _notificationExcludedTypesKey = 'notification_excluded_types';
 
 /// デッキのカラム列 (#1091)。バックアップに含める（#1101・`settings_backup.dart`
@@ -2056,6 +2059,27 @@ class StickerPickerHeightNotifier extends PickerSheetHeightNotifier {
   String get prefsKey => _stickerPickerHeightKey;
 }
 
+/// デッキで間が空いてから投稿するとき、投稿先を確かめるか (#1306)。
+///
+/// ⚠ 困っている人だけが有効にする設定なので、既定は無効。
+final confirmPostAccountAfterIdleProvider =
+    NotifierProvider<ConfirmPostAccountAfterIdleNotifier, bool>(
+      ConfirmPostAccountAfterIdleNotifier.new,
+    );
+
+class ConfirmPostAccountAfterIdleNotifier extends PersistedNotifier<bool> {
+  @override
+  bool get defaultValue => false;
+  @override
+  bool? readSaved(SharedPreferences prefs) =>
+      prefs.getBool(_confirmPostAccountAfterIdleKey);
+  @override
+  Future<void> writeSaved(SharedPreferences prefs, bool value) =>
+      prefs.setBool(_confirmPostAccountAfterIdleKey, value);
+
+  Future<void> setEnabled(bool value) => persist(value);
+}
+
 /// Whether to show absolute timestamps instead of relative ones.
 final absoluteTimeProvider = NotifierProvider<AbsoluteTimeNotifier, bool>(
   AbsoluteTimeNotifier.new,
@@ -2520,6 +2544,7 @@ final backedUpPreferenceProviders = <ProviderOrFamily>[
   // backgroundOpacityProvider は入れない。アカウントごとの family で、素の
   // `background_opacity` は移行専用キー（`accountScopedKeys`）。
   absoluteTimeProvider,
+  confirmPostAccountAfterIdleProvider,
   blurAllImagesProvider,
   hideInstanceTickerProvider,
   hideLivecureProvider,

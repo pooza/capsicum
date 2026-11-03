@@ -114,6 +114,7 @@ const exportableSettings = <BackupSetting>[
   BackupSetting('emoji_scale', BackupValueType.number, min: 16, max: 40),
   BackupSetting('thumbnail_scale', BackupValueType.number, min: 0.4, max: 1.2),
   BackupSetting('absolute_time', BackupValueType.boolean),
+  BackupSetting('confirm_post_account_after_idle', BackupValueType.boolean),
   BackupSetting('blur_all_images', BackupValueType.boolean),
   BackupSetting('hide_instance_ticker', BackupValueType.boolean),
   BackupSetting('hide_livecure', BackupValueType.boolean),

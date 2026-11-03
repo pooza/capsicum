@@ -68,6 +68,38 @@ macOS ネイティブビルドは iOS と同じ Bundle ID `jp.co.b-shock.capsicu
 - [x] [capsicum.shrieker.net/privacy-policy](https://capsicum.shrieker.net/privacy-policy) で公開（正本は [capsicum-site](https://github.com/pooza/capsicum-site) の `privacy-policy/index.md`）
 - [x] URL をストアの掲載情報に設定
 
+#### プライバシー申告（#1358）
+
+外へ送る情報は **4 か所**で申告している。**どれかを変えたら残りも揃える。**
+
+| 場所 | 中身 |
+| --- | --- |
+| プライバシーポリシー | capsicum-site の `privacy-policy/index.md` |
+| Google Play のデータセーフティ | `https://play.google.com/console/u/0/developers/6137700345409037703/app/4973484112906347344/app-content/data-privacy-security`（⚠ メニューの名前で案内すると画面と合わない。URL で開く） |
+| App Store の App プライバシー | `https://appstoreconnect.apple.com/apps/6760206608/distribution/privacy`（⚠ **保存した時点で即座に公開**・審査なし） |
+| iOS のマニフェスト | `ios/Runner/PrivacyInfo.xcprivacy` |
+
+⚠⚠ **SDK のマニフェストがあっても、ストアの申告は手で答える。**自動では埋まらない。Sentry を入れたあとも App Store は「データの収集なし」のまま 8 か月出ていた。
+
+**見直す区切り:**
+
+- 端末の外へ送る情報が増えたとき（新しい SDK・新しい送り先・Sentry のタグや context・relay へ送る項目・利用者の入力を新しく保存する機能）。⚠ その変更を入れる Issue の中で 4 か所を揃える
+- リリース前レビュー（[release-review スキル](../.claude/skills/release-review/SKILL.md)の不変条件）で、差分から取りこぼしを拾う
+
+**いまの申告（2026-11-03）:**
+
+| 出どころ | App Store | Google Play |
+| --- | --- | --- |
+| Sentry | 診断 › クラッシュデータ / パフォーマンスデータ / その他の診断データ（関連付けなし） | アプリの情報とパフォーマンス › クラッシュログ / 診断情報、デバイスまたはその他の ID（収集・共有なし・必須） |
+| relay | ID › ユーザ ID（**関連付けあり**）、購入 › 購入履歴（関連付けなし） | 個人情報 › ユーザー ID、財務情報 › 購入履歴（収集・共有なし・**任意**・アプリの機能。2026-11-03 にリリース前レビューの指摘で追加） |
+
+- 目的は App Store がすべて「アプリの機能」、Google Play の Sentry 分は「アプリの機能」と「分析」。トラッキングはどれもなし
+- Sentry は代わりに処理をする委託先なので、Play の「共有」に数えない。送信を止める設定が無いので「必須」
+- 利用者が自分で選んだ Mastodon / Misskey サーバーへ送るものは、開発者の「収集」に数えない
+- アプリが作る識別子は、Play の「デバイスまたはその他の ID」には当たる（アプリ単位の ID を含む定義）が、Apple の「デバイス ID」（端末単位の ID）には当たらない
+- Sentry の 3 種類は Sentry Cocoa 自身のマニフェストにも同じ内容で入っている。アプリのマニフェストに書くのは重複だが、害はないので揃えて残す
+- 確かめるときは、Claude が Chrome で画面を読める（Play はウィザード最後の「プレビュー」→「すべて展開」で一覧になる）。App Store Connect はログインだけ pooza が行う
+
 ### 1.6 コンテンツレーティング
 
 - [x] Google Play: IARC 質問回答

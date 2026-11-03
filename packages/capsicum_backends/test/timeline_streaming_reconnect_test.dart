@@ -54,12 +54,107 @@ void main() {
       return states;
     }
 
-    test('⚠⚠ live のままにせず exhausted を知らせる', () async {
+    test('⚠⚠ 4xx は live のままにせず rejected を知らせる', () async {
       final states = await statesAfter(
         '{"error":"Not authorized to stream this list","status":401}',
       );
 
-      expect(states.last, StreamConnectionState.exhausted);
+      expect(states.last, StreamConnectionState.rejected);
+    });
+
+    // #1353: 5xx はサーバー側の一時的な失敗。`exhausted` を出すだけで張り直さず、
+    // 帯は「再試行中」と言いながら何もしていなかった。
+    Future<_Probe> probeReceiving(
+      List<String> messages, {
+      required List<Object> errors,
+      required List<StreamConnectionState> states,
+      TabType tab = const TimelineTab(TimelineType.home),
+    }) async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close(force: true));
+      server.listen((request) async {
+        final socket = await WebSocketTransformer.upgrade(request);
+        messages.forEach(socket.add);
+      });
+      final probe = _Probe(
+        _Backend.mastodon,
+        server.port,
+        onConnectionState: states.add,
+        onStreamError: (e, _) => errors.add(e),
+      );
+      final sub = probe.connectTab(tab).listen((_) {});
+      addTearDown(sub.cancel);
+      return probe;
+    }
+
+    test('⚠⚠ 5xx は張り直し、状態は exhausted にしない', () async {
+      final errors = <Object>[];
+      final states = <StreamConnectionState>[];
+      final probe = await probeReceiving(
+        ['{"error":"Error connecting","status":500}'],
+        errors: errors,
+        states: states,
+      );
+
+      await waitUntil(() => probe.connectCount >= 3);
+
+      expect(probe.connectCount, greaterThanOrEqualTo(3));
+      expect(states, isNot(contains(StreamConnectionState.exhausted)));
+      expect(states, isNot(contains(StreamConnectionState.rejected)));
+      // ⚠ 再接続のたびに同じ応答を受けても、観測へは 1 回だけ。
+      expect(errors.whereType<StreamSubscriptionRefused>(), hasLength(1));
+      expect(errors.whereType<StreamSubscriptionRefused>().single.status, 500);
+    });
+
+    test('4xx は張り直さず、status を観測へ流す', () async {
+      final errors = <Object>[];
+      final states = <StreamConnectionState>[];
+      final probe = await probeReceiving(
+        ['{"error":"Not authorized","status":401}'],
+        errors: errors,
+        states: states,
+      );
+
+      await waitUntil(() => states.contains(StreamConnectionState.rejected));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(probe.connectCount, 1);
+      expect(errors.whereType<StreamSubscriptionRefused>().single.status, 401);
+    });
+
+    const twoTags = HashtagTab('?a+b');
+
+    test('⚠⚠ 複数タグで 1 本だけ断られても、カラムを赤くしない', () async {
+      expect(mastodonHashtagSubscriptions(twoTags), ['a', 'b'], reason: '前提');
+      final states = <StreamConnectionState>[];
+      await probeReceiving(
+        ['{"error":"Not authorized","status":401}'],
+        errors: [],
+        states: states,
+        tab: twoTags,
+      );
+
+      await waitUntil(() => states.contains(StreamConnectionState.live));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(states.last, StreamConnectionState.live);
+    });
+
+    test('複数タグでも全部断られたら rejected', () async {
+      final states = <StreamConnectionState>[];
+      await probeReceiving(
+        [
+          '{"error":"Not authorized","status":401}',
+          '{"error":"Not authorized","status":401}',
+        ],
+        errors: [],
+        states: states,
+        tab: twoTags,
+      );
+
+      await waitUntil(() => states.contains(StreamConnectionState.rejected));
+
+      expect(states.last, StreamConnectionState.rejected);
     });
 
     test('前提: エラーでなければ live のまま', () async {
@@ -258,6 +353,8 @@ class _Probe {
   late final Stream<Post> Function(TabType) _connect;
 
   Stream<Post> connect() => _connect(const TimelineTab(TimelineType.home));
+
+  Stream<Post> connectTab(TabType tab) => _connect(tab);
 
   Duration delayFor(int attempt) {
     delayRequests.add(attempt);

@@ -27,6 +27,7 @@ import '../../provider/timeline_provider.dart';
 import '../../service/compose_draft_attachment.dart';
 import '../../service/compose_draft_store.dart';
 import '../../service/now_playing_artwork.dart';
+import '../../service/post_account_idle_tracker.dart';
 import '../../service/sentry_op_failure.dart';
 import '../../url_helper.dart';
 import '../../util/action_labels.dart';
@@ -51,6 +52,7 @@ import '../util/hashtag_body.dart';
 import '../util/image_crop_geometry.dart';
 import '../util/livecure_snackbar.dart';
 import '../util/pop_or_go.dart';
+import '../util/post_account_confirm.dart';
 import '../util/post_scope_display.dart';
 import '../util/program_schedule_display.dart';
 import '../util/provider_scope_carrier.dart';
@@ -4274,7 +4276,13 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       if (proceed != true) return;
     }
 
-    if (await ref.read(confirmBeforePostProvider.notifier).readPersisted()) {
+    if (!mounted) return;
+    final accountCheck = await confirmPostAccountIfNeeded(context, ref);
+    if (accountCheck == PostAccountConfirmResult.cancelled || !mounted) return;
+
+    // ⚠ 投稿先を尋ねたばかりなら重ねない (#1306)。
+    if (accountCheck == PostAccountConfirmResult.notAsked &&
+        await ref.read(confirmBeforePostProvider.notifier).readPersisted()) {
       if (!mounted) return;
       final confirmed = await showDialog<bool>(
         context: context,
@@ -4378,6 +4386,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           quoteApprovalPolicy: _quoteApprovalPolicy,
         ),
       );
+      // ⚠ 送れたなら投稿先は分かって書いている。尋ねる印を下ろす (#1306)。
+      postAccountIdleTracker.clear();
       // ⚠⚠ **ドライブ添付の ALT は投稿が通ってから書き戻す (#1035-A2)。**
       // 以前は `postStatus` の**前**にあった。ドライブファイルは実体が 1 つ
       // なので、投稿が失敗しても**そのファイルを使っている過去の投稿の ALT は

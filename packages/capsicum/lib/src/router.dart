@@ -13,6 +13,7 @@ import 'ui/screen/annict_record_screen.dart';
 import 'ui/screen/annict_review_screen.dart';
 import 'ui/screen/announcement_screen.dart';
 import 'ui/screen/antenna_notes_screen.dart';
+import 'ui/screen/avatar_decoration_screen.dart';
 import 'ui/screen/bookmark_screen.dart';
 import 'ui/screen/channel_edit_screen.dart';
 import 'ui/screen/channel_management_screen.dart';
@@ -37,6 +38,7 @@ import 'ui/screen/eula_screen.dart';
 import 'ui/screen/favorites_screen.dart';
 import 'ui/screen/filter_edit_screen.dart';
 import 'ui/screen/filter_list_screen.dart';
+import 'ui/screen/flash_browser_screen.dart';
 import 'ui/screen/flash_view_screen.dart';
 import 'ui/screen/follow_requests_screen.dart';
 import 'ui/screen/followed_hashtags_screen.dart';
@@ -73,6 +75,7 @@ import 'ui/screen/settings/settings_backup_screen.dart';
 import 'ui/screen/settings/supporter_screen.dart';
 import 'ui/screen/settings/touch_action_settings_screen.dart';
 import 'ui/screen/settings_screen.dart';
+import 'ui/screen/share_account_screen.dart';
 import 'ui/screen/splash_screen.dart';
 import 'ui/screen/templates_manage_screen.dart';
 import 'ui/screen/unified_notification_screen.dart';
@@ -449,6 +452,26 @@ final routerProvider = Provider<GoRouter>((ref) {
               );
             },
           ),
+          // 共有されたナウプレを投稿するアカウントを選ぶ (#1348)。
+          GoRoute(
+            path: '/share/account',
+            // ⚠ `extra` はプロセスをまたいで残らない (#1083-F)。共有の中身が
+            // 無ければ選ぶものが無いので、ホームへ戻す。
+            redirect: (context, state) {
+              final extra = state.extra;
+              return extra is Map && extra['sharedText'] is String
+                  ? null
+                  : '/home';
+            },
+            builder: (context, state) => ShareAccountScreen(
+              sharedText: (state.extra as Map?)?['sharedText'] as String? ?? '',
+            ),
+          ),
+          // Play を探す・自分の Play を削除する (#1351)。
+          GoRoute(
+            path: '/plays',
+            builder: (context, state) => const FlashBrowserScreen(),
+          ),
           GoRoute(
             path: '/play',
             builder: (context, state) {
@@ -540,6 +563,14 @@ final routerProvider = Provider<GoRouter>((ref) {
             // ⚠ 開いた側（デッキのカラム）のアカウントを編集する (#1150)。
             builder: (context, state) =>
                 withExtraProviderScope(state.extra, const ProfileEditScreen()),
+          ),
+          // アイコンデコレーションの付け外し (#1349)。
+          GoRoute(
+            path: '/profile/decorations',
+            builder: (context, state) => withExtraProviderScope(
+              state.extra,
+              const AvatarDecorationScreen(),
+            ),
           ),
           // ⚠⚠ **`extra` はプロセスをまたいで残らない (#1083-F)。**この 2 本は
           // 「タイトルと fetcher（クロージャ）」を `extra` で渡す汎用画面なので、

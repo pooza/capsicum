@@ -37,6 +37,20 @@ const _plain = Channel(id: 'c1', name: 'プリキュア', userId: 'other');
 const _mine = Channel(id: 'c2', name: '自作', userId: 'me', description: '説明');
 
 void main() {
+  test('channelCountsLabel: あるものだけを出し、無ければ null (#1353)', () {
+    expect(
+      channelCountsLabel(
+        const Channel(id: 'c', name: 'n', usersCount: 2, notesCount: 3),
+      ),
+      'ユーザー 2・投稿 3',
+    );
+    expect(
+      channelCountsLabel(const Channel(id: 'c', name: 'n', usersCount: 2)),
+      'ユーザー 2',
+    );
+    expect(channelCountsLabel(const Channel(id: 'c', name: 'n')), isNull);
+  });
+
   late _Adapter adapter;
 
   setUpAll(() => registerFallbackValue(_DraftFake()));
@@ -226,7 +240,7 @@ void main() {
       ).thenThrow(StateError('network'));
       await pump(tester, const ChannelManagementScreen());
 
-      expect(find.text('読み込みに失敗しました'), findsOneWidget);
+      expect(find.textContaining('読み込みに失敗しました'), findsOneWidget);
     });
   });
 
@@ -365,7 +379,7 @@ void main() {
     });
 
     testWidgets('入力したものを作成で送る', (tester) async {
-      when(() => adapter.createChannel(any())).thenAnswer((_) async => _plain);
+      when(() => adapter.createChannel(any())).thenAnswer((_) async {});
       final results = await pushEdit(tester);
 
       await tester.enterText(find.byType(TextField).first, ' 名前 ');
@@ -384,9 +398,7 @@ void main() {
     });
 
     testWidgets('編集は今の値を出し、そのチャンネルへ送る', (tester) async {
-      when(
-        () => adapter.updateChannel('c2', any()),
-      ).thenAnswer((_) async => _mine);
+      when(() => adapter.updateChannel('c2', any())).thenAnswer((_) async {});
       final results = await pushEdit(tester, channel: _mine);
 
       expect(find.text('自作'), findsOneWidget);

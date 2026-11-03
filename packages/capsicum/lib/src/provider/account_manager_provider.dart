@@ -374,6 +374,22 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     state = state.copyWith(accounts: accounts, current: updated);
   }
 
+  /// [key] のアカウントの情報を更新する。
+  ///
+  /// ⚠ デッキのカラムから開いた画面は、現在のアカウントとは別のアカウントを
+  /// 操作していることがある。[updateCurrentUser] を呼ぶと、現在のアカウントに
+  /// 別人の情報を書いてしまう。
+  void updateUserOf(AccountKey key, User user) {
+    final current = state.current;
+    final accounts = state.accounts
+        .map((a) => a.key == key ? a.copyWithUser(user) : a)
+        .toList();
+    state = state.copyWith(
+      accounts: accounts,
+      current: current?.key == key ? current!.copyWithUser(user) : current,
+    );
+  }
+
   /// [key] がまだ現在のアカウントなら、[updateCurrentUser] する。
   ///
   /// ⚠ 画面の `ref` で現在のアカウントを確かめる形にしない（v2.4 リリース前

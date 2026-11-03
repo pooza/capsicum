@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../provider/channel_provider.dart';
 import '../util/deck_navigation.dart';
+import '../util/op_error.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/channel_actions_sheet.dart';
 import '../widget/retry_error_view.dart';
@@ -122,6 +123,18 @@ class _ChannelManagementScreenState
   }
 }
 
+/// 探すときの手がかりになる数の行。どちらも無ければ null。
+@visibleForTesting
+String? channelCountsLabel(Channel channel) {
+  final users = channel.usersCount;
+  final notes = channel.notesCount;
+  final parts = [
+    if (users != null) 'ユーザー $users',
+    if (notes != null) '投稿 $notes',
+  ];
+  return parts.isEmpty ? null : parts.join('・');
+}
+
 class _ChannelList extends ConsumerWidget {
   const _ChannelList({required this.provider, required this.emptyMessage});
 
@@ -133,8 +146,8 @@ class _ChannelList extends ConsumerWidget {
     final channels = ref.watch(provider);
     return channels.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (_, _) => RetryErrorView(
-        message: '読み込みに失敗しました',
+      error: (e, _) => RetryErrorView(
+        message: '読み込みに失敗しました\n${summarizeOpError(e)}',
         isRetrying: channels.isLoading,
         onRetry: () => invalidateChannels(ref),
       ),
@@ -146,6 +159,7 @@ class _ChannelList extends ConsumerWidget {
           itemBuilder: (context, index) {
             final channel = list[index];
             final description = channel.description;
+            final counts = channelCountsLabel(channel);
             return ListTile(
               leading: Icon(
                 channel.isFollowing ? Icons.forum : Icons.forum_outlined,
@@ -156,10 +170,10 @@ class _ChannelList extends ConsumerWidget {
                 overflow: TextOverflow.ellipsis,
               ),
               subtitle: description == null || description.isEmpty
-                  ? null
+                  ? (counts == null ? null : Text(counts))
                   : Text(
-                      description,
-                      maxLines: 2,
+                      counts == null ? description : '$description\n$counts',
+                      maxLines: counts == null ? 2 : 3,
                       overflow: TextOverflow.ellipsis,
                     ),
               onTap: () => openChannel(context, channel.id, channel.name),

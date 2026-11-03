@@ -7,6 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'support/dart_source.dart';
+
 /// #1174: デッキの画面全体に 1 枚、背景画像を敷く。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -142,11 +144,25 @@ void main() {
     );
   });
 
-  test('デッキ画面が敷いている', () {
-    final source = File(
-      'lib/src/ui/screen/deck_screen.dart',
-    ).readAsStringSync();
+  group('デッキ画面が敷いている', () {
+    bool laysBackground(String source) =>
+        maskComments(source).contains('DeckBackground(');
 
-    expect(source, contains('DeckBackground('));
+    final file = File('lib/src/ui/screen/deck_screen.dart');
+
+    test('前提: 走査の対象が実在する', () {
+      expect(file.existsSync(), isTrue);
+      expect(file.readAsStringSync(), contains('class DeckScreen'));
+    });
+
+    test('判定: 呼び出しに当たり、コメントには当たらない', () {
+      expect(laysBackground('child: DeckBackground(child: body),'), isTrue);
+      expect(laysBackground('// DeckBackground( を敷く\nchild: body,'), isFalse);
+      expect(laysBackground('child: body,'), isFalse);
+    });
+
+    test('deck_screen.dart が DeckBackground を使っている', () {
+      expect(laysBackground(file.readAsStringSync()), isTrue);
+    });
   });
 }

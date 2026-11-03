@@ -68,6 +68,7 @@ void main() {
         // #1173: 検索・すべての通知（荷物を持たない・`:` の無いキー）
         SearchTab(),
         AllNotificationsTab(),
+        AllAnnouncementsTab(),
       ]) {
         expect(TabType.fromKey(tab.toIdentityKey()), tab);
       }
@@ -125,6 +126,7 @@ void main() {
         ChatUserTab('u'),
         SearchTab(),
         AllNotificationsTab(),
+        AllAnnouncementsTab(),
       ]) {
         expect(tab, isA<DeckOnlyTab>(), reason: tab.toKey());
       }

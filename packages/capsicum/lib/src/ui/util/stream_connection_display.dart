@@ -22,6 +22,11 @@ import 'package:flutter/material.dart';
     color: Theme.of(context).colorScheme.error,
     label: '接続が不安定 — 再試行中',
   ),
+  // ⚠ 再試行していないので「再試行中」と書かない (#1353)。
+  StreamConnectionState.rejected => (
+    color: Theme.of(context).colorScheme.error,
+    label: 'サーバーに断られました — 更新で再試行できます',
+  ),
   // ユーザーが設定でライブ更新を OFF にしている (#854)。エラーではないので
   // 灰色で「オフ」と正直に出す。pull-to-refresh / タブ再選択で更新できる。
   StreamConnectionState.disabled => (color: Colors.grey, label: 'ライブ更新オフ'),

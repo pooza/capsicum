@@ -25,7 +25,12 @@ class AnnouncementTile extends ConsumerStatefulWidget {
     required this.announcement,
     this.host,
     this.onDismiss,
+    this.showReactions = true,
   });
+
+  /// リアクションの行を出すか。⚠ 付け外しは現在のアカウントへ送るので、
+  /// アカウントをまたぐ画面（#1347）では出さない。
+  final bool showReactions;
 
   @override
   ConsumerState<AnnouncementTile> createState() => _AnnouncementTileState();
@@ -180,6 +185,7 @@ class _AnnouncementTileState extends ConsumerState<AnnouncementTile> {
   /// が false・#1321）では「+」を出さず、既存チップも押せなくする（付け外しは
   /// 400 になる）。既に付いているリアクションの表示はそのまま残す。
   Widget _buildReactions(BuildContext context, ThemeData theme) {
+    if (!widget.showReactions) return const SizedBox.shrink();
     final adapter = ref.watch(currentAdapterProvider);
     if (adapter is! AnnouncementReactionSupport) return const SizedBox.shrink();
     final allowed = announcement.reactionsAllowed;

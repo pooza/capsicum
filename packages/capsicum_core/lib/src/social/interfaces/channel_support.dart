@@ -35,6 +35,6 @@ abstract mixin class ChannelManagementSupport {
   Future<void> unfavoriteChannel(String channelId);
   Future<void> muteChannel(String channelId);
   Future<void> unmuteChannel(String channelId);
-  Future<Channel> createChannel(ChannelDraft draft);
-  Future<Channel> updateChannel(String channelId, ChannelDraft draft);
+  Future<void> createChannel(ChannelDraft draft);
+  Future<void> updateChannel(String channelId, ChannelDraft draft);
 }

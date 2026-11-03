@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'package:capsicum_backends/capsicum_backends.dart'
+    show StreamSubscriptionRefused;
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -1273,6 +1275,27 @@ mixin TimelineLiveIngest<Arg>
             message: e.runtimeType.toString(),
           ),
         );
+        // ⚠ 購読を断られたのは回線の事象ではない (#1353)。まとめ役に渡すと、
+        // 2 ホストで同時に起きた回が「回線断」に畳まれ、ホストもステータスも
+        // 消える。ストリーム側が status ごとに 1 回へ間引いているので、直接送る。
+        if (e is StreamSubscriptionRefused) {
+          final status = e.status;
+          final serverSide = status == null || status >= 500;
+          Sentry.captureMessage(
+            'timeline.stream.subscription_refused',
+            level: serverSide ? SentryLevel.warning : SentryLevel.error,
+            withScope: (scope) {
+              scope.setTag('timeline.stream', 'subscription_refused');
+              scope.setTag('timeline.stream.status', '${status ?? '-'}');
+              if (host != null) scope.setTag('timeline.stream.host', host);
+              scope.fingerprint = [
+                'timeline.stream.subscription_refused',
+                '${status ?? '-'}',
+              ];
+            },
+          );
+          return;
+        }
         // ⚠ **イベントにするかは、アプリ全体で 1 つの報告役が決める** (#1246)。
         // 購読ごとに間引いていた頃は、回線が 1 回切れるたびに接続の本数だけ
         // error が飛んでいた（デッキで 4 ホスト 7 本なら 7 件）。

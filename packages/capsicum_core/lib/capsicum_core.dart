@@ -48,6 +48,7 @@ export 'src/social/capabilities.dart';
 export 'src/social/interfaces/achievement_support.dart';
 export 'src/social/interfaces/announcement_support.dart';
 export 'src/social/interfaces/antenna_support.dart';
+export 'src/social/interfaces/avatar_decoration_support.dart';
 export 'src/social/interfaces/bookmark_support.dart';
 export 'src/social/interfaces/channel_support.dart';
 export 'src/social/interfaces/chat_support.dart';

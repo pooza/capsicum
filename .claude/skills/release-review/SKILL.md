@@ -32,6 +32,16 @@ disable-model-invocation: true
 
 この確認はセキュリティ観点のサブエージェントに持たせる（追加の 1 本は立てない）。
 
+### 必ず見る不変条件: 外へ送る情報とプライバシー申告が揃っている
+
+**どのリリースでも確かめる**（2026-11-03 pooza 指示・正本は [store-release-guide.md](../../../docs/store-release-guide.md) §1.5「プライバシー申告」）。Sentry を入れたあとも App Store が「データの収集なし」のまま 8 か月出ていた（#1358）。
+
+- `v前リリース..HEAD` の差分で、**端末の外へ送る情報が増えていないか**を見る: 新しい SDK・新しい送り先・Sentry のタグや context・relay へ送る項目（capsicum と **同じ期間の capsicum-relay の差分**の両方）・利用者の入力を新しく保存する箇所
+- 増えていたら 🟡 として、**4 か所の見直しをリリースの作業に足す**: プライバシーポリシー（capsicum-site）・Play のデータセーフティ・App Store の App プライバシー・`ios/Runner/PrivacyInfo.xcprivacy`
+- ⚠ 利用者が自分で選んだ Mastodon / Misskey サーバーへ送るものは、開発者の「収集」に数えない（§1.5 の判断）
+
+この確認もセキュリティ観点のサブエージェントに持たせる。
+
 対象範囲は `v前リリース..HEAD` の差分。Codex（`chatgpt-codex-connector[bot]`）は PR ready 時に走るので併走させ、重複しない指摘だけを拾う。
 
 ⚠⚠ **併走させるには、ここで実際に PR を ready にすること。**手順は [store-release スキル §4.0](../store-release/SKILL.md)。**「併走させる」と書いてあるだけで ready にする step がどこにも無かった**ため、実際には §4.4（GitHub Release）まで ready されず、**Codex の指摘がストア提出後に届いていた**（2026-09-17 の v1.65 で顕在化）。⚠ **ready 化だけでは走らないことがある**ので `@codex review` を明示的に打つ。

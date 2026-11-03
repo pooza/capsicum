@@ -2,6 +2,7 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../model/account_key.dart';
+import '../service/sentry_op_failure.dart';
 import 'account_manager_provider.dart';
 import 'preferences_provider.dart';
 import 'timeline_provider.dart';
@@ -174,26 +175,56 @@ enum ChannelListKind {
   final String emptyMessage;
 }
 
+/// 一覧の取得。失敗は観測へ流してから、そのまま画面へ返す (#1353)。
+Future<List<Channel>> _fetchChannelList(
+  Ref ref,
+  String operation,
+  Future<List<Channel>> Function() fetch,
+) async {
+  // ⚠ 通信の前に取る。通信の間に provider が破棄されると `ref` を読めない。
+  final account = ref.read(currentAccountProvider);
+  try {
+    return await fetch();
+  } catch (e, st) {
+    reportOpFailure(
+      tagKey: 'channel.list',
+      operation: operation,
+      error: e,
+      stackTrace: st,
+      account: account,
+    );
+    rethrow;
+  }
+}
+
 final channelListProvider = FutureProvider.autoDispose
     .family<List<Channel>, ChannelListKind>((ref, kind) async {
       final adapter = ref.watch(currentAdapterProvider);
       if (adapter is! ChannelManagementSupport) return const [];
       final support = adapter as ChannelManagementSupport;
-      return switch (kind) {
-        ChannelListKind.featured => support.getFeaturedChannels(),
-        ChannelListKind.followed =>
-          (adapter as ChannelSupport).getFollowedChannels(),
-        ChannelListKind.favorite => support.getFavoriteChannels(),
-        ChannelListKind.owned => support.getOwnedChannels(),
-      };
-    }, dependencies: [currentAdapterProvider]);
+      return _fetchChannelList(
+        ref,
+        kind.name,
+        () => switch (kind) {
+          ChannelListKind.featured => support.getFeaturedChannels(),
+          ChannelListKind.followed =>
+            (adapter as ChannelSupport).getFollowedChannels(),
+          ChannelListKind.favorite => support.getFavoriteChannels(),
+          ChannelListKind.owned => support.getOwnedChannels(),
+        },
+      );
+    }, dependencies: [currentAdapterProvider, currentAccountProvider]);
 
 final channelSearchProvider = FutureProvider.autoDispose
     .family<List<Channel>, String>((ref, query) async {
       final adapter = ref.watch(currentAdapterProvider);
       if (adapter is! ChannelManagementSupport) return const [];
-      return (adapter as ChannelManagementSupport).searchChannels(query);
-    }, dependencies: [currentAdapterProvider]);
+      return _fetchChannelList(
+        ref,
+        'search',
+        () => (adapter as ChannelManagementSupport).searchChannels(query),
+      );
+    }, dependencies: [currentAdapterProvider, currentAccountProvider]);
 
 /// チャンネルを操作したあとに、持っている一覧を取り直す (#1051)。
 ///

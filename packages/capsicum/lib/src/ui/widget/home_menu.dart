@@ -337,7 +337,7 @@ List<HomeNavItem> buildHomeNavItems(
       HomeNavItem(
         title: 'Play',
         icon: Icons.play_circle_outline,
-        onSelected: () => act(() => showFlashList(context, ref)),
+        onSelected: () => act(() => context.push('/plays')),
       ),
     if (adapter is GallerySupport)
       HomeNavItem(
@@ -1040,67 +1040,6 @@ Future<void> showServerLinks(BuildContext context, WidgetRef ref) async {
                 },
               ),
           ],
-        ],
-      ),
-    ),
-  );
-}
-
-Future<void> showFlashList(BuildContext context, WidgetRef ref) async {
-  final adapter = ref.read(currentAdapterProvider);
-  if (adapter is! FlashSupport) return;
-
-  final List<Flash> flashes;
-  try {
-    flashes = await (adapter as FlashSupport).getFeaturedFlashes();
-  } catch (_) {
-    if (context.mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Play の取得に失敗しました')));
-    }
-    return;
-  }
-  if (flashes.isEmpty) {
-    if (context.mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Play はありません')));
-    }
-    return;
-  }
-  if (!context.mounted) return;
-
-  await showModalBottomSheet<void>(
-    context: context,
-    builder: (context) => SafeArea(
-      child: ListView(
-        shrinkWrap: true,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Text('Play', style: Theme.of(context).textTheme.titleMedium),
-          ),
-          for (final flash in flashes)
-            ListTile(
-              leading: const Icon(Icons.play_circle_outline, size: 20),
-              title: Text(flash.title),
-              subtitle: flash.summary != null && flash.summary!.isNotEmpty
-                  ? Text(
-                      flash.summary!,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    )
-                  : null,
-              dense: true,
-              onTap: () {
-                // #830 でネイティブ実行に切り替えた。以前は外部ブラウザで
-                // /play/<id> を開いていた (#73)。実行できない Play は
-                // 詳細画面側で「ブラウザで開く」に degrade する。
-                Navigator.pop(context);
-                openFlash(context, flash: flash);
-              },
-            ),
         ],
       ),
     ),
