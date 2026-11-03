@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
@@ -45,6 +47,15 @@ Object scrubException(Object e) {
     // 含む。streaming のフレーム parse 失敗時に投稿本文の断片が混入する
     // ため、message のみ残して source / offset は落とす (#586)。
     return StateError('FormatException: ${e.message}');
+  }
+  if (e is FileSystemException) {
+    // toString() は対象のパスを含む。利用者が選んだ画像のパス（ホームの
+    // ユーザー名が入る）や、アカウントごとの保存先が載るので落とす (#1353 の
+    // リリース前レビュー)。種類と OS のエラー番号だけ残す。
+    return StateError(
+      '${e.runtimeType}: ${e.message} '
+      'errno=${e.osError?.errorCode ?? '-'}',
+    );
   }
   final text = e.toString();
   if (_sensitiveQueryParam.hasMatch(text)) {

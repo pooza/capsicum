@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:capsicum/src/util/exception_scrub.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
@@ -5,6 +7,20 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('scrubException', () {
+    test('⚠ ファイルの例外からパスを落とす（利用者のユーザー名が入る）', () {
+      const e = FileSystemException(
+        'Cannot copy file',
+        '/Users/someone/Pictures/bg.png',
+        OSError('Permission denied', 13),
+      );
+
+      final scrubbed = scrubException(e).toString();
+
+      expect(scrubbed, isNot(contains('someone')));
+      expect(scrubbed, contains('Cannot copy file'));
+      expect(scrubbed, contains('errno=13'));
+    });
+
     test('MiAuth の session UUID をパスからマスクする (#790)', () {
       final e = DioException(
         requestOptions: RequestOptions(

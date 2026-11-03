@@ -24,12 +24,13 @@ class BackgroundImageSection extends ConsumerWidget {
   /// ⚠ 選択やコピーの失敗を黙らせない (#1353)。押しても何も起きないように見える。
   Future<void> _pickImage(BuildContext context, WidgetRef ref) async {
     final messenger = ScaffoldMessenger.of(context);
+    // ⚠ 選んでいる間に設定画面が閉じても読めるよう、await の前に取る。
+    final picker = ref.read(mediaPickerProvider);
+    final notifier = ref.read(backgroundImageProvider(storageKey).notifier);
     try {
-      final file = await ref.read(mediaPickerProvider).pickImage();
+      final file = await picker.pickImage();
       if (file == null) return;
-      await ref
-          .read(backgroundImageProvider(storageKey).notifier)
-          .setImage(file.path);
+      await notifier.setImage(file.path);
     } catch (e, st) {
       reportOpFailure(
         tagKey: 'background_image.op',
