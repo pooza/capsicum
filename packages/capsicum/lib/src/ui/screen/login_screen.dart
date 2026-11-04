@@ -900,6 +900,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           await _finishLogin(adapter, completeResult);
         } else if (completeResult is LoginFailure) {
           debugPrint('Login failed: ${completeResult.error}');
+          // 承認待ち・メール未確認 (#1320)。アカウントの状態であって不具合では
+          // ないので、Sentry のイベントにはしない。
+          final notFunctional = notFunctionalLoginMessage(completeResult.error);
+          if (notFunctional != null) {
+            final error = completeResult.error as MastodonAccountNotFunctional;
+            _logLoginStep(
+              'completeLogin.not_functional',
+              data: {'error_code': error.errorCode},
+            );
+            if (mounted) setState(() => _error = notFunctional);
+            return;
+          }
           // MiAuth ポーリング枯渇 (#276): 承認がまだ反映されていない／ユーザーが
           // 拒否した場合は Misskey が `{ok:false}` を返し続け、poll が尽きて
           // MisskeyMiAuthPending で失敗する。ジェネリック失敗と区別し、再試行を
@@ -1387,7 +1399,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       } else if (result is LoginFailure) {
         debugPrint('Manual code login failed: ${result.error}');
         if (mounted) {
-          setState(() => _error = '認証コードが正しくありません');
+          setState(
+            () => _error =
+                notFunctionalLoginMessage(result.error) ?? '認証コードが正しくありません',
+          );
         }
       }
     } catch (e) {

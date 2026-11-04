@@ -839,7 +839,9 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       );
 
       client.setAccessToken(token.accessToken!);
-      final account = await client.verifyCredentials();
+      // 承認待ち・メール未確認は MastodonAccountNotFunctional になり、下の
+      // catch で LoginFailure に包まれる (#1320)。
+      final account = await client.verifyCredentials(allowNonfunctional: true);
       _learnAdminRoles(account);
 
       return LoginSuccess(

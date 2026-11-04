@@ -20,6 +20,63 @@ class MastodonGroupedNotificationsUnsupported implements Exception {
       'MastodonGroupedNotificationsUnsupported: response is not a map';
 }
 
+/// ログインはできたが、アカウントがまだ使えない状態にある (#1320)。
+///
+/// 承認待ち・メール未確認などで、トークンは発行されるのに API が 403 を返す。
+/// 以前は 403 をまとめて「ログインに失敗しました」にしていたため、承認制の
+/// サーバーで登録したばかりの人が、理由を知る手段が無かった。
+///
+/// 見分け方は 2 通り（版では分岐しない）:
+///
+/// - 5.0〜: `verify_credentials?allow_nonfunctional=true` が 200 で返す
+///   `state`（`functional` / `error_code` / `error`）
+/// - 4.7 以前: `allow_nonfunctional` を知らないので 403 のまま。本文の `error` は
+///   `Api::BaseController#require_user!` の固定の英文で、5.0 でも同じ
+class MastodonAccountNotFunctional implements Exception {
+  const MastodonAccountNotFunctional(this.errorCode, [this.serverMessage]);
+
+  /// `pending_confirmation` / `pending_approval` / そのほか
+  /// （`account_suspended` / `login_disabled` 等・4.7 では区別できず `login_disabled`）。
+  final String errorCode;
+
+  /// サーバーの言語で書かれた説明（5.0 の `state.error`）。4.7 では無い。
+  final String? serverMessage;
+
+  static const pendingConfirmation = 'pending_confirmation';
+  static const pendingApproval = 'pending_approval';
+  static const loginDisabled = 'login_disabled';
+
+  /// 5.0 の `state` から読む。使える状態・`state` が無い（4.7 以前）なら null。
+  static MastodonAccountNotFunctional? fromState(Object? state) {
+    if (state is! Map) return null;
+    if (state['functional'] != false) return null;
+    final code = state['error_code'];
+    final message = state['error'];
+    return MastodonAccountNotFunctional(
+      code is String && code.isNotEmpty ? code : loginDisabled,
+      message is String && message.isNotEmpty ? message : null,
+    );
+  }
+
+  /// 4.7 以前の 403 の本文から読む。該当しなければ null。
+  static MastodonAccountNotFunctional? fromForbidden(Response<dynamic>? res) {
+    if (res?.statusCode != 403) return null;
+    final data = res!.data;
+    final error = data is Map ? data['error'] : null;
+    if (error is! String) return null;
+    final code = switch (error) {
+      'Your login is missing a confirmed e-mail address' => pendingConfirmation,
+      'Your login is currently pending approval' => pendingApproval,
+      'Your login is currently disabled' => loginDisabled,
+      _ => null,
+    };
+    return code == null ? null : MastodonAccountNotFunctional(code);
+  }
+
+  @override
+  String toString() => 'MastodonAccountNotFunctional: $errorCode';
+}
+
 /// Link ヘッダの rel="next" から offset を取り出す（offset ページング、#802）。
 /// Collections API 用。次ページが無い / Link が無い / 解析不能なら null。
 /// テスト可能なようトップレベルに切り出す。
@@ -151,9 +208,40 @@ class MastodonClient {
   }
 
   /// GET /api/v1/accounts/verify_credentials
-  Future<MastodonAccount> verifyCredentials() async {
-    final response = await dio.get('/api/v1/accounts/verify_credentials');
-    return MastodonAccount.fromJson(response.data as Map<String, dynamic>);
+  ///
+  /// [allowNonfunctional] はログインの直後だけ立てる (#1320)。アカウントが
+  /// まだ使えない状態なら [MastodonAccountNotFunctional] を投げる。
+  ///
+  /// ⚠ ログイン以外では立てない。セッションの復元は 403 を「認証が失効した」と
+  /// 読む（`classifyRestoreFailure`）ので、ここで例外を詰め替えると分類が変わる。
+  Future<MastodonAccount> verifyCredentials({
+    bool allowNonfunctional = false,
+  }) async {
+    final Response<dynamic> response;
+    try {
+      response = await dio.get(
+        '/api/v1/accounts/verify_credentials',
+        queryParameters: allowNonfunctional
+            ? {'allow_nonfunctional': 'true'}
+            : null,
+      );
+    } on DioException catch (e) {
+      if (allowNonfunctional) {
+        final notFunctional = MastodonAccountNotFunctional.fromForbidden(
+          e.response,
+        );
+        if (notFunctional != null) throw notFunctional;
+      }
+      rethrow;
+    }
+    final data = response.data as Map<String, dynamic>;
+    if (allowNonfunctional) {
+      final notFunctional = MastodonAccountNotFunctional.fromState(
+        data['state'],
+      );
+      if (notFunctional != null) throw notFunctional;
+    }
+    return MastodonAccount.fromJson(data);
   }
 
   /// GET /api/v1/accounts/:id
