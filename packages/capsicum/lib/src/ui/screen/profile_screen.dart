@@ -45,6 +45,25 @@ import '../widget/user_avatar.dart';
 /// 直書きをやめ、この列挙で意味付けする。
 enum _ProfileTab { posts, media, gallery, pages }
 
+/// 相手が、開いているアカウント（[accountHost]）と同じサーバーの人か。
+/// host が無い相手は同じサーバーとして扱う。
+///
+/// 同じサーバーの中でしか成り立たないものの出し分けに使う: Misskey のチャット、
+/// Misskey の実績（#1363・実績は連合しないので、他のサーバーの人は必ず空）。
+bool isSameServerUser(User user, String accountHost) =>
+    user.host == null || user.host == accountHost;
+
+/// プロフィールに「実績」ボタンを出すか (#1363)。開いているアカウントが実績を
+/// 持つサーバー（Misskey）で、相手が同じサーバーの人（自分を含む）のときだけ。
+bool showsAchievementsButton({
+  required Object? adapter,
+  required User user,
+  required String? accountHost,
+}) =>
+    adapter is AchievementSupport &&
+    accountHost != null &&
+    isSameServerUser(user, accountHost);
+
 class ProfileScreen extends ConsumerStatefulWidget {
   final User user;
 
@@ -136,8 +155,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     if (user.canChat != true) return false;
     final account = ref.read(currentAccountProvider);
     if (account == null) return false;
-    if (user.host != null && user.host != account.key.host) return false;
-    return true;
+    return isSameServerUser(user, account.key.host);
   }
 
   static final _tcoPattern = RegExp(r'https?://t\.co/\S+');
@@ -1413,7 +1431,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
 
   /// プロフィール画面のアクションボタンを Wrap で横並びに配置する。
   /// 自他・能力・関係性で表示するボタンを切り替える:
-  /// - 実績 (AchievementSupport がある adapter)
+  /// - 実績 (AchievementSupport がある adapter・同じサーバーの人だけ)
   /// - プロフィールを編集 (自分)
   /// - メッセージを送る (相手・chat 可能)
   /// - フォロー / フォロー解除 (相手・関係性ロード済み)
@@ -1422,9 +1440,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   /// 1 件もない場合は空リストを返し、呼び出し側の SizedBox も挿入されない。
   List<Widget> _buildProfileActionRow(BuildContext context, User user) {
     final adapter = ref.read(currentAdapterProvider);
+    final account = ref.read(currentAccountProvider);
     final actions = <Widget>[];
 
-    if (adapter is AchievementSupport) {
+    // 実績は連合しないので、他のサーバーの人（Mastodon・他の Misskey とも）は
+    // 必ず空になる。同じサーバーの人と自分にだけ出す (#1363)。
+    if (showsAchievementsButton(
+      adapter: adapter,
+      user: user,
+      accountHost: account?.key.host,
+    )) {
       actions.add(
         OutlinedButton.icon(
           onPressed: () => openAchievements(
