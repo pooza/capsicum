@@ -106,6 +106,27 @@ void main() {
       expect(account.username, 'newbie');
     });
 
+    test('⚠ 引っ越し済み（functional は false・error_code は null）は、そのまま返す', () async {
+      // 5.0 の `functional?` は moved_to_account_id を含むが、
+      // `nonfunctional_reason` は nil で、require_user! も通す。
+      final http = _FixedAdapter(
+        200,
+        _account(
+          state: {
+            'functional': false,
+            'confirmed': true,
+            'approved': true,
+            'error_code': null,
+            'error': null,
+          },
+        ),
+      );
+      final account = await _client(
+        http,
+      ).verifyCredentials(allowNonfunctional: true);
+      expect(account.username, 'newbie');
+    });
+
     test('state が無い（4.7 以前の 200）なら、そのまま返す', () async {
       final http = _FixedAdapter(200, _account());
       final account = await _client(

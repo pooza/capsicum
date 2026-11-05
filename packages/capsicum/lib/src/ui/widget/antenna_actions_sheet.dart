@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/antenna_provider.dart';
 import '../../service/sentry_op_failure.dart';
+import '../../util/oauth_scope_error.dart';
 import '../util/op_error.dart';
 
 enum _AntennaAction { edit, delete }
@@ -53,7 +54,11 @@ Future<bool> showAntennaActions(
   if (action == _AntennaAction.edit) {
     final saved = await context.push<bool>('/antennas/edit', extra: antenna);
     // ⚠ 編集の間に行が破棄されていることがあるので、コンテナへ当てる。
-    if (saved == true) container.invalidate(antennasProvider);
+    // アンテナの画面から開いたときは、条件を変えた結果も取り直す。
+    if (saved == true) {
+      container.invalidate(antennasProvider);
+      container.invalidate(antennaNotesProvider(antenna.id));
+    }
     return false;
   }
 
@@ -79,15 +84,25 @@ Future<bool> showAntennaActions(
   try {
     await support.deleteAntenna(antenna.id);
   } catch (e, st) {
-    reportOpFailure(
-      tagKey: 'antenna.op',
-      operation: 'delete',
-      error: e,
-      stackTrace: st,
-      account: account,
-    );
+    // ⚠ 権限の足りない古いトークンは送らない（再ログインで直る・#1361）。
+    final scope = isOAuthScopeError(e);
+    if (!scope) {
+      reportOpFailure(
+        tagKey: 'antenna.op',
+        operation: 'delete',
+        error: e,
+        stackTrace: st,
+        account: account,
+      );
+    }
     messenger.showSnackBar(
-      SnackBar(content: Text('アンテナの削除に失敗しました\n${summarizeOpError(e)}')),
+      SnackBar(
+        content: Text(
+          scope
+              ? oauthScopeErrorMessage
+              : 'アンテナの削除に失敗しました\n${summarizeOpError(e)}',
+        ),
+      ),
     );
     return false;
   }

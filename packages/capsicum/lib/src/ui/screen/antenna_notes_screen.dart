@@ -75,10 +75,20 @@ class _AntennaNotesScreenState extends ConsumerState<AntennaNotesScreen> {
   @override
   Widget build(BuildContext context) {
     final timeline = ref.watch(antennaNotesProvider(widget.antennaId));
+    // ⚠ 題は一覧から引く。「…」から名前を変えたあとも、開いたときの名前の
+    // ままにならないように（一覧は編集の保存で取り直される）。
+    final name =
+        ref
+            .watch(antennasProvider)
+            .valueOrNull
+            ?.where((a) => a.id == widget.antennaId)
+            .firstOrNull
+            ?.name ??
+        widget.antennaName;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.antennaName ?? 'アンテナ'),
+        title: Text(name ?? 'アンテナ'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
           // 管理画面の行と同じシート (#1052・「閲覧のみの族の型」)。

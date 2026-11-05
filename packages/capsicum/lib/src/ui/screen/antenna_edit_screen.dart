@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../model/account.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../service/sentry_op_failure.dart';
+import '../../util/oauth_scope_error.dart';
 import '../util/antenna_text.dart';
 import '../util/op_error.dart';
 import '../widget/bottom_safe_area.dart';
@@ -155,17 +156,27 @@ class _AntennaEditScreenState extends ConsumerState<AntennaEditScreen> {
         const SnackBar(content: Text('このアカウントでは、これ以上アンテナを作れません')),
       );
     } catch (e, st) {
-      reportOpFailure(
-        tagKey: 'antenna.op',
-        operation: _isNew ? 'create' : 'update',
-        error: e,
-        stackTrace: st,
-        account: _account,
-      );
+      // ⚠ 権限の足りない古いトークンは送らない（再ログインで直る・#1361）。
+      final scope = isOAuthScopeError(e);
+      if (!scope) {
+        reportOpFailure(
+          tagKey: 'antenna.op',
+          operation: _isNew ? 'create' : 'update',
+          error: e,
+          stackTrace: st,
+          account: _account,
+        );
+      }
       if (!mounted) return;
       setState(() => _saving = false);
       messenger.showSnackBar(
-        SnackBar(content: Text('アンテナの保存に失敗しました\n${summarizeOpError(e)}')),
+        SnackBar(
+          content: Text(
+            scope
+                ? oauthScopeErrorMessage
+                : 'アンテナの保存に失敗しました\n${summarizeOpError(e)}',
+          ),
+        ),
       );
     }
   }

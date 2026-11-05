@@ -34,7 +34,9 @@ Future<UnreadBadge> fetchUnreadBadge(
     } on NotificationUnreadCountUnavailable catch (e) {
       // このサーバーでは未読数が使えない（アダプターは以後問い合わせない）。
       // ⚠ どのサーバーかを残す（#1370）。打ち続けていた間は、パンくずに host が
-      // 無く切り分けられなかった。アダプターは 1 回しか投げないので、これも 1 回。
+      // 無く切り分けられなかった。アダプターは印を立ててから投げるので、送るのは
+      // 起動ごと・アカウントごとにほぼ 1 回（問い合わせが重なると 2 回になりうるが、
+      // info なので許容する）。
       Sentry.captureMessage(
         'notification.unread_count.unavailable',
         level: SentryLevel.info,

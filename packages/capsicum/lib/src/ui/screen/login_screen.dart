@@ -1398,12 +1398,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         return true;
       } else if (result is LoginFailure) {
         debugPrint('Manual code login failed: ${result.error}');
-        if (mounted) {
-          setState(
-            () => _error =
-                notFunctionalLoginMessage(result.error) ?? '認証コードが正しくありません',
+        // 承認待ち・メール未確認 (#1320) は、コードの交換までは成功している。
+        // 呼び出し側は false を「補助手段も失敗した」として Sentry へ送る
+        // (#276 の信号) ので、決着したものとして true を返す。
+        final notFunctional = notFunctionalLoginMessage(result.error);
+        if (notFunctional != null) {
+          final error = result.error as MastodonAccountNotFunctional;
+          _logLoginStep(
+            'completeLogin.not_functional',
+            data: {'error_code': error.errorCode},
           );
+          if (mounted) setState(() => _error = notFunctional);
+          return true;
         }
+        if (mounted) setState(() => _error = '認証コードが正しくありません');
       }
     } catch (e) {
       // DioException の場合 requestOptions.uri に client_secret が載る

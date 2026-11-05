@@ -2,13 +2,21 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'account_manager_provider.dart';
+import 'list_fetch.dart';
 import 'timeline_provider.dart';
 
 /// Provider that fetches the user's antennas.
+///
+/// 失敗は観測へ流す（チャンネル・Play の一覧と同じ・#1361）。
 final antennasProvider = FutureProvider.autoDispose<List<Antenna>>((ref) async {
   final adapter = ref.watch(currentAdapterProvider);
   if (adapter == null || adapter is! AntennaSupport) return [];
-  return (adapter as AntennaSupport).getAntennas();
+  return fetchListReportingFailure(
+    ref,
+    tagKey: 'antenna.list',
+    operation: 'list',
+    fetch: () => (adapter as AntennaSupport).getAntennas(),
+  );
 }, dependencies: [currentAdapterProvider]);
 
 /// Notifier that manages paginated antenna notes fetching.

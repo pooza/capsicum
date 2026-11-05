@@ -47,13 +47,19 @@ class MastodonAccountNotFunctional implements Exception {
   static const loginDisabled = 'login_disabled';
 
   /// 5.0 の `state` から読む。使える状態・`state` が無い（4.7 以前）なら null。
+  ///
+  /// ⚠ 判定は `functional` ではなく `error_code` で行う。5.0 の `functional` は
+  /// 引っ越し済み（`moved_to_account_id` あり）でも false になるが、
+  /// `nonfunctional_reason` は nil で、`require_user!` も通す（＝ログインできる）。
+  /// `functional` だけを見ると、引っ越し済みのアカウントにログインできなくなる。
   static MastodonAccountNotFunctional? fromState(Object? state) {
     if (state is! Map) return null;
     if (state['functional'] != false) return null;
     final code = state['error_code'];
+    if (code is! String || code.isEmpty) return null;
     final message = state['error'];
     return MastodonAccountNotFunctional(
-      code is String && code.isNotEmpty ? code : loginDisabled,
+      code,
       message is String && message.isNotEmpty ? message : null,
     );
   }

@@ -159,7 +159,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   }
 
   static final _tcoPattern = RegExp(r'https?://t\.co/\S+');
-  ContentRenderer? _bioRenderer;
+
+  /// 自己紹介の span (#1365)。⚠ 組み直しのたびに作り直さない理由は
+  /// [ContentSpanCache]（デッキのカラムにも入る）。
+  final _bioSpans = ContentSpanCache();
+
+  /// t.co を解決できた回数。自己紹介の span の鍵に入れて、解決したら描き直す。
+  int _tcoResolvedCount = 0;
 
   @override
   void initState() {
@@ -185,7 +191,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
         final url = match.group(0)!;
         if (TcoResolver.getCached(url) != null) continue;
         TcoResolver.resolve(url).then((resolved) {
-          if (resolved != null && mounted) setState(() {});
+          if (resolved != null && mounted) {
+            setState(() => _tcoResolvedCount++);
+          }
         });
       }
     }
@@ -215,7 +223,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     _tabController.dispose();
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
-    _bioRenderer?.dispose();
+    _bioSpans.dispose();
     super.dispose();
   }
 
@@ -1967,27 +1975,34 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   }
 
   Widget _buildBio(User user, ThemeData theme) {
-    _bioRenderer?.dispose();
     final stripped = _stripHtml(user.description!);
-    _bioRenderer = ContentRenderer(
-      baseStyle: theme.textTheme.bodyMedium ?? const TextStyle(),
-      resolveEmoji: (shortcode) {
-        final url = user.emojis[shortcode];
-        if (url != null) return url;
-        if (user.host != null) {
-          return 'https://${user.host}/emoji/$shortcode.webp';
-        }
-        return null;
-      },
-      resolveUrl: (url) =>
-          TcoResolver.isTcoUrl(url) ? TcoResolver.getCached(url) : null,
-      onLinkTap: (url) => openFediverseLink(context, ref, url),
-      onHashtagTap: (tag) => showHashtagActionMenu(context, tag),
-      onMentionTap: (mention) => _navigateToMention(mention),
-      emojiSize: ref.watch(emojiSizeProvider),
-      animateMfm: ref.watch(mfmAnimationEnabledProvider),
+    final baseStyle = theme.textTheme.bodyMedium ?? const TextStyle();
+    final emojiSize = ref.watch(emojiSizeProvider);
+    final animateMfm = ref.watch(mfmAnimationEnabledProvider);
+    // 絵文字・host はユーザーから決まるので、ユーザー（同一性）で代える。
+    final span = _bioSpans.resolve(
+      [user, stripped, baseStyle, emojiSize, animateMfm, _tcoResolvedCount],
+      () => ContentRenderer(
+        baseStyle: baseStyle,
+        resolveEmoji: (shortcode) {
+          final url = user.emojis[shortcode];
+          if (url != null) return url;
+          if (user.host != null) {
+            return 'https://${user.host}/emoji/$shortcode.webp';
+          }
+          return null;
+        },
+        resolveUrl: (url) =>
+            TcoResolver.isTcoUrl(url) ? TcoResolver.getCached(url) : null,
+        onLinkTap: (url) => openFediverseLink(context, ref, url),
+        onHashtagTap: (tag) => showHashtagActionMenu(context, tag),
+        onMentionTap: (mention) => _navigateToMention(mention),
+        emojiSize: emojiSize,
+        animateMfm: animateMfm,
+      ),
+      (renderer) => renderer.renderMfm(stripped),
     );
-    return RichText(text: _bioRenderer!.renderMfm(stripped));
+    return RichText(text: span);
   }
 
   Widget _buildFieldValue(

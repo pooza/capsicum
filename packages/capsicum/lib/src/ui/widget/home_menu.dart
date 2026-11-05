@@ -22,6 +22,7 @@ import '../../provider/timeline_provider.dart';
 import '../../service/resident_mode_service.dart';
 import '../../url_helper.dart';
 import '../../util/action_labels.dart';
+import '../../util/oauth_scope_error.dart';
 import '../util/about_dialog.dart';
 import '../util/deck_close_unlocked.dart';
 import '../util/deck_navigation.dart';
@@ -1310,10 +1311,15 @@ Future<Channel?> pickFollowedChannel(
   final List<Channel> channels;
   try {
     channels = await (adapter as ChannelSupport).getFollowedChannels();
-  } catch (_) {
+  } catch (e) {
+    // 権限不足なら、管理画面と同じ再ログインの案内を出す（#1361）。
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('チャンネルの取得に失敗しました。再ログインが必要な場合があります')),
+        SnackBar(
+          content: Text(
+            isOAuthScopeError(e) ? oauthScopeErrorMessage : 'チャンネルの取得に失敗しました',
+          ),
+        ),
       );
     }
     return null;

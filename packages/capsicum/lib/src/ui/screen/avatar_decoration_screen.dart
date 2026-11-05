@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../../provider/list_fetch.dart';
 import '../../service/sentry_op_failure.dart';
 import '../../util/misskey_api_error.dart';
 import '../../util/oauth_scope_error.dart';
@@ -16,23 +17,13 @@ final avatarDecorationOptionsProvider =
     FutureProvider.autoDispose<List<AvatarDecorationOption>>((ref) async {
       final adapter = ref.watch(currentAdapterProvider);
       if (adapter is! AvatarDecorationSupport) return const [];
-      // ⚠ 通信の前に取る。通信の間に provider が破棄されると `ref` を読めない。
-      final account = ref.read(currentAccountProvider);
-      try {
-        return await (adapter as AvatarDecorationSupport)
-            .getAvatarDecorationOptions();
-      } catch (e, st) {
-        if (!isOAuthScopeError(e)) {
-          reportOpFailure(
-            tagKey: 'avatar_decoration.list',
-            operation: 'options',
-            error: e,
-            stackTrace: st,
-            account: account,
-          );
-        }
-        rethrow;
-      }
+      return fetchListReportingFailure(
+        ref,
+        tagKey: 'avatar_decoration.list',
+        operation: 'options',
+        fetch: () =>
+            (adapter as AvatarDecorationSupport).getAvatarDecorationOptions(),
+      );
     }, dependencies: [currentAdapterProvider, currentAccountProvider]);
 
 /// アイコンデコレーションの付け外し (#1349)。
@@ -52,8 +43,8 @@ class _AvatarDecorationScreenState
   /// 保存中のデコレーション。連打で順番が入れ替わらないよう、1 つずつ送る。
   String? _savingId;
 
-  /// 開いた画面のアカウントへ書き戻す。⚠ 現在のアカウントを更新する形（消した）は現在のアカウントを
-  /// 書き換えるので、別アカウントのカラムから来たときに使えない。
+  /// 開いた画面のアカウントへ書き戻す。⚠ 「現在のアカウント」へ書き戻す形
+  /// （#1361 で消した）は、別アカウントのカラムから来たときに別の人を書き換える。
   User? _localUser;
 
   Future<void> _toggle(AvatarDecorationOption option, bool attached) async {
@@ -89,12 +80,12 @@ class _AvatarDecorationScreenState
         ),
       );
     } catch (e, st) {
+      // ⚠ ロールで数を絞られたとき（`RESTRICTED_BY_ROLE`）は、アダプターが
+      // AvatarDecorationLimitReached に写すので、ここには来ない（上の on 節・#1361）。
       if (isOAuthScopeError(e)) {
         messenger.showSnackBar(
           const SnackBar(content: Text(oauthScopeErrorMessage)),
         );
-        // ⚠ ロールで数を絞られたとき（`RESTRICTED_BY_ROLE`）は、アダプターが
-        // AvatarDecorationLimitReached に写す（画面がバックエンドに依らない・#1361）。
       } else if (misskeyApiErrorCode(e) == 'RATE_LIMIT_EXCEEDED') {
         // ⚠ i/update は 1 時間に 20 回まで。付け替えを続けると当たる既知の条件。
         messenger.showSnackBar(

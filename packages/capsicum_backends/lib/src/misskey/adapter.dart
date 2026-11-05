@@ -2322,8 +2322,15 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       );
 
   @override
-  Future<void> deleteAntenna(String antennaId) =>
-      client.deleteAntenna(antennaId);
+  Future<void> deleteAntenna(String antennaId) async {
+    try {
+      await client.deleteAntenna(antennaId);
+    } on DioException catch (e) {
+      // 一覧を取ったあとに Web などで消されていた。消すという目的は果たして
+      // いるので成功として扱う（失敗を出して Sentry へ送らない）。
+      if (!_hasErrorCode(e, 'NO_SUCH_ANTENNA')) rethrow;
+    }
+  }
 
   /// ⚠ ロールの上限（`TOO_MANY_ANTENNAS`）は [AntennaLimitReached] に写す。画面が
   /// バックエンドのエラーコードに依らないため（デコの #1361 と同じ）。

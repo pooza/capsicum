@@ -8,9 +8,12 @@ import 'package:test/test.dart';
 
 /// #1052: アンテナの作成・編集・削除。
 class _Server implements HttpClientAdapter {
-  _Server({this.tooMany = false});
+  _Server({this.tooMany = false, this.deleteErrorCode});
 
   final bool tooMany;
+
+  /// 削除に返すエラーコード（null なら成功）。
+  final String? deleteErrorCode;
   final requests = <String, Map<String, dynamic>>{};
 
   @override
@@ -23,6 +26,12 @@ class _Server implements HttpClientAdapter {
     if (tooMany && options.path.endsWith('/api/antennas/create')) {
       return _json({
         'error': {'code': 'TOO_MANY_ANTENNAS'},
+      }, 400);
+    }
+    if (deleteErrorCode != null &&
+        options.path.endsWith('/api/antennas/delete')) {
+      return _json({
+        'error': {'code': deleteErrorCode},
       }, 400);
     }
     return _json(options.path.endsWith('/list') ? [_listed] : {}, 200);
@@ -158,6 +167,21 @@ void main() {
     await adapter.deleteAntenna('a1');
 
     expect(server.requests['/api/antennas/delete']!['antennaId'], 'a1');
+  });
+
+  test('⚠ 既に消えていた（NO_SUCH_ANTENNA）なら、削除は成功として扱う', () async {
+    await install(_Server(deleteErrorCode: 'NO_SUCH_ANTENNA'));
+
+    await adapter.deleteAntenna('a1');
+  });
+
+  test('ほかの失敗は、そのまま投げる', () async {
+    await install(_Server(deleteErrorCode: 'PERMISSION_DENIED'));
+
+    await expectLater(
+      adapter.deleteAntenna('a1'),
+      throwsA(isA<DioException>()),
+    );
   });
 
   test('ロールの上限（TOO_MANY_ANTENNAS）は AntennaLimitReached にする', () async {
