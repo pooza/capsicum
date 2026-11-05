@@ -138,6 +138,9 @@ class MastodonStreaming with ReconnectTuning, StreamConnectionStateReporter {
   int _subscriptionCount = 1;
   int _refusedInConnection = 0;
 
+  /// この接続で断られた購読に、5xx（と status の無い応答）があったか (#1361)。
+  bool _transientRefusedInConnection = false;
+
   /// 観測へ流した応答の status。
   final _reportedRefusals = <int?>{};
 
@@ -204,6 +207,7 @@ class MastodonStreaming with ReconnectTuning, StreamConnectionStateReporter {
       onConnecting: () {
         _seenIds.clear();
         _refusedInConnection = 0;
+        _transientRefusedInConnection = false;
         notifyConnectionState(StreamConnectionState.connecting);
       },
       onClosed: onDisconnect,
@@ -220,6 +224,12 @@ class MastodonStreaming with ReconnectTuning, StreamConnectionStateReporter {
   ///
   /// ⚠ 複数タグでは、1 本断られても残りのタグは流れている。全部断られるまで
   /// カラムを赤くしない。応答にはどのタグかが無いので、数で見る。
+  ///
+  /// ⚠⚠ **5xx も数で見る** (#1361)。以前は 1 本でも 5xx なら接続ごと閉じていた
+  /// ので、1 本のタグが断られ続けると、購読の直後に閉じるため試行回数が戻らず、
+  /// 健全なタグまで間隔の延びた張り直しに付き合わされた。全部断られたときだけ、
+  /// 1 本でも 5xx があれば張り直し、全部 4xx なら rejected にする。購読 1 本の
+  /// 接続（単独のタグ・ホームなど）は、今までどおり 5xx ですぐ張り直す。
   void _onSubscriptionRefused(Object? rawStatus) {
     final status = rawStatus is num ? rawStatus.toInt() : null;
     // ⚠ 断られるたびに送らない。同じ接続が再接続のたびに同じ応答を受ける。
@@ -233,14 +243,14 @@ class MastodonStreaming with ReconnectTuning, StreamConnectionStateReporter {
         // 観測経路の失敗で本筋を止めない。
       }
     }
-    if (status == null || status >= 500) {
+    if (status == null || status >= 500) _transientRefusedInConnection = true;
+    _refusedInConnection++;
+    if (_refusedInConnection < _subscriptionCount) return;
+    if (_transientRefusedInConnection) {
       _socket?.closeAndRetry();
       return;
     }
-    _refusedInConnection++;
-    if (_refusedInConnection >= _subscriptionCount) {
-      notifyConnectionState(StreamConnectionState.rejected);
-    }
+    notifyConnectionState(StreamConnectionState.rejected);
   }
 
   void _onMessage(dynamic message) {

@@ -21,6 +21,16 @@ class ForegroundTicker {
     _timer = Timer.periodic(interval, (_) => onTick());
   }
 
+  /// 作り直したときの始め方 (#1361)。アプリが前面（[AppLifecycleState.resumed]）に
+  /// いるときだけ始める。⚠ 無条件に [start] すると、裏にいる間に画面が作り直された
+  /// とき（アカウントの切り替えなど）に動き出し、裏で取り直し続ける。
+  ///
+  /// [state] が null（起動の直後でまだ分からない）なら、前面とみなして始める。
+  /// 裏にいたなら、次の [handleLifecycle] で止まる。
+  void startIfResumed(AppLifecycleState? state) {
+    if (state == null || state == AppLifecycleState.resumed) start();
+  }
+
   void stop() {
     _timer?.cancel();
     _timer = null;

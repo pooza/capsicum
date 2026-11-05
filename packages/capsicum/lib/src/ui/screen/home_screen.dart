@@ -159,7 +159,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         interval: _announcementRefreshInterval,
         onTick: () =>
             unawaited(ref.read(announcementProvider.notifier).refresh()),
-      )..start();
+      )..startIfResumed(WidgetsBinding.instance.lifecycleState);
     }
     // Shell 上のデスクトップメニュー (#834) の「タイムラインを更新」/ Ctrl+R が
     // 現在表示中のタイムラインをリフレッシュできるよう、自身の

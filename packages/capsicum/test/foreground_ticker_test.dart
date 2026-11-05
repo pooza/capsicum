@@ -67,4 +67,33 @@ void main() {
       ticker.stop();
     });
   });
+
+  // #1361: 画面が作り直されたときの始め方。
+  group('startIfResumed', () {
+    for (final (state, runs) in [
+      (AppLifecycleState.resumed, true),
+      (null, true),
+      (AppLifecycleState.paused, false),
+      (AppLifecycleState.hidden, false),
+      (AppLifecycleState.inactive, false),
+      (AppLifecycleState.detached, false),
+    ]) {
+      test('$state なら ${runs ? '始める' : '⚠ 始めない（裏で取り直し続ける）'}', () {
+        final ticker = ForegroundTicker(interval: interval, onTick: () {})
+          ..startIfResumed(state);
+        addTearDown(ticker.stop);
+
+        expect(ticker.isRunning, runs);
+      });
+    }
+
+    test('裏で始めなかったものも、前面へ戻れば動く', () {
+      final ticker = ForegroundTicker(interval: interval, onTick: () {})
+        ..startIfResumed(AppLifecycleState.paused)
+        ..handleLifecycle(AppLifecycleState.resumed);
+      addTearDown(ticker.stop);
+
+      expect(ticker.isRunning, isTrue);
+    });
+  });
 }
