@@ -79,11 +79,13 @@ void main() {
     bool nowPlayingAvailable = false,
     List<String> locked = const [],
     void Function(ProviderContainer container)? onContainer,
+    // カラム id → そのカラムのアカウントの username（既定は me・#1367）。
+    Map<String, String> columnOwners = const {},
   }) async {
     SharedPreferences.setMockInitialValues({
       'deck_columns': [
         for (final id in columnIds)
-          '$id|misskey://me@misskey.example|hashtag:$id',
+          '$id|misskey://${columnOwners[id] ?? 'me'}@misskey.example|hashtag:$id',
       ],
       if (locked.isNotEmpty) 'deck_locked_columns': locked,
     });
@@ -523,7 +525,55 @@ void main() {
       expect(actionNamed(account, 'プロフィール'), isNotNull);
       expect(actionNamed(account, 'アカウントを追加'), isNotNull);
       // 「ログアウト」から言い換えた (#1297)。
-      expect(actionNamed(account, 'このアカウントをこの端末から削除…'), isNotNull);
+      // 「ログアウト」から言い換えた (#1297)。対象のアカウントを名前に出す (#1367)。
+      expect(actionNamed(account, '@me@misskey.example をこの端末から削除…'), isNotNull);
+    });
+  });
+
+  // #1367: デッキ中は「アカウント」と「移動」を、フォーカス中のカラムの
+  // アカウントで組む（ドロワーの #1286 と同じ判断）。
+  group('フォーカス中のカラムのアカウント (#1367)', () {
+    void focusB(ProviderContainer container) =>
+        container.read(deckFocusProvider.notifier).focus('b');
+
+    testWidgets('別アカウントのカラムにフォーカスしていると、削除の対象はそのアカウント', (tester) async {
+      final account = childrenOf(
+        await buildModel(
+          tester,
+          inDeck: true,
+          columnOwners: const {'b': 'other'},
+          onContainer: focusB,
+        ),
+        'アカウント',
+      );
+
+      expect(
+        actionNamed(account, '@other@misskey.example をこの端末から削除…'),
+        isNotNull,
+      );
+      expect(actionNamed(account, '@me@misskey.example をこの端末から削除…'), isNull);
+    });
+
+    testWidgets('同じアカウントのカラムなら、今までどおり現在のアカウント', (tester) async {
+      final account = childrenOf(
+        await buildModel(tester, inDeck: true, onContainer: focusB),
+        'アカウント',
+      );
+
+      expect(actionNamed(account, '@me@misskey.example をこの端末から削除…'), isNotNull);
+    });
+
+    testWidgets('⚠ デッキの外では、フォーカスに関わらず現在のアカウント', (tester) async {
+      final account = childrenOf(
+        await buildModel(
+          tester,
+          columnOwners: const {'b': 'other'},
+          onContainer: focusB,
+        ),
+        'アカウント',
+      );
+
+      expect(actionNamed(account, '@me@misskey.example をこの端末から削除…'), isNotNull);
     });
   });
 

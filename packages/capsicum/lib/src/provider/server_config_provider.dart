@@ -109,10 +109,16 @@ final reblogLabelProvider = Provider<String>(
 /// この三項式は 7 箇所へ写されていて、[postLabelProvider] /
 /// [reblogLabelProvider] / [favouriteLabelProvider] と同型なのに **bookmark
 /// だけ provider が無かった** (#982)。
-final bookmarkLabelProvider = Provider<String>((ref) {
-  final adapter = ref.watch(currentAdapterProvider);
-  return adapter is ReactionSupport ? 'お気に入り' : 'ブックマーク';
-}, dependencies: [currentAdapterProvider]);
+final bookmarkLabelProvider = Provider<String>(
+  (ref) => bookmarkLabelFrom(ref.watch(currentAdapterProvider)),
+  dependencies: [currentAdapterProvider],
+);
+
+/// [bookmarkLabelProvider] の中身。現在のアカウント以外のアダプターで呼び名を
+/// 決めるとき（デッキのメニューバーがフォーカス中のカラムのアカウントで組む・
+/// #1367）に使う。
+String bookmarkLabelFrom(Object? adapter) =>
+    adapter is ReactionSupport ? 'お気に入り' : 'ブックマーク';
 
 /// The label to use for "favourite/reaction" actions.
 ///

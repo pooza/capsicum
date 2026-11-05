@@ -21,6 +21,7 @@ import '../../provider/supporter_purchase_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../../service/resident_mode_service.dart';
 import '../../url_helper.dart';
+import '../../util/action_labels.dart';
 import '../util/about_dialog.dart';
 import '../util/deck_close_unlocked.dart';
 import '../util/deck_navigation.dart';
@@ -206,8 +207,9 @@ bool watchAnnouncementsShownAsTab(
 ///   カラムとして開く（決定済み事項 7-3）。ここから開くと全画面になり、結果から
 ///   開いた先がデッキの外へ出る。
 ///
-/// ⚠ メニューバーの「移動」はデッキ中でも [inDeck] を渡さない（決定済み事項 11 の
-/// 差し替えは 3 か所だけで、ここは対象外）。
+/// ⚠ メニューバーの「移動」はデッキ中でも [inDeck] を渡さない（項目を減らすのは
+/// ドロワーだけ）。⚠ ただし [current] にはフォーカス中のカラムのアカウントを渡す
+/// （決定済み事項 11・#1367）ので、出し分けは provider ではなく [current] から読む。
 ///
 /// [columnContext] は、**選ぶとタイムラインになる項目**（リスト・チャンネル・
 /// プロフィールタグ）を開くときに使う `context` (#1272・2026-10-12 pooza)。
@@ -226,8 +228,12 @@ List<HomeNavItem> buildHomeNavItems(
   bool inDeck = false,
   BuildContext? columnContext,
 }) {
-  final adapter = ref.read(currentAdapterProvider);
-  final hasMulukhiya = ref.read(currentMulukhiyaProvider) != null;
+  // ⚠ 出し分けは [current] から読む（現在のアカウントの provider を読まない）。
+  // デッキのメニューバーは、フォーカス中のカラムのアカウントで組む (#1367)。
+  // タブ表示とドロワーは現在のアカウントを渡すので、今までと同じ。
+  final adapter = current?.adapter;
+  final mulukhiya = current?.mulukhiya;
+  final hasMulukhiya = mulukhiya != null;
   final timelineContext = columnContext ?? context;
   void act(VoidCallback action) {
     onActivate?.call();
@@ -262,7 +268,7 @@ List<HomeNavItem> buildHomeNavItems(
       ),
     ],
     HomeNavItem(
-      title: ref.read(bookmarkLabelProvider),
+      title: bookmarkLabelFrom(adapter),
       icon: Icons.bookmark_outline,
       onSelected: () => act(() => context.push('/bookmarks')),
     ),
@@ -276,7 +282,7 @@ List<HomeNavItem> buildHomeNavItems(
         // FavoriteSupport と ReactionSupport を両方持つアダプターが入ると、
         // カウントチップ（provider 由来「リアクション」）とここ（直書き
         // 「お気に入り」）が同じ機能に別名を付ける。
-        title: ref.read(favouriteLabelProvider),
+        title: favouriteLabelFrom(adapter),
         icon: Icons.star_outline,
         onSelected: () => act(() => context.push('/favorites')),
       ),
@@ -381,7 +387,7 @@ List<HomeNavItem> buildHomeNavItems(
         onSelected: () => act(() => context.push('/drafts')),
       ),
     // 投稿テンプレート管理 (#767)。テンプレ機能提供サーバーのみ。
-    if (ref.read(currentMulukhiyaProvider)?.composeTemplatesEnabled == true)
+    if (mulukhiya?.composeTemplatesEnabled == true)
       HomeNavItem(
         title: '投稿テンプレート',
         icon: Icons.description_outlined,
@@ -461,18 +467,6 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
   AccountManagerState accountState,
   int unreadAnnouncements,
 ) {
-  final navItems = buildHomeNavItems(
-    context,
-    ref,
-    current,
-    accountState,
-    unreadAnnouncements,
-    watchAnnouncementsShownAsTab(
-      ref,
-      current,
-      inDeck: ref.watch(mountedDeckCountProvider) > 0,
-    ),
-  );
   final otherAccounts = accountState.accounts
       .where((a) => a.key != current?.key)
       .toList();
@@ -514,6 +508,41 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
   final focusedRefresh = focusedColumnId == null
       ? null
       : ref.watch(deckColumnRefreshProvider)[focusedColumnId];
+
+  // ⚠⚠ **デッキ中は「アカウント」と「移動」を、フォーカス中のカラムのアカウントで
+  // 組む** (#1367・決定済み事項 11)。メニューバーはルートのスコープにいるので、
+  // そのままだと別アカウントのカラムを見ながら選んでも現在のアカウントで開く。
+  // 選んだときに、ドロワー（#1286）と同じくそのアカウントへ切り替えてから開く。
+  // ⚠ macOS のネイティブのメニューは「開いた瞬間」を拾えないので、切り替えは
+  // **選んだとき**。⚠ 判断は [deckFocusedOtherAccount] でドロワーと共有する
+  // （アカウントをまたぐカラムにフォーカスしているときは切り替えない）。
+  final focusedOther = inDeck
+      ? deckFocusedOtherAccount(
+          columns: deckColumns,
+          focusedColumnId: focusedColumnId,
+          current: current?.key,
+          accounts: accountState.accounts,
+        )
+      : null;
+  final menuAccount = focusedOther ?? current;
+  VoidCallback inMenuAccount(VoidCallback action) => focusedOther == null
+      ? action
+      : () => switchAccountThen(
+          ref,
+          focusedOther,
+          action,
+          mounted: () => context.mounted,
+        );
+  final navItems = buildHomeNavItems(
+    context,
+    ref,
+    menuAccount,
+    accountState,
+    // ⚠ 未読の数は現在のアカウントのもの。別のアカウントで組んだときは出さない
+    // （違うアカウントの数を出さない）。
+    focusedOther == null ? unreadAnnouncements : 0,
+    watchAnnouncementsShownAsTab(ref, menuAccount, inDeck: inDeck),
+  );
 
   // 編集アクションは現在フォーカス中のフィールドへ intent を送る。フォーカスが
   // テキスト以外なら no-op（intent を処理する Action が無い）。
@@ -688,7 +717,7 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
             shortcut: item.shortcut,
             // shortcut を持つナビ項目（検索 ⌘F 等）は in-window でも発火させる。
             globalShortcut: item.shortcut != null,
-            onSelected: item.onSelected,
+            onSelected: inMenuAccount(item.onSelected),
           ),
       ],
     ),
@@ -696,11 +725,14 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
       MenuSubmenuEntry(
         label: 'アカウント',
         children: [
-          if (current != null)
+          // デッキ中はフォーカス中のカラムのアカウント (#1367)。
+          if (menuAccount != null)
             MenuActionEntry(
               label: 'プロフィール',
               icon: Icons.person_outline,
-              onSelected: () => openProfile(context, current.user),
+              onSelected: inMenuAccount(
+                () => openProfile(context, menuAccount.user),
+              ),
             ),
           // ⚠⚠ **デッキ中はアカウントの切り替えを隠す** (#1170・決定済み事項 11)。
           // 切り替えると `go('/home')` で**デッキを抜ける**うえ、デッキは各カラムが
@@ -729,11 +761,16 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
             icon: Icons.person_add_alt,
             onSelected: () => context.push('/server'),
           ),
-          if (current != null)
+          // ⚠ 対象のアカウントを項目の名前に出す（取り違えて消さないため・#1367）。
+          // デッキ中はフォーカス中のカラムのアカウントが対象。⚠ 外すのに切り替えは
+          // 要らない（今のアカウント以外も外せる・[confirmRemoveAccount]）。
+          if (menuAccount != null)
             MenuActionEntry(
-              label: 'このアカウントをこの端末から削除…',
+              label:
+                  '@${menuAccount.user.username}@${menuAccount.key.host} '
+                  'をこの端末から削除…',
               icon: Icons.delete_outline,
-              onSelected: () => confirmRemoveAccount(context, ref, current),
+              onSelected: () => confirmRemoveAccount(context, ref, menuAccount),
             ),
         ],
       ),

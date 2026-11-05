@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../model/account.dart';
 import '../../model/account_key.dart';
 import '../../model/deck_column.dart';
 import '../../provider/account_manager_provider.dart';
@@ -300,3 +301,44 @@ void openChatWithUser(BuildContext context, User user) => openColumnOrPush(
   seed: user,
   push: () => context.push('/chat/user/${user.id}', extra: user),
 );
+
+/// デッキのフォーカス中のカラムのアカウントのうち、**現在のアカウントと違うもの**
+/// (#1286 / #1367)。ドロワーとメニューバーは、これが非 null のとき、そのアカウントへ
+/// 切り替えてから開く。
+///
+/// null を返すのは: フォーカスが無い・カラムが見つからない・アカウントをまたぐ
+/// カラム（「すべての通知」など・[TabType.spansAccounts]）・現在のアカウントと
+/// 同じ・アカウントが接続済みの一覧に無い（ログアウト直後など）。
+///
+/// ⚠ ドロワーとメニューバーで食い違わせないため、判断はここ 1 か所にする。
+Account? deckFocusedOtherAccount({
+  required List<DeckColumn> columns,
+  required String? focusedColumnId,
+  required AccountKey? current,
+  required List<Account> accounts,
+}) {
+  if (focusedColumnId == null) return null;
+  final column = columns.where((c) => c.id == focusedColumnId).firstOrNull;
+  if (column == null || column.tab.spansAccounts) return null;
+  if (column.account == current) return null;
+  return accounts.where((a) => a.key == column.account).firstOrNull;
+}
+
+/// [account] へ切り替えてから [then] を走らせる (#1286 / #1367)。
+///
+/// ⚠ 未読の印は消さない (#1293)。開いただけで、利用者はまだそのアカウントの
+/// 通知を見ていない。⚠ 組み替えのフレームが済んでから走らせる。同じフレームで
+/// 開くと、開いた先が切り替える前のアカウントで組まれる。
+void switchAccountThen(
+  WidgetRef ref,
+  Account account,
+  VoidCallback then, {
+  required bool Function() mounted,
+}) {
+  ref
+      .read(accountManagerProvider.notifier)
+      .switchAccount(account, clearUnread: false);
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (mounted()) then();
+  });
+}

@@ -403,39 +403,25 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
   ///   （狭幅ではスワイプのたび）に切り替えると、そのたびに起きる
   /// - アカウントをまたぐカラム（「すべての通知」・決定済み事項 14）にフォーカス
   ///   しているときは切り替えない
+  /// - ⚠ どのアカウントへ切り替えるかの判断は [deckFocusedOtherAccount]。
+  ///   メニューバー（#1367）と食い違わせないため、そちらと共有する
   void _openDrawerForFocused(ScaffoldState scaffold) {
-    final id = ref.read(deckFocusProvider).columnId;
-    final column = ref
-        .read(deckColumnsProvider)
-        .where((c) => c.id == id)
-        .firstOrNull;
-    final current = ref.read(currentAccountKeyProvider);
-    final target = column == null || column.tab.spansAccounts
-        ? null
-        : column.account;
-    if (target == null || target == current) {
-      scaffold.openDrawer();
-      return;
-    }
-    final account = ref
-        .read(accountManagerProvider)
-        .accounts
-        .where((a) => a.key == target)
-        .firstOrNull;
+    final account = deckFocusedOtherAccount(
+      columns: ref.read(deckColumnsProvider),
+      focusedColumnId: ref.read(deckFocusProvider).columnId,
+      current: ref.read(currentAccountKeyProvider),
+      accounts: ref.read(accountManagerProvider).accounts,
+    );
     if (account == null) {
       scaffold.openDrawer();
       return;
     }
-    // ⚠ 未読の印は消さない (#1293)。ドロワーを開いただけで、利用者はまだ
-    // そのアカウントの通知を見ていない。
-    ref
-        .read(accountManagerProvider.notifier)
-        .switchAccount(account, clearUnread: false);
-    // ⚠ 組み替えのフレームが済んでから開く。同じフレームで開くと、ドロワーの
-    // 頭と項目が切り替える前のアカウントで組まれる。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && scaffold.mounted) scaffold.openDrawer();
-    });
+    switchAccountThen(
+      ref,
+      account,
+      scaffold.openDrawer,
+      mounted: () => mounted && scaffold.mounted,
+    );
   }
 
   /// フォーカス中のカラムのアカウントで新規投稿を開く（⌘N / Ctrl+N・#1170）。
