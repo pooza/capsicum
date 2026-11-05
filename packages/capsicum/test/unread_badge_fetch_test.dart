@@ -18,10 +18,15 @@ class _Adapter extends Mock
   final int unread;
   final List<Announcement> announcements;
   bool failUnread = false;
+  bool unavailable = false;
   bool failAnnouncements = false;
 
   @override
+  String get host => 'mstdn.example';
+
+  @override
   Future<int> getUnreadNotificationCount() async {
+    if (unavailable) throw const NotificationUnreadCountUnavailable(400);
     if (failUnread) throw Exception('404');
     return unread;
   }
@@ -79,6 +84,17 @@ void main() {
   test('⚠ 未読数が取れなくても、お知らせの未読は出す（古いサーバーは 404）', () async {
     final adapter = _Adapter(unread: 9, announcements: [_ann('a1')])
       ..failUnread = true;
+
+    final badge = await fetchUnreadBadge(adapter);
+
+    expect(badge.notifications, 0);
+    expect(badge.announcements, 1);
+  });
+
+  // #1370: 400 を返すサーバー。アダプターは 1 回だけ知らせ、以後は 0 を返す。
+  test('⚠ 未読数の口が使えないと知らされても、お知らせの未読は出す', () async {
+    final adapter = _Adapter(unread: 9, announcements: [_ann('a1')])
+      ..unavailable = true;
 
     final badge = await fetchUnreadBadge(adapter);
 
