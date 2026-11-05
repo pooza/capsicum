@@ -37,11 +37,16 @@ class AnnouncementTile extends ConsumerStatefulWidget {
 }
 
 class _AnnouncementTileState extends ConsumerState<AnnouncementTile> {
-  ContentRenderer? _contentRenderer;
+  /// 本文の span。⚠ 組み直しのたびに作り直さない理由は [ContentSpanCache]（#1365）。
+  final _contentSpans = ContentSpanCache();
 
   Announcement get announcement => widget.announcement;
 
   static final _tcoPattern = RegExp(r'https?://t\.co/\S+');
+
+  /// t.co の解決が終わった回数。本文の span の鍵に入れて、解決した URL で
+  /// 描き直させる（#1365）。
+  int _tcoResolvedCount = 0;
 
   @override
   void initState() {
@@ -57,7 +62,7 @@ class _AnnouncementTileState extends ConsumerState<AnnouncementTile> {
       TcoResolver.resolve(url).then((resolved) {
         if (resolved != null && mounted) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) setState(() {});
+            if (mounted) setState(() => _tcoResolvedCount++);
           });
         }
       });
@@ -66,30 +71,41 @@ class _AnnouncementTileState extends ConsumerState<AnnouncementTile> {
 
   @override
   void dispose() {
-    _contentRenderer?.dispose();
+    _contentSpans.dispose();
     super.dispose();
   }
 
   TextSpan _renderContent(String content, TextStyle baseStyle) {
-    _contentRenderer?.dispose();
-    _contentRenderer = ContentRenderer(
-      baseStyle: baseStyle,
-      resolveEmoji: (shortcode) {
-        if (widget.host != null) {
-          return 'https://${widget.host}/emoji/$shortcode.webp';
-        }
-        return null;
-      },
-      resolveUrl: (url) =>
-          TcoResolver.isTcoUrl(url) ? TcoResolver.getCached(url) : null,
-      onLinkTap: (url) => openFediverseLink(context, ref, url),
-      onHashtagTap: (tag) => showHashtagActionMenu(context, tag),
-      emojiSize: ref.watch(emojiSizeProvider),
-      animateMfm: ref.watch(mfmAnimationEnabledProvider),
+    final host = widget.host;
+    final emojiSize = ref.watch(emojiSizeProvider);
+    final animateMfm = ref.watch(mfmAnimationEnabledProvider);
+    final isHtml = announcement.isHtml;
+    return _contentSpans.resolve(
+      [
+        content,
+        host,
+        isHtml,
+        baseStyle,
+        emojiSize,
+        animateMfm,
+        _tcoResolvedCount,
+      ],
+      () => ContentRenderer(
+        baseStyle: baseStyle,
+        resolveEmoji: (shortcode) {
+          if (host != null) return 'https://$host/emoji/$shortcode.webp';
+          return null;
+        },
+        resolveUrl: (url) =>
+            TcoResolver.isTcoUrl(url) ? TcoResolver.getCached(url) : null,
+        onLinkTap: (url) => openFediverseLink(context, ref, url),
+        onHashtagTap: (tag) => showHashtagActionMenu(context, tag),
+        emojiSize: emojiSize,
+        animateMfm: animateMfm,
+      ),
+      (renderer) =>
+          isHtml ? renderer.renderHtml(content) : renderer.renderMfm(content),
     );
-    return announcement.isHtml
-        ? _contentRenderer!.renderHtml(content)
-        : _contentRenderer!.renderMfm(content);
   }
 
   @override

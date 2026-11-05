@@ -183,6 +183,10 @@ class _PostTileState extends ConsumerState<PostTile> {
 
   static final _tcoPattern = RegExp(r'https?://t\.co/\S+');
 
+  /// t.co の解決が終わった回数。本文の span の鍵に入れて、解決した URL で
+  /// 描き直させる（[ContentSpanCache] は鍵が変わらないと作り直さない・#1365）。
+  int _tcoResolvedCount = 0;
+
   void _resolveTcoUrls() {
     final content = (post.reblog ?? post).content;
     if (content == null) return;
@@ -192,7 +196,7 @@ class _PostTileState extends ConsumerState<PostTile> {
       TcoResolver.resolve(url).then((resolved) {
         if (resolved != null && mounted) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) setState(() {});
+            if (mounted) setState(() => _tcoResolvedCount++);
           });
         }
       });
@@ -386,8 +390,8 @@ class _PostTileState extends ConsumerState<PostTile> {
     _cardFetchDebounce?.cancel();
     // 画面から外れたタイルのぶんの引用元は引かせない (#1304)。
     _releaseQuoteFallback();
-    _contentRenderer?.dispose();
-    _cwRenderer?.dispose();
+    _contentSpans.dispose();
+    _cwSpans.dispose();
     super.dispose();
   }
 
@@ -409,17 +413,19 @@ class _PostTileState extends ConsumerState<PostTile> {
     }
   }
 
-  ContentRenderer? _contentRenderer;
+  /// 本文の span (#1365)。⚠ 組み直しのたびに作り直さない理由は [ContentSpanCache]。
+  final _contentSpans = ContentSpanCache();
 
-  /// CW 用のレンダラ (#1068)。
+  /// CW 用の span (#1068)。
   ///
-  /// ⚠⚠ **本文と同じインスタンスを使い回してはいけない。**[_renderContent] は
-  /// 呼ばれるたび冒頭で前のインスタンスを `dispose()` するので、共有すると
-  /// **本文を描いた瞬間に CW 側の `TapGestureRecognizer` が破棄され、CW の
-  /// ハッシュタグが押せなくなる**（押しても何も起きない、という壊れ方）。
-  ContentRenderer? _cwRenderer;
+  /// ⚠⚠ **本文と同じキャッシュを使い回してはいけない。**中身が変わると前の
+  /// レンダラを `dispose()` するので、共有すると**本文を描いた瞬間に CW 側の
+  /// `TapGestureRecognizer` が破棄され、CW のハッシュタグが押せなくなる**
+  /// （押しても何も起きない、という壊れ方）。
+  final _cwSpans = ContentSpanCache();
 
   TextSpan _renderContent(
+    Post displayPost,
     String content,
     TextStyle baseStyle,
     Map<String, String> emojis, {
@@ -427,16 +433,30 @@ class _PostTileState extends ConsumerState<PostTile> {
     required bool isHtml,
     bool isCat = false,
   }) {
-    _contentRenderer?.dispose();
-    _contentRenderer = _buildRenderer(
-      baseStyle,
-      emojis,
-      fallbackHost: fallbackHost,
-      isCat: isCat,
+    final emojiSize = ref.watch(emojiSizeProvider);
+    final animateMfm = ref.watch(mfmAnimationEnabledProvider);
+    // 絵文字・fallbackHost・isCat は投稿から決まるので、投稿（同一性）で代える。
+    return _contentSpans.resolve(
+      [
+        displayPost,
+        content,
+        baseStyle,
+        isHtml,
+        emojiSize,
+        animateMfm,
+        _tcoResolvedCount,
+      ],
+      () => _buildRenderer(
+        baseStyle,
+        emojis,
+        fallbackHost: fallbackHost,
+        isCat: isCat,
+        emojiSize: emojiSize,
+        animateMfm: animateMfm,
+      ),
+      (renderer) =>
+          isHtml ? renderer.renderHtml(content) : renderer.renderMfm(content),
     );
-    return isHtml
-        ? _contentRenderer!.renderHtml(content)
-        : _contentRenderer!.renderMfm(content);
   }
 
   /// CW（警告文）を本文と同じ導線でレンダリングする (#1068)。
@@ -445,15 +465,34 @@ class _PostTileState extends ConsumerState<PostTile> {
   /// MFM。**一律 `renderMfm` に通すと Mastodon 側の CW で `**〜**` 等が
   /// 意図せず装飾される。投稿が HTML（= Mastodon）なら `renderPlain` を使う。
   TextSpan _renderCw(
+    Post displayPost,
     String cw,
     TextStyle baseStyle,
     Map<String, String> emojis, {
     String? fallbackHost,
     required bool isHtml,
   }) {
-    _cwRenderer?.dispose();
-    _cwRenderer = _buildRenderer(baseStyle, emojis, fallbackHost: fallbackHost);
-    return isHtml ? _cwRenderer!.renderPlain(cw) : _cwRenderer!.renderMfm(cw);
+    final emojiSize = ref.watch(emojiSizeProvider);
+    final animateMfm = ref.watch(mfmAnimationEnabledProvider);
+    return _cwSpans.resolve(
+      [
+        displayPost,
+        cw,
+        baseStyle,
+        isHtml,
+        emojiSize,
+        animateMfm,
+        _tcoResolvedCount,
+      ],
+      () => _buildRenderer(
+        baseStyle,
+        emojis,
+        fallbackHost: fallbackHost,
+        emojiSize: emojiSize,
+        animateMfm: animateMfm,
+      ),
+      (renderer) => isHtml ? renderer.renderPlain(cw) : renderer.renderMfm(cw),
+    );
   }
 
   ContentRenderer _buildRenderer(
@@ -461,6 +500,8 @@ class _PostTileState extends ConsumerState<PostTile> {
     Map<String, String> emojis, {
     String? fallbackHost,
     bool isCat = false,
+    required double emojiSize,
+    required bool animateMfm,
   }) {
     return ContentRenderer(
       baseStyle: baseStyle,
@@ -492,8 +533,8 @@ class _PostTileState extends ConsumerState<PostTile> {
       onMentionTap: (mention) => _navigateToMention(mention),
       onEmojiTap: (shortcode, emojiUrl) =>
           _showEmojiActionMenu(context, shortcode, emojiUrl),
-      emojiSize: ref.watch(emojiSizeProvider),
-      animateMfm: ref.watch(mfmAnimationEnabledProvider),
+      emojiSize: emojiSize,
+      animateMfm: animateMfm,
     );
   }
 
@@ -791,6 +832,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                                   Expanded(
                                     child: Text.rich(
                                       _renderCw(
+                                        displayPost,
                                         displayPost.spoilerText!,
                                         Theme.of(
                                               context,
@@ -864,6 +906,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                                     context,
                                   ).style;
                                   final contentSpan = _renderContent(
+                                    displayPost,
                                     parsed.body,
                                     baseStyle,
                                     allEmojis,
@@ -3387,16 +3430,17 @@ class _QuoteCard extends ConsumerStatefulWidget {
 class _QuoteCardState extends ConsumerState<_QuoteCard> {
   bool _cwExpanded = false;
 
-  /// 引用元 CW 用のレンダラ (#1068)。⚠ **本体側の `_cwRenderer` とは別インス
-  /// タンス**（別 State なので共有しようがないが、共有すると本体と同じ
-  /// 「dispose されてタップが死ぬ」形になる）。
-  ContentRenderer? _cwRenderer;
+  /// 引用元 CW 用の span (#1068)。⚠ **本体側の `_cwSpans` とは別インスタンス**
+  /// （別 State なので共有しようがないが、共有すると本体と同じ「dispose されて
+  /// タップが死ぬ」形になる）。組み直しのたびに作り直さない理由は
+  /// [ContentSpanCache]（#1365）。
+  final _cwSpans = ContentSpanCache();
 
   Post get quote => widget.quote;
 
   @override
   void dispose() {
-    _cwRenderer?.dispose();
+    _cwSpans.dispose();
     super.dispose();
   }
 
@@ -3404,22 +3448,26 @@ class _QuoteCardState extends ConsumerState<_QuoteCard> {
   ///
   /// ⚠ **Mastodon はプレーンテキスト、Misskey は MFM**（本体側と同じ振り分け）。
   TextSpan _renderCw(String cw, TextStyle? baseStyle) {
-    _cwRenderer?.dispose();
-    final renderer = ContentRenderer(
-      baseStyle: baseStyle ?? const TextStyle(),
-      resolveEmoji: (shortcode) {
-        final url = quote.emojis[shortcode];
-        if (url != null) return url;
-        final host = quote.emojiHost;
-        return host != null ? 'https://$host/emoji/$shortcode.webp' : null;
-      },
-      onLinkTap: (url) => openFediverseLink(context, ref, url),
-      onHashtagTap: (tag) => showHashtagActionMenu(context, tag),
-      emojiSize: ref.watch(emojiSizeProvider),
-      animateMfm: ref.watch(mfmAnimationEnabledProvider),
+    final emojiSize = ref.watch(emojiSizeProvider);
+    final animateMfm = ref.watch(mfmAnimationEnabledProvider);
+    return _cwSpans.resolve(
+      [quote, cw, baseStyle, emojiSize, animateMfm],
+      () => ContentRenderer(
+        baseStyle: baseStyle ?? const TextStyle(),
+        resolveEmoji: (shortcode) {
+          final url = quote.emojis[shortcode];
+          if (url != null) return url;
+          final host = quote.emojiHost;
+          return host != null ? 'https://$host/emoji/$shortcode.webp' : null;
+        },
+        onLinkTap: (url) => openFediverseLink(context, ref, url),
+        onHashtagTap: (tag) => showHashtagActionMenu(context, tag),
+        emojiSize: emojiSize,
+        animateMfm: animateMfm,
+      ),
+      (renderer) =>
+          quote.isHtml ? renderer.renderPlain(cw) : renderer.renderMfm(cw),
     );
-    _cwRenderer = renderer;
-    return quote.isHtml ? renderer.renderPlain(cw) : renderer.renderMfm(cw);
   }
 
   @override
