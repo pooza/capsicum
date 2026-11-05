@@ -165,43 +165,50 @@ class _UnifiedNotificationTile extends ConsumerStatefulWidget {
 
 class _UnifiedNotificationTileState
     extends ConsumerState<_UnifiedNotificationTile> {
-  ContentRenderer? _contentRenderer;
+  /// 本文の span。⚠ 組み直しのたびに作り直さない理由は [ContentSpanCache]（#1365）。
+  final _contentSpans = ContentSpanCache();
 
   UnifiedNotification get item => widget.item;
 
   @override
   void dispose() {
-    _contentRenderer?.dispose();
+    _contentSpans.dispose();
     super.dispose();
   }
 
   /// 通知画面 (NotificationTile) と同じロジックで本文をレンダリング。
   /// カスタム絵文字・MFM / HTML の両対応、`@cat` の場合 nyaize を適用する。
   TextSpan _renderContent(String content, TextStyle baseStyle) {
-    _contentRenderer?.dispose();
     final post = item.notification.post;
-    final allEmojis = {...?post?.emojis, ...?post?.author.emojis};
-    final host = post?.author.host;
-    _contentRenderer = ContentRenderer(
-      baseStyle: baseStyle,
-      resolveEmoji: (shortcode) {
-        final url = allEmojis[shortcode];
-        if (url != null) return url;
-        if (host != null) return 'https://$host/emoji/$shortcode.webp';
-        return null;
-      },
-      resolveUrl: (url) =>
-          TcoResolver.isTcoUrl(url) ? TcoResolver.getCached(url) : null,
-      onLinkTap: (url) => openFediverseLink(context, ref, url),
-      onHashtagTap: (tag) => showHashtagActionMenu(context, tag),
-      emojiSize: ref.watch(emojiSizeProvider),
-      animateMfm: ref.watch(mfmAnimationEnabledProvider),
-      applyNyaize: post?.author.isCat ?? false,
-    );
+    final emojiSize = ref.watch(emojiSizeProvider);
+    final animateMfm = ref.watch(mfmAnimationEnabledProvider);
     final isHtml = post?.isHtml ?? false;
-    return isHtml
-        ? _contentRenderer!.renderHtml(content)
-        : _contentRenderer!.renderMfm(content);
+    // 絵文字・host・isCat は投稿から決まるので、投稿（同一性）で代える。
+    return _contentSpans.resolve(
+      [post, content, baseStyle, emojiSize, animateMfm],
+      () {
+        final allEmojis = {...?post?.emojis, ...?post?.author.emojis};
+        final host = post?.author.host;
+        return ContentRenderer(
+          baseStyle: baseStyle,
+          resolveEmoji: (shortcode) {
+            final url = allEmojis[shortcode];
+            if (url != null) return url;
+            if (host != null) return 'https://$host/emoji/$shortcode.webp';
+            return null;
+          },
+          resolveUrl: (url) =>
+              TcoResolver.isTcoUrl(url) ? TcoResolver.getCached(url) : null,
+          onLinkTap: (url) => openFediverseLink(context, ref, url),
+          onHashtagTap: (tag) => showHashtagActionMenu(context, tag),
+          emojiSize: emojiSize,
+          animateMfm: animateMfm,
+          applyNyaize: post?.author.isCat ?? false,
+        );
+      },
+      (renderer) =>
+          isHtml ? renderer.renderHtml(content) : renderer.renderMfm(content),
+    );
   }
 
   @override

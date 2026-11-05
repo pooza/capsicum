@@ -15,6 +15,12 @@ import 'support/source_files.dart';
 /// 複数行だが、投稿フォームのフォントを当てない入力欄。**1 件ずつ理由を書く。**
 /// キーはファイル、値は件数と理由（件数も見るので、黙って足せない）。
 const _unstyledMultiline = <String, ({int count, String reason})>{
+  'lib/src/ui/screen/antenna_edit_screen.dart': (
+    count: 3,
+    reason:
+        'Misskey のアンテナ（#1052）。ユーザー・キーワード・除外キーワードの 3 欄は'
+        '1 行 1 条件の並びで、文章を書く欄ではない（ワードミュートと同じ線）',
+  ),
   'lib/src/ui/screen/image_overlay_screen.dart': (
     count: 1,
     reason:

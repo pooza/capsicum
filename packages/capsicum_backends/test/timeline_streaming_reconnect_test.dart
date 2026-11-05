@@ -157,6 +157,41 @@ void main() {
       expect(states.last, StreamConnectionState.rejected);
     });
 
+    // #1361: 1 本の 5xx で接続ごと閉じると、健全なタグも止まる。
+    test('⚠⚠ 複数タグで 1 本だけ 5xx なら、張り直さず残りを流し続ける', () async {
+      final states = <StreamConnectionState>[];
+      final probe = await probeReceiving(
+        ['{"error":"Error connecting","status":500}'],
+        errors: [],
+        states: states,
+        tab: twoTags,
+      );
+
+      await waitUntil(() => states.contains(StreamConnectionState.live));
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+
+      expect(probe.connectCount, 1);
+      expect(states.last, StreamConnectionState.live);
+    });
+
+    test('複数タグで全部断られ、5xx が含まれていれば張り直す', () async {
+      final states = <StreamConnectionState>[];
+      final probe = await probeReceiving(
+        [
+          '{"error":"Not authorized","status":401}',
+          '{"error":"Error connecting","status":500}',
+        ],
+        errors: [],
+        states: states,
+        tab: twoTags,
+      );
+
+      await waitUntil(() => probe.connectCount >= 2);
+
+      expect(probe.connectCount, greaterThanOrEqualTo(2));
+      expect(states, isNot(contains(StreamConnectionState.rejected)));
+    });
+
     test('前提: エラーでなければ live のまま', () async {
       final states = await statesAfter('{"event":"delete","payload":"1"}');
 

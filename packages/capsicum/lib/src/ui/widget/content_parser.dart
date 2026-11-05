@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
 import 'package:capsicum_core/capsicum_core.dart' show Post, nyaize;
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:html_unescape/html_unescape.dart';
@@ -1144,6 +1145,46 @@ typedef EmojiTapCallback = void Function(String shortcode, String emojiUrl);
 /// Synchronous URL resolver: returns the resolved URL or `null`.
 typedef LinkLongPressCallback = void Function(String url);
 typedef UrlResolver = String? Function(String url);
+
+/// 本文の span を、描く中身が変わったときだけ作り直す (#1365)。
+///
+/// ⚠⚠ **組み直すたびに [ContentRenderer] を作り直して前のものを `dispose()`
+/// してはいけない。**押している最中に欄が組み直されると、そのタップを持っていた
+/// `TapGestureRecognizer` が捨てられ（dispose はアリーナから rejected で降りる）、
+/// タップが外側の `InkWell`（投稿を開く）へ流れる。デッキではフォーカスの無い
+/// カラムを押した瞬間に画面全体が組み直されるので、リンクやメンションを押すと
+/// スレッドのカラムが開いていた。
+///
+/// [key] には **span の中身とコールバックが掴むものを全部**入れる（本文・文字の
+/// スタイル・絵文字の大きさ・投稿そのもの など）。要素は `==` で比べる（`Post` は
+/// 同一性）。⚠ 入れ忘れると、変わったはずの表示や古い投稿を掴んだコールバックが
+/// 残る。
+class ContentSpanCache {
+  ContentRenderer? _renderer;
+  List<Object?>? _key;
+  TextSpan? _span;
+
+  TextSpan resolve(
+    List<Object?> key,
+    ContentRenderer Function() create,
+    TextSpan Function(ContentRenderer renderer) render,
+  ) {
+    final cached = _span;
+    if (cached != null && listEquals(_key, key)) return cached;
+    _renderer?.dispose();
+    final renderer = create();
+    _renderer = renderer;
+    _key = List.unmodifiable(key);
+    return _span = render(renderer);
+  }
+
+  void dispose() {
+    _renderer?.dispose();
+    _renderer = null;
+    _key = null;
+    _span = null;
+  }
+}
 
 class ContentRenderer {
   final TextStyle baseStyle;

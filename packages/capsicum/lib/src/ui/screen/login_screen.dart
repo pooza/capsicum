@@ -900,6 +900,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           await _finishLogin(adapter, completeResult);
         } else if (completeResult is LoginFailure) {
           debugPrint('Login failed: ${completeResult.error}');
+          // 承認待ち・メール未確認 (#1320)。アカウントの状態であって不具合では
+          // ないので、Sentry のイベントにはしない。
+          final notFunctional = notFunctionalLoginMessage(completeResult.error);
+          if (notFunctional != null) {
+            final error = completeResult.error as MastodonAccountNotFunctional;
+            _logLoginStep(
+              'completeLogin.not_functional',
+              data: {'error_code': error.errorCode},
+            );
+            if (mounted) setState(() => _error = notFunctional);
+            return;
+          }
           // MiAuth ポーリング枯渇 (#276): 承認がまだ反映されていない／ユーザーが
           // 拒否した場合は Misskey が `{ok:false}` を返し続け、poll が尽きて
           // MisskeyMiAuthPending で失敗する。ジェネリック失敗と区別し、再試行を
@@ -1386,9 +1398,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         return true;
       } else if (result is LoginFailure) {
         debugPrint('Manual code login failed: ${result.error}');
-        if (mounted) {
-          setState(() => _error = '認証コードが正しくありません');
+        // 承認待ち・メール未確認 (#1320) は、コードの交換までは成功している。
+        // 呼び出し側は false を「補助手段も失敗した」として Sentry へ送る
+        // (#276 の信号) ので、決着したものとして true を返す。
+        final notFunctional = notFunctionalLoginMessage(result.error);
+        if (notFunctional != null) {
+          final error = result.error as MastodonAccountNotFunctional;
+          _logLoginStep(
+            'completeLogin.not_functional',
+            data: {'error_code': error.errorCode},
+          );
+          if (mounted) setState(() => _error = notFunctional);
+          return true;
         }
+        if (mounted) setState(() => _error = '認証コードが正しくありません');
       }
     } catch (e) {
       // DioException の場合 requestOptions.uri に client_secret が載る

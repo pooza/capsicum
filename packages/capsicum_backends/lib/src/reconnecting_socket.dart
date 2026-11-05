@@ -329,15 +329,25 @@ class ReconnectingSocket {
   ///
   /// ⚠ [connect] を直接呼ばない。待ち時間と失敗の数え方を通さないと、断り続ける
   /// 相手へ打ち続ける。
+  ///
+  /// ⚠ [onClosed] は呼ばない (#1361)。こちらから閉じたので「相手から閉じられた」
+  /// ではなく、close code 無しで渡すとサーバーに切られたように見える。張り直す
+  /// 理由（断られた購読など）は呼び出し側が別に記録している。
   void closeAndRetry() {
     final channel = _channel;
     if (_disposed || channel == null) return;
     channel.sink.close();
-    _failed(channel, null, null);
+    _failed(channel, null, null, selfInitiated: true);
   }
 
   /// [channel] が切れた / つながらなかった。[error] は切断だけなら null。
-  void _failed(WebSocketChannel channel, Object? error, StackTrace? stack) {
+  /// [selfInitiated] はこちらから閉じたとき（[closeAndRetry]）。
+  void _failed(
+    WebSocketChannel channel,
+    Object? error,
+    StackTrace? stack, {
+    bool selfInitiated = false,
+  }) {
     if (_disposed) return;
     if (_channel != channel) return;
     if (identical(_handledFailureOf, channel)) return;
@@ -347,8 +357,8 @@ class ReconnectingSocket {
     try {
       if (error != null) {
         onStreamError?.call(error, stack ?? StackTrace.current);
-      } else {
-        // エラーが無いのは onDone（相手から閉じられた）だけ。
+      } else if (!selfInitiated) {
+        // エラーが無いのは onDone（相手から閉じられた）と、こちらから閉じたとき。
         onClosed?.call(channel.closeCode, channel.closeReason);
       }
     } catch (_) {

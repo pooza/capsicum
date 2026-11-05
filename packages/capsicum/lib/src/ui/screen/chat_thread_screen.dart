@@ -343,11 +343,13 @@ class _MessageBubble extends ConsumerStatefulWidget {
 }
 
 class _MessageBubbleState extends ConsumerState<_MessageBubble> {
-  ContentRenderer? _contentRenderer;
+  /// 本文の span (#1365)。⚠ 組み直しのたびに作り直さない理由は
+  /// [ContentSpanCache]（デッキのカラムにも入る）。
+  final _contentSpans = ContentSpanCache();
 
   @override
   void dispose() {
-    _contentRenderer?.dispose();
+    _contentSpans.dispose();
     super.dispose();
   }
 
@@ -355,34 +357,41 @@ class _MessageBubbleState extends ConsumerState<_MessageBubble> {
   /// する (#449)。Misskey の chat は MFM のみで HTML は来ない。emojis は
   /// メッセージ自体の `emojis` と送信者の `emojis` をマージ。
   TextSpan _renderContent(String content, TextStyle baseStyle) {
-    _contentRenderer?.dispose();
     final message = widget.message;
-    final allEmojis = {...message.fromUser.emojis, ...message.emojis};
-    final host = message.fromUser.host;
-    _contentRenderer = ContentRenderer(
-      baseStyle: baseStyle,
-      resolveEmoji: (shortcode) {
-        final url = allEmojis[shortcode];
-        if (url != null) return url;
-        if (host != null) return 'https://$host/emoji/$shortcode.webp';
-        return null;
-      },
-      onLinkTap: (url) => openFediverseLink(context, ref, url),
-      onLinkLongPress: (url) {
-        Clipboard.setData(ClipboardData(text: url));
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('URL をコピーしました'),
-            duration: Duration(seconds: 2),
-          ),
+    final emojiSize = ref.watch(emojiSizeProvider);
+    final animateMfm = ref.watch(mfmAnimationEnabledProvider);
+    // 絵文字・host・isCat はメッセージから決まるので、メッセージ（同一性）で代える。
+    return _contentSpans.resolve(
+      [message, content, baseStyle, emojiSize, animateMfm],
+      () {
+        final allEmojis = {...message.fromUser.emojis, ...message.emojis};
+        final host = message.fromUser.host;
+        return ContentRenderer(
+          baseStyle: baseStyle,
+          resolveEmoji: (shortcode) {
+            final url = allEmojis[shortcode];
+            if (url != null) return url;
+            if (host != null) return 'https://$host/emoji/$shortcode.webp';
+            return null;
+          },
+          onLinkTap: (url) => openFediverseLink(context, ref, url),
+          onLinkLongPress: (url) {
+            Clipboard.setData(ClipboardData(text: url));
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('URL をコピーしました'),
+                duration: Duration(seconds: 2),
+              ),
+            );
+          },
+          onHashtagTap: (tag) => showHashtagActionMenu(context, tag),
+          emojiSize: emojiSize,
+          animateMfm: animateMfm,
+          applyNyaize: message.fromUser.isCat,
         );
       },
-      onHashtagTap: (tag) => showHashtagActionMenu(context, tag),
-      emojiSize: ref.watch(emojiSizeProvider),
-      animateMfm: ref.watch(mfmAnimationEnabledProvider),
-      applyNyaize: message.fromUser.isCat,
+      (renderer) => renderer.renderMfm(content),
     );
-    return _contentRenderer!.renderMfm(content);
   }
 
   @override

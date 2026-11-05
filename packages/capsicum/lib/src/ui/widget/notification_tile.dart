@@ -53,11 +53,16 @@ class NotificationTile extends ConsumerStatefulWidget {
 }
 
 class _NotificationTileState extends ConsumerState<NotificationTile> {
-  ContentRenderer? _contentRenderer;
+  /// 本文の span。⚠ 組み直しのたびに作り直さない理由は [ContentSpanCache]（#1365）。
+  final _contentSpans = ContentSpanCache();
 
   Notification get notification => widget.notification;
 
   static final _tcoPattern = RegExp(r'https?://t\.co/\S+');
+
+  /// t.co の解決が終わった回数。本文の span の鍵に入れて、解決した URL で
+  /// 描き直させる（#1365）。
+  int _tcoResolvedCount = 0;
 
   @override
   void initState() {
@@ -74,7 +79,7 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
       TcoResolver.resolve(url).then((resolved) {
         if (resolved != null && mounted) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) setState(() {});
+            if (mounted) setState(() => _tcoResolvedCount++);
           });
         }
       });
@@ -83,39 +88,46 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
 
   @override
   void dispose() {
-    _contentRenderer?.dispose();
+    _contentSpans.dispose();
     super.dispose();
   }
 
   TextSpan _renderContent(String content, TextStyle baseStyle) {
-    _contentRenderer?.dispose();
     final post = notification.post;
-    final allEmojis = {...?post?.emojis, ...?post?.author.emojis};
-    final host = post?.author.host;
-    _contentRenderer = ContentRenderer(
-      baseStyle: baseStyle,
-      resolveEmoji: (shortcode) {
-        final url = allEmojis[shortcode];
-        if (url != null) return url;
-        if (host != null) return 'https://$host/emoji/$shortcode.webp';
-        return null;
-      },
-      resolveUrl: (url) =>
-          TcoResolver.isTcoUrl(url) ? TcoResolver.getCached(url) : null,
-      onLinkTap: (url) => openFediverseLink(context, ref, url),
-      onHashtagTap: (tag) => showHashtagActionMenu(context, tag),
-      onEmojiTap: post != null
-          ? (shortcode, emojiUrl) =>
-                _showEmojiActionMenu(context, post, shortcode, emojiUrl)
-          : null,
-      emojiSize: ref.watch(emojiSizeProvider),
-      animateMfm: ref.watch(mfmAnimationEnabledProvider),
-      applyNyaize: post?.author.isCat ?? false,
-    );
+    final emojiSize = ref.watch(emojiSizeProvider);
+    final animateMfm = ref.watch(mfmAnimationEnabledProvider);
     final isHtml = post?.isHtml ?? false;
-    return isHtml
-        ? _contentRenderer!.renderHtml(content)
-        : _contentRenderer!.renderMfm(content);
+    // 絵文字・host・isCat とコールバックが掴む post は投稿から決まるので、投稿
+    // （同一性）で代える。
+    return _contentSpans.resolve(
+      [post, content, baseStyle, emojiSize, animateMfm, _tcoResolvedCount],
+      () {
+        final allEmojis = {...?post?.emojis, ...?post?.author.emojis};
+        final host = post?.author.host;
+        return ContentRenderer(
+          baseStyle: baseStyle,
+          resolveEmoji: (shortcode) {
+            final url = allEmojis[shortcode];
+            if (url != null) return url;
+            if (host != null) return 'https://$host/emoji/$shortcode.webp';
+            return null;
+          },
+          resolveUrl: (url) =>
+              TcoResolver.isTcoUrl(url) ? TcoResolver.getCached(url) : null,
+          onLinkTap: (url) => openFediverseLink(context, ref, url),
+          onHashtagTap: (tag) => showHashtagActionMenu(context, tag),
+          onEmojiTap: post != null
+              ? (shortcode, emojiUrl) =>
+                    _showEmojiActionMenu(context, post, shortcode, emojiUrl)
+              : null,
+          emojiSize: emojiSize,
+          animateMfm: animateMfm,
+          applyNyaize: post?.author.isCat ?? false,
+        );
+      },
+      (renderer) =>
+          isHtml ? renderer.renderHtml(content) : renderer.renderMfm(content),
+    );
   }
 
   /// 書き出したファイルを開く (#1187)。`exportCompleted` 通知は `fileId` しか

@@ -839,7 +839,9 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       );
 
       client.setAccessToken(token.accessToken!);
-      final account = await client.verifyCredentials();
+      // 承認待ち・メール未確認は MastodonAccountNotFunctional になり、下の
+      // catch で LoginFailure に包まれる (#1320)。
+      final account = await client.verifyCredentials(allowNonfunctional: true);
       _learnAdminRoles(account);
 
       return LoginSuccess(
@@ -1341,12 +1343,22 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     try {
       return await client.getNotificationUnreadCount();
     } on DioException catch (e) {
-      // ⚠ 「口が無い」と読むのは 404 / 501 だけ。401 / 429 / 5xx は一時的な
-      // 失敗で、ここで立てると未読数が二度と出なくなる。
+      // ⚠ 「口が無い・使えない」と読むのは 404 / 501 / 400 だけ。401 / 429 / 5xx
+      // は一時的な失敗で、ここで立てると未読数が二度と出なくなる。
       final status = e.response?.statusCode;
-      if (status != 404 && status != 501) rethrow;
-      _unreadCountUnsupported = true;
-      return 0;
+      if (status == 404 || status == 501) {
+        _unreadCountUnsupported = true;
+        return 0;
+      }
+      // ⚠ 400 は、口はあるのにこのサーバーが受け付けない（互換サーバー・
+      // フォーク）。止めないと 30 秒ごとに打ち続けていた（#1370・10-29 から
+      // Linux の記録に並んでいた）。どのサーバーかを呼び出し側が記録できるよう、
+      // 最初の 1 回だけ投げる。
+      if (status == 400) {
+        _unreadCountUnsupported = true;
+        throw NotificationUnreadCountUnavailable(status!);
+      }
+      rethrow;
     }
   }
 

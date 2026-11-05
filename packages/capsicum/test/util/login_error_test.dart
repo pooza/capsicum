@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:capsicum/src/service/secure_storage_gate.dart';
 import 'package:capsicum/src/service/secure_storage_health.dart';
 import 'package:capsicum/src/util/login_error.dart';
+import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -356,6 +357,43 @@ void main() {
     test('番号が無い・SocketException でないなら null', () {
       expect(serverProbeOsErrorCode(const SocketException('x')), isNull);
       expect(serverProbeOsErrorCode(Exception('x')), isNull);
+    });
+  });
+
+  group('notFunctionalLoginMessage (#1320)', () {
+    test('承認待ち・メール未確認は、次にすることを言う', () {
+      expect(
+        notFunctionalLoginMessage(
+          const MastodonAccountNotFunctional('pending_approval'),
+        ),
+        contains('承認を待っています'),
+      );
+      expect(
+        notFunctionalLoginMessage(
+          const MastodonAccountNotFunctional('pending_confirmation'),
+        ),
+        contains('メールアドレスの確認'),
+      );
+    });
+
+    test('ほかの理由は、5.0 のサーバーの説明を優先する', () {
+      expect(
+        notFunctionalLoginMessage(
+          const MastodonAccountNotFunctional('account_suspended', '凍結されています'),
+        ),
+        '凍結されています',
+      );
+      expect(
+        notFunctionalLoginMessage(
+          const MastodonAccountNotFunctional('login_disabled'),
+        ),
+        contains('ログインできない状態'),
+      );
+    });
+
+    test('それ以外の例外は null（従来の文言のまま）', () {
+      expect(notFunctionalLoginMessage(Exception('x')), isNull);
+      expect(notFunctionalLoginMessage(null), isNull);
     });
   });
 }

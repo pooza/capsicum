@@ -12,6 +12,8 @@ import 'ui/screen/achievement_screen.dart';
 import 'ui/screen/annict_record_screen.dart';
 import 'ui/screen/annict_review_screen.dart';
 import 'ui/screen/announcement_screen.dart';
+import 'ui/screen/antenna_edit_screen.dart';
+import 'ui/screen/antenna_management_screen.dart';
 import 'ui/screen/antenna_notes_screen.dart';
 import 'ui/screen/avatar_decoration_screen.dart';
 import 'ui/screen/bookmark_screen.dart';
@@ -402,6 +404,20 @@ final routerProvider = Provider<GoRouter>((ref) {
               final channel = state.extra;
               return ChannelEditScreen(
                 channel: channel is Channel ? channel : null,
+              );
+            },
+          ),
+          // アンテナを管理する (#1052)。
+          GoRoute(
+            path: '/antennas/manage',
+            builder: (context, state) => const AntennaManagementScreen(),
+          ),
+          GoRoute(
+            path: '/antennas/edit',
+            builder: (context, state) {
+              final antenna = state.extra;
+              return AntennaEditScreen(
+                antenna: antenna is Antenna ? antenna : null,
               );
             },
           ),

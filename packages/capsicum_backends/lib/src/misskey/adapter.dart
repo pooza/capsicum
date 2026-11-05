@@ -7,6 +7,7 @@ import 'package:fediverse_objects/fediverse_objects.dart';
 import 'package:uuid/uuid.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
+import 'antenna_mapping.dart';
 import 'chat_room_streaming.dart';
 import 'chat_streaming.dart';
 import 'client.dart';
@@ -164,6 +165,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         FlashSupport,
         GallerySupport,
         AntennaSupport,
+        AntennaManagementSupport,
         ReportSupport,
         PinSupport,
         PushSubscriptionSupport,
@@ -1949,10 +1951,43 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     );
   }
 
+  /// Play の一覧の 1 ページの件数。⚠ 各経路の既定は 10 件（検索は 5 件）なので、
+  /// 上限を明示する。
+  static const _flashListLimit = 100;
+
+  /// 1 回の表示で追うページの上限。広い語の検索でサーバーを叩き続けない。
+  static const _flashListMaxPages = 10;
+
+  /// `untilId` で最後まで（[_flashListMaxPages] まで）読む (#1361)。
+  ///
+  /// [cursorOf] は続きの起点。⚠ いいねの一覧は Flash の ID ではなく、いいねの
+  /// エントリの ID が起点になる（#1360）。[flashOf] が null を返す行（壊れた
+  /// エントリ）は読み飛ばすが、起点には数える。
+  Future<List<Flash>> _pagedFlashes(
+    Future<List<Map<String, dynamic>>> Function(String? untilId) fetch, {
+    String? Function(Map<String, dynamic> row)? cursorOf,
+    Map<String, dynamic>? Function(Map<String, dynamic> row)? flashOf,
+  }) async {
+    final flashes = <Flash>[];
+    String? untilId;
+    for (var page = 0; page < _flashListMaxPages; page++) {
+      final data = await fetch(untilId);
+      for (final row in data) {
+        final flash = flashOf == null ? row : flashOf(row);
+        if (flash != null) flashes.add(_mapFlash(flash));
+      }
+      if (data.length < _flashListLimit) break;
+      untilId = (cursorOf ?? (row) => row['id'] as String?)(data.last);
+      if (untilId == null) break;
+    }
+    return flashes;
+  }
+
   @override
-  Future<List<Flash>> getFeaturedFlashes({TimelineQuery? query}) async {
-    // featured のページングは offset + limit で sinceId / untilId を受けない。
-    final data = await client.getFeaturedFlashes(limit: query?.limit);
+  Future<List<Flash>> getFeaturedFlashes() async {
+    // ⚠ featured のページングは offset + limit で untilId を受けない。1 回で
+    // 取れる上限まで。
+    final data = await client.getFeaturedFlashes(limit: _flashListLimit);
     return data.map(_mapFlash).toList();
   }
 
@@ -1962,47 +1997,29 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<List<Flash>> getMyFlashes({TimelineQuery? query}) async {
-    final data = await client.getMyFlashes(
-      sinceId: query?.sinceId,
-      untilId: query?.maxId,
-      limit: query?.limit,
-    );
-    return data.map(_mapFlash).toList();
-  }
+  Future<List<Flash>> getMyFlashes() => _pagedFlashes(
+    (untilId) => client.getMyFlashes(untilId: untilId, limit: _flashListLimit),
+  );
 
   @override
-  Future<List<Flash>> searchFlashes(String text, {TimelineQuery? query}) async {
-    final data = await client.searchFlashes(
-      text,
-      sinceId: query?.sinceId,
-      untilId: query?.maxId,
-      limit: query?.limit,
-    );
-    return data.map(_mapFlash).toList();
-  }
+  Future<List<Flash>> searchFlashes(String text) => _pagedFlashes(
+    (untilId) =>
+        client.searchFlashes(text, untilId: untilId, limit: _flashListLimit),
+  );
 
   @override
   Future<void> deleteFlash(String flashId) => client.deleteFlash(flashId);
 
+  /// ⚠ `/api/flash/my-likes` は `{id, flash}` の配列を返す。`id` はいいねの
+  /// エントリの ID で、続きの起点に渡すのはこちら（Flash の ID ではない）。
   @override
-  Future<List<LikedFlashEntry>> getLikedFlashes({TimelineQuery? query}) async {
-    final data = await client.getMyFlashLikes(
-      sinceId: query?.sinceId,
-      untilId: query?.maxId,
-      limit: query?.limit,
-    );
-    // /api/flash/my-likes は {id, flash} の配列を返す。`id` はライクエントリ
-    // 自体の ID で、pagination cursor として渡すべきはこちら。
-    final entries = <LikedFlashEntry>[];
-    for (final e in data) {
-      final likeId = e['id'] as String?;
-      final flashMap = e['flash'] as Map<String, dynamic>?;
-      if (likeId == null || flashMap == null) continue;
-      entries.add((likeId: likeId, flash: _mapFlash(flashMap)));
-    }
-    return entries;
-  }
+  Future<List<Flash>> getLikedFlashes() => _pagedFlashes(
+    (untilId) =>
+        client.getMyFlashLikes(untilId: untilId, limit: _flashListLimit),
+    cursorOf: (row) => row['id'] as String?,
+    flashOf: (row) =>
+        row['id'] is String ? row['flash'] as Map<String, dynamic>? : null,
+  );
 
   @override
   Future<void> likeFlash(String flashId) => client.likeFlash(flashId);
@@ -2289,12 +2306,43 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   @override
   Future<List<Antenna>> getAntennas() async {
     final data = await client.getAntennas();
-    return data
-        .map(
-          (a) =>
-              Antenna(id: a['id'] as String, name: a['name'] as String? ?? ''),
-        )
-        .toList();
+    return data.map(misskeyAntennaFromJson).toList();
+  }
+
+  // AntennaManagementSupport
+
+  @override
+  Future<void> createAntenna(AntennaDraft draft) =>
+      _antennaWrite(() => client.createAntenna(misskeyAntennaParams(draft)));
+
+  @override
+  Future<void> updateAntenna(String antennaId, AntennaDraft draft) =>
+      _antennaWrite(
+        () => client.updateAntenna(antennaId, misskeyAntennaParams(draft)),
+      );
+
+  @override
+  Future<void> deleteAntenna(String antennaId) async {
+    try {
+      await client.deleteAntenna(antennaId);
+    } on DioException catch (e) {
+      // 一覧を取ったあとに Web などで消されていた。消すという目的は果たして
+      // いるので成功として扱う（失敗を出して Sentry へ送らない）。
+      if (!_hasErrorCode(e, 'NO_SUCH_ANTENNA')) rethrow;
+    }
+  }
+
+  /// ⚠ ロールの上限（`TOO_MANY_ANTENNAS`）は [AntennaLimitReached] に写す。画面が
+  /// バックエンドのエラーコードに依らないため（デコの #1361 と同じ）。
+  Future<void> _antennaWrite(Future<void> Function() write) async {
+    try {
+      await write();
+    } on DioException catch (e) {
+      if (_hasErrorCode(e, 'TOO_MANY_ANTENNAS')) {
+        throw const AntennaLimitReached();
+      }
+      rethrow;
+    }
   }
 
   @override
@@ -2517,13 +2565,10 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   /// Web で変えたものを消してしまう。
   @override
   Future<User> attachAvatarDecoration(String id) async {
-    final me = (await client.getI()).toCapsicum(
-      host,
-      adminRoleIds: _adminRoleIds,
-    );
+    final (rawMe, limit) = await client.getIWithAvatarDecorationLimit();
+    final me = rawMe.toCapsicum(host, adminRoleIds: _adminRoleIds);
     final current = me.avatarDecorations;
     if (current.any((d) => d.id == id)) return me;
-    final limit = await client.getAvatarDecorationLimit();
     final List<AvatarDecoration> kept;
     if (limit != null && current.length >= limit) {
       // ⚠ 1 つだけのサーバーでは、外してから付ける手間を掛けさせない。
@@ -2532,12 +2577,23 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     } else {
       kept = current;
     }
-    final user = await client.updateI(
-      avatarDecorations: [
-        ...kept.map(_decorationParams),
-        {'id': id},
-      ],
-    );
+    final MisskeyUser user;
+    try {
+      user = await client.updateI(
+        avatarDecorations: [
+          ...kept.map(_decorationParams),
+          {'id': id},
+        ],
+      );
+    } on DioException catch (e) {
+      // ⚠ ロールで数を絞られていると `i/update` は `RESTRICTED_BY_ROLE` で断る。
+      // 画面がバックエンドのエラーコードに依らないよう、上限に当たったものとして
+      // 返す (#1361)。上限が読めなかったときは、今付いている数を上限とみなす。
+      if (_hasErrorCode(e, 'RESTRICTED_BY_ROLE')) {
+        throw AvatarDecorationLimitReached(limit ?? current.length);
+      }
+      rethrow;
+    }
     final updated = user.toCapsicum(host, adminRoleIds: _adminRoleIds);
     // ⚠ 権限のないものは、エラーにならず黙って落とされる。
     if (!updated.avatarDecorations.any((d) => d.id == id)) {

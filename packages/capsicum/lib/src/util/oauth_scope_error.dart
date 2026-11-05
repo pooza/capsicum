@@ -50,3 +50,8 @@ bool isOAuthScopeError(Object error) {
   }
   return false;
 }
+
+/// [isOAuthScopeError] のときに画面へ出す文言 (#1361)。
+///
+/// ⚠ 画面ごとに直書きしない（4 か所に写されていた）。
+const oauthScopeErrorMessage = '権限が不足しています。再ログインしてください';

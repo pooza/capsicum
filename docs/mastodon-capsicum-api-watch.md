@@ -162,6 +162,17 @@ minor 内の patch 更新（自前 3 鯖は pooza が本番へリリース日に
 
 実測（2026-10-30）: 美食丼 / デルムリン丼 / キュアスタ！の `/api/v2/instance` はいずれも `4.7.4`。
 
+### v4.7.4 → v4.7.5（セキュリティリリース・2026-11-04 トリアージ）
+
+**client 影響なし（capsicum コード変更ゼロ）**。上流タグ `v4.7.4..v4.7.5` で、`app/serializers/rest/`・`config/routes`・`app/controllers/api/`・`streaming/` の diff は**いずれも完全に空**（全体で 14 ファイル・+95 / -27 行）。
+
+- **passive（ログインの画面だけ）**: 4.7.4 で入ったメールのセキュリティコードの穴埋め（GHSA-3xjw-gv43-3w62）。⚠ **4.7.4 では 5 分の期限が判定に使われていなかった**のが効くようになり、コードは**使い捨て**になり、入力の失敗は **1 時間に 10 回まで**（超えると「回数が多すぎます」で止まる）。capsicum の OAuth はブラウザの中で完結するので、アプリ側は変わらない。[login-troubleshooting スキル](../.claude/skills/login-troubleshooting/SKILL.md) の対処手順に追記した
+- **none（連合）**: 署名つきの JSON-LD を compaction する前にも上限を検査する（GHSA-cf49-73r7-rxj6・DoS 対策）
+- **none（サーバーの運用）**: `Forwarded` ヘッダーより `X-Forwarded-For` を優先する（GHSA-qp4r-p842-mw5c）。同梱の `dist/nginx.conf` は `proxy_set_header Forwarded "";` を 2 箇所足した。⚠ 反映は chubo2 側
+- **none（招待）**: 招待で入った人がアカウントを消しても、招待の使用回数が減らなくなった（#41458）。capsicum は招待 API を叩かない
+
+実測（2026-11-04）: 美食丼 / デルムリン丼 / キュアスタ！の `/api/v2/instance` はいずれも `4.7.5`。
+
 ## 5.0 先読み（v4.7.3 → upstream main `5.0.0-alpha.1`・2026-10-20）
 
 **まだタグが無い**（RC 前）。upstream main `5204e8ab94` との tree diff で見た（718 コミット）。⚠ **RC が出たら同じ手順で引き直す**（フォーク側の試しマージ pooza/mastodon#996 と同じ時期）。5.0 の目玉は Web UI の全面刷新で、フォークの 5.0 対応（pooza/mastodon の `5.0.0` マイルストーン）もほぼそちら。

@@ -17,6 +17,22 @@ import '../widget/user_avatar.dart';
 String shareDestination(int accountCount) =>
     accountCount >= 2 ? '/share/account' : '/compose';
 
+/// 選ぶ前に共有の中身（曲名）を引くために借りるアカウント (#1348 / #1361)。
+///
+/// ⚠ **現在のアカウントを先に見る。**いちばん選ばれやすいアカウントで、選ばれる
+/// 前に URL を送る先を、利用者がふだん使っているサーバーに寄せる（以前は一覧の
+/// 先頭を借りていた）。使えなければ、使える別のアカウント。
+///
+/// ⚠ 選んでから引く形にはしない。何を共有したかを、選ぶ前に思い出せるように
+/// 出すための表示（共有してから開くまでに間が空く）。
+Account? shareResolverAccount(AccountManagerState state) {
+  bool canResolve(Account a) =>
+      a.mulukhiya?.nowplayingUrlResolverEnabled ?? false;
+  final current = state.current;
+  if (current != null && canResolve(current)) return current;
+  return state.accounts.where(canResolve).firstOrNull;
+}
+
 /// 共有されたナウプレを投稿するアカウントを選ぶ (#1348)。
 ///
 /// ⚠ 共有から来たテキストは、URL でなくてもナウプレとして組む（投稿フォームの
@@ -53,10 +69,7 @@ class _ShareAccountScreenState extends ConsumerState<ShareAccountScreen> {
   Future<void> _resolve() async {
     final text = widget.sharedText.trim();
     if (!isSingleNowPlayingUrl(text)) return;
-    final accounts = ref.read(accountManagerProvider).accounts;
-    final account = accounts
-        .where((a) => a.mulukhiya?.nowplayingUrlResolverEnabled ?? false)
-        .firstOrNull;
+    final account = shareResolverAccount(ref.read(accountManagerProvider));
     if (account == null) return;
     try {
       final info = await account.mulukhiya!.resolveNowPlayingByUrl(

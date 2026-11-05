@@ -90,12 +90,11 @@ void main() {
       });
       adapter.client.dio.httpClientAdapter = http;
 
-      await adapter.getFeaturedFlashes(
-        query: const TimelineQuery(limit: 20, sinceId: 'x', maxId: 'y'),
-      );
+      await adapter.getFeaturedFlashes();
 
       final body = http.sentBodies['flash/featured']!;
-      expect(body['limit'], 20);
+      // ⚠ 既定は 10 件。offset 方式で 1 回に取れる上限（100）を明示する。
+      expect(body['limit'], 100);
       expect(body.containsKey('sinceId'), isFalse);
       expect(body.containsKey('untilId'), isFalse);
     });
@@ -146,23 +145,20 @@ void main() {
     });
 
     // #1351: 検索の既定は 5 件。
-    test('search は query と limit と続きの起点を送る', () async {
+    test('search は query と limit を送る（最初のページは起点なし）', () async {
       final adapter = await MisskeyAdapter.create('misskey.example');
       final http = _RoutingAdapter({
         'flash/search': (200, [_flash]),
       });
       adapter.client.dio.httpClientAdapter = http;
 
-      final found = await adapter.searchFlashes(
-        'おみくじ',
-        query: const TimelineQuery(maxId: 'x', limit: 100),
-      );
+      final found = await adapter.searchFlashes('おみくじ');
 
       expect(found.single.id, 'flash1');
       final body = http.sentBodies['flash/search'];
       expect(body, containsPair('query', 'おみくじ'));
       expect(body, containsPair('limit', 100));
-      expect(body, containsPair('untilId', 'x'));
+      expect(body!.containsKey('untilId'), isFalse);
     });
 
     test('delete は flashId を送る', () async {
@@ -207,11 +203,9 @@ void main() {
         ),
       });
 
-      final entries = await adapter.getLikedFlashes();
+      final flashes = await adapter.getLikedFlashes();
 
-      expect(entries, hasLength(1));
-      expect(entries.single.likeId, 'like1');
-      expect(entries.single.flash.id, 'flash1');
+      expect(flashes.single.id, 'flash1');
     });
 
     test('my-likes の壊れたエントリは読み飛ばす', () async {
@@ -227,9 +221,9 @@ void main() {
         ),
       });
 
-      final entries = await adapter.getLikedFlashes();
+      final flashes = await adapter.getLikedFlashes();
 
-      expect(entries.map((e) => e.likeId), ['like2']);
+      expect(flashes, hasLength(1));
     });
 
     test('like / unlike は flashId パラメータで叩く', () async {
@@ -247,4 +241,88 @@ void main() {
       expect(http.sentBodies['flash/unlike']!['flashId'], 'flash1');
     });
   });
+
+  // #1361: ページ送りはアダプターが持つ（チャンネルと同じ層）。
+  group('ページ送り', () {
+    test('⚠ いいねの次のページは、いいねの ID を起点にする（Flash の ID ではない）', () async {
+      final adapter = await MisskeyAdapter.create('misskey.example');
+      final http = _PagingAdapter(
+        firstPage: [
+          for (var i = 0; i < 100; i++)
+            {
+              'id': 'like$i',
+              'flash': {..._flash, 'id': 'f$i'},
+            },
+        ],
+      );
+      adapter.client.dio.httpClientAdapter = http;
+
+      final flashes = await adapter.getLikedFlashes();
+
+      expect(http.untilIds, [null, 'like99']);
+      expect(flashes, hasLength(100));
+      expect(flashes.last.id, 'f99');
+    });
+
+    test('自分の Play は Flash の ID を起点にし、満たないページで止める', () async {
+      final adapter = await MisskeyAdapter.create('misskey.example');
+      final http = _PagingAdapter(
+        firstPage: [
+          for (var i = 0; i < 100; i++) {..._flash, 'id': 'm$i'},
+        ],
+      );
+      adapter.client.dio.httpClientAdapter = http;
+
+      await adapter.getMyFlashes();
+
+      expect(http.untilIds, [null, 'm99']);
+    });
+
+    test('⚠ 上限（10 ページ）で止める（広い語の検索で叩き続けない）', () async {
+      final adapter = await MisskeyAdapter.create('misskey.example');
+      final http = _PagingAdapter(
+        firstPage: [
+          for (var i = 0; i < 100; i++) {..._flash, 'id': 's$i'},
+        ],
+        repeat: true,
+      );
+      adapter.client.dio.httpClientAdapter = http;
+
+      await adapter.searchFlashes('a');
+
+      expect(http.untilIds, hasLength(10));
+    });
+  });
+}
+
+/// 最初のページに [firstPage] を返し、次からは空（[repeat] なら同じもの）を返す。
+/// 送られた `untilId` を順に記録する。
+class _PagingAdapter implements HttpClientAdapter {
+  _PagingAdapter({required this.firstPage, this.repeat = false});
+
+  final List<Map<String, dynamic>> firstPage;
+  final bool repeat;
+  final untilIds = <String?>[];
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<List<int>>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    final data = options.data as Map<String, dynamic>;
+    final untilId = data['untilId'] as String?;
+    untilIds.add(untilId);
+    final body = untilId == null || repeat ? firstPage : <Object>[];
+    return ResponseBody.fromString(
+      jsonEncode(body),
+      200,
+      headers: {
+        Headers.contentTypeHeader: ['application/json'],
+      },
+    );
+  }
+
+  @override
+  void close({bool force = false}) {}
 }

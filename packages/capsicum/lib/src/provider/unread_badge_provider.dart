@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../util/exception_scrub.dart';
 import 'account_manager_provider.dart';
@@ -30,6 +31,20 @@ Future<UnreadBadge> fetchUnreadBadge(
     try {
       notifications = await (adapter as NotificationUnreadCountSupport)
           .getUnreadNotificationCount();
+    } on NotificationUnreadCountUnavailable catch (e) {
+      // このサーバーでは未読数が使えない（アダプターは以後問い合わせない）。
+      // ⚠ どのサーバーかを残す（#1370）。打ち続けていた間は、パンくずに host が
+      // 無く切り分けられなかった。アダプターは印を立ててから投げるので、送るのは
+      // 起動ごと・アカウントごとにほぼ 1 回（問い合わせが重なると 2 回になりうるが、
+      // info なので許容する）。
+      Sentry.captureMessage(
+        'notification.unread_count.unavailable',
+        level: SentryLevel.info,
+        withScope: (scope) {
+          scope.setTag('unread_count.host', adapter.host);
+          scope.setTag('unread_count.status', e.status.toString());
+        },
+      );
     } catch (e) {
       // Non-critical — skip on failure.
       // ⚠ ただし痕跡は残す（リリース前レビュー・2026-10-10）。握りつぶすと

@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
 
@@ -108,6 +109,29 @@ LoginFailureInfo classifyLoginFailure(Object error) {
   }
 
   return (kind: LoginFailureKind.unknown, message: 'ログインに失敗しました');
+}
+
+/// ログインはできたが、アカウントがまだ使えない状態のときの文言 (#1320)。
+/// [error] がそれ以外なら null。
+///
+/// 承認待ち・メール未確認は不具合ではなく、利用者が次に何をすればよいかが
+/// 決まっている。「ログインに失敗しました」だと、パスワードやアプリを疑わせる。
+String? notFunctionalLoginMessage(Object? error) {
+  if (error is! MastodonAccountNotFunctional) return null;
+  return switch (error.errorCode) {
+    MastodonAccountNotFunctional.pendingConfirmation =>
+      'メールアドレスの確認が済んでいません。サーバーから届いたメールのリンクを'
+          '開いてから、もう一度ログインしてください。',
+    MastodonAccountNotFunctional.pendingApproval =>
+      'このアカウントは、サーバーの管理者の承認を待っています。'
+          '承認されてから、もう一度ログインしてください。',
+    // 凍結・無効化・2 段階認証の必須化など。5.0 はサーバーの言語で理由を返す
+    // ので、こちらの言い換えより具体的なそちらを出す。
+    _ =>
+      error.serverMessage ??
+          'このアカウントは、いまログインできない状態です。'
+              '詳しくはサーバーの管理者に問い合わせてください。',
+  };
 }
 
 /// サーバーの接続確認（サーバー選択画面）が失敗した理由の分類 (#1298)。

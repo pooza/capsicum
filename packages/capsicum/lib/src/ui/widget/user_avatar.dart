@@ -96,7 +96,7 @@ class UserAvatar extends ConsumerWidget {
     double avatarSize,
     double padding,
   ) {
-    final decoSize = avatarSize * 2.0;
+    final decoSize = decorationSize(avatarSize);
     Widget image = Image.network(
       decoration.url,
       width: decoSize,
@@ -125,6 +125,12 @@ class UserAvatar extends ConsumerWidget {
     );
   }
 
+  /// デコレーションの描画の大きさ。Misskey Web と同じくアバターの 200%。
+  ///
+  /// ⚠ 描画（[_buildDecoration]）と移動量（[decorationOffset]）で同じ値を使う
+  /// （2 か所で計算していた・#1361）。片方だけ変えると、位置調整がずれる。
+  static double decorationSize(double avatarSize) => avatarSize * 2.0;
+
   /// デコレーションの位置調整の移動量 (#1357)。
   ///
   /// Misskey Web は `translate: ${offsetX * 100}% ${offsetY * 100}%` で動かす。
@@ -134,7 +140,7 @@ class UserAvatar extends ConsumerWidget {
     AvatarDecoration decoration,
     double avatarSize,
   ) {
-    final decoSize = avatarSize * 2.0;
+    final decoSize = decorationSize(avatarSize);
     return Offset(decoration.offsetX * decoSize, decoration.offsetY * decoSize);
   }
 }

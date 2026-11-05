@@ -100,10 +100,10 @@ class _PostingDefaultsScreenState extends ConsumerState<PostingDefaultsScreen> {
         quotePolicy: effectiveDefaultQuotePolicy(_scope, _quotePolicy),
         spoilerField: _spoilerField,
       );
-      // ⚠ 開いたアカウントがまだ現在のアカウントなら、手元の `User` を差し替える。
+      // ⚠ 開いたアカウントの手元の `User` を差し替える（現在のアカウントでなくても・#1361）。
       // 差し替えないと、次の取り直し（#1185 の TTL）まで投稿フォームが古い既定で
       // 開く。⚠ ここで `ref` を使わない（待つ間に戻られると破棄済みで投げる）。
-      accountManager.updateCurrentUserIfCurrent(account?.key, user);
+      if (account != null) accountManager.updateUserOf(account.key, user);
       if (!mounted) return;
       navigator.maybePop();
       messenger.showSnackBar(

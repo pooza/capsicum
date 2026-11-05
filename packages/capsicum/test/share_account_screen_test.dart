@@ -15,6 +15,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// #1348: ナウプレの共有で、投稿するアカウントを選ぶ。
 class _Adapter extends Mock implements DecentralizedBackendAdapter {}
 
+class _Mulukhiya extends Mock implements MulukhiyaService {
+  _Mulukhiya({required this.resolves});
+
+  final bool resolves;
+
+  @override
+  bool get nowplayingUrlResolverEnabled => resolves;
+}
+
 class _AccountNotifier extends AccountManagerNotifier {
   _AccountNotifier(this._accounts);
 
@@ -58,6 +67,53 @@ void main() {
     ),
     userSecret: const UserSecret(accessToken: 'token'),
   );
+
+  // #1361: 選ぶ前に URL を送る先を、現在のアカウントに寄せる。
+  group('shareResolverAccount', () {
+    Account withResolver(String name, {required bool resolves}) {
+      final a = account(name);
+      return Account(
+        key: a.key,
+        adapter: a.adapter,
+        user: a.user,
+        userSecret: a.userSecret,
+        mulukhiya: _Mulukhiya(resolves: resolves),
+      );
+    }
+
+    test('現在のアカウントが引けるなら、一覧の先頭ではなくそれを借りる', () {
+      final first = withResolver('first', resolves: true);
+      final current = withResolver('current', resolves: true);
+
+      final picked = shareResolverAccount(
+        AccountManagerState(accounts: [first, current], current: current),
+      );
+
+      expect(picked?.key, current.key);
+    });
+
+    test('現在のアカウントが引けなければ、引ける別のアカウント', () {
+      final current = withResolver('current', resolves: false);
+      final other = withResolver('other', resolves: true);
+
+      final picked = shareResolverAccount(
+        AccountManagerState(accounts: [current, other], current: current),
+      );
+
+      expect(picked?.key, other.key);
+    });
+
+    test('どれも引けなければ null（共有のまま出す）', () {
+      final current = account('current');
+
+      expect(
+        shareResolverAccount(
+          AccountManagerState(accounts: [current], current: current),
+        ),
+        isNull,
+      );
+    });
+  });
 
   test('shareDestination: 1 つなら今までどおり、2 つ以上で選ばせる', () {
     expect(shareDestination(1), '/compose');

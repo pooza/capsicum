@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../provider/channel_provider.dart';
+import '../../util/oauth_scope_error.dart';
 import '../util/deck_navigation.dart';
 import '../util/op_error.dart';
 import '../widget/bottom_safe_area.dart';
@@ -147,7 +148,10 @@ class _ChannelList extends ConsumerWidget {
     return channels.when(
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, _) => RetryErrorView(
-        message: '読み込みに失敗しました\n${summarizeOpError(e)}',
+        // 権限の足りない古いトークンは再ログインの案内を出す（Play の一覧と同じ・#1361）。
+        message: isOAuthScopeError(e)
+            ? oauthScopeErrorMessage
+            : '読み込みに失敗しました\n${summarizeOpError(e)}',
         isRetrying: channels.isLoading,
         onRetry: () => invalidateChannels(ref),
       ),

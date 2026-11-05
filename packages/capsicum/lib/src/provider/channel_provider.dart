@@ -2,8 +2,8 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../model/account_key.dart';
-import '../service/sentry_op_failure.dart';
 import 'account_manager_provider.dart';
+import 'list_fetch.dart';
 import 'preferences_provider.dart';
 import 'timeline_provider.dart';
 
@@ -176,26 +176,17 @@ enum ChannelListKind {
 }
 
 /// 一覧の取得。失敗は観測へ流してから、そのまま画面へ返す (#1353)。
+/// ⚠ 権限の足りない古いトークンの失敗は送らない（Play の一覧と同じ・#1361）。
 Future<List<Channel>> _fetchChannelList(
   Ref ref,
   String operation,
   Future<List<Channel>> Function() fetch,
-) async {
-  // ⚠ 通信の前に取る。通信の間に provider が破棄されると `ref` を読めない。
-  final account = ref.read(currentAccountProvider);
-  try {
-    return await fetch();
-  } catch (e, st) {
-    reportOpFailure(
-      tagKey: 'channel.list',
-      operation: operation,
-      error: e,
-      stackTrace: st,
-      account: account,
-    );
-    rethrow;
-  }
-}
+) => fetchListReportingFailure(
+  ref,
+  tagKey: 'channel.list',
+  operation: operation,
+  fetch: fetch,
+);
 
 final channelListProvider = FutureProvider.autoDispose
     .family<List<Channel>, ChannelListKind>((ref, kind) async {

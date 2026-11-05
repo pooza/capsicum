@@ -50,9 +50,41 @@ import 'preview_card_widget.dart';
 import 'reaction_picker_sheet.dart';
 import 'report_comment_dialog.dart';
 import 'server_badge.dart';
+import 'text_with_overflow_toggle.dart';
 import 'user_avatar.dart';
 
 String _stripHtml(String html) => stripHtml(html);
+
+/// 本文のメンション（`@user` / `@user@host`）を引いてプロフィールを開く。
+/// 投稿の欄と引用の枠（#1364）で共有する。
+Future<void> _openMention(
+  BuildContext context,
+  WidgetRef ref,
+  String mention,
+) async {
+  final parts = mention.replaceFirst('@', '').split('@');
+  if (parts.isEmpty) return;
+  final username = parts[0];
+  final host = parts.length > 1 ? parts[1] : null;
+  final adapter = ref.read(currentAdapterProvider);
+  if (adapter == null) return;
+  try {
+    final user = await adapter.getUser(username, host);
+    if (user != null && context.mounted) {
+      openProfile(context, user);
+    }
+  } on Exception catch (e) {
+    debugLogException('Failed to look up mention $mention', e);
+  }
+}
+
+/// 引用の枠の本文（#1364）。検査から掴むための鍵。
+@visibleForTesting
+const quoteCardBodyKey = Key('quote-card-body');
+
+/// 引用の枠を単独で組む（検査用・#1364）。
+@visibleForTesting
+Widget quoteCardForTest(Post quote) => _QuoteCard(quote: quote);
 
 class PostTile extends ConsumerStatefulWidget {
   final Post post;
@@ -183,6 +215,10 @@ class _PostTileState extends ConsumerState<PostTile> {
 
   static final _tcoPattern = RegExp(r'https?://t\.co/\S+');
 
+  /// t.co の解決が終わった回数。本文の span の鍵に入れて、解決した URL で
+  /// 描き直させる（[ContentSpanCache] は鍵が変わらないと作り直さない・#1365）。
+  int _tcoResolvedCount = 0;
+
   void _resolveTcoUrls() {
     final content = (post.reblog ?? post).content;
     if (content == null) return;
@@ -192,7 +228,7 @@ class _PostTileState extends ConsumerState<PostTile> {
       TcoResolver.resolve(url).then((resolved) {
         if (resolved != null && mounted) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) setState(() {});
+            if (mounted) setState(() => _tcoResolvedCount++);
           });
         }
       });
@@ -386,40 +422,27 @@ class _PostTileState extends ConsumerState<PostTile> {
     _cardFetchDebounce?.cancel();
     // 画面から外れたタイルのぶんの引用元は引かせない (#1304)。
     _releaseQuoteFallback();
-    _contentRenderer?.dispose();
-    _cwRenderer?.dispose();
+    _contentSpans.dispose();
+    _cwSpans.dispose();
     super.dispose();
   }
 
-  Future<void> _navigateToMention(String mention) async {
-    // Parse @user or @user@host
-    final parts = mention.replaceFirst('@', '').split('@');
-    if (parts.isEmpty) return;
-    final username = parts[0];
-    final host = parts.length > 1 ? parts[1] : null;
-    final adapter = ref.read(currentAdapterProvider);
-    if (adapter == null) return;
-    try {
-      final user = await adapter.getUser(username, host);
-      if (user != null && mounted) {
-        openProfile(context, user);
-      }
-    } on Exception catch (e) {
-      debugLogException('Failed to look up mention $mention', e);
-    }
-  }
+  Future<void> _navigateToMention(String mention) =>
+      _openMention(context, ref, mention);
 
-  ContentRenderer? _contentRenderer;
+  /// 本文の span (#1365)。⚠ 組み直しのたびに作り直さない理由は [ContentSpanCache]。
+  final _contentSpans = ContentSpanCache();
 
-  /// CW 用のレンダラ (#1068)。
+  /// CW 用の span (#1068)。
   ///
-  /// ⚠⚠ **本文と同じインスタンスを使い回してはいけない。**[_renderContent] は
-  /// 呼ばれるたび冒頭で前のインスタンスを `dispose()` するので、共有すると
-  /// **本文を描いた瞬間に CW 側の `TapGestureRecognizer` が破棄され、CW の
-  /// ハッシュタグが押せなくなる**（押しても何も起きない、という壊れ方）。
-  ContentRenderer? _cwRenderer;
+  /// ⚠⚠ **本文と同じキャッシュを使い回してはいけない。**中身が変わると前の
+  /// レンダラを `dispose()` するので、共有すると**本文を描いた瞬間に CW 側の
+  /// `TapGestureRecognizer` が破棄され、CW のハッシュタグが押せなくなる**
+  /// （押しても何も起きない、という壊れ方）。
+  final _cwSpans = ContentSpanCache();
 
   TextSpan _renderContent(
+    Post displayPost,
     String content,
     TextStyle baseStyle,
     Map<String, String> emojis, {
@@ -427,16 +450,30 @@ class _PostTileState extends ConsumerState<PostTile> {
     required bool isHtml,
     bool isCat = false,
   }) {
-    _contentRenderer?.dispose();
-    _contentRenderer = _buildRenderer(
-      baseStyle,
-      emojis,
-      fallbackHost: fallbackHost,
-      isCat: isCat,
+    final emojiSize = ref.watch(emojiSizeProvider);
+    final animateMfm = ref.watch(mfmAnimationEnabledProvider);
+    // 絵文字・fallbackHost・isCat は投稿から決まるので、投稿（同一性）で代える。
+    return _contentSpans.resolve(
+      [
+        displayPost,
+        content,
+        baseStyle,
+        isHtml,
+        emojiSize,
+        animateMfm,
+        _tcoResolvedCount,
+      ],
+      () => _buildRenderer(
+        baseStyle,
+        emojis,
+        fallbackHost: fallbackHost,
+        isCat: isCat,
+        emojiSize: emojiSize,
+        animateMfm: animateMfm,
+      ),
+      (renderer) =>
+          isHtml ? renderer.renderHtml(content) : renderer.renderMfm(content),
     );
-    return isHtml
-        ? _contentRenderer!.renderHtml(content)
-        : _contentRenderer!.renderMfm(content);
   }
 
   /// CW（警告文）を本文と同じ導線でレンダリングする (#1068)。
@@ -445,15 +482,34 @@ class _PostTileState extends ConsumerState<PostTile> {
   /// MFM。**一律 `renderMfm` に通すと Mastodon 側の CW で `**〜**` 等が
   /// 意図せず装飾される。投稿が HTML（= Mastodon）なら `renderPlain` を使う。
   TextSpan _renderCw(
+    Post displayPost,
     String cw,
     TextStyle baseStyle,
     Map<String, String> emojis, {
     String? fallbackHost,
     required bool isHtml,
   }) {
-    _cwRenderer?.dispose();
-    _cwRenderer = _buildRenderer(baseStyle, emojis, fallbackHost: fallbackHost);
-    return isHtml ? _cwRenderer!.renderPlain(cw) : _cwRenderer!.renderMfm(cw);
+    final emojiSize = ref.watch(emojiSizeProvider);
+    final animateMfm = ref.watch(mfmAnimationEnabledProvider);
+    return _cwSpans.resolve(
+      [
+        displayPost,
+        cw,
+        baseStyle,
+        isHtml,
+        emojiSize,
+        animateMfm,
+        _tcoResolvedCount,
+      ],
+      () => _buildRenderer(
+        baseStyle,
+        emojis,
+        fallbackHost: fallbackHost,
+        emojiSize: emojiSize,
+        animateMfm: animateMfm,
+      ),
+      (renderer) => isHtml ? renderer.renderPlain(cw) : renderer.renderMfm(cw),
+    );
   }
 
   ContentRenderer _buildRenderer(
@@ -461,6 +517,8 @@ class _PostTileState extends ConsumerState<PostTile> {
     Map<String, String> emojis, {
     String? fallbackHost,
     bool isCat = false,
+    required double emojiSize,
+    required bool animateMfm,
   }) {
     return ContentRenderer(
       baseStyle: baseStyle,
@@ -492,8 +550,8 @@ class _PostTileState extends ConsumerState<PostTile> {
       onMentionTap: (mention) => _navigateToMention(mention),
       onEmojiTap: (shortcode, emojiUrl) =>
           _showEmojiActionMenu(context, shortcode, emojiUrl),
-      emojiSize: ref.watch(emojiSizeProvider),
-      animateMfm: ref.watch(mfmAnimationEnabledProvider),
+      emojiSize: emojiSize,
+      animateMfm: animateMfm,
     );
   }
 
@@ -791,6 +849,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                                   Expanded(
                                     child: Text.rich(
                                       _renderCw(
+                                        displayPost,
                                         displayPost.spoilerText!,
                                         Theme.of(
                                               context,
@@ -858,12 +917,13 @@ class _PostTileState extends ConsumerState<PostTile> {
                           return Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              LayoutBuilder(
-                                builder: (context, constraints) {
+                              Builder(
+                                builder: (context) {
                                   final baseStyle = DefaultTextStyle.of(
                                     context,
                                   ).style;
                                   final contentSpan = _renderContent(
+                                    displayPost,
                                     parsed.body,
                                     baseStyle,
                                     allEmojis,
@@ -871,47 +931,36 @@ class _PostTileState extends ConsumerState<PostTile> {
                                     isHtml: isHtml,
                                     isCat: displayPost.author.isCat,
                                   );
-                                  // Use a plain TextSpan for overflow measurement
-                                  // because TextPainter cannot measure WidgetSpan.
-                                  // HTML の場合はタグ除去済みテキストで測定する。
-                                  final measureSpan = TextSpan(
-                                    text: isHtml ? plainBody : parsed.body,
-                                    style: baseStyle,
-                                  );
-                                  final textPainter = TextPainter(
-                                    text: measureSpan,
-                                    maxLines: _maxLines,
-                                    textDirection: TextDirection.ltr,
-                                  )..layout(maxWidth: constraints.maxWidth);
-                                  final overflows =
-                                      textPainter.didExceedMaxLines;
-
-                                  return Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      _buildContentText(contentSpan),
-                                      if (overflows)
-                                        GestureDetector(
-                                          onTap: () => setState(
-                                            () => _expanded = !_expanded,
-                                          ),
-                                          child: Padding(
-                                            padding: const EdgeInsets.only(
-                                              top: 4,
-                                            ),
-                                            child: Text(
-                                              _expanded ? '折り畳む' : '続きを読む',
-                                              style: TextStyle(
-                                                color: Theme.of(
-                                                  context,
-                                                ).colorScheme.primary,
-                                                fontSize: 13,
-                                              ),
-                                            ),
+                                  // ⚠ 「続きを読む」の要否は、表示した段落そのもので
+                                  // 決める (#1369)。別の TextPainter で測ると、文字
+                                  // サイズの倍率・絵文字の大きさが表示と揃わない。
+                                  return TextWithOverflowToggle(
+                                    text: _buildContentText(contentSpan),
+                                    // 展開中は、上限を付けた同じ本文で測る。
+                                    collapsedText: _expanded
+                                        ? Text.rich(
+                                            contentSpan,
+                                            maxLines: _maxLines,
+                                            overflow: TextOverflow.ellipsis,
+                                          )
+                                        : null,
+                                    toggle: GestureDetector(
+                                      onTap: () => setState(
+                                        () => _expanded = !_expanded,
+                                      ),
+                                      child: Padding(
+                                        padding: const EdgeInsets.only(top: 4),
+                                        child: Text(
+                                          _expanded ? '折り畳む' : '続きを読む',
+                                          style: TextStyle(
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.primary,
+                                            fontSize: 13,
                                           ),
                                         ),
-                                    ],
+                                      ),
+                                    ),
                                   );
                                 },
                               ),
@@ -3387,39 +3436,78 @@ class _QuoteCard extends ConsumerStatefulWidget {
 class _QuoteCardState extends ConsumerState<_QuoteCard> {
   bool _cwExpanded = false;
 
-  /// 引用元 CW 用のレンダラ (#1068)。⚠ **本体側の `_cwRenderer` とは別インス
-  /// タンス**（別 State なので共有しようがないが、共有すると本体と同じ
-  /// 「dispose されてタップが死ぬ」形になる）。
-  ContentRenderer? _cwRenderer;
+  /// 引用元 CW 用の span (#1068)。⚠ **本体側の `_cwSpans` とは別インスタンス**
+  /// （別 State なので共有しようがないが、共有すると本体と同じ「dispose されて
+  /// タップが死ぬ」形になる）。組み直しのたびに作り直さない理由は
+  /// [ContentSpanCache]（#1365）。
+  final _cwSpans = ContentSpanCache();
+
+  /// 引用元の本文の span (#1364)。⚠ CW と同じ理由で別インスタンスにする。
+  final _bodySpans = ContentSpanCache();
 
   Post get quote => widget.quote;
 
   @override
   void dispose() {
-    _cwRenderer?.dispose();
+    _cwSpans.dispose();
+    _bodySpans.dispose();
     super.dispose();
+  }
+
+  /// 引用元の本文を、ふつうの投稿と同じ導線（リンク・メンション・ハッシュタグ）で
+  /// レンダリングする (#1364)。
+  TextSpan _renderBody(String content, TextStyle? baseStyle) {
+    final emojiSize = ref.watch(emojiSizeProvider);
+    final animateMfm = ref.watch(mfmAnimationEnabledProvider);
+    return _bodySpans.resolve(
+      [quote, content, baseStyle, emojiSize, animateMfm],
+      () => ContentRenderer(
+        baseStyle: baseStyle ?? const TextStyle(),
+        applyNyaize: quote.author.isCat,
+        resolveEmoji: (shortcode) {
+          final url = quote.emojis[shortcode];
+          if (url != null) return url;
+          final host = quote.emojiHost;
+          return host != null ? 'https://$host/emoji/$shortcode.webp' : null;
+        },
+        resolveUrl: (url) =>
+            TcoResolver.isTcoUrl(url) ? TcoResolver.getCached(url) : null,
+        onLinkTap: (url) => openFediverseLink(context, ref, url),
+        onHashtagTap: (tag) => showHashtagActionMenu(context, tag),
+        onMentionTap: (mention) => _openMention(context, ref, mention),
+        emojiSize: emojiSize,
+        animateMfm: animateMfm,
+      ),
+      (renderer) => quote.isHtml
+          ? renderer.renderHtml(content)
+          : renderer.renderMfm(content),
+    );
   }
 
   /// 引用元の CW を本体と同じ規則でレンダリングする (#1068)。
   ///
   /// ⚠ **Mastodon はプレーンテキスト、Misskey は MFM**（本体側と同じ振り分け）。
   TextSpan _renderCw(String cw, TextStyle? baseStyle) {
-    _cwRenderer?.dispose();
-    final renderer = ContentRenderer(
-      baseStyle: baseStyle ?? const TextStyle(),
-      resolveEmoji: (shortcode) {
-        final url = quote.emojis[shortcode];
-        if (url != null) return url;
-        final host = quote.emojiHost;
-        return host != null ? 'https://$host/emoji/$shortcode.webp' : null;
-      },
-      onLinkTap: (url) => openFediverseLink(context, ref, url),
-      onHashtagTap: (tag) => showHashtagActionMenu(context, tag),
-      emojiSize: ref.watch(emojiSizeProvider),
-      animateMfm: ref.watch(mfmAnimationEnabledProvider),
+    final emojiSize = ref.watch(emojiSizeProvider);
+    final animateMfm = ref.watch(mfmAnimationEnabledProvider);
+    return _cwSpans.resolve(
+      [quote, cw, baseStyle, emojiSize, animateMfm],
+      () => ContentRenderer(
+        baseStyle: baseStyle ?? const TextStyle(),
+        resolveEmoji: (shortcode) {
+          final url = quote.emojis[shortcode];
+          if (url != null) return url;
+          final host = quote.emojiHost;
+          return host != null ? 'https://$host/emoji/$shortcode.webp' : null;
+        },
+        onLinkTap: (url) => openFediverseLink(context, ref, url),
+        onHashtagTap: (tag) => showHashtagActionMenu(context, tag),
+        emojiSize: emojiSize,
+        animateMfm: animateMfm,
+      ),
+      (renderer) =>
+          quote.isHtml ? renderer.renderPlain(cw) : renderer.renderMfm(cw),
     );
-    _cwRenderer = renderer;
-    return quote.isHtml ? renderer.renderPlain(cw) : renderer.renderMfm(cw);
   }
 
   @override
@@ -3506,14 +3594,22 @@ class _QuoteCardState extends ConsumerState<_QuoteCard> {
                 quote.content != null &&
                 quote.content!.isNotEmpty) ...[
               const SizedBox(height: 4),
-              EmojiText(
-                _stripHtml(quote.content!),
-                emojis: quote.emojis,
-                fallbackHost: quote.emojiHost,
-                style: theme.textTheme.bodySmall,
+              // 本文のリンク・メンション・ハッシュタグを押せる形で描く (#1364)。
+              // 押した所はそれぞれの行き先が開き、外側（引用元を開く）へは
+              // 流れない。⚠ 4 行で切る扱いは変えない。
+              Text.rich(
+                _renderBody(quote.content!, theme.textTheme.bodySmall),
+                key: quoteCardBodyKey,
                 maxLines: 4,
                 overflow: TextOverflow.ellipsis,
               ),
+              // 引用元のプレビューカード (#1364)。押すとリンクを直接開く。
+              // 表示 / ぼかし / 非表示の設定は PreviewCardWidget が見る。
+              if (quote.card != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: PreviewCardWidget(card: quote.card!),
+                ),
             ],
             if (quote.attachments.isNotEmpty) ...[
               const SizedBox(height: 4),

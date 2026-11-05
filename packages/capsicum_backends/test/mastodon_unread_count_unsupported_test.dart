@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:capsicum_backends/capsicum_backends.dart';
+import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
 import 'package:test/test.dart';
 
@@ -53,6 +54,29 @@ void main() {
     expect(await adapter.getUnreadNotificationCount(), 0);
     expect(await adapter.getUnreadNotificationCount(), 0);
     expect(http.calls, 1, reason: '以前は 30 秒ごとに 404 を打ち続けていた');
+  });
+
+  // #1370: 400 を返すサーバーへ 30 秒ごとに打ち続けていた（どのサーバーかも
+  // 分からなかった）。
+  test('⚠⚠ 400 なら最初の 1 回だけ知らせ、以後は 0 を返して問い合わせない', () async {
+    final adapter = await MastodonAdapter.create('mstdn.example');
+    final http = _StatusAdapter(400);
+    adapter.client.dio.httpClientAdapter = http;
+
+    await expectLater(
+      adapter.getUnreadNotificationCount(),
+      throwsA(
+        isA<NotificationUnreadCountUnavailable>().having(
+          (e) => e.status,
+          'status',
+          400,
+        ),
+      ),
+      reason: '呼び出し側が host を記録できるよう、1 回だけ投げる',
+    );
+    expect(await adapter.getUnreadNotificationCount(), 0);
+    expect(await adapter.getUnreadNotificationCount(), 0);
+    expect(http.calls, 1);
   });
 
   test('⚠⚠ 一時的な失敗（401 / 429 / 503）では「口が無い」と読まない', () async {

@@ -114,9 +114,6 @@ class _FlashBrowserScreenState extends ConsumerState<FlashBrowserScreen>
   }
 }
 
-/// 権限の足りない古いトークンの案内。`write:flash` は #1351 で足した。
-const _scopeErrorMessage = '権限が不足しています。再ログインしてください';
-
 class _FlashList extends ConsumerWidget {
   const _FlashList({
     required this.provider,
@@ -159,7 +156,7 @@ class _FlashList extends ConsumerWidget {
     } catch (e, st) {
       if (isOAuthScopeError(e)) {
         messenger.showSnackBar(
-          const SnackBar(content: Text(_scopeErrorMessage)),
+          const SnackBar(content: Text(oauthScopeErrorMessage)),
         );
         return;
       }
@@ -182,7 +179,7 @@ class _FlashList extends ConsumerWidget {
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, _) => RetryErrorView(
         message: isOAuthScopeError(e)
-            ? _scopeErrorMessage
+            ? oauthScopeErrorMessage
             : '読み込みに失敗しました\n${summarizeOpError(e)}',
         isRetrying: flashes.isLoading,
         onRetry: onRetry,
