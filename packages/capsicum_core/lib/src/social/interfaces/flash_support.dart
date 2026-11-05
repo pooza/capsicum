@@ -1,11 +1,4 @@
 import '../../model/flash.dart';
-import '../../model/timeline_query.dart';
-
-/// like 履歴 1 件分のエントリ。`likeId` はライクエントリ自体の ID で、
-/// `flash` がそのライクが指す Flash 本体。`/api/flash/my-likes` の payload は
-/// `{id, flash}` 構造で、ここでの `id` は **ライクエントリ ID** であり
-/// Flash ID とは別物（Pages の `LikedPageEntry` と同じ構造）。
-typedef LikedFlashEntry = ({String likeId, Flash flash});
 
 /// Misskey の Flash（UI 表記は Play）サポートを宣言する mixin。
 ///
@@ -13,14 +6,19 @@ typedef LikedFlashEntry = ({String likeId, Flash flash});
 /// 外部ブラウザへ投げるだけだったため [getFeaturedFlashes] しか無かった。
 /// ネイティブ実行 ([#830](https://github.com/pooza/capsicum/issues/830)) には
 /// 個別取得と like 操作が要る。
+///
+/// ⚠⚠ **一覧を返すメソッドは、ページ送りまでアダプターが持つ** (#1361)。
+/// チャンネル（`ChannelManagementSupport`）と同じく、最後まで（上限のページ数
+/// まで）読んで返す。1 ページの件数とカーソルの性質（いいねの一覧はいいねの ID
+/// が続きの起点になる）を知っているのはアダプターなので、アプリの側で送らない。
 abstract mixin class FlashSupport {
-  /// サーバーが featured 扱いしている Flash 一覧。
+  /// サーバーが featured 扱いしている Flash 一覧（1 回で取れる上限まで）。
   ///
   /// Misskey の `POST /api/flash/featured` 相当。**認証不要**。
   ///
-  /// このエンドポイントのページングは `offset` + `limit` で、Pages 等の
-  /// `sinceId` / `untilId` 方式ではない。[TimelineQuery] からは limit のみ効く。
-  Future<List<Flash>> getFeaturedFlashes({TimelineQuery? query});
+  /// ⚠ このエンドポイントのページングは `offset` + `limit` で、`untilId` 方式では
+  /// ない。いいね 0 件の Play は返らない（#1360）。
+  Future<List<Flash>> getFeaturedFlashes();
 
   /// 指定 ID の Flash を取得する。
   ///
@@ -33,16 +31,13 @@ abstract mixin class FlashSupport {
   /// Misskey の `POST /api/flash/my` 相当。`read:flash` スコープを要求する
   /// ため、スコープ追加前に発行された既存トークンでは失敗する。呼び出し側は
   /// スコープ不足を検出して degrade できるようにしておくこと。
-  Future<List<Flash>> getMyFlashes({TimelineQuery? query}) async => const [];
+  Future<List<Flash>> getMyFlashes() async => const [];
 
   /// Flash を探す (#1351)。
   ///
   /// Misskey の `POST /api/flash/search` 相当。**認証不要**。世代の合わない
   /// Flash も混ざるので、実行前の判定は一覧と同じものを通す。
-  Future<List<Flash>> searchFlashes(
-    String text, {
-    TimelineQuery? query,
-  }) async => const [];
+  Future<List<Flash>> searchFlashes(String text) async => const [];
 
   /// 自分の Flash を削除する (#1351)（`write:flash` スコープ）。
   Future<void> deleteFlash(String flashId) async {}
@@ -50,10 +45,9 @@ abstract mixin class FlashSupport {
   /// 認証ユーザーが like 済みの Flash 一覧。
   ///
   /// Misskey の `POST /api/flash/my-likes` 相当（`read:flash-likes` スコープ）。
-  /// 戻り値は `{likeId, flash}` の組で、pagination cursor として渡すべきは
-  /// Flash ID ではなくライクエントリ ID。
-  Future<List<LikedFlashEntry>> getLikedFlashes({TimelineQuery? query}) async =>
-      const [];
+  /// ⚠ 応答は `{id, flash}` の組で、`id` はいいねのエントリの ID（Flash の ID
+  /// ではない）。続きの起点に使うのはこちらで、アダプターの中で扱う。
+  Future<List<Flash>> getLikedFlashes() async => const [];
 
   /// 指定 Flash を like する（`write:flash-likes` スコープ）。
   Future<void> likeFlash(String flashId) async {}

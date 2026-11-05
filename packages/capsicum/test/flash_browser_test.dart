@@ -14,8 +14,6 @@ import 'package:mocktail/mocktail.dart';
 class _Adapter extends Mock
     implements DecentralizedBackendAdapter, FlashSupport {}
 
-class _QueryFake extends Fake implements TimelineQuery {}
-
 class _AccountNotifier extends AccountManagerNotifier {
   _AccountNotifier(this._account);
 
@@ -38,19 +36,17 @@ Flash _flash(String id, String title) => Flash(
 void main() {
   late _Adapter adapter;
 
-  setUpAll(() => registerFallbackValue(_QueryFake()));
-
   setUp(() {
     adapter = _Adapter();
     when(
-      () => adapter.getFeaturedFlashes(query: any(named: 'query')),
+      () => adapter.getFeaturedFlashes(),
     ).thenAnswer((_) async => [_flash('f1', '人気の Play')]);
     when(
-      () => adapter.getMyFlashes(query: any(named: 'query')),
+      () => adapter.getMyFlashes(),
     ).thenAnswer((_) async => [_flash('m1', '自作の Play')]);
-    when(() => adapter.getLikedFlashes(query: any(named: 'query'))).thenAnswer(
-      (_) async => [(likeId: 'like1', flash: _flash('l1', '日課の Play'))],
-    );
+    when(
+      () => adapter.getLikedFlashes(),
+    ).thenAnswer((_) async => [_flash('l1', '日課の Play')]);
     when(() => adapter.deleteFlash(any())).thenAnswer((_) async {});
   });
 
@@ -107,47 +103,28 @@ void main() {
   });
 
   testWidgets('#1360: 「いつもの」は同じ Play を 2 回並べない', (tester) async {
-    when(() => adapter.getLikedFlashes(query: any(named: 'query'))).thenAnswer(
-      (_) async => [(likeId: 'like1', flash: _flash('m1', '自作の Play'))],
-    );
+    when(
+      () => adapter.getLikedFlashes(),
+    ).thenAnswer((_) async => [_flash('m1', '自作の Play')]);
     await pump(tester);
 
     expect(find.text('自作の Play'), findsOneWidget);
   });
 
   testWidgets('#1360: どちらも無いときは、いいねするか作ると並ぶことを案内する', (tester) async {
-    when(
-      () => adapter.getLikedFlashes(query: any(named: 'query')),
-    ).thenAnswer((_) async => []);
-    when(
-      () => adapter.getMyFlashes(query: any(named: 'query')),
-    ).thenAnswer((_) async => []);
+    when(() => adapter.getLikedFlashes()).thenAnswer((_) async => []);
+    when(() => adapter.getMyFlashes()).thenAnswer((_) async => []);
     await pump(tester);
 
     expect(find.textContaining('日課の Play にいいねするか自分で作ると'), findsOneWidget);
   });
 
-  testWidgets('⚠ #1360: いいねの次のページは、いいねの ID をカーソルにする', (tester) async {
-    final firstPage = [
-      for (var i = 0; i < 100; i++)
-        (likeId: 'like$i', flash: _flash('f$i', 'Play $i')),
-    ];
-    final queries = <TimelineQuery?>[];
-    when(() => adapter.getLikedFlashes(query: any(named: 'query'))).thenAnswer((
-      invocation,
-    ) async {
-      final query = invocation.namedArguments[#query] as TimelineQuery?;
-      queries.add(query);
-      return query?.maxId == null ? firstPage : [];
-    });
-    await pump(tester);
-
-    expect(queries.map((q) => q?.maxId), [null, 'like99']);
-  });
+  // ⚠ いいねの次のページの起点（いいねの ID）は、アダプターが持つ（#1361）。
+  // 固定しているのは `capsicum_backends/test/misskey_flash_test.dart`。
 
   testWidgets('⚠ #1360: 「いつもの」も古いトークンの 403 は再ログインを案内する', (tester) async {
     final options = RequestOptions(path: '/api/flash/my-likes');
-    when(() => adapter.getLikedFlashes(query: any(named: 'query'))).thenThrow(
+    when(() => adapter.getLikedFlashes()).thenThrow(
       DioException(
         requestOptions: options,
         type: DioExceptionType.badResponse,
@@ -224,7 +201,7 @@ void main() {
 
   testWidgets('検索は語を渡し、結果に削除を出さない', (tester) async {
     when(
-      () => adapter.searchFlashes('おみ', query: any(named: 'query')),
+      () => adapter.searchFlashes('おみ'),
     ).thenAnswer((_) async => [_flash('s1', 'おみくじ')]);
     await pump(tester);
 

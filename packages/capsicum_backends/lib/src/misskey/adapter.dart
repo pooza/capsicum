@@ -1951,10 +1951,43 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     );
   }
 
+  /// Play の一覧の 1 ページの件数。⚠ 各経路の既定は 10 件（検索は 5 件）なので、
+  /// 上限を明示する。
+  static const _flashListLimit = 100;
+
+  /// 1 回の表示で追うページの上限。広い語の検索でサーバーを叩き続けない。
+  static const _flashListMaxPages = 10;
+
+  /// `untilId` で最後まで（[_flashListMaxPages] まで）読む (#1361)。
+  ///
+  /// [cursorOf] は続きの起点。⚠ いいねの一覧は Flash の ID ではなく、いいねの
+  /// エントリの ID が起点になる（#1360）。[flashOf] が null を返す行（壊れた
+  /// エントリ）は読み飛ばすが、起点には数える。
+  Future<List<Flash>> _pagedFlashes(
+    Future<List<Map<String, dynamic>>> Function(String? untilId) fetch, {
+    String? Function(Map<String, dynamic> row)? cursorOf,
+    Map<String, dynamic>? Function(Map<String, dynamic> row)? flashOf,
+  }) async {
+    final flashes = <Flash>[];
+    String? untilId;
+    for (var page = 0; page < _flashListMaxPages; page++) {
+      final data = await fetch(untilId);
+      for (final row in data) {
+        final flash = flashOf == null ? row : flashOf(row);
+        if (flash != null) flashes.add(_mapFlash(flash));
+      }
+      if (data.length < _flashListLimit) break;
+      untilId = (cursorOf ?? (row) => row['id'] as String?)(data.last);
+      if (untilId == null) break;
+    }
+    return flashes;
+  }
+
   @override
-  Future<List<Flash>> getFeaturedFlashes({TimelineQuery? query}) async {
-    // featured のページングは offset + limit で sinceId / untilId を受けない。
-    final data = await client.getFeaturedFlashes(limit: query?.limit);
+  Future<List<Flash>> getFeaturedFlashes() async {
+    // ⚠ featured のページングは offset + limit で untilId を受けない。1 回で
+    // 取れる上限まで。
+    final data = await client.getFeaturedFlashes(limit: _flashListLimit);
     return data.map(_mapFlash).toList();
   }
 
@@ -1964,47 +1997,29 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<List<Flash>> getMyFlashes({TimelineQuery? query}) async {
-    final data = await client.getMyFlashes(
-      sinceId: query?.sinceId,
-      untilId: query?.maxId,
-      limit: query?.limit,
-    );
-    return data.map(_mapFlash).toList();
-  }
+  Future<List<Flash>> getMyFlashes() => _pagedFlashes(
+    (untilId) => client.getMyFlashes(untilId: untilId, limit: _flashListLimit),
+  );
 
   @override
-  Future<List<Flash>> searchFlashes(String text, {TimelineQuery? query}) async {
-    final data = await client.searchFlashes(
-      text,
-      sinceId: query?.sinceId,
-      untilId: query?.maxId,
-      limit: query?.limit,
-    );
-    return data.map(_mapFlash).toList();
-  }
+  Future<List<Flash>> searchFlashes(String text) => _pagedFlashes(
+    (untilId) =>
+        client.searchFlashes(text, untilId: untilId, limit: _flashListLimit),
+  );
 
   @override
   Future<void> deleteFlash(String flashId) => client.deleteFlash(flashId);
 
+  /// ⚠ `/api/flash/my-likes` は `{id, flash}` の配列を返す。`id` はいいねの
+  /// エントリの ID で、続きの起点に渡すのはこちら（Flash の ID ではない）。
   @override
-  Future<List<LikedFlashEntry>> getLikedFlashes({TimelineQuery? query}) async {
-    final data = await client.getMyFlashLikes(
-      sinceId: query?.sinceId,
-      untilId: query?.maxId,
-      limit: query?.limit,
-    );
-    // /api/flash/my-likes は {id, flash} の配列を返す。`id` はライクエントリ
-    // 自体の ID で、pagination cursor として渡すべきはこちら。
-    final entries = <LikedFlashEntry>[];
-    for (final e in data) {
-      final likeId = e['id'] as String?;
-      final flashMap = e['flash'] as Map<String, dynamic>?;
-      if (likeId == null || flashMap == null) continue;
-      entries.add((likeId: likeId, flash: _mapFlash(flashMap)));
-    }
-    return entries;
-  }
+  Future<List<Flash>> getLikedFlashes() => _pagedFlashes(
+    (untilId) =>
+        client.getMyFlashLikes(untilId: untilId, limit: _flashListLimit),
+    cursorOf: (row) => row['id'] as String?,
+    flashOf: (row) =>
+        row['id'] is String ? row['flash'] as Map<String, dynamic>? : null,
+  );
 
   @override
   Future<void> likeFlash(String flashId) => client.likeFlash(flashId);
