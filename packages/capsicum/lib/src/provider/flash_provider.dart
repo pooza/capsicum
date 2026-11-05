@@ -1,9 +1,9 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../service/sentry_op_failure.dart';
 import '../util/oauth_scope_error.dart';
 import 'account_manager_provider.dart';
+import 'list_fetch.dart';
 
 /// Play の画面の分類 (#1351)。並びがそのままタブの順になる。
 ///
@@ -88,24 +88,12 @@ Future<List<Flash>> _fetchFlashList(
   Ref ref,
   String operation,
   Future<List<Flash>> Function() fetch,
-) async {
-  // ⚠ 通信の前に取る。通信の間に provider が破棄されると `ref` を読めない。
-  final account = ref.read(currentAccountProvider);
-  try {
-    return await fetch();
-  } catch (e, st) {
-    if (!isOAuthScopeError(e)) {
-      reportOpFailure(
-        tagKey: 'flash.list',
-        operation: operation,
-        error: e,
-        stackTrace: st,
-        account: account,
-      );
-    }
-    rethrow;
-  }
-}
+) => fetchListReportingFailure(
+  ref,
+  tagKey: 'flash.list',
+  operation: operation,
+  fetch: fetch,
+);
 
 final flashListProvider = FutureProvider.autoDispose
     .family<List<Flash>, FlashListKind>((ref, kind) async {

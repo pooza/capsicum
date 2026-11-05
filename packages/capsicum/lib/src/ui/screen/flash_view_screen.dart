@@ -545,7 +545,7 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
       if (isOAuthScopeError(e)) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text('権限が不足しています。再ログインしてください')));
+        ).showSnackBar(const SnackBar(content: Text(oauthScopeErrorMessage)));
         return;
       }
 

@@ -2517,13 +2517,10 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   /// Web で変えたものを消してしまう。
   @override
   Future<User> attachAvatarDecoration(String id) async {
-    final me = (await client.getI()).toCapsicum(
-      host,
-      adminRoleIds: _adminRoleIds,
-    );
+    final (rawMe, limit) = await client.getIWithAvatarDecorationLimit();
+    final me = rawMe.toCapsicum(host, adminRoleIds: _adminRoleIds);
     final current = me.avatarDecorations;
     if (current.any((d) => d.id == id)) return me;
-    final limit = await client.getAvatarDecorationLimit();
     final List<AvatarDecoration> kept;
     if (limit != null && current.length >= limit) {
       // ⚠ 1 つだけのサーバーでは、外してから付ける手間を掛けさせない。
@@ -2532,12 +2529,23 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     } else {
       kept = current;
     }
-    final user = await client.updateI(
-      avatarDecorations: [
-        ...kept.map(_decorationParams),
-        {'id': id},
-      ],
-    );
+    final MisskeyUser user;
+    try {
+      user = await client.updateI(
+        avatarDecorations: [
+          ...kept.map(_decorationParams),
+          {'id': id},
+        ],
+      );
+    } on DioException catch (e) {
+      // ⚠ ロールで数を絞られていると `i/update` は `RESTRICTED_BY_ROLE` で断る。
+      // 画面がバックエンドのエラーコードに依らないよう、上限に当たったものとして
+      // 返す (#1361)。上限が読めなかったときは、今付いている数を上限とみなす。
+      if (_hasErrorCode(e, 'RESTRICTED_BY_ROLE')) {
+        throw AvatarDecorationLimitReached(limit ?? current.length);
+      }
+      rethrow;
+    }
     final updated = user.toCapsicum(host, adminRoleIds: _adminRoleIds);
     // ⚠ 権限のないものは、エラーにならず黙って落とされる。
     if (!updated.avatarDecorations.any((d) => d.id == id)) {

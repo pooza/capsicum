@@ -10,11 +10,22 @@ import 'package:test/test.dart';
 /// `/api/i` で今の値と上限を返し、`/api/i/update` は送られた配列を保存して返す
 /// （[dropped] に入れた id は、権限のないものとして黙って落とす）。
 class _Server implements HttpClientAdapter {
-  _Server({required this.decorations, this.limit = 1, this.dropped = const {}});
+  _Server({
+    required this.decorations,
+    this.limit = 1,
+    this.dropped = const {},
+    this.restrictedByRole = false,
+  });
 
   List<Map<String, dynamic>> decorations;
   final int? limit;
   final Set<String> dropped;
+
+  /// `i/update` を `RESTRICTED_BY_ROLE` で断る（ロールで数を絞られている・#1361）。
+  final bool restrictedByRole;
+
+  /// `/api/i` を引いた回数。
+  int iCalls = 0;
   List<dynamic>? lastUpdate;
 
   Map<String, dynamic> get _me => {
@@ -31,6 +42,18 @@ class _Server implements HttpClientAdapter {
     Future<void>? cancelFuture,
   ) async {
     Object body = _me;
+    if (options.path.endsWith('/api/i')) iCalls++;
+    if (options.path.endsWith('/api/i/update') && restrictedByRole) {
+      return ResponseBody.fromString(
+        jsonEncode({
+          'error': {'code': 'RESTRICTED_BY_ROLE'},
+        }),
+        400,
+        headers: {
+          Headers.contentTypeHeader: ['application/json'],
+        },
+      );
+    }
     if (options.path.endsWith('/api/i/update')) {
       final data = options.data as Map<String, dynamic>;
       lastUpdate = data['avatarDecorations'] as List<dynamic>;
@@ -210,5 +233,40 @@ void main() {
     await adapter.attachAvatarDecoration('keep');
 
     expect(server.lastUpdate, isNull);
+  });
+
+  // #1361: 画面がバックエンドのエラーコードに依らないよう、アダプターで写す。
+  test('ロールで断られた（RESTRICTED_BY_ROLE）ら、上限に当たったものとして投げる', () async {
+    await install(
+      _Server(decorations: [_adjusted], limit: 3, restrictedByRole: true),
+    );
+
+    await expectLater(
+      adapter.attachAvatarDecoration('new'),
+      throwsA(
+        isA<AvatarDecorationLimitReached>().having((e) => e.limit, 'limit', 3),
+      ),
+    );
+  });
+
+  test('上限が読めないまま断られたら、今付いている数を上限とみなす', () async {
+    await install(
+      _Server(decorations: [_adjusted], limit: null, restrictedByRole: true),
+    );
+
+    await expectLater(
+      adapter.attachAvatarDecoration('new'),
+      throwsA(
+        isA<AvatarDecorationLimitReached>().having((e) => e.limit, 'limit', 1),
+      ),
+    );
+  });
+
+  test('付けるときに /api/i を 1 回しか引かない（上限は同じ応答から読む）', () async {
+    final server = await install(_Server(decorations: [], limit: 3));
+
+    await adapter.attachAvatarDecoration('new');
+
+    expect(server.iCalls, 1);
   });
 }

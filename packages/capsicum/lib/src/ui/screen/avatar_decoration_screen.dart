@@ -52,7 +52,7 @@ class _AvatarDecorationScreenState
   /// 保存中のデコレーション。連打で順番が入れ替わらないよう、1 つずつ送る。
   String? _savingId;
 
-  /// 開いた画面のアカウントへ書き戻す。⚠ `updateCurrentUser` は現在のアカウントを
+  /// 開いた画面のアカウントへ書き戻す。⚠ 現在のアカウントを更新する形（消した）は現在のアカウントを
   /// 書き換えるので、別アカウントのカラムから来たときに使えない。
   User? _localUser;
 
@@ -91,12 +91,10 @@ class _AvatarDecorationScreenState
     } catch (e, st) {
       if (isOAuthScopeError(e)) {
         messenger.showSnackBar(
-          const SnackBar(content: Text('権限が不足しています。再ログインしてください')),
+          const SnackBar(content: Text(oauthScopeErrorMessage)),
         );
-      } else if (misskeyApiErrorCode(e) == 'RESTRICTED_BY_ROLE') {
-        messenger.showSnackBar(
-          const SnackBar(content: Text('付けられる数を超えています。先にどれかを外してください')),
-        );
+        // ⚠ ロールで数を絞られたとき（`RESTRICTED_BY_ROLE`）は、アダプターが
+        // AvatarDecorationLimitReached に写す（画面がバックエンドに依らない・#1361）。
       } else if (misskeyApiErrorCode(e) == 'RATE_LIMIT_EXCEEDED') {
         // ⚠ i/update は 1 時間に 20 回まで。付け替えを続けると当たる既知の条件。
         messenger.showSnackBar(

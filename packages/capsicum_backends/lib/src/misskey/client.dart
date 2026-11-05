@@ -88,13 +88,19 @@ class MisskeyClient {
     return (response.data as List).cast<Map<String, dynamic>>();
   }
 
-  /// POST /api/i の `policies.avatarDecorationLimit` (#1349)。読めなければ null。
-  Future<int?> getAvatarDecorationLimit() async {
+  /// POST /api/i を 1 回引き、自分と `policies.avatarDecorationLimit` を返す
+  /// (#1349)。上限が読めなければ null。
+  ///
+  /// ⚠ 上限のためだけに `/api/i` をもう 1 回引かない (#1361)。付けるたびに 2 回
+  /// 引いていたが、`policies` は 1 回目の応答にある。
+  Future<(MisskeyUser, int?)> getIWithAvatarDecorationLimit() async {
     final response = await dio.post('/api/i', data: createBody());
     final data = response.data as Map<String, dynamic>;
     final policies = data['policies'];
-    if (policies is! Map) return null;
-    return (policies['avatarDecorationLimit'] as num?)?.toInt();
+    final limit = policies is Map
+        ? (policies['avatarDecorationLimit'] as num?)?.toInt()
+        : null;
+    return (MisskeyUser.fromJson(data), limit);
   }
 
   /// POST /api/i の `unreadNotificationsCount` (#1207)。
