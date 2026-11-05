@@ -28,7 +28,12 @@ extension CapsicumMastodonAccountExtension on MastodonAccount {
       displayName: displayName.isEmpty ? null : displayName,
       host: atHost ?? localHost,
       avatarUrl: avatar,
-      bannerUrl: header,
+      // ヘッダーが未設定でも Mastodon は既定の画像（1×1 の透明な PNG）を返す。
+      // Web 版の `nullIfMissing` と同じく「なし」として扱う (#1362)。
+      // ⚠ アバターの missing.png は既定のアバターとして表示するので、そのまま。
+      bannerUrl: header.endsWith('/headers/original/missing.png')
+          ? null
+          : header,
       avatarDescription: avatarDescription,
       bannerDescription: headerDescription,
       description: note,

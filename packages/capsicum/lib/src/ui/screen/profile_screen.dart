@@ -608,73 +608,76 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   Widget _buildFiltered(BuildContext context) {
     final user = _user;
     final colorScheme = Theme.of(context).colorScheme;
+    final bannerUrl = user.bannerUrl;
 
     return Scaffold(
       body: BottomSafeArea(
         child: CustomScrollView(
           controller: _scrollController,
           slivers: [
-            SliverAppBar(
-              expandedHeight: 200,
-              pinned: true,
-              backgroundColor: colorScheme.inversePrimary,
-              automaticallyImplyLeading: !widget.embedded,
-              leading: widget.embedded
-                  ? null
-                  : Padding(
-                      padding: const EdgeInsets.all(8),
-                      child: CircleAvatar(
-                        backgroundColor: Colors.black38,
-                        child: IconButton(
-                          icon: const Icon(
-                            Icons.arrow_back,
-                            color: Colors.white,
+            // ヘッダーが無いときは、何も見せない高さ 200 の帯を出さない (#1362)。
+            // 単独で開いたときは戻るボタンのツールバーだけ、デッキのカラムの
+            // 中（戻るボタンも出していない）では帯ごと出さない。
+            if (bannerUrl != null)
+              SliverAppBar(
+                expandedHeight: 200,
+                pinned: true,
+                backgroundColor: colorScheme.inversePrimary,
+                automaticallyImplyLeading: !widget.embedded,
+                leading: widget.embedded
+                    ? null
+                    : Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: CircleAvatar(
+                          backgroundColor: Colors.black38,
+                          child: IconButton(
+                            icon: const Icon(
+                              Icons.arrow_back,
+                              color: Colors.white,
+                            ),
+                            tooltip: MaterialLocalizations.of(
+                              context,
+                            ).backButtonTooltip,
+                            onPressed: () => Navigator.of(context).pop(),
                           ),
-                          tooltip: MaterialLocalizations.of(
-                            context,
-                          ).backButtonTooltip,
-                          onPressed: () => Navigator.of(context).pop(),
                         ),
                       ),
-                    ),
-              flexibleSpace: FlexibleSpaceBar(
-                background: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  // ヘッダー画像をタップで全画面表示。alt を説明に載せる (#733)。
-                  onTap: user.bannerUrl != null
-                      ? () => _openImageViewer(
-                          user.bannerUrl!,
-                          user.bannerDescription,
-                        )
-                      : null,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      if (user.bannerUrl != null)
+                flexibleSpace: FlexibleSpaceBar(
+                  background: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    // ヘッダー画像をタップで全画面表示。alt を説明に載せる (#733)。
+                    onTap: () =>
+                        _openImageViewer(bannerUrl, user.bannerDescription),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
                         Image.network(
-                          user.bannerUrl!,
+                          bannerUrl,
                           fit: BoxFit.cover,
                           semanticLabel: user.bannerDescription,
-                        )
-                      else
-                        Container(color: colorScheme.primaryContainer),
-                      Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Colors.transparent,
-                              Colors.black.withValues(alpha: 0.5),
-                            ],
+                        ),
+                        Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Colors.transparent,
+                                Colors.black.withValues(alpha: 0.5),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
+              )
+            else if (!widget.embedded)
+              SliverAppBar(
+                pinned: true,
+                backgroundColor: colorScheme.inversePrimary,
               ),
-            ),
             SliverToBoxAdapter(child: _buildProfileHeader(context, user)),
             SliverPersistentHeader(
               pinned: true,
