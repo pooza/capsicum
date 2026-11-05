@@ -54,6 +54,37 @@ import 'user_avatar.dart';
 
 String _stripHtml(String html) => stripHtml(html);
 
+/// 本文のメンション（`@user` / `@user@host`）を引いてプロフィールを開く。
+/// 投稿の欄と引用の枠（#1364）で共有する。
+Future<void> _openMention(
+  BuildContext context,
+  WidgetRef ref,
+  String mention,
+) async {
+  final parts = mention.replaceFirst('@', '').split('@');
+  if (parts.isEmpty) return;
+  final username = parts[0];
+  final host = parts.length > 1 ? parts[1] : null;
+  final adapter = ref.read(currentAdapterProvider);
+  if (adapter == null) return;
+  try {
+    final user = await adapter.getUser(username, host);
+    if (user != null && context.mounted) {
+      openProfile(context, user);
+    }
+  } on Exception catch (e) {
+    debugLogException('Failed to look up mention $mention', e);
+  }
+}
+
+/// 引用の枠の本文（#1364）。検査から掴むための鍵。
+@visibleForTesting
+const quoteCardBodyKey = Key('quote-card-body');
+
+/// 引用の枠を単独で組む（検査用・#1364）。
+@visibleForTesting
+Widget quoteCardForTest(Post quote) => _QuoteCard(quote: quote);
+
 class PostTile extends ConsumerStatefulWidget {
   final Post post;
   final bool tappable;
@@ -395,23 +426,8 @@ class _PostTileState extends ConsumerState<PostTile> {
     super.dispose();
   }
 
-  Future<void> _navigateToMention(String mention) async {
-    // Parse @user or @user@host
-    final parts = mention.replaceFirst('@', '').split('@');
-    if (parts.isEmpty) return;
-    final username = parts[0];
-    final host = parts.length > 1 ? parts[1] : null;
-    final adapter = ref.read(currentAdapterProvider);
-    if (adapter == null) return;
-    try {
-      final user = await adapter.getUser(username, host);
-      if (user != null && mounted) {
-        openProfile(context, user);
-      }
-    } on Exception catch (e) {
-      debugLogException('Failed to look up mention $mention', e);
-    }
-  }
+  Future<void> _navigateToMention(String mention) =>
+      _openMention(context, ref, mention);
 
   /// 本文の span (#1365)。⚠ 組み直しのたびに作り直さない理由は [ContentSpanCache]。
   final _contentSpans = ContentSpanCache();
@@ -3436,12 +3452,46 @@ class _QuoteCardState extends ConsumerState<_QuoteCard> {
   /// [ContentSpanCache]（#1365）。
   final _cwSpans = ContentSpanCache();
 
+  /// 引用元の本文の span (#1364)。⚠ CW と同じ理由で別インスタンスにする。
+  final _bodySpans = ContentSpanCache();
+
   Post get quote => widget.quote;
 
   @override
   void dispose() {
     _cwSpans.dispose();
+    _bodySpans.dispose();
     super.dispose();
+  }
+
+  /// 引用元の本文を、ふつうの投稿と同じ導線（リンク・メンション・ハッシュタグ）で
+  /// レンダリングする (#1364)。
+  TextSpan _renderBody(String content, TextStyle? baseStyle) {
+    final emojiSize = ref.watch(emojiSizeProvider);
+    final animateMfm = ref.watch(mfmAnimationEnabledProvider);
+    return _bodySpans.resolve(
+      [quote, content, baseStyle, emojiSize, animateMfm],
+      () => ContentRenderer(
+        baseStyle: baseStyle ?? const TextStyle(),
+        applyNyaize: quote.author.isCat,
+        resolveEmoji: (shortcode) {
+          final url = quote.emojis[shortcode];
+          if (url != null) return url;
+          final host = quote.emojiHost;
+          return host != null ? 'https://$host/emoji/$shortcode.webp' : null;
+        },
+        resolveUrl: (url) =>
+            TcoResolver.isTcoUrl(url) ? TcoResolver.getCached(url) : null,
+        onLinkTap: (url) => openFediverseLink(context, ref, url),
+        onHashtagTap: (tag) => showHashtagActionMenu(context, tag),
+        onMentionTap: (mention) => _openMention(context, ref, mention),
+        emojiSize: emojiSize,
+        animateMfm: animateMfm,
+      ),
+      (renderer) => quote.isHtml
+          ? renderer.renderHtml(content)
+          : renderer.renderMfm(content),
+    );
   }
 
   /// 引用元の CW を本体と同じ規則でレンダリングする (#1068)。
@@ -3554,14 +3604,22 @@ class _QuoteCardState extends ConsumerState<_QuoteCard> {
                 quote.content != null &&
                 quote.content!.isNotEmpty) ...[
               const SizedBox(height: 4),
-              EmojiText(
-                _stripHtml(quote.content!),
-                emojis: quote.emojis,
-                fallbackHost: quote.emojiHost,
-                style: theme.textTheme.bodySmall,
+              // 本文のリンク・メンション・ハッシュタグを押せる形で描く (#1364)。
+              // 押した所はそれぞれの行き先が開き、外側（引用元を開く）へは
+              // 流れない。⚠ 4 行で切る扱いは変えない。
+              Text.rich(
+                _renderBody(quote.content!, theme.textTheme.bodySmall),
+                key: quoteCardBodyKey,
                 maxLines: 4,
                 overflow: TextOverflow.ellipsis,
               ),
+              // 引用元のプレビューカード (#1364)。押すとリンクを直接開く。
+              // 表示 / ぼかし / 非表示の設定は PreviewCardWidget が見る。
+              if (quote.card != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: PreviewCardWidget(card: quote.card!),
+                ),
             ],
             if (quote.attachments.isNotEmpty) ...[
               const SizedBox(height: 4),
