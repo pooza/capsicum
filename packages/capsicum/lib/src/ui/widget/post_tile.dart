@@ -50,6 +50,7 @@ import 'preview_card_widget.dart';
 import 'reaction_picker_sheet.dart';
 import 'report_comment_dialog.dart';
 import 'server_badge.dart';
+import 'text_with_overflow_toggle.dart';
 import 'user_avatar.dart';
 
 String _stripHtml(String html) => stripHtml(html);
@@ -916,8 +917,8 @@ class _PostTileState extends ConsumerState<PostTile> {
                           return Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              LayoutBuilder(
-                                builder: (context, constraints) {
+                              Builder(
+                                builder: (context) {
                                   final baseStyle = DefaultTextStyle.of(
                                     context,
                                   ).style;
@@ -930,47 +931,36 @@ class _PostTileState extends ConsumerState<PostTile> {
                                     isHtml: isHtml,
                                     isCat: displayPost.author.isCat,
                                   );
-                                  // Use a plain TextSpan for overflow measurement
-                                  // because TextPainter cannot measure WidgetSpan.
-                                  // HTML の場合はタグ除去済みテキストで測定する。
-                                  final measureSpan = TextSpan(
-                                    text: isHtml ? plainBody : parsed.body,
-                                    style: baseStyle,
-                                  );
-                                  final textPainter = TextPainter(
-                                    text: measureSpan,
-                                    maxLines: _maxLines,
-                                    textDirection: TextDirection.ltr,
-                                  )..layout(maxWidth: constraints.maxWidth);
-                                  final overflows =
-                                      textPainter.didExceedMaxLines;
-
-                                  return Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      _buildContentText(contentSpan),
-                                      if (overflows)
-                                        GestureDetector(
-                                          onTap: () => setState(
-                                            () => _expanded = !_expanded,
-                                          ),
-                                          child: Padding(
-                                            padding: const EdgeInsets.only(
-                                              top: 4,
-                                            ),
-                                            child: Text(
-                                              _expanded ? '折り畳む' : '続きを読む',
-                                              style: TextStyle(
-                                                color: Theme.of(
-                                                  context,
-                                                ).colorScheme.primary,
-                                                fontSize: 13,
-                                              ),
-                                            ),
+                                  // ⚠ 「続きを読む」の要否は、表示した段落そのもので
+                                  // 決める (#1369)。別の TextPainter で測ると、文字
+                                  // サイズの倍率・絵文字の大きさが表示と揃わない。
+                                  return TextWithOverflowToggle(
+                                    text: _buildContentText(contentSpan),
+                                    // 展開中は、上限を付けた同じ本文で測る。
+                                    collapsedText: _expanded
+                                        ? Text.rich(
+                                            contentSpan,
+                                            maxLines: _maxLines,
+                                            overflow: TextOverflow.ellipsis,
+                                          )
+                                        : null,
+                                    toggle: GestureDetector(
+                                      onTap: () => setState(
+                                        () => _expanded = !_expanded,
+                                      ),
+                                      child: Padding(
+                                        padding: const EdgeInsets.only(top: 4),
+                                        child: Text(
+                                          _expanded ? '折り畳む' : '続きを読む',
+                                          style: TextStyle(
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.primary,
+                                            fontSize: 13,
                                           ),
                                         ),
-                                    ],
+                                      ),
+                                    ),
                                   );
                                 },
                               ),
