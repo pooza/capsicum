@@ -1595,6 +1595,30 @@ class MisskeyClient {
     return (response.data as List).cast<Map<String, dynamic>>();
   }
 
+  /// POST /api/antennas/create (#1052)
+  Future<void> createAntenna(Map<String, dynamic> params) async {
+    await dio.post('/api/antennas/create', data: createBody(params));
+  }
+
+  /// POST /api/antennas/update (#1052)
+  Future<void> updateAntenna(
+    String antennaId,
+    Map<String, dynamic> params,
+  ) async {
+    await dio.post(
+      '/api/antennas/update',
+      data: createBody({'antennaId': antennaId, ...params}),
+    );
+  }
+
+  /// POST /api/antennas/delete (#1052)
+  Future<void> deleteAntenna(String antennaId) async {
+    await dio.post(
+      '/api/antennas/delete',
+      data: createBody({'antennaId': antennaId}),
+    );
+  }
+
   /// POST /api/antennas/notes
   Future<List<MisskeyNote>> getAntennaNotes(
     String antennaId, {

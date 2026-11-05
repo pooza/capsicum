@@ -1156,7 +1156,10 @@ Future<void> showAntennaList(BuildContext context, WidgetRef ref) async {
     }
     return;
   }
-  if (antennas.isEmpty) {
+  // ⚠ 管理できるなら 0 件でも開く。ここが新しいアンテナへの唯一の入口
+  // (#1052・「閲覧のみの族の型」)。
+  final canManage = adapter is AntennaManagementSupport;
+  if (antennas.isEmpty && !canManage) {
     if (context.mounted) {
       ScaffoldMessenger.of(
         context,
@@ -1184,6 +1187,18 @@ Future<void> showAntennaList(BuildContext context, WidgetRef ref) async {
               onTap: () {
                 Navigator.pop(context);
                 context.push('/antenna/${antenna.id}', extra: antenna.name);
+              },
+            ),
+          if (antennas.isEmpty)
+            const ListTile(dense: true, title: Text('アンテナはありません')),
+          if (canManage)
+            ListTile(
+              leading: const Icon(Icons.settings, size: 20),
+              title: const Text('アンテナを管理する'),
+              dense: true,
+              onTap: () {
+                Navigator.pop(context);
+                context.push('/antennas/manage');
               },
             ),
         ],

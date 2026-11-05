@@ -7,6 +7,7 @@ import 'package:fediverse_objects/fediverse_objects.dart';
 import 'package:uuid/uuid.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
+import 'antenna_mapping.dart';
 import 'chat_room_streaming.dart';
 import 'chat_streaming.dart';
 import 'client.dart';
@@ -164,6 +165,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         FlashSupport,
         GallerySupport,
         AntennaSupport,
+        AntennaManagementSupport,
         ReportSupport,
         PinSupport,
         PushSubscriptionSupport,
@@ -2289,12 +2291,36 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   @override
   Future<List<Antenna>> getAntennas() async {
     final data = await client.getAntennas();
-    return data
-        .map(
-          (a) =>
-              Antenna(id: a['id'] as String, name: a['name'] as String? ?? ''),
-        )
-        .toList();
+    return data.map(misskeyAntennaFromJson).toList();
+  }
+
+  // AntennaManagementSupport
+
+  @override
+  Future<void> createAntenna(AntennaDraft draft) =>
+      _antennaWrite(() => client.createAntenna(misskeyAntennaParams(draft)));
+
+  @override
+  Future<void> updateAntenna(String antennaId, AntennaDraft draft) =>
+      _antennaWrite(
+        () => client.updateAntenna(antennaId, misskeyAntennaParams(draft)),
+      );
+
+  @override
+  Future<void> deleteAntenna(String antennaId) =>
+      client.deleteAntenna(antennaId);
+
+  /// ⚠ ロールの上限（`TOO_MANY_ANTENNAS`）は [AntennaLimitReached] に写す。画面が
+  /// バックエンドのエラーコードに依らないため（デコの #1361 と同じ）。
+  Future<void> _antennaWrite(Future<void> Function() write) async {
+    try {
+      await write();
+    } on DioException catch (e) {
+      if (_hasErrorCode(e, 'TOO_MANY_ANTENNAS')) {
+        throw const AntennaLimitReached();
+      }
+      rethrow;
+    }
   }
 
   @override

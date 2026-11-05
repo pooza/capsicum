@@ -100,8 +100,8 @@ grep -rhoE "\['[a-zA-Z_][a-zA-Z0-9_]*'\]" packages/capsicum_backends/lib/src/mis
 | 通知のグループ化 | [#1048](https://github.com/pooza/capsicum/issues/1048)（✅ v2.0） |
 | トレンド | [#1049](https://github.com/pooza/capsicum/issues/1049) |
 | Misskey クリップの操作 | [#1050](https://github.com/pooza/capsicum/issues/1050) |
-| Misskey チャンネルの操作 | [#1051](https://github.com/pooza/capsicum/issues/1051) |
-| Misskey アンテナの管理 | [#1052](https://github.com/pooza/capsicum/issues/1052) |
+| Misskey チャンネルの操作 | [#1051](https://github.com/pooza/capsicum/issues/1051)（✅ v2.8） |
+| Misskey アンテナの管理 | [#1052](https://github.com/pooza/capsicum/issues/1052)（✅ v2.10） |
 | Misskey ギャラリー | [#1053](https://github.com/pooza/capsicum/issues/1053) |
 | 編集済み投稿の表示 | [#1054](https://github.com/pooza/capsicum/issues/1054)（✅ v1.65） |
 | 引っ越し済みアカウントの表示 | [#1055](https://github.com/pooza/capsicum/issues/1055)（✅ v1.65） |
@@ -118,7 +118,7 @@ grep -rhoE "\['[a-zA-Z_][a-zA-Z0-9_]*'\]" packages/capsicum_backends/lib/src/mis
 | **トレンド** | `trends/tags` / `trends/links` / `trends/statuses` | `hashtags/trend` | 新しい画面。実況文化圏との相性は要検討（トレンドは全体の話題であって、プリセットサーバーのデフォルトタグ文化とは別軸） |
 | **クリップへの投稿追加**（Misskey） | ― | `clips/create` / `clips/add-note` / `clips/remove-note` / `clips/update` / `clips/delete` / `clips/show` | capsicum は**クリップの閲覧だけ**（11 本中 2 本）。作成・追加ができないので「読める整理棚」で止まっている |
 | **チャンネルの操作**（Misskey） | ― | 16 本中 14 本未使用（`create` / `update` / `follow` / `favorite` / `search` / `show` / `mute/*` / `owned` ほか） | 同上。閲覧のみ |
-| **アンテナの管理**（Misskey） | ― | `antennas/create` / `update` / `delete` / `show` | 同上。閲覧のみ |
+| **アンテナの管理**（Misskey） | ― | `antennas/create` / `update` / `delete` / `show` | ✅ **実装済み**（2026-11-05・v2.10・[#1052](https://github.com/pooza/capsicum/issues/1052)）。`create` / `update` / `delete` を使う。⚠ `show` は使わない（`list` が条件を全部返す）。項目は Web の編集画面（`MkAntennaEditor.vue`）と同じに揃え、対象のホーム / リストは Web と同じく選択肢に出さない（今そうなっているものは残す）。② の paramDef（`create` / `update`）と ③ の `antenna` の項目はこの回に読んだ |
 | **ギャラリー**（Misskey） | ― | `gallery/*` 9 本中 8 本未使用 | 独立した機能。単独で 1 枠になる規模 |
 | **編集済み投稿の表示** | Status の `edited_at` / `GET /api/v1/statuses/:id/history` / `/source` | ― | ✅ **実装済み**（v1.65・#1054）。⚠ **CLAUDE.md の「実装しない機能: 投稿の更新」とは別物。**あちらは*書く*側の話で、これは**他人が編集した投稿に「編集済み」と分かる印を出す** *読む*側の話。混同しやすいので、起票時に本文へ明記する |
 | **アカウントの引っ越し追従** | Account の `moved` | `i/move` は除外だが受け側の表示は別 | ✅ **実装済み**（v1.65・#1055）。棚卸し時点では、capsicum の Account モデルは `moved` を持たなかった |
