@@ -364,21 +364,13 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     );
   }
 
-  void updateCurrentUser(User user) {
-    final current = state.current;
-    if (current == null) return;
-    final updated = current.copyWithUser(user);
-    final accounts = state.accounts
-        .map((a) => a.key == updated.key ? updated : a)
-        .toList();
-    state = state.copyWith(accounts: accounts, current: updated);
-  }
-
   /// [key] のアカウントの情報を更新する。
   ///
   /// ⚠ デッキのカラムから開いた画面は、現在のアカウントとは別のアカウントを
-  /// 操作していることがある。[updateCurrentUser] を呼ぶと、現在のアカウントに
-  /// 別人の情報を書いてしまう。
+  /// 操作していることがある。「現在のアカウントを更新する」形にすると、現在の
+  /// アカウントに別人の情報を書いてしまう（その形の `updateCurrentUser` は
+  /// #1361 で消した）。⚠ 画面の `ref` で現在のアカウントを確かめてから呼ぶ形に
+  /// しない（保存の応答を待つ間に画面が閉じられると、破棄済みの `ref` が投げる）。
   void updateUserOf(AccountKey key, User user) {
     final current = state.current;
     final accounts = state.accounts
@@ -388,16 +380,6 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
       accounts: accounts,
       current: current?.key == key ? current!.copyWithUser(user) : current,
     );
-  }
-
-  /// [key] がまだ現在のアカウントなら、[updateCurrentUser] する。
-  ///
-  /// ⚠ 画面の `ref` で現在のアカウントを確かめる形にしない（v2.4 リリース前
-  /// レビュー）。保存の応答を待つ間に画面が閉じられると、破棄済みの `ref` が
-  /// 例外を投げ、保存できたのに失敗として扱われる。
-  void updateCurrentUserIfCurrent(AccountKey? key, User user) {
-    if (key == null || state.current?.key != key) return;
-    updateCurrentUser(user);
   }
 
   Future<void> logout(Account account) async {
@@ -560,7 +542,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
   ///
   /// `Account.user` を作るのは [restoreSessions] の `getMyself()` で、**起動時の
   /// 1 回だけ**。以後 `user` が差し替わるのは capsicum 内でプロフィールを編集した
-  /// とき（`profile_edit_screen` → [updateCurrentUser]）に限られていた。
+  /// とき（`profile_edit_screen` → `updateCurrentUser`（#1361 で消した））に限られていた。
   ///
   /// ⚠⚠ **腐るのは Mastodon の `source.privacy`（既定の公開範囲）だけ。**
   /// capsicum はこれを `User.defaultScope` にして**投稿時に `visibility` を明示
@@ -609,7 +591,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
       return;
     }
 
-    // ⚠⚠ **await 中にアカウント切替 / ログアウトが起きうる。**[updateCurrentUser]
+    // ⚠⚠ **await 中にアカウント切替 / ログアウトが起きうる。**`updateCurrentUser`（#1361 で消した）
     // は `state.current` をそのまま書き換えるので、ここから使うと**切替後の別
     // アカウントへ他人の user を書き込む**。必ず key で引き直す
     // （[refreshCurrentServerVersion] と同じ）。
