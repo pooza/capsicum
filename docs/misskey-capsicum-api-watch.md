@@ -139,6 +139,15 @@ daisskey（ダイスキー本番のフォーク本体）への**本番適用**�
 
 ## トリアージ履歴
 
+### baseline: `481883ac2a`（**2026.10.1**、2026-11-07 記録）
+
+フォーク（`daisskey`）が 2026.10.1 を取り込んだ。ダイスキー本番は `/api/meta` で **2026.10.1+0**、きゅあすきーは **2026.9.1** のまま。上流の分は下の前倒しで見てあり、actionable の 2 件（#1334 / #1335）は v2.6 で出荷済み。
+
+**フォーク独自の差分（`816846dc6d..481883ac2a` のうち上流 2026.10.1 に無いもの・9 commits）は client 影響なし。**endpoint の `paramDef` と autogen の型は、上流の分を除くと 0 行。
+
+- **passive**: ローカル TL とソーシャル TL（DB・ストリームの両経路）の絞り込みをデフォルトタグの定義に揃え、DB 経路で `withRenotes` を守るようにした（フォーク #448）。応答の形は変わらず、サーバー側で載る投稿が揃うだけ
+- **none**: 上流の `normalizeForSearch` の改名への追随 / `drive_file` の index の宣言 / フロントエンドの型 2 件 / docs 3 件
+
 ### 前倒し: 上流タグ `2026.10.0..2026.10.1`（2026-10-24 記録）
 
 ⚠ **fork（`daisskey`）が 2026.10.1 を取り込む前の前倒し**で、上流のタグどうしで差分した（38 commits）。ダイスキー本番・ステージングは **2026.10.0+0**、きゅあすきーは **2026.9.1**（いずれも `/api/meta` で実測）。
@@ -238,7 +247,7 @@ Flash 互換ハーネス: **6 / 6 pass**（ダイスキー 4 + きゅあすき�
 `fe064da6`（2026.5.4）..`589d4ece`（2026.6.0）の差分トリアージ。**endpoint 3 本追加のみ・entity フィールド変化なし・packed json-schema 変化なし・`@syuilo/aiscript` は 1.2.1 で据え置き**。
 
 - **`admin/queue/pause` / `admin/queue/resume`（新規 endpoint）** — 判定 **none**: サーバー管理者用のジョブキュー操作。capsicum は無関係。
-- **`antennas/remove-note`（新規 endpoint）** — 判定 **⚪ passive**: アンテナのタイムラインから個別ノートを外す additive な操作。capsicum はアンテナ TL を読むのみで、この除去導線は未提供でも degrade 不要（probing で自動的に非提供）。将来のエンハンス候補にとどめ起票なし。
+- **`antennas/remove-note`（新規 endpoint）** — 判定 **⚪ passive**: アンテナのタイムラインから個別ノートを外す additive な操作。capsicum はアンテナ自体の作成・編集・削除は持つ（v2.10・#1052）が、TL から個別ノートを外す導線は無く、未提供でも degrade 不要（probing で自動的に非提供）。将来のエンハンス候補にとどめ起票なし。
 
 Flash 互換ハーネス（`@syuilo/aiscript` 1.2.1 据え置き）: **6 / 6 pass**（ダイスキー 4 + きゅあすきー 2 の featured 全数）。描画コンポーネントは container / mfm / postFormButton で baseline から不変。
 
