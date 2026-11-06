@@ -26,7 +26,7 @@
 | 層 | Mastodon | Misskey |
 | --- | --- | --- |
 | ① エンドポイント | **全数**（routes 全行を読んで突き合わせ）。⚠ **取りこぼしが 2 件あった**（§13-4 / §13-7） | **全数**（338 とカテゴリ別 diff） |
-| ② パラメータ | ✅ **全数**（2026-10-02・§13。capsicum が呼ぶ約 75 経路） | ✅ **分類 B 系以外は全数**（2026-10-02・§12-5 + §14）。残るのは `clips` / `antennas` / `channels` / `pages` / `flash` で、**B の着手回に従属**（§12-6） |
+| ② パラメータ | ✅ **全数**（2026-10-02・§13。capsicum が呼ぶ約 75 経路） | ✅ **分類 B 系以外は全数**（2026-10-02・§12-5 + §14）。残るのは `clips` / `pages` / `flash` で、**B の着手回に従属**（§12-6・`channels` は v2.8、`antennas` は v2.10 の着手回に入った） |
 | ③ entity フィールド | **全 8 entity**（2026-08-31 に 6 つ追加） | **Note / User**（2026-08-31）+ `notification` / `drive-file` / `chat-*` / `emoji` / `role`（2026-09-29・§12）。残り 5 entity は **B の着手回に従属**（§12-6） |
 
 結果は §9–10（第 1 巡）・§12（層③ の続き）・§13（Mastodon ②）・§14（Misskey ②）。⚠ **どれも結論だけを本体に残し、詳細は archive 側**（第 1 巡 → [api-gap-inventory-settled.md](archive/api-gap-inventory-settled.md) / 第 2 巡 → [api-gap-inventory-round2-settled.md](archive/api-gap-inventory-round2-settled.md)）。
@@ -117,7 +117,7 @@ grep -rhoE "\['[a-zA-Z_][a-zA-Z0-9_]*'\]" packages/capsicum_backends/lib/src/mis
 | **通知のグループ化** | `GET /api/v2/notifications`（`group_key` 単位） | `i/notifications-grouped` | ✅ **実装済み**（2026-09-27・v2.0）。⚠ **束ねる種別は揃っていない** — Mastodon は favourite / reblog / follow を履歴全体で、Misskey は reaction / renote を 1 ページ内の連続したものだけ。罠は `tech-notes-api.md`「`GET /api/v2/notifications`（束ねた通知）の 4 つの罠」が正本 |
 | **トレンド** | `trends/tags` / `trends/links` / `trends/statuses` | `hashtags/trend` | 新しい画面。実況文化圏との相性は要検討（トレンドは全体の話題であって、プリセットサーバーのデフォルトタグ文化とは別軸） |
 | **クリップへの投稿追加**（Misskey） | ― | `clips/create` / `clips/add-note` / `clips/remove-note` / `clips/update` / `clips/delete` / `clips/show` | capsicum は**クリップの閲覧だけ**（11 本中 2 本）。作成・追加ができないので「読める整理棚」で止まっている |
-| **チャンネルの操作**（Misskey） | ― | 16 本中 14 本未使用（`create` / `update` / `follow` / `favorite` / `search` / `show` / `mute/*` / `owned` ほか） | 同上。閲覧のみ |
+| **チャンネルの操作**（Misskey） | ― | `create` / `update` / `follow` / `search` / `show` / `owned` / `my-favorites` ほか | ✅ **実装済み**（2026-10-31・v2.8・[#1051](https://github.com/pooza/capsicum/issues/1051)）。探す・フォローする・作る・編集するまで。「閲覧のみ」の族の型はこの回に決めた（`docs/product-policy.md`）。棚卸し時点では 16 本中 14 本が未使用だった |
 | **アンテナの管理**（Misskey） | ― | `antennas/create` / `update` / `delete` / `show` | ✅ **実装済み**（2026-11-05・v2.10・[#1052](https://github.com/pooza/capsicum/issues/1052)）。`create` / `update` / `delete` を使う。⚠ `show` は使わない（`list` が条件を全部返す）。項目は Web の編集画面（`MkAntennaEditor.vue`）と同じに揃え、対象のホーム / リストは Web と同じく選択肢に出さない（今そうなっているものは残す）。② の paramDef（`create` / `update`）と ③ の `antenna` の項目はこの回に読んだ |
 | **ギャラリー**（Misskey） | ― | `gallery/*` 9 本中 8 本未使用 | 独立した機能。単独で 1 枠になる規模 |
 | **編集済み投稿の表示** | Status の `edited_at` / `GET /api/v1/statuses/:id/history` / `/source` | ― | ✅ **実装済み**（v1.65・#1054）。⚠ **CLAUDE.md の「実装しない機能: 投稿の更新」とは別物。**あちらは*書く*側の話で、これは**他人が編集した投稿に「編集済み」と分かる印を出す** *読む*側の話。混同しやすいので、起票時に本文へ明記する |
@@ -204,7 +204,7 @@ grep -rhoE "\['[a-zA-Z_][a-zA-Z0-9_]*'\]" packages/capsicum_backends/lib/src/mis
 
 ## 11. 未実施のまま残す範囲（→ [#1046](https://github.com/pooza/capsicum/issues/1046)）→ [archive へ分けた](archive/api-gap-inventory-round2-settled.md)
 
-「主要なものだけ進め、残りは別 Issue」という 2026-08-31 の判断に従って切り出した範囲。⚠⚠ **2026-10-02 に #1046 を一巡し終えたので、この節は履歴**になった。**いまの到達点は §1 の実施範囲の表**が正本で、残っているのは `clips` / `antennas` / `channels` / `pages` / `flash` だけ（分類 B の着手回に従属・§12-6）。
+「主要なものだけ進め、残りは別 Issue」という 2026-08-31 の判断に従って切り出した範囲。⚠⚠ **2026-10-02 に #1046 を一巡し終えたので、この節は履歴**になった。**いまの到達点は §1 の実施範囲の表**が正本で、残っているのは `clips` / `pages` / `flash` だけ（分類 B の着手回に従属・§12-6）。
 
 ⚠ **「見ていない」であって「無かった」ではない**という前提は正しかった。**第 1 巡の主要経路だけで ★ 5 件、続きで ★ 2 件（§12）、Mastodon ② で ★ 8 件 + Misskey ② で ★ 2 件（§13 / §14）。**⚠⚠ **いちばん「当たりは薄い」と見立てていた Mastodon ② が最も多く出た**（優先順位の案 4 = 最後尾）。**見立てで順序を決めても、薄いほうを落とさないこと。**
 
@@ -228,7 +228,7 @@ grep -rhoE "\['[a-zA-Z_][a-zA-Z0-9_]*'\]" packages/capsicum_backends/lib/src/mis
 
 ⚠ **この節は live な判断。**
 
-**残り**: `channel` / `clip` / `antenna` / `page` / `flash` の各 entity と、Misskey ② の同名の経路。
+**残り**: `clip` / `page` / `flash` の各 entity と、Misskey ② の同名の経路。`channel` は v2.8（#1051）、`antenna` は v2.10（#1052）の着手回に入った。
 
 ⚠⚠ **残っている entity は全部「分類 B と母数が重なる」側に寄った。**`clip` / `antenna` / `channel` は [#1050](https://github.com/pooza/capsicum/issues/1050) / [#1051](https://github.com/pooza/capsicum/issues/1051) / [#1052](https://github.com/pooza/capsicum/issues/1052)、`page` は [#1073](https://github.com/pooza/capsicum/issues/1073)、`flash` は [#1074](https://github.com/pooza/capsicum/issues/1074) で、いずれも**作成・編集 UI を作る回に同じコードを読む**。→ **単独で巡回する価値が薄くなったので、B を着手する回に一緒に見る**（#1046 の優先順位の案 3 を、残り全体へ広げた判断）。
 
@@ -283,6 +283,6 @@ grep -rhoE "\['[a-zA-Z_][a-zA-Z0-9_]*'\]" packages/capsicum_backends/lib/src/mis
 
 | 層 | Mastodon | Misskey |
 | --- | --- | --- |
-| ② パラメータ | ✅ **全数**（§13・capsicum が呼ぶ約 75 経路） | ✅ **B 系以外は全数**（§12-5 の chat 23 経路 + §14 の `lists` / `following` / `blocking` / `mute` / `drive`）。⚠ 残るのは `clips` / `antennas` / `channels` / `pages` / `flash` で、**作成・編集 UI を作る回に同じコードを読む**（§12-6 の判断） |
+| ② パラメータ | ✅ **全数**（§13・capsicum が呼ぶ約 75 経路） | ✅ **B 系以外は全数**（§12-5 の chat 23 経路 + §14 の `lists` / `following` / `blocking` / `mute` / `drive`）。⚠ 残るのは `clips` / `pages` / `flash` で、**作成・編集 UI を作る回に同じコードを読む**（§12-6 の判断） |
 
 ⚠ 層② で単独に巡回する価値のある範囲は無くなり、残りは分類 B の着手に従属する。
