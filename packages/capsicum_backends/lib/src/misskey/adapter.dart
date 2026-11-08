@@ -2334,12 +2334,22 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
 
   /// ⚠ ロールの上限（`TOO_MANY_ANTENNAS`）は [AntennaLimitReached] に写す。画面が
   /// バックエンドのエラーコードに依らないため（デコの #1361 と同じ）。
+  ///
+  /// 既に消えたアンテナ（`NO_SUCH_ANTENNA`・更新のみ）とリスト
+  /// （`NO_SUCH_USER_LIST`）も型に写す (#1372)。写さないと画面は一般的な失敗と
+  /// して Sentry へ送っていた。
   Future<void> _antennaWrite(Future<void> Function() write) async {
     try {
       await write();
     } on DioException catch (e) {
       if (_hasErrorCode(e, 'TOO_MANY_ANTENNAS')) {
         throw const AntennaLimitReached();
+      }
+      if (_hasErrorCode(e, 'NO_SUCH_ANTENNA')) {
+        throw const AntennaNotFound();
+      }
+      if (_hasErrorCode(e, 'NO_SUCH_USER_LIST')) {
+        throw const AntennaUserListNotFound();
       }
       rethrow;
     }

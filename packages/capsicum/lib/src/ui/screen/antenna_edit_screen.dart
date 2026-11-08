@@ -155,6 +155,22 @@ class _AntennaEditScreenState extends ConsumerState<AntennaEditScreen> {
       messenger.showSnackBar(
         const SnackBar(content: Text('このアカウントでは、これ以上アンテナを作れません')),
       );
+    } on AntennaNotFound {
+      // ⚠ Web などで既に消されていた (#1372)。失敗として Sentry へ送らない。
+      // 編集を続ける先が無いので、一覧へ戻って取り直させる。
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(content: Text('このアンテナは見つかりませんでした（削除された可能性があります）')),
+      );
+      Navigator.of(context).pop(true);
+    } on AntennaUserListNotFound {
+      // ⚠ 受信元のリストが既に消されていた (#1372)。選び直せば保存できるので
+      // 画面に留まる。
+      if (!mounted) return;
+      setState(() => _saving = false);
+      messenger.showSnackBar(
+        const SnackBar(content: Text('受信元のリストが見つかりませんでした。リストを選び直してください')),
+      );
     } catch (e, st) {
       // ⚠ 権限の足りない古いトークンは送らない（再ログインで直る・#1361）。
       final scope = isOAuthScopeError(e);
