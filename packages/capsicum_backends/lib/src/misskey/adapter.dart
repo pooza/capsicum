@@ -2636,6 +2636,46 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     return user.toCapsicum(host, adminRoleIds: _adminRoleIds);
   }
 
+  @override
+  Future<int?> getAvatarDecorationLimit() async =>
+      (await client.getIWithAvatarDecorationLimit()).$2;
+
+  /// ⚠ 付け外しと同じく、サーバーの今の値から組み立てる（#1359）。
+  @override
+  Future<User> adjustAvatarDecoration(
+    String id, {
+    required double angle,
+    required bool flipH,
+    required double offsetX,
+    required double offsetY,
+  }) async {
+    final me = (await client.getI()).toCapsicum(
+      host,
+      adminRoleIds: _adminRoleIds,
+    );
+    final current = me.avatarDecorations;
+    if (!current.any((d) => d.id == id)) return me;
+    final user = await client.updateI(
+      avatarDecorations: [
+        for (final d in current)
+          if (d.id == id)
+            _decorationParams(
+              AvatarDecoration(
+                id: d.id,
+                url: d.url,
+                angle: angle.clamp(-0.5, 0.5),
+                flipH: flipH,
+                offsetX: offsetX.clamp(-0.25, 0.25),
+                offsetY: offsetY.clamp(-0.25, 0.25),
+              ),
+            )
+          else
+            _decorationParams(d),
+      ],
+    );
+    return user.toCapsicum(host, adminRoleIds: _adminRoleIds);
+  }
+
   /// ⚠ 省略した値は既定に戻るので、今の調整値を必ず添える。
   Map<String, Object> _decorationParams(AvatarDecoration d) => {
     'id': d.id,

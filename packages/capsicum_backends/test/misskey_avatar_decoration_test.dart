@@ -269,4 +269,92 @@ void main() {
 
     expect(server.iCalls, 1);
   });
+
+  // #1359: 位置・角度・反転の調整。
+  group('調整', () {
+    test('対象だけ値を差し替え、ほかは今の調整値のまま送る', () async {
+      final server = await install(
+        _Server(
+          decorations: [
+            _adjusted,
+            {'id': 'target', 'url': 'https://x/target'},
+          ],
+          limit: 3,
+        ),
+      );
+
+      final user = await adapter.adjustAvatarDecoration(
+        'target',
+        angle: -0.3,
+        flipH: true,
+        offsetX: 0.1,
+        offsetY: 0.15,
+      );
+
+      final sent = server.lastUpdate!.cast<Map<String, dynamic>>();
+      expect(sent.first, {
+        'id': 'keep',
+        'angle': 0.1,
+        'flipH': true,
+        'offsetX': 0.2,
+        'offsetY': -0.2,
+      });
+      expect(sent.last, {
+        'id': 'target',
+        'angle': -0.3,
+        'flipH': true,
+        'offsetX': 0.1,
+        'offsetY': 0.15,
+      });
+      expect(user.avatarDecorations.last.angle, -0.3);
+    });
+
+    test('範囲の外の値は Misskey の範囲へ丸める', () async {
+      final server = await install(
+        _Server(
+          decorations: [
+            {'id': 'target', 'url': 'https://x/target'},
+          ],
+          limit: 3,
+        ),
+      );
+
+      await adapter.adjustAvatarDecoration(
+        'target',
+        angle: 2,
+        flipH: false,
+        offsetX: -1,
+        offsetY: 1,
+      );
+
+      expect(server.lastUpdate!.single, {
+        'id': 'target',
+        'angle': 0.5,
+        'flipH': false,
+        'offsetX': -0.25,
+        'offsetY': 0.25,
+      });
+    });
+
+    test('⚠ サーバー側で既に外れていたら、保存せずに今の状態を返す', () async {
+      final server = await install(_Server(decorations: [_adjusted], limit: 3));
+
+      final user = await adapter.adjustAvatarDecoration(
+        'gone',
+        angle: 0,
+        flipH: false,
+        offsetX: 0,
+        offsetY: 0,
+      );
+
+      expect(server.lastUpdate, isNull);
+      expect(user.avatarDecorations.single.id, 'keep');
+    });
+  });
+
+  test('上限は /api/i の policies から読む', () async {
+    await install(_Server(decorations: [], limit: 4));
+
+    expect(await adapter.getAvatarDecorationLimit(), 4);
+  });
 }

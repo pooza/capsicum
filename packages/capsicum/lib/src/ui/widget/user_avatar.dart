@@ -13,17 +13,22 @@ class UserAvatar extends ConsumerWidget {
   final double borderRadius;
   final bool compact;
 
+  /// 描くデコレーションを差し替える。デコレーションの調整画面のプレビュー用
+  /// (#1359)。null なら [user] のものを描く。
+  final List<AvatarDecoration>? decorations;
+
   const UserAvatar({
     super.key,
     required this.user,
     required this.size,
     this.borderRadius = 6,
     this.compact = false,
+    this.decorations,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final decorations = user.avatarDecorations;
+    final decorations = this.decorations ?? user.avatarDecorations;
     final showCatEars = user.isCat;
     // compact: デコレーション用パディングを省略しアバターサイズを維持
     final padding = decorations.isEmpty || compact ? 0.0 : size * 0.25;
