@@ -90,6 +90,7 @@ void main() {
       'lib/src/ui/widget/announcement_tile.dart',
       'lib/src/ui/screen/profile_screen.dart',
       'lib/src/ui/screen/unified_notification_screen.dart',
+      'lib/src/ui/screen/flash_view_screen.dart',
     ];
 
     test('既知の対象がすべて列挙に入っている', () {
