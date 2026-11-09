@@ -1589,6 +1589,56 @@ class MisskeyClient {
         .toList();
   }
 
+  /// POST /api/clips/create (#1050)
+  Future<Map<String, dynamic>> createClip(Map<String, dynamic> params) async {
+    final response = await dio.post(
+      '/api/clips/create',
+      data: createBody(params),
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// POST /api/clips/update (#1050)
+  Future<void> updateClip(String clipId, Map<String, dynamic> params) async {
+    await dio.post(
+      '/api/clips/update',
+      data: createBody({'clipId': clipId, ...params}),
+    );
+  }
+
+  /// POST /api/clips/delete (#1050)
+  Future<void> deleteClip(String clipId) async {
+    await dio.post('/api/clips/delete', data: createBody({'clipId': clipId}));
+  }
+
+  /// POST /api/clips/add-note (#1050)
+  Future<void> addNoteToClip(String clipId, String noteId) async {
+    await dio.post(
+      '/api/clips/add-note',
+      data: createBody({'clipId': clipId, 'noteId': noteId}),
+    );
+  }
+
+  /// POST /api/clips/remove-note (#1050)
+  Future<void> removeNoteFromClip(String clipId, String noteId) async {
+    await dio.post(
+      '/api/clips/remove-note',
+      data: createBody({'clipId': clipId, 'noteId': noteId}),
+    );
+  }
+
+  /// POST /api/notes/clips (#1050)。⚠ 公開のクリップしか返らない（ほかの人の
+  /// ものも含む）。
+  Future<List<Map<String, dynamic>>> getClipsContainingNote(
+    String noteId,
+  ) async {
+    final response = await dio.post(
+      '/api/notes/clips',
+      data: createBody({'noteId': noteId}),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
   /// POST /api/antennas/list
   Future<List<Map<String, dynamic>>> getAntennas() async {
     final response = await dio.post('/api/antennas/list', data: createBody({}));

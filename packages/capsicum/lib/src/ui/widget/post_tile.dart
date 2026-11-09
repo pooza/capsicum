@@ -38,6 +38,7 @@ import '../util/reaction_acceptance.dart';
 import '../util/relative_time.dart';
 import '../util/sensitive_media.dart';
 import '../util/visible_timeline.dart';
+import 'clip_add_sheet.dart';
 import 'content_parser.dart';
 import 'cross_account_boost.dart';
 import 'emoji_action_sheet.dart';
@@ -1544,6 +1545,14 @@ class _PostTileState extends ConsumerState<PostTile> {
                       ),
                       '$bookmarkLabelに追加しました',
                     ),
+                  ),
+                // クリップ (#1050)。入れる・外すはシートの中で切り替える。
+                if (adapter is ClipManagementSupport)
+                  item(
+                    leading: const Icon(Icons.content_paste),
+                    title: const Text('クリップに追加'),
+                    onSelected: () =>
+                        showAddToClipSheet(context, ref, targetPost),
                   ),
                 // 会話のミュート (#1208)。この会話から届く通知だけを止める。
                 // ⚠ 自分の投稿と自分宛ての投稿にだけ出す（[threadMuteApplies]）。

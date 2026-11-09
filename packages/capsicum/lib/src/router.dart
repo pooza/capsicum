@@ -28,6 +28,8 @@ import 'ui/screen/chat_room_members_screen.dart';
 import 'ui/screen/chat_room_timeline_screen.dart';
 import 'ui/screen/chat_thread_list_screen.dart';
 import 'ui/screen/chat_thread_screen.dart';
+import 'ui/screen/clip_edit_screen.dart';
+import 'ui/screen/clip_management_screen.dart';
 import 'ui/screen/clip_notes_screen.dart';
 import 'ui/screen/collection_detail_screen.dart';
 import 'ui/screen/collections_list_screen.dart';
@@ -407,6 +409,18 @@ final routerProvider = Provider<GoRouter>((ref) {
               );
             },
           ),
+          // クリップを管理する (#1050)。
+          GoRoute(
+            path: '/clips/manage',
+            builder: (context, state) => const ClipManagementScreen(),
+          ),
+          GoRoute(
+            path: '/clips/edit',
+            builder: (context, state) {
+              final clip = state.extra;
+              return ClipEditScreen(clip: clip is NoteClip ? clip : null);
+            },
+          ),
           // アンテナを管理する (#1052)。
           GoRoute(
             path: '/antennas/manage',
@@ -664,8 +678,15 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/clip/:id',
             builder: (context, state) {
               final id = state.pathParameters['id']!;
-              final name = state.extra as String?;
-              return ClipNotesScreen(clipId: id, clipName: name);
+              // 管理画面からはクリップそのもの、クイックチューザからは名前が来る
+              // (#1050)。
+              final extra = state.extra;
+              return ClipNotesScreen(
+                clipId: id,
+                clipName: extra is NoteClip
+                    ? extra.name
+                    : (extra is String ? extra : null),
+              );
             },
           ),
           GoRoute(

@@ -11,6 +11,7 @@ import 'antenna_mapping.dart';
 import 'chat_room_streaming.dart';
 import 'chat_streaming.dart';
 import 'client.dart';
+import 'clip_mapping.dart';
 import 'extensions.dart';
 import 'notification_streaming.dart';
 import 'streaming.dart';
@@ -162,6 +163,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         ChannelSupport,
         ChannelManagementSupport,
         ClipSupport,
+        ClipManagementSupport,
         FlashSupport,
         GallerySupport,
         AntennaSupport,
@@ -2377,15 +2379,60 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   @override
   Future<List<NoteClip>> getClips() async {
     final data = await client.getClips();
-    return data
-        .map(
-          (c) => NoteClip(
-            id: c['id'] as String,
-            name: c['name'] as String? ?? '',
-            description: c['description'] as String?,
-          ),
-        )
-        .toList();
+    return data.map(misskeyClipFromJson).toList();
+  }
+
+  // ClipManagementSupport
+
+  @override
+  Future<NoteClip> createClip(ClipDraft draft) => _clipWrite(
+    () async =>
+        misskeyClipFromJson(await client.createClip(misskeyClipParams(draft))),
+  );
+
+  @override
+  Future<void> updateClip(String clipId, ClipDraft draft) =>
+      _clipWrite(() => client.updateClip(clipId, misskeyClipParams(draft)));
+
+  @override
+  Future<void> deleteClip(String clipId) async {
+    try {
+      await client.deleteClip(clipId);
+    } on DioException catch (e) {
+      // 一覧を取ったあとに Web などで消されていた。消すという目的は果たして
+      // いるので成功として扱う（アンテナと同じ）。
+      if (!_hasErrorCode(e, 'NO_SUCH_CLIP')) rethrow;
+    }
+  }
+
+  @override
+  Future<void> addNoteToClip(String clipId, String noteId) =>
+      _clipWrite(() => client.addNoteToClip(clipId, noteId));
+
+  @override
+  Future<void> removeNoteFromClip(String clipId, String noteId) =>
+      _clipWrite(() => client.removeNoteFromClip(clipId, noteId));
+
+  @override
+  Future<Set<String>> getPublicClipIdsContaining(String noteId) async {
+    final data = await client.getClipsContainingNote(noteId);
+    return {for (final clip in data) ?clip['id'] as String?};
+  }
+
+  /// ⚠ サーバーのエラーコードを型に写す (#1050)。画面がバックエンドの
+  /// エラーコードに依らないため（アンテナの `_antennaWrite` と同じ）。
+  Future<T> _clipWrite<T>(Future<T> Function() write) async {
+    try {
+      return await write();
+    } on DioException catch (e) {
+      if (_hasErrorCode(e, 'TOO_MANY_CLIPS')) throw const ClipLimitReached();
+      if (_hasErrorCode(e, 'TOO_MANY_CLIP_NOTES')) {
+        throw const ClipNoteLimitReached();
+      }
+      if (_hasErrorCode(e, 'ALREADY_CLIPPED')) throw const AlreadyClipped();
+      if (_hasErrorCode(e, 'NO_SUCH_CLIP')) throw const ClipNotFound();
+      rethrow;
+    }
   }
 
   @override

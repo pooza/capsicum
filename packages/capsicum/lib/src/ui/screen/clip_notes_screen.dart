@@ -1,9 +1,12 @@
+import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../provider/account_manager_provider.dart';
 import '../../provider/clip_provider.dart';
 import '../util/scroll_thresholds.dart';
 import '../widget/bottom_safe_area.dart';
+import '../widget/clip_actions_sheet.dart';
 import '../widget/post_tile.dart';
 import '../widget/retry_error_view.dart';
 
@@ -42,11 +45,32 @@ class _ClipNotesScreenState extends ConsumerState<ClipNotesScreen> {
   @override
   Widget build(BuildContext context) {
     final timeline = ref.watch(clipNotesProvider(widget.clipId));
+    // 自分のクリップなら、操作（編集・削除）を出す (#1050)。⚠ 一覧に無い
+    // （ほかの人の公開クリップ・まだ読めていない）ときは出さない。
+    final canManage =
+        ref.watch(currentAdapterProvider) is ClipManagementSupport;
+    NoteClip? clip;
+    for (final c
+        in ref.watch(clipsProvider).valueOrNull ?? const <NoteClip>[]) {
+      if (c.id == widget.clipId) clip = c;
+    }
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.clipName ?? 'クリップ'),
+        // ⚠ 編集で名前を変えたら追随させる（一覧を取り直すので）。
+        title: Text(clip?.name ?? widget.clipName ?? 'クリップ'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        actions: [
+          if (canManage && clip != null)
+            IconButton(
+              icon: const Icon(Icons.more_horiz),
+              tooltip: 'クリップの操作',
+              onPressed: () async {
+                final deleted = await showClipActions(context, ref, clip!);
+                if (deleted && context.mounted) Navigator.of(context).pop();
+              },
+            ),
+        ],
       ),
       body: BottomSafeArea(
         child: timeline.when(

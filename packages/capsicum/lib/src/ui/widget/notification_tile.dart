@@ -27,6 +27,7 @@ import '../util/provider_scope_carrier.dart';
 import '../util/reaction_acceptance.dart';
 import '../util/relative_time.dart';
 import '../util/visible_timeline.dart';
+import 'clip_add_sheet.dart';
 import 'content_parser.dart';
 import 'cross_account_boost.dart';
 import 'emoji_action_sheet.dart';
@@ -519,6 +520,16 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
                       ),
                       '$bookmarkLabelに追加しました',
                     );
+                  },
+                ),
+              // クリップ (#1050)。投稿のメニューと揃える。
+              if (adapter is ClipManagementSupport)
+                ListTile(
+                  leading: const Icon(Icons.content_paste),
+                  title: const Text('クリップに追加'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    showAddToClipSheet(context, ref, targetPost);
                   },
                 ),
               // 会話のミュート (#1208)。⚠ **通知では常に出す** —— 通知が来ている

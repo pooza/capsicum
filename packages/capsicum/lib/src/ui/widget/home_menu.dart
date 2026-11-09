@@ -1099,7 +1099,10 @@ Future<void> showClipList(BuildContext context, WidgetRef ref) async {
     }
     return;
   }
-  if (clips.isEmpty) {
+  // ⚠ 管理できるなら 0 件でも開く。ここが新しいクリップへの唯一の入口
+  // （#1050・アンテナの #1052 と同じ型）。
+  final canManage = adapter is ClipManagementSupport;
+  if (clips.isEmpty && !canManage) {
     if (context.mounted) {
       ScaffoldMessenger.of(
         context,
@@ -1134,6 +1137,18 @@ Future<void> showClipList(BuildContext context, WidgetRef ref) async {
               onTap: () {
                 Navigator.pop(context);
                 context.push('/clip/${clip.id}', extra: clip.name);
+              },
+            ),
+          if (clips.isEmpty)
+            const ListTile(dense: true, title: Text('クリップはありません')),
+          if (canManage)
+            ListTile(
+              leading: const Icon(Icons.settings, size: 20),
+              title: const Text('クリップを管理する'),
+              dense: true,
+              onTap: () {
+                Navigator.pop(context);
+                context.push('/clips/manage');
               },
             ),
         ],
