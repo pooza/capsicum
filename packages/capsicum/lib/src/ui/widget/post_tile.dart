@@ -19,6 +19,7 @@ import '../../provider/server_config_provider.dart';
 import '../../service/server_metadata_cache.dart';
 import '../../service/tco_resolver.dart';
 import '../../service/url_preview_cache.dart';
+import '../../util/emoji_url.dart';
 import '../../util/exception_scrub.dart';
 import '../../util/user_acct.dart';
 import '../util/compose_settings_display.dart';
@@ -518,7 +519,7 @@ class _PostTileState extends ConsumerState<PostTile> {
         final url = emojis[shortcode];
         if (url != null) return url;
         if (fallbackHost != null) {
-          return 'https://$fallbackHost/emoji/$shortcode.webp';
+          return fallbackEmojiUrl(fallbackHost, shortcode);
         }
         return null;
       },
@@ -2795,7 +2796,7 @@ class _ReactionChips extends StatelessWidget {
                 ? (post.emojiHost ?? post.author.host)
                 : hostPart;
             if (emojiHost != null) {
-              emojiUrl = 'https://$emojiHost/emoji/$nameOnly.webp';
+              emojiUrl = fallbackEmojiUrl(emojiHost, nameOnly);
             }
           }
           return _ReactionChip(
@@ -3476,7 +3477,7 @@ class _QuoteCardState extends ConsumerState<_QuoteCard> {
           final url = quote.emojis[shortcode];
           if (url != null) return url;
           final host = quote.emojiHost;
-          return host != null ? 'https://$host/emoji/$shortcode.webp' : null;
+          return host != null ? fallbackEmojiUrl(host, shortcode) : null;
         },
         resolveUrl: (url) =>
             TcoResolver.isTcoUrl(url) ? TcoResolver.getCached(url) : null,
@@ -3506,7 +3507,7 @@ class _QuoteCardState extends ConsumerState<_QuoteCard> {
           final url = quote.emojis[shortcode];
           if (url != null) return url;
           final host = quote.emojiHost;
-          return host != null ? 'https://$host/emoji/$shortcode.webp' : null;
+          return host != null ? fallbackEmojiUrl(host, shortcode) : null;
         },
         onLinkTap: (url) => openFediverseLink(context, ref, url),
         onHashtagTap: (tag) => showHashtagActionMenu(context, tag),

@@ -7,6 +7,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import '../../model/account.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
+import '../../util/emoji_url.dart';
 import '../util/fediverse_link.dart';
 import '../util/pages_error.dart';
 import '../util/provider_scope_carrier.dart';
@@ -244,8 +245,9 @@ class _TextBlockState extends ConsumerState<_TextBlock> {
       _renderer = ContentRenderer(
         baseStyle: baseStyle,
         resolveEmoji: (shortcode) {
-          if (widget.host != null) {
-            return 'https://${widget.host}/emoji/$shortcode.webp';
+          final host = widget.host;
+          if (host != null) {
+            return fallbackEmojiUrl(host, shortcode);
           }
           return null;
         },

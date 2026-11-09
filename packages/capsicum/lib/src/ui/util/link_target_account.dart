@@ -13,7 +13,7 @@ import '../widget/server_badge.dart';
 ///
 /// サーバーの名前がまだ取れていない（ホスト名と同じ）ときは、ハンドルだけにする。
 String linkTargetAccountLabel(AccountKey key) {
-  final handle = '@${key.username}@${key.host}';
+  final handle = key.handle;
   final name = serverDisplayName(key.host);
   return name == key.host ? handle : '$name の $handle';
 }

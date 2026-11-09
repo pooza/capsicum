@@ -31,6 +31,7 @@ import '../../service/post_account_idle_tracker.dart';
 import '../../service/sentry_op_failure.dart';
 import '../../url_helper.dart';
 import '../../util/action_labels.dart';
+import '../../util/emoji_url.dart';
 import '../../util/exception_scrub.dart';
 import '../../util/misskey_api_error.dart';
 import '../../util/now_playing_formatter.dart';
@@ -3732,8 +3733,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           resolveEmoji: (shortcode) {
             final url = allEmojis[shortcode];
             if (url != null) return url;
-            if (user.host != null) {
-              return 'https://${user.host}/emoji/$shortcode.webp';
+            final host = user.host;
+            if (host != null) {
+              return fallbackEmojiUrl(host, shortcode);
             }
             return null;
           },

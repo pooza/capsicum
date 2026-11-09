@@ -48,6 +48,10 @@ class AntennaEditScreen extends ConsumerStatefulWidget {
 }
 
 class _AntennaEditScreenState extends ConsumerState<AntennaEditScreen> {
+  /// アンテナ名の上限。Misskey の `antennas/create` / `update` の
+  /// `name: { maxLength: 100 }` に合わせる (#1372)。
+  static const _nameMaxLength = 100;
+
   late final TextEditingController _name;
   late final TextEditingController _users;
   late final TextEditingController _keywords;
@@ -242,7 +246,7 @@ class _AntennaEditScreenState extends ConsumerState<AntennaEditScreen> {
             children: [
               TextField(
                 controller: _name,
-                maxLength: 100,
+                maxLength: _nameMaxLength,
                 decoration: const InputDecoration(labelText: '名前'),
               ),
               const SizedBox(height: 8),

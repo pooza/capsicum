@@ -125,7 +125,7 @@ String deckColumnMenuLabel(
   final who =
       account?.user.displayName ??
       account?.user.username ??
-      '@${column.account.username}@${column.account.host}';
+      column.account.handle;
   return '$label · $who';
 }
 
@@ -431,7 +431,7 @@ Future<void> confirmRemoveAccount(
     builder: (context) => AlertDialog(
       title: const Text('アカウントを削除'),
       content: Text(
-        '@${account.user.username}@${account.key.host} をこの端末から削除します。'
+        '${account.key.handle} をこの端末から削除します。'
         'サーバー上のアカウントと投稿は消えません。'
         'もう一度使うときは、ログインし直してください。',
       ),
@@ -745,7 +745,7 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
           if (!inDeck)
             for (final a in otherAccounts)
               MenuActionEntry(
-                label: '@${a.user.username}@${a.key.host}',
+                label: a.key.handle,
                 icon: Icons.switch_account,
                 onSelected: () {
                   ref.read(accountManagerProvider.notifier).switchAccount(a);
@@ -768,7 +768,7 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
           if (menuAccount != null)
             MenuActionEntry(
               label:
-                  '@${menuAccount.user.username}@${menuAccount.key.host} '
+                  '${menuAccount.key.handle} '
                   'をこの端末から削除…',
               icon: Icons.delete_outline,
               onSelected: () => confirmRemoveAccount(context, ref, menuAccount),

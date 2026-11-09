@@ -11,6 +11,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../service/tco_resolver.dart';
+import '../../util/emoji_url.dart';
 import '../../util/notification_filter.dart';
 import '../util/deck_navigation.dart';
 import '../util/fediverse_link.dart';
@@ -100,7 +101,7 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
           resolveEmoji: (shortcode) {
             final url = allEmojis[shortcode];
             if (url != null) return url;
-            if (host != null) return 'https://$host/emoji/$shortcode.webp';
+            if (host != null) return fallbackEmojiUrl(host, shortcode);
             return null;
           },
           resolveUrl: (url) =>
@@ -849,7 +850,7 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
         ? (post?.emojiHost ?? post?.author.host)
         : hostPart;
     if (emojiHost != null) {
-      return 'https://$emojiHost/emoji/$nameOnly.webp';
+      return fallbackEmojiUrl(emojiHost, nameOnly);
     }
     return null;
   }

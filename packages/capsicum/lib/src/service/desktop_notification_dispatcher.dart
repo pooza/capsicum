@@ -512,7 +512,7 @@ class DesktopNotificationDispatcher {
     final base = _baseTitle(n, display);
     if (recipient == null) return base;
     // 宛先アカウントを末尾に添える (複数垢の区別用)。
-    return '$base (@${recipient.username}@${recipient.host})';
+    return '$base (${recipient.handle})';
   }
 
   String _baseTitle(Notification n, NotificationTypeDisplay display) {

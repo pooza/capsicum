@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../constants.dart';
 import '../../provider/preferences_provider.dart';
+import '../../util/emoji_url.dart';
 import 'reaction_picker_sheet.dart';
 
 /// chat メッセージの reaction を表示するバー (#612)。DM・ルーム双方の
@@ -136,9 +137,10 @@ class _ReactionChip extends StatelessWidget {
     // フォールバックする (content_parser と同じ方針)。解決できなければ素のテキスト。
     if (reaction.startsWith(':') && reaction.endsWith(':')) {
       final shortcode = reaction.substring(1, reaction.length - 1);
+      final host = this.host;
       final url =
           emojis[shortcode] ??
-          (host != null ? 'https://$host/emoji/$shortcode.webp' : null);
+          (host != null ? fallbackEmojiUrl(host, shortcode) : null);
       if (url != null) {
         return Image.network(
           url,

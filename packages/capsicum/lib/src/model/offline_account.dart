@@ -73,7 +73,7 @@ class OfflineAccount {
   bool get recoverableByRetry => reason == OfflineAccountReason.unreachable;
 
   /// 切替 UI 用の `@username@host` ラベル（profile 不在でも表示できる）。
-  String get handle => '@${key.username}@${key.host}';
+  String get handle => key.handle;
 }
 
 /// プッシュ通知の宛先（relay の `username@host`）が、**まだ戻っていないが再試行で

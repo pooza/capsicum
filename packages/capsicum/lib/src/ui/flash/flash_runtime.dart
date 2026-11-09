@@ -1,5 +1,6 @@
 import 'package:aiscript/aiscript.dart';
 
+import '../../util/emoji_url.dart';
 import 'as_ui.dart';
 
 /// Flash スクリプトの実行時エラー。UI にそのまま出せる日本語の要約を持つ。
@@ -286,7 +287,7 @@ class FlashRuntime {
                 ? NullValue()
                 : StrValue(e.category!),
             'aliases': ArrValue([]),
-            'url': StrValue('https://$host/emoji/${e.name}.webp'),
+            'url': StrValue(fallbackEmojiUrl(host, e.name)),
           }),
       ]),
 

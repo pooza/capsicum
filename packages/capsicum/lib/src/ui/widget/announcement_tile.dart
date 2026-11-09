@@ -9,6 +9,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/announcement_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../service/tco_resolver.dart';
+import '../../util/emoji_url.dart';
 import '../util/announcement_period.dart';
 import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
@@ -85,7 +86,7 @@ class _AnnouncementTileState extends ConsumerState<AnnouncementTile> {
       () => ContentRenderer(
         baseStyle: baseStyle,
         resolveEmoji: (shortcode) {
-          if (host != null) return 'https://$host/emoji/$shortcode.webp';
+          if (host != null) return fallbackEmojiUrl(host, shortcode);
           return null;
         },
         resolveUrl: (url) =>

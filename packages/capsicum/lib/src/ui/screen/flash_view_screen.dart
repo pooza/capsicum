@@ -11,6 +11,7 @@ import '../../provider/server_config_provider.dart';
 import '../../service/sentry_play_result.dart';
 import '../../service/tco_resolver.dart';
 import '../../url_helper.dart';
+import '../../util/emoji_url.dart';
 import '../../util/exception_scrub.dart';
 import '../../util/misskey_api_error.dart';
 import '../../util/oauth_scope_error.dart';
@@ -241,7 +242,7 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
         resolveEmoji: (shortcode) {
           final url = flash.author.emojis[shortcode];
           if (url != null) return url;
-          if (host != null) return 'https://$host/emoji/$shortcode.webp';
+          if (host != null) return fallbackEmojiUrl(host, shortcode);
           return null;
         },
         resolveUrl: (url) =>

@@ -143,7 +143,7 @@ class _ShareAccountScreenState extends ConsumerState<ShareAccountScreen> {
                     const SizedBox(width: 4),
                     Expanded(
                       child: Text(
-                        '@${account.key.username}@${account.key.host}',
+                        account.key.handle,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),

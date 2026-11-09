@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/preferences_provider.dart';
+import '../../util/emoji_url.dart';
 import 'inline_custom_emoji.dart';
 
 /// A [Text]-like widget that replaces `:shortcode:` patterns with inline
@@ -91,7 +92,7 @@ class EmojiText extends ConsumerWidget {
     final url = emojis[shortcode];
     if (url != null) return url;
     if (fallbackHost != null) {
-      return Uri.https(fallbackHost!, '/emoji/$shortcode.webp').toString();
+      return fallbackEmojiUrl(fallbackHost!, shortcode);
     }
     return null;
   }

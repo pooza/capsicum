@@ -27,7 +27,7 @@ class AccountSettingsScreen extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: Text(
-              '@${account.key.username}@${account.key.host}',
+              account.key.handle,
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ),

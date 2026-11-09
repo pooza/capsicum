@@ -11,6 +11,7 @@ import '../../provider/server_config_provider.dart';
 import '../../provider/unified_notification_provider.dart';
 import '../../service/tco_resolver.dart';
 import '../../util/announcement_notifications.dart';
+import '../../util/emoji_url.dart';
 import '../../util/notification_filter.dart';
 import '../util/deck_navigation.dart';
 import '../util/fediverse_link.dart';
@@ -216,7 +217,7 @@ class _UnifiedNotificationTileState
           resolveEmoji: (shortcode) {
             final url = allEmojis[shortcode];
             if (url != null) return url;
-            if (host != null) return 'https://$host/emoji/$shortcode.webp';
+            if (host != null) return fallbackEmojiUrl(host, shortcode);
             return null;
           },
           resolveUrl: (url) =>
@@ -323,7 +324,7 @@ class _UnifiedNotificationTileState
   Widget _accountBadge(BuildContext context, Account account) {
     final theme = Theme.of(context);
     final displayName = account.user.displayName;
-    final acct = '@${account.user.username}@${account.key.host}';
+    final acct = account.key.handle;
     final hasDisplayName = displayName != null && displayName.trim().isNotEmpty;
     final labelStyle = theme.textTheme.labelSmall?.copyWith(
       color: theme.colorScheme.onSurfaceVariant,
@@ -459,7 +460,7 @@ class _UnifiedNotificationTileState
         ? (post?.emojiHost ?? post?.author.host)
         : hostPart;
     if (emojiHost != null) {
-      return 'https://$emojiHost/emoji/$nameOnly.webp';
+      return fallbackEmojiUrl(emojiHost, nameOnly);
     }
     return null;
   }
@@ -513,7 +514,7 @@ class _UnifiedStatusBanner extends StatelessWidget {
 
   const _UnifiedStatusBanner({required this.state});
 
-  static String _acct(Account a) => '@${a.user.username}@${a.key.host}';
+  static String _acct(Account a) => a.key.handle;
 
   @override
   Widget build(BuildContext context) {

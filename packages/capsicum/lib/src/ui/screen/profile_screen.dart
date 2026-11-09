@@ -18,6 +18,7 @@ import '../../provider/supporter_status_provider.dart';
 import '../../service/server_version_checker.dart';
 import '../../service/tco_resolver.dart';
 import '../../url_helper.dart';
+import '../../util/emoji_url.dart';
 import '../../util/exception_scrub.dart';
 import '../../util/user_acct.dart';
 import '../util/deck_navigation.dart';
@@ -1985,8 +1986,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
         resolveEmoji: (shortcode) {
           final url = user.emojis[shortcode];
           if (url != null) return url;
-          if (user.host != null) {
-            return 'https://${user.host}/emoji/$shortcode.webp';
+          final host = user.host;
+          if (host != null) {
+            return fallbackEmojiUrl(host, shortcode);
           }
           return null;
         },
@@ -2037,7 +2039,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           if (url != null) return url;
           final host = widget.user.host;
           if (host != null) {
-            return 'https://$host/emoji/$shortcode.webp';
+            return fallbackEmojiUrl(host, shortcode);
           }
           return null;
         },
