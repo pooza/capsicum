@@ -712,9 +712,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       // 何だったかは**再現しないと分からない**ので、原因の特定は別途。
       //
       // **2. 「アカウントの有無」では危険な経路を覆えない。**capsicum は
-      // **アカウント削除時にトークンを revoke しない**（リポジトリ全体で
-      // `/oauth/revoke` の呼び出しが無い）一方、Mastodon 側は `reuse_access_token`
-      // 有効・期限無しなので、**@a を消して後日 @b を足すと** 手元のどのリストにも
+      // **アカウント削除時にトークンを revoke しない**（`/oauth/revoke` を呼ぶ
+      // のは、メール未確認・承認待ちでログインを止めたときだけ・#1372）一方、
+      // Mastodon 側は `reuse_access_token` 有効・期限無しなので、
+      // **@a を消して後日 @b を足すと** 手元のどのリストにも
       // entry が無く（＝判定は false）、サーバー側では @a のトークンが生きていて
       // `matching_token?` が成立する → **同意画面を出さずに @a が戻ってくる**。
       // 判定を `offlineAccounts` まで広げてもこの経路は残る。

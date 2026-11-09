@@ -841,7 +841,13 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       client.setAccessToken(token.accessToken!);
       // 承認待ち・メール未確認は MastodonAccountNotFunctional になり、下の
       // catch で LoginFailure に包まれる (#1320)。
-      final account = await client.verifyCredentials(allowNonfunctional: true);
+      final MastodonAccount account;
+      try {
+        account = await client.verifyCredentials(allowNonfunctional: true);
+      } on MastodonAccountNotFunctional catch (e) {
+        await _revokeUnusableToken(e, token.accessToken!, extra);
+        rethrow;
+      }
       _learnAdminRoles(account);
 
       return LoginSuccess(
@@ -856,6 +862,39 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       return LoginFailure(e, s);
     }
   }
+
+  /// ログインを止めたときに、発行したばかりのトークンを無効にする (#1372)。
+  /// 端末には保存しないが、放っておくとログインを試すたびにサーバーに使える
+  /// トークンが 1 本ずつ残る。
+  ///
+  /// ⚠⚠ **メール未確認・承認待ちに限る。**この 2 つは一度もログインできていない
+  /// 状態なので、同じトークンで動いているセッションが無い。凍結・ログイン停止
+  /// （4.7 以前は区別できず `login_disabled`）は、ログイン済みのアカウントが後から
+  /// そうなった場合があり、client_id を使い回しているので `reuse_access_token`
+  /// で**手元のセッションと同じトークン**が返っていることがある。そちらは従来
+  /// どおり残す。
+  ///
+  /// 失敗は握りつぶす（ログインを止めた理由のほうを利用者へ出す）。
+  Future<void> _revokeUnusableToken(
+    MastodonAccountNotFunctional e,
+    String accessToken,
+    Map<String, String> extra,
+  ) async {
+    if (!revokesTokenOn(e.errorCode)) return;
+    try {
+      await client.revokeToken(
+        clientId: extra['client_id']!,
+        clientSecret: extra['client_secret']!,
+        token: accessToken,
+      );
+    } catch (_) {}
+  }
+
+  /// [_revokeUnusableToken] がトークンを無効にする状態か (#1372)。テスト用に
+  /// 公開している。
+  static bool revokesTokenOn(String errorCode) =>
+      errorCode == MastodonAccountNotFunctional.pendingConfirmation ||
+      errorCode == MastodonAccountNotFunctional.pendingApproval;
 
   // FavoriteSupport
 
