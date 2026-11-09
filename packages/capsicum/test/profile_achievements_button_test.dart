@@ -37,6 +37,30 @@ void main() {
     );
   });
 
+  // #1372: 判定を acctOf と揃えた（isLocalHost）。旧実装は空の host と
+  // 大文字小文字の違いを「別のサーバー」と読んでいた。
+  test('host が空文字の相手も同じサーバーとして扱う', () {
+    expect(
+      showsAchievementsButton(
+        adapter: misskey,
+        user: _user(''),
+        accountHost: home,
+      ),
+      isTrue,
+    );
+  });
+
+  test('host の大文字小文字の違いは同じサーバーとして扱う', () {
+    expect(
+      showsAchievementsButton(
+        adapter: misskey,
+        user: _user('Misskey.Delmulin.com'),
+        accountHost: home,
+      ),
+      isTrue,
+    );
+  });
+
   test('Mastodon の人には出さない', () {
     expect(
       showsAchievementsButton(

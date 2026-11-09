@@ -21,9 +21,17 @@ String userAcct(User user, {String? localHost}) =>
 ///
 /// ⚠ host の比較は大文字小文字を区別しない。
 String acctOf(String username, String? host, {String? localHost}) {
-  if (host == null || host.isEmpty) return username;
-  if (localHost != null && host.toLowerCase() == localHost.toLowerCase()) {
-    return username;
-  }
+  if (isLocalHost(host, localHost: localHost)) return username;
   return '$username@$host';
+}
+
+/// [host] がローカル（自サーバー）を指すか。`null` と空文字はローカル、
+/// [localHost] を渡せばそれと同じ host もローカル（大文字小文字を区別しない）。
+///
+/// 「同じサーバーの人か」の判定はここ 1 か所で行う (#1372)。プロフィールの
+/// 出し分け（`isSameServerUser`）が別の条件で書かれていて、空の host と
+/// 大文字小文字の扱いが [acctOf] とずれていた。
+bool isLocalHost(String? host, {String? localHost}) {
+  if (host == null || host.isEmpty) return true;
+  return localHost != null && host.toLowerCase() == localHost.toLowerCase();
 }

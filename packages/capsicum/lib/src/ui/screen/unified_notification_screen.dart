@@ -168,7 +168,29 @@ class _UnifiedNotificationTileState
   /// 本文の span。⚠ 組み直しのたびに作り直さない理由は [ContentSpanCache]（#1365）。
   final _contentSpans = ContentSpanCache();
 
+  /// 本文の t.co を解決できた回数 (#1372)。本文の span の鍵に入れる。⚠ 入れない
+  /// と、解決しても（タイムラインの側で解決が済んでも）描き直されない。
+  int _tcoResolvedCount = 0;
+
   UnifiedNotification get item => widget.item;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolveTcoUrls();
+  }
+
+  @override
+  void didUpdateWidget(covariant _UnifiedNotificationTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.item, widget.item)) _resolveTcoUrls();
+  }
+
+  void _resolveTcoUrls() {
+    TcoResolver.resolveAllIn(item.notification.post?.content, () {
+      if (mounted) setState(() => _tcoResolvedCount++);
+    });
+  }
 
   @override
   void dispose() {
@@ -185,7 +207,7 @@ class _UnifiedNotificationTileState
     final isHtml = post?.isHtml ?? false;
     // 絵文字・host・isCat は投稿から決まるので、投稿（同一性）で代える。
     return _contentSpans.resolve(
-      [post, content, baseStyle, emojiSize, animateMfm],
+      [post, content, baseStyle, emojiSize, animateMfm, _tcoResolvedCount],
       () {
         final allEmojis = {...?post?.emojis, ...?post?.author.emojis};
         final host = post?.author.host;

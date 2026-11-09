@@ -42,8 +42,6 @@ class _AnnouncementTileState extends ConsumerState<AnnouncementTile> {
 
   Announcement get announcement => widget.announcement;
 
-  static final _tcoPattern = RegExp(r'https?://t\.co/\S+');
-
   /// t.co の解決が終わった回数。本文の span の鍵に入れて、解決した URL で
   /// 描き直させる（#1365）。
   int _tcoResolvedCount = 0;
@@ -55,18 +53,12 @@ class _AnnouncementTileState extends ConsumerState<AnnouncementTile> {
   }
 
   void _resolveTcoUrls() {
-    final content = announcement.content;
-    for (final match in _tcoPattern.allMatches(content)) {
-      final url = match.group(0)!;
-      if (TcoResolver.getCached(url) != null) continue;
-      TcoResolver.resolve(url).then((resolved) {
-        if (resolved != null && mounted) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) setState(() => _tcoResolvedCount++);
-          });
-        }
+    TcoResolver.resolveAllIn(announcement.content, () {
+      if (!mounted) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _tcoResolvedCount++);
       });
-    }
+    });
   }
 
   @override

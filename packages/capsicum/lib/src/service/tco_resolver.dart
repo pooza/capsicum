@@ -25,6 +25,25 @@ class TcoResolver {
     return uri != null && uri.host == 't.co';
   }
 
+  static final _tcoPattern = RegExp(r'https?://t\.co/\S+');
+
+  /// [text] の中のまだ解決していない t.co を解決しに行き、1 件解決できるたびに
+  /// [onResolved] を呼ぶ (#1372)。
+  ///
+  /// 呼ぶ側は解決できた回数を数えて、本文の span の鍵（`ContentSpanCache`）に
+  /// 入れること。⚠ 鍵に入れないと、解決しても描き直されない。⚠ [onResolved] は
+  /// 非同期に呼ばれるので、`mounted` を確かめてから `setState` する。
+  static void resolveAllIn(String? text, void Function() onResolved) {
+    if (text == null) return;
+    for (final match in _tcoPattern.allMatches(text)) {
+      final url = match.group(0)!;
+      if (getCached(url) != null) continue;
+      resolve(url).then((resolved) {
+        if (resolved != null) onResolved();
+      });
+    }
+  }
+
   /// Returns the cached resolved URL, or `null` if not yet resolved.
   static String? getCached(String url) => _cache[url];
 
