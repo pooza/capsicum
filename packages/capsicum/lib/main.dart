@@ -48,6 +48,7 @@ import 'src/service/window_state_service.dart';
 import 'src/service/wns_service.dart';
 import 'src/ui/screen/share_account_screen.dart';
 import 'src/ui/util/deck_notification_fallback.dart';
+import 'src/ui/widget/activation_click_guard.dart';
 import 'src/util/action_labels.dart';
 import 'src/util/exception_scrub.dart';
 import 'src/util/notification_route_wait.dart';
@@ -1593,11 +1594,16 @@ class _CapsicumAppState extends ConsumerState<CapsicumApp>
       themeMode: themeMode,
       builder: (context, child) {
         final fontScale = ref.watch(fontScaleProvider);
-        return MediaQuery(
-          data: MediaQuery.of(
-            context,
-          ).copyWith(textScaler: TextScaler.linear(fontScale)),
-          child: child!,
+        // ウィンドウを前面に出すためのクリックで、投稿やカラムを開かない
+        // (#1366)。タブ UI・デッキ UI の両方に効かせるため、一番外に置く。
+        return ActivationClickGuard(
+          enabled: isDesktop,
+          child: MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: TextScaler.linear(fontScale)),
+            child: child!,
+          ),
         );
       },
       routerConfig: router,
