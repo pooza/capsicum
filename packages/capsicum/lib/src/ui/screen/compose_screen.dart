@@ -1659,7 +1659,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     } finally {
       _confirmingReset = false;
     }
-    if (ok != true || !mounted) return;
+    // ⚠ 確認の間に送信が始まっていたら空にしない。macOS の native メニューは
+    // ダイアログに遮られないので、確認を出したまま「投稿する」を押せる。送信は
+    // 本文・アンケートを await の後で読むので、空にすると空の投稿になりうる。
+    if (ok != true || !mounted || _sending) return;
     _resetCompose();
   }
 
