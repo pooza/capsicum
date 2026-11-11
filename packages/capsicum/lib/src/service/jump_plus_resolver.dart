@@ -57,8 +57,8 @@ Future<Uri?> jumpPlusAppUrlFor(
   var aban = _cache[key];
   if (aban == null) {
     // ⚠ 取得中にもう一度押されたら、同じ取得を待つ（v2.11 のリリース前レビュー）。
-    // 取得の間は画面に何も出ないので押し直されやすく、別々に取りに行くと、
-    // 終わったところでアプリ（かブラウザ）が 2 回開く。
+    // 同じページを 2 回取りに行かないため。⚠ 2 回開かないことは、ここではなく
+    // `url_helper.dart` の `launchInPreferredApp` が「調べて開く」ごとまとめて守る。
     //
     // ⚠⚠ `whenComplete` の中で `remove` の戻り値を返さない。返るのはこの
     // Future 自身で、`whenComplete` は返された Future を待つので、自分の完了を

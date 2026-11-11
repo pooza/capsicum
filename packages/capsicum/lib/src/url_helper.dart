@@ -109,18 +109,43 @@ Future<bool> launchInPreferredApp(
   final service = isMobile && (uri.scheme == 'http' || uri.scheme == 'https')
       ? preferredAppServiceFor(uri.host, disabled: disabledServices)
       : null;
-  if (service != null) {
-    final appUri = await preferredAppUriFor(service, uri);
-    if (appUri != null) {
-      try {
-        final opened = await launchUrl(
-          appUri,
-          mode: LaunchMode.externalNonBrowserApplication,
-        );
-        if (opened) return true;
-      } catch (_) {
-        // アプリ未インストール / このモード非対応。ブラウザにフォールバックする。
-      }
+  if (service == null) return launchUrlSafely(uri, mode: browserMode);
+  if (service.appUrlFor == null) {
+    return _launchViaPreferredApp(service, uri, browserMode);
+  }
+  // ⚠⚠ 開く URL を求めに行くサービス（ジャンプ＋・#1352）は、**調べて開く
+  // 操作ごと**同じ URL で 1 回にまとめる（v2.11 のリリース前レビューの Codex P2）。
+  // 求めている間は画面に何も出ないので押し直されやすい。求める処理だけを
+  // まとめても、待っていた呼び出しがそれぞれ開くので、アプリ（かブラウザ）が
+  // 2 回開く（最初の修正はこの形で、狙いを果たしていなかった）。
+  final key = uri.toString();
+  return _pendingPreferredLaunches[key] ??= () async {
+    try {
+      return await _launchViaPreferredApp(service, uri, browserMode);
+    } finally {
+      _pendingPreferredLaunches.remove(key);
+    }
+  }();
+}
+
+/// 開いている途中の、専用アプリで開く操作（URL ごと）。
+final _pendingPreferredLaunches = <String, Future<bool>>{};
+
+Future<bool> _launchViaPreferredApp(
+  PreferredAppService service,
+  Uri uri,
+  LaunchMode browserMode,
+) async {
+  final appUri = await preferredAppUriFor(service, uri);
+  if (appUri != null) {
+    try {
+      final opened = await launchUrl(
+        appUri,
+        mode: LaunchMode.externalNonBrowserApplication,
+      );
+      if (opened) return true;
+    } catch (_) {
+      // アプリ未インストール / このモード非対応。ブラウザにフォールバックする。
     }
   }
   return launchUrlSafely(uri, mode: browserMode);
