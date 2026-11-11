@@ -582,6 +582,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// 控え、言語だけは最初のフレームで控え直す。
   late ComposeOpening _opening;
 
+  /// 「入力を空にする…」の確認を出している間か (#1368)。ショートカット
+  /// （⇧⌘K / Ctrl+Shift+K）はダイアログを開いたままでも届くので、続けて押すと
+  /// 確認が重なる。
+  bool _confirmingReset = false;
+
   /// ⚠ **この投稿が返信として送られるか (#1113)。**
   ///
   /// 送信側と同じ判定を使う。⚠ **`widget.replyTo != null` で見ない** — redraft
@@ -1646,8 +1651,21 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// ⚠ 削除して再編集の途中は、元の投稿がもう消えているので、空にすると文面を
   /// 戻せないことを確認の文に書く。
   Future<void> _confirmAndResetCompose() async {
+    if (_confirmingReset) return;
+    _confirmingReset = true;
+    final bool? ok;
+    try {
+      ok = await _showResetConfirmation();
+    } finally {
+      _confirmingReset = false;
+    }
+    if (ok != true || !mounted) return;
+    _resetCompose();
+  }
+
+  Future<bool?> _showResetConfirmation() {
     final redraft = widget.redraft != null;
-    final ok = await showDialog<bool>(
+    return showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('入力を空にする'),
@@ -1670,8 +1688,6 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         ],
       ),
     );
-    if (ok != true || !mounted) return;
-    _resetCompose();
   }
 
   /// 開いたときの状態へ戻す (#1368)。扱いの表は [ComposeOpening]。
@@ -4726,6 +4742,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       MenuActionEntry(
         label: '入力を空にする…',
         icon: Icons.clear_all,
+        // ⇧⌘K / Ctrl+Shift+K (#1368)。⚠ ⇧⌘⌫ は使えない —— Flutter のテキスト
+        // 入力が ⌘⌫（行頭まで削除）を Shift 付きでも受けるので本文の編集と
+        // ぶつかる。押し間違えても確認のダイアログで止まる。
+        shortcut: const MenuShortcut(LogicalKeyboardKey.keyK, shift: true),
+        globalShortcut: true,
         onSelected: busy ? null : _confirmAndResetCompose,
       ),
       const MenuGroupSeparator(),
