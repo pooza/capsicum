@@ -154,7 +154,7 @@ class _DeckColumnsSheetState extends ConsumerState<DeckColumnsSheet> {
                         subtitle: Text(
                           column.tab.spansAccounts
                               ? 'すべてのアカウント'
-                              : '@${column.account.username}@${column.account.host}',
+                              : column.account.handle,
                         ),
                         // ⚠ **ロック中でもここからは外せる** (#1271)。ロックが
                         // 止めるのは見出しの × の押し間違いで、ここは意図して
@@ -270,7 +270,7 @@ class _AccountOption extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final user = account.user;
-    final acct = '@${account.key.username}@${account.key.host}';
+    final acct = account.key.handle;
     return Row(
       children: [
         UserAvatar(user: user, size: 24, compact: true),

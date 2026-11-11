@@ -14,6 +14,11 @@ class AccountKey {
 
   String toStorageKey() => '${type.name}://$username@$host';
 
+  /// 表示用の `@username@host` (#1372)。アカウントの表示はここで組む（約 20 か所に
+  /// 写されていた）。⚠ 本文から抜いたメンションなど、アカウントでないものの
+  /// acct は `util/user_acct.dart` の `acctOf`。
+  String get handle => '@$username@$host';
+
   factory AccountKey.fromStorageKey(String key) {
     final uri = Uri.parse(key);
     return AccountKey(

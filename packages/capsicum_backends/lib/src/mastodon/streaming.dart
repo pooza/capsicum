@@ -144,6 +144,17 @@ class MastodonStreaming with ReconnectTuning, StreamConnectionStateReporter {
   /// 観測へ流した応答の status。
   final _reportedRefusals = <int?>{};
 
+  /// 一部のタグだけ 5xx で断られたときの張り直しの予約 (#1372)。
+  Timer? _partialRetryTimer;
+
+  /// 一部だけ断られて張り直した回数（続けて何回か）。断られずにつながった接続が
+  /// あれば 0 に戻す。
+  int _partialRetries = 0;
+
+  /// 一部だけ断られたときに、続けて張り直す上限 (#1372)。断り続けるサーバーへ
+  /// 打ち続けない。超えたら、その接続のまま残りのタグを流し続ける。
+  static const maxPartialRetries = 3;
+
   @override
   bool get isStreamDisposed => _disposed;
 
@@ -206,6 +217,10 @@ class MastodonStreaming with ReconnectTuning, StreamConnectionStateReporter {
       onConnectionEvent: reportConnectionEvent,
       onConnecting: () {
         _seenIds.clear();
+        _partialRetryTimer?.cancel();
+        _partialRetryTimer = null;
+        // ⚠ 前の接続で何も断られていなければ、続けての張り直しは途切れた。
+        if (_refusedInConnection == 0) _partialRetries = 0;
         _refusedInConnection = 0;
         _transientRefusedInConnection = false;
         notifyConnectionState(StreamConnectionState.connecting);
@@ -230,6 +245,12 @@ class MastodonStreaming with ReconnectTuning, StreamConnectionStateReporter {
   /// 健全なタグまで間隔の延びた張り直しに付き合わされた。全部断られたときだけ、
   /// 1 本でも 5xx があれば張り直し、全部 4xx なら rejected にする。購読 1 本の
   /// 接続（単独のタグ・ホームなど）は、今までどおり 5xx ですぐ張り直す。
+  ///
+  /// ⚠⚠ **一部だけ 5xx のときも、放っておかない** (#1372)。断られたタグは別の
+  /// 理由で切れるまで流れず、状態は `live` のままなので誰も気付かない。
+  /// その場では閉じず、[stableConnectionAfter] を過ぎてから 1 回だけ張り直す
+  /// （[_schedulePartialRetry]）。安定を待てば試行回数が 0 に戻っているので、
+  /// 健全なタグを延びた待ち時間に付き合わせない。
   void _onSubscriptionRefused(Object? rawStatus) {
     final status = rawStatus is num ? rawStatus.toInt() : null;
     // ⚠ 断られるたびに送らない。同じ接続が再接続のたびに同じ応答を受ける。
@@ -245,12 +266,34 @@ class MastodonStreaming with ReconnectTuning, StreamConnectionStateReporter {
     }
     if (status == null || status >= 500) _transientRefusedInConnection = true;
     _refusedInConnection++;
-    if (_refusedInConnection < _subscriptionCount) return;
+    if (_refusedInConnection < _subscriptionCount) {
+      if (_transientRefusedInConnection) _schedulePartialRetry();
+      return;
+    }
+    _partialRetryTimer?.cancel();
+    _partialRetryTimer = null;
     if (_transientRefusedInConnection) {
       _socket?.closeAndRetry();
       return;
     }
     notifyConnectionState(StreamConnectionState.rejected);
+  }
+
+  /// 一部だけ 5xx で断られた接続を、落ち着いてから張り直す (#1372)。接続ごとに
+  /// 1 回だけ予約し、続けては [maxPartialRetries] 回まで。
+  ///
+  /// ⚠ 待ちは [stableConnectionAfter] の 2 倍。安定のタイマー（握手の直後に
+  /// 張る）が先に満ちて、試行回数が 0 に戻ってから閉じるため。
+  void _schedulePartialRetry() {
+    if (_partialRetryTimer != null) return;
+    if (_partialRetries >= maxPartialRetries) return;
+    final socket = _socket;
+    _partialRetryTimer = Timer(stableConnectionAfter * 2, () {
+      _partialRetryTimer = null;
+      if (_disposed || _socket != socket) return;
+      _partialRetries++;
+      socket?.closeAndRetry();
+    });
   }
 
   void _onMessage(dynamic message) {
@@ -289,6 +332,8 @@ class MastodonStreaming with ReconnectTuning, StreamConnectionStateReporter {
 
   void dispose() {
     _disposed = true;
+    _partialRetryTimer?.cancel();
+    _partialRetryTimer = null;
     _socket?.dispose();
     _socket = null;
     _controller?.close();

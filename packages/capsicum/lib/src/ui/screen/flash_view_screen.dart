@@ -11,6 +11,7 @@ import '../../provider/server_config_provider.dart';
 import '../../service/sentry_play_result.dart';
 import '../../service/tco_resolver.dart';
 import '../../url_helper.dart';
+import '../../util/emoji_url.dart';
 import '../../util/exception_scrub.dart';
 import '../../util/misskey_api_error.dart';
 import '../../util/oauth_scope_error.dart';
@@ -157,13 +158,24 @@ class _FlashBody extends ConsumerStatefulWidget {
 class _FlashBodyState extends ConsumerState<_FlashBody> {
   FlashRuntime? _runtime;
   FlashRuntimeError? _error;
-  ContentRenderer? _summaryRenderer;
-  // summary の ContentRenderer は入力（絵文字サイズ・MFM アニメ・テーマ輝度）が
-  // 変わったときだけ作り直す（#628 の _Mfm invariant）。いいねトグルの setState で
-  // 毎 build 作り直すと gesture recognizer を無駄に dispose/再生成する (#874)。
-  double? _summaryEmojiSize;
-  bool? _summaryAnimateMfm;
-  Brightness? _summaryBrightness;
+
+  /// 説明文の span。入力（絵文字サイズ・MFM アニメ・文字のスタイル）が変わった
+  /// ときだけ作り直す（#628 の _Mfm invariant・#874）。⚠ 以前はレンダラだけを
+  /// 使い回して span は毎回組み直しており、いいねの setState のたびにタップの
+  /// recognizer がレンダラの中に溜まっていた (#1372)。理由は [ContentSpanCache]。
+  final _summarySpans = ContentSpanCache();
+
+  /// 説明文の t.co を解決できた回数 (#1372)。説明文の span の鍵に入れる。
+  int _tcoResolvedCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    TcoResolver.resolveAllIn(widget.flash.summary, () {
+      if (mounted) setState(() => _tcoResolvedCount++);
+    });
+  }
+
   bool _running = false;
 
   late bool _isLiked = widget.flash.isLiked;
@@ -183,7 +195,7 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
   void dispose() {
     _cancelResultReport();
     _runtime?.dispose();
-    _summaryRenderer?.dispose();
+    _summarySpans.dispose();
     super.dispose();
   }
 
@@ -210,23 +222,27 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
   Widget _buildSummary(Flash flash, ThemeData theme) {
     final emojiSize = ref.watch(emojiSizeProvider);
     final animateMfm = ref.watch(mfmAnimationEnabledProvider);
-    final brightness = theme.brightness;
+    final baseStyle = (theme.textTheme.bodyMedium ?? const TextStyle())
+        .copyWith(color: theme.colorScheme.onSurfaceVariant);
+    final host = _host;
     // 入力が変わったときだけ作り直す（#628 の _Mfm invariant）。summary は
     // widget.flash 固定なので、実質 emojiSize/animateMfm/テーマ変更時のみ。
-    if (_summaryRenderer == null ||
-        _summaryEmojiSize != emojiSize ||
-        _summaryAnimateMfm != animateMfm ||
-        _summaryBrightness != brightness) {
-      _summaryRenderer?.dispose();
-      final host = _host;
-      _summaryRenderer = ContentRenderer(
-        baseStyle: (theme.textTheme.bodyMedium ?? const TextStyle()).copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
+    final span = _summarySpans.resolve(
+      [
+        flash,
+        flash.summary,
+        baseStyle,
+        host,
+        emojiSize,
+        animateMfm,
+        _tcoResolvedCount,
+      ],
+      () => ContentRenderer(
+        baseStyle: baseStyle,
         resolveEmoji: (shortcode) {
           final url = flash.author.emojis[shortcode];
           if (url != null) return url;
-          if (host != null) return 'https://$host/emoji/$shortcode.webp';
+          if (host != null) return fallbackEmojiUrl(host, shortcode);
           return null;
         },
         resolveUrl: (url) =>
@@ -236,12 +252,10 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
         onMentionTap: (mention) => _navigateToMention(mention),
         emojiSize: emojiSize,
         animateMfm: animateMfm,
-      );
-      _summaryEmojiSize = emojiSize;
-      _summaryAnimateMfm = animateMfm;
-      _summaryBrightness = brightness;
-    }
-    return Text.rich(_summaryRenderer!.renderMfm(flash.summary!));
+      ),
+      (renderer) => renderer.renderMfm(flash.summary!),
+    );
+    return Text.rich(span);
   }
 
   /// 互換性を承知で degrade を無視し、従来どおりネイティブ実行する (#881)。

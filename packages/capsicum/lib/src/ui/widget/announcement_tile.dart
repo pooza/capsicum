@@ -9,6 +9,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/announcement_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../service/tco_resolver.dart';
+import '../../util/emoji_url.dart';
 import '../util/announcement_period.dart';
 import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
@@ -42,8 +43,6 @@ class _AnnouncementTileState extends ConsumerState<AnnouncementTile> {
 
   Announcement get announcement => widget.announcement;
 
-  static final _tcoPattern = RegExp(r'https?://t\.co/\S+');
-
   /// t.co の解決が終わった回数。本文の span の鍵に入れて、解決した URL で
   /// 描き直させる（#1365）。
   int _tcoResolvedCount = 0;
@@ -55,18 +54,12 @@ class _AnnouncementTileState extends ConsumerState<AnnouncementTile> {
   }
 
   void _resolveTcoUrls() {
-    final content = announcement.content;
-    for (final match in _tcoPattern.allMatches(content)) {
-      final url = match.group(0)!;
-      if (TcoResolver.getCached(url) != null) continue;
-      TcoResolver.resolve(url).then((resolved) {
-        if (resolved != null && mounted) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) setState(() => _tcoResolvedCount++);
-          });
-        }
+    TcoResolver.resolveAllIn(announcement.content, () {
+      if (!mounted) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _tcoResolvedCount++);
       });
-    }
+    });
   }
 
   @override
@@ -93,7 +86,7 @@ class _AnnouncementTileState extends ConsumerState<AnnouncementTile> {
       () => ContentRenderer(
         baseStyle: baseStyle,
         resolveEmoji: (shortcode) {
-          if (host != null) return 'https://$host/emoji/$shortcode.webp';
+          if (host != null) return fallbackEmojiUrl(host, shortcode);
           return null;
         },
         resolveUrl: (url) =>

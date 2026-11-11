@@ -77,7 +77,7 @@ class RelayEntitlementPurchaseSection extends ConsumerWidget {
                 in PushRegistrationService.accountsWithoutPushSupport(
                   ref.watch(accountManagerProvider).accounts,
                 ))
-              '@${account.key.username}@${account.key.host}',
+              account.key.handle,
           ]);
 
     // ⚠⚠ **購入・復元が成立したら、利用権の状態を引き直す (#1234)。**

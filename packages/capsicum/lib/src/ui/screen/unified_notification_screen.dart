@@ -11,6 +11,7 @@ import '../../provider/server_config_provider.dart';
 import '../../provider/unified_notification_provider.dart';
 import '../../service/tco_resolver.dart';
 import '../../util/announcement_notifications.dart';
+import '../../util/emoji_url.dart';
 import '../../util/notification_filter.dart';
 import '../util/deck_navigation.dart';
 import '../util/fediverse_link.dart';
@@ -168,7 +169,29 @@ class _UnifiedNotificationTileState
   /// 本文の span。⚠ 組み直しのたびに作り直さない理由は [ContentSpanCache]（#1365）。
   final _contentSpans = ContentSpanCache();
 
+  /// 本文の t.co を解決できた回数 (#1372)。本文の span の鍵に入れる。⚠ 入れない
+  /// と、解決しても（タイムラインの側で解決が済んでも）描き直されない。
+  int _tcoResolvedCount = 0;
+
   UnifiedNotification get item => widget.item;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolveTcoUrls();
+  }
+
+  @override
+  void didUpdateWidget(covariant _UnifiedNotificationTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.item, widget.item)) _resolveTcoUrls();
+  }
+
+  void _resolveTcoUrls() {
+    TcoResolver.resolveAllIn(item.notification.post?.content, () {
+      if (mounted) setState(() => _tcoResolvedCount++);
+    });
+  }
 
   @override
   void dispose() {
@@ -185,7 +208,7 @@ class _UnifiedNotificationTileState
     final isHtml = post?.isHtml ?? false;
     // 絵文字・host・isCat は投稿から決まるので、投稿（同一性）で代える。
     return _contentSpans.resolve(
-      [post, content, baseStyle, emojiSize, animateMfm],
+      [post, content, baseStyle, emojiSize, animateMfm, _tcoResolvedCount],
       () {
         final allEmojis = {...?post?.emojis, ...?post?.author.emojis};
         final host = post?.author.host;
@@ -194,7 +217,7 @@ class _UnifiedNotificationTileState
           resolveEmoji: (shortcode) {
             final url = allEmojis[shortcode];
             if (url != null) return url;
-            if (host != null) return 'https://$host/emoji/$shortcode.webp';
+            if (host != null) return fallbackEmojiUrl(host, shortcode);
             return null;
           },
           resolveUrl: (url) =>
@@ -301,7 +324,7 @@ class _UnifiedNotificationTileState
   Widget _accountBadge(BuildContext context, Account account) {
     final theme = Theme.of(context);
     final displayName = account.user.displayName;
-    final acct = '@${account.user.username}@${account.key.host}';
+    final acct = account.key.handle;
     final hasDisplayName = displayName != null && displayName.trim().isNotEmpty;
     final labelStyle = theme.textTheme.labelSmall?.copyWith(
       color: theme.colorScheme.onSurfaceVariant,
@@ -437,7 +460,7 @@ class _UnifiedNotificationTileState
         ? (post?.emojiHost ?? post?.author.host)
         : hostPart;
     if (emojiHost != null) {
-      return 'https://$emojiHost/emoji/$nameOnly.webp';
+      return fallbackEmojiUrl(emojiHost, nameOnly);
     }
     return null;
   }
@@ -491,7 +514,7 @@ class _UnifiedStatusBanner extends StatelessWidget {
 
   const _UnifiedStatusBanner({required this.state});
 
-  static String _acct(Account a) => '@${a.user.username}@${a.key.host}';
+  static String _acct(Account a) => a.key.handle;
 
   @override
   Widget build(BuildContext context) {

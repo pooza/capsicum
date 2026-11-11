@@ -125,7 +125,7 @@ String deckColumnMenuLabel(
   final who =
       account?.user.displayName ??
       account?.user.username ??
-      '@${column.account.username}@${column.account.host}';
+      column.account.handle;
   return '$label · $who';
 }
 
@@ -431,7 +431,7 @@ Future<void> confirmRemoveAccount(
     builder: (context) => AlertDialog(
       title: const Text('アカウントを削除'),
       content: Text(
-        '@${account.user.username}@${account.key.host} をこの端末から削除します。'
+        '${account.key.handle} をこの端末から削除します。'
         'サーバー上のアカウントと投稿は消えません。'
         'もう一度使うときは、ログインし直してください。',
       ),
@@ -745,7 +745,7 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
           if (!inDeck)
             for (final a in otherAccounts)
               MenuActionEntry(
-                label: '@${a.user.username}@${a.key.host}',
+                label: a.key.handle,
                 icon: Icons.switch_account,
                 onSelected: () {
                   ref.read(accountManagerProvider.notifier).switchAccount(a);
@@ -768,7 +768,7 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
           if (menuAccount != null)
             MenuActionEntry(
               label:
-                  '@${menuAccount.user.username}@${menuAccount.key.host} '
+                  '${menuAccount.key.handle} '
                   'をこの端末から削除…',
               icon: Icons.delete_outline,
               onSelected: () => confirmRemoveAccount(context, ref, menuAccount),
@@ -1099,7 +1099,10 @@ Future<void> showClipList(BuildContext context, WidgetRef ref) async {
     }
     return;
   }
-  if (clips.isEmpty) {
+  // ⚠ 管理できるなら 0 件でも開く。ここが新しいクリップへの唯一の入口
+  // （#1050・アンテナの #1052 と同じ型）。
+  final canManage = adapter is ClipManagementSupport;
+  if (clips.isEmpty && !canManage) {
     if (context.mounted) {
       ScaffoldMessenger.of(
         context,
@@ -1134,6 +1137,18 @@ Future<void> showClipList(BuildContext context, WidgetRef ref) async {
               onTap: () {
                 Navigator.pop(context);
                 context.push('/clip/${clip.id}', extra: clip.name);
+              },
+            ),
+          if (clips.isEmpty)
+            const ListTile(dense: true, title: Text('クリップはありません')),
+          if (canManage)
+            ListTile(
+              leading: const Icon(Icons.settings, size: 20),
+              title: const Text('クリップを管理する'),
+              dense: true,
+              onTap: () {
+                Navigator.pop(context);
+                context.push('/clips/manage');
               },
             ),
         ],

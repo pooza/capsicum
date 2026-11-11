@@ -158,7 +158,9 @@ void main() {
     });
 
     // #1361: 1 本の 5xx で接続ごと閉じると、健全なタグも止まる。
-    test('⚠⚠ 複数タグで 1 本だけ 5xx なら、張り直さず残りを流し続ける', () async {
+    // #1372: ただし放っておくと、断られたタグは別の理由で切れるまで流れない。
+    // 落ち着いてから（試行回数が 0 に戻ってから）張り直し、続けては上限まで。
+    test('⚠⚠ 複数タグで 1 本だけ 5xx なら、その場では閉じずに残りを流し続ける', () async {
       final states = <StreamConnectionState>[];
       final probe = await probeReceiving(
         ['{"error":"Error connecting","status":500}'],
@@ -168,10 +170,49 @@ void main() {
       );
 
       await waitUntil(() => states.contains(StreamConnectionState.live));
-      await Future<void>.delayed(const Duration(milliseconds: 200));
+      // 安定の待ち（20ms）の 2 倍より短い間は、張り直さない。
+      await Future<void>.delayed(const Duration(milliseconds: 10));
 
       expect(probe.connectCount, 1);
       expect(states.last, StreamConnectionState.live);
+    });
+
+    test('⚠⚠ 1 本だけ 5xx なら、落ち着いてから張り直す（上限まで・待ちは延ばさない）', () async {
+      final states = <StreamConnectionState>[];
+      final probe = await probeReceiving(
+        ['{"error":"Error connecting","status":500}'],
+        errors: [],
+        states: states,
+        tab: twoTags,
+      );
+
+      await waitUntil(
+        () => probe.connectCount > MastodonStreaming.maxPartialRetries,
+      );
+      // 上限に達したら、それ以上は張り直さない。
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+
+      expect(probe.connectCount, MastodonStreaming.maxPartialRetries + 1);
+      // ⚠ 試行回数が 0 に戻ってから閉じている（健全なタグを延びた待ちに
+      // 付き合わせない）。
+      expect(probe.delayRequests, everyElement(0));
+      expect(states.last, StreamConnectionState.live);
+      expect(states, isNot(contains(StreamConnectionState.rejected)));
+    });
+
+    test('1 本だけ 4xx なら、張り直さない（張り直しても同じ）', () async {
+      final states = <StreamConnectionState>[];
+      final probe = await probeReceiving(
+        ['{"error":"Not authorized","status":401}'],
+        errors: [],
+        states: states,
+        tab: twoTags,
+      );
+
+      await waitUntil(() => states.contains(StreamConnectionState.live));
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+
+      expect(probe.connectCount, 1);
     });
 
     test('複数タグで全部断られ、5xx が含まれていれば張り直す', () async {

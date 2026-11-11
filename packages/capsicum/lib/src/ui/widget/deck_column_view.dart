@@ -249,9 +249,7 @@ class DeckColumnUnavailable extends StatelessWidget {
       decoration: BoxDecoration(
         border: Border(right: BorderSide(color: theme.dividerColor)),
       ),
-      child: _DeckColumnMessage(
-        '@${account.username}@${account.host} は接続されていません',
-      ),
+      child: _DeckColumnMessage('${account.handle} は接続されていません'),
     );
   }
 }
@@ -275,7 +273,7 @@ class _DeckColumnHeader extends ConsumerWidget {
         : const <PostList>[];
     final label = tabLabel(ref, column.tab, isMastodon, adapter, lists);
     final account = column.account;
-    final acct = '@${account.username}@${account.host}';
+    final acct = account.handle;
     // カラムのスコープの中なので、別アカウントのカラムでもここはそのカラムの
     // アカウントになる。⚠ 割り当てが壊れているとき（本体と同じ判定）は他人の
     // アイコンを出さず、アカウント名だけにする。

@@ -304,6 +304,35 @@ void main() {
       expect(find.text('このアカウントでは、これ以上アンテナを作れません'), findsOneWidget);
       expect(find.byType(AntennaEditScreen), findsOneWidget);
     });
+
+    testWidgets('#1372: 既に消えたアンテナなら、そう知らせて一覧へ戻り取り直させる', (tester) async {
+      when(
+        () => adapter.updateAntenna('a1', any()),
+      ).thenThrow(const AntennaNotFound());
+      final results = await pushEdit(tester, antenna: _live);
+
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('このアンテナは見つかりませんでした（削除された可能性があります）'), findsOneWidget);
+      expect(find.byType(AntennaEditScreen), findsNothing);
+      expect(results, [true], reason: '一覧を取り直させる');
+      expect(find.textContaining('アンテナの保存に失敗しました'), findsNothing);
+    });
+
+    testWidgets('#1372: 受信元のリストが消えていたら、選び直しを促して留まる', (tester) async {
+      when(
+        () => adapter.updateAntenna('a1', any()),
+      ).thenThrow(const AntennaUserListNotFound());
+      await pushEdit(tester, antenna: _live);
+
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('受信元のリストが見つかりませんでした。リストを選び直してください'), findsOneWidget);
+      expect(find.byType(AntennaEditScreen), findsOneWidget);
+      expect(find.textContaining('アンテナの保存に失敗しました'), findsNothing);
+    });
   });
 
   group('ドロワーのチューザ', () {

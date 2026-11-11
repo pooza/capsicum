@@ -18,6 +18,7 @@ import '../../provider/supporter_status_provider.dart';
 import '../../service/server_version_checker.dart';
 import '../../service/tco_resolver.dart';
 import '../../url_helper.dart';
+import '../../util/emoji_url.dart';
 import '../../util/exception_scrub.dart';
 import '../../util/user_acct.dart';
 import '../util/deck_navigation.dart';
@@ -46,12 +47,13 @@ import '../widget/user_avatar.dart';
 enum _ProfileTab { posts, media, gallery, pages }
 
 /// 相手が、開いているアカウント（[accountHost]）と同じサーバーの人か。
-/// host が無い相手は同じサーバーとして扱う。
+/// host が無い（空も含む）相手は同じサーバーとして扱い、host は大文字小文字を
+/// 区別しない。判定の正本は [isLocalHost]（`acctOf` と同じ条件・#1372）。
 ///
 /// 同じサーバーの中でしか成り立たないものの出し分けに使う: Misskey のチャット、
 /// Misskey の実績（#1363・実績は連合しないので、他のサーバーの人は必ず空）。
 bool isSameServerUser(User user, String accountHost) =>
-    user.host == null || user.host == accountHost;
+    isLocalHost(user.host, localHost: accountHost);
 
 /// プロフィールに「実績」ボタンを出すか (#1363)。開いているアカウントが実績を
 /// 持つサーバー（Misskey）で、相手が同じサーバーの人（自分を含む）のときだけ。
@@ -158,11 +160,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     return isSameServerUser(user, account.key.host);
   }
 
-  static final _tcoPattern = RegExp(r'https?://t\.co/\S+');
-
   /// 自己紹介の span (#1365)。⚠ 組み直しのたびに作り直さない理由は
   /// [ContentSpanCache]（デッキのカラムにも入る）。
   final _bioSpans = ContentSpanCache();
+
+  /// 補足情報の値の span。欄の位置ごとに 1 つ (#1372)。
+  final _fieldSpans = <ContentSpanCache>[];
 
   /// t.co を解決できた回数。自己紹介の span の鍵に入れて、解決したら描き直す。
   int _tcoResolvedCount = 0;
@@ -187,15 +190,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       ...widget.user.fields.map((f) => _stripHtml(f.value)),
     ];
     for (final text in texts) {
-      for (final match in _tcoPattern.allMatches(text)) {
-        final url = match.group(0)!;
-        if (TcoResolver.getCached(url) != null) continue;
-        TcoResolver.resolve(url).then((resolved) {
-          if (resolved != null && mounted) {
-            setState(() => _tcoResolvedCount++);
-          }
-        });
-      }
+      TcoResolver.resolveAllIn(text, () {
+        if (mounted) setState(() => _tcoResolvedCount++);
+      });
     }
   }
 
@@ -224,6 +221,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _bioSpans.dispose();
+    for (final cache in _fieldSpans) {
+      cache.dispose();
+    }
     super.dispose();
   }
 
@@ -1393,8 +1393,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           }(),
           if (user.fields.isNotEmpty) ...[
             const SizedBox(height: 12),
-            ...user.fields.map(
-              (field) => Padding(
+            for (final (index, field) in user.fields.indexed)
+              Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1424,12 +1424,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                     ),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: _buildFieldValue(field, user.emojis, theme),
+                      child: _buildFieldValue(index, field, user, theme),
                     ),
                   ],
                 ),
               ),
-            ),
           ],
           const Divider(height: 24),
         ],
@@ -1987,8 +1986,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
         resolveEmoji: (shortcode) {
           final url = user.emojis[shortcode];
           if (url != null) return url;
-          if (user.host != null) {
-            return 'https://${user.host}/emoji/$shortcode.webp';
+          final host = user.host;
+          if (host != null) {
+            return fallbackEmojiUrl(host, shortcode);
           }
           return null;
         },
@@ -2005,32 +2005,55 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     return RichText(text: span);
   }
 
+  /// プロフィールの補足情報の値 (#1372)。⚠ 自己紹介と同じく、組み直しのたびに
+  /// レンダラを作り直さない（[ContentSpanCache]）。以前は組むたびに作って
+  /// dispose しておらず、リンクの `TapGestureRecognizer` が溜まっていた。
   Widget _buildFieldValue(
+    int index,
     UserField field,
-    Map<String, String> emojis,
+    User user,
     ThemeData theme,
   ) {
+    while (_fieldSpans.length <= index) {
+      _fieldSpans.add(ContentSpanCache());
+    }
     final stripped = _stripHtml(field.value);
-    final renderer = ContentRenderer(
-      baseStyle: theme.textTheme.bodyMedium ?? const TextStyle(),
-      resolveEmoji: (shortcode) {
-        final url = emojis[shortcode];
-        if (url != null) return url;
-        final host = widget.user.host;
-        if (host != null) {
-          return 'https://$host/emoji/$shortcode.webp';
-        }
-        return null;
-      },
-      resolveUrl: (url) =>
-          TcoResolver.isTcoUrl(url) ? TcoResolver.getCached(url) : null,
-      resolveDisplayUrl: _tryResolveAcct,
-      onLinkTap: (url) => openFediverseLink(context, ref, url),
-      onHashtagTap: (tag) => showHashtagActionMenu(context, tag),
-      emojiSize: ref.watch(emojiSizeProvider),
-      animateMfm: ref.watch(mfmAnimationEnabledProvider),
+    final baseStyle = theme.textTheme.bodyMedium ?? const TextStyle();
+    final emojiSize = ref.watch(emojiSizeProvider);
+    final animateMfm = ref.watch(mfmAnimationEnabledProvider);
+    // 絵文字はユーザーから、絵文字の host は widget.user から決まる（従来どおり）。
+    final span = _fieldSpans[index].resolve(
+      [
+        user,
+        widget.user,
+        stripped,
+        baseStyle,
+        emojiSize,
+        animateMfm,
+        _tcoResolvedCount,
+      ],
+      () => ContentRenderer(
+        baseStyle: baseStyle,
+        resolveEmoji: (shortcode) {
+          final url = user.emojis[shortcode];
+          if (url != null) return url;
+          final host = widget.user.host;
+          if (host != null) {
+            return fallbackEmojiUrl(host, shortcode);
+          }
+          return null;
+        },
+        resolveUrl: (url) =>
+            TcoResolver.isTcoUrl(url) ? TcoResolver.getCached(url) : null,
+        resolveDisplayUrl: _tryResolveAcct,
+        onLinkTap: (url) => openFediverseLink(context, ref, url),
+        onHashtagTap: (tag) => showHashtagActionMenu(context, tag),
+        emojiSize: emojiSize,
+        animateMfm: animateMfm,
+      ),
+      (renderer) => renderer.renderMfm(stripped),
     );
-    return RichText(text: renderer.renderMfm(stripped));
+    return RichText(text: span);
   }
 
   static final _profileUrlPattern = RegExp(

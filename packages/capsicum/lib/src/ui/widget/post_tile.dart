@@ -19,6 +19,7 @@ import '../../provider/server_config_provider.dart';
 import '../../service/server_metadata_cache.dart';
 import '../../service/tco_resolver.dart';
 import '../../service/url_preview_cache.dart';
+import '../../util/emoji_url.dart';
 import '../../util/exception_scrub.dart';
 import '../../util/user_acct.dart';
 import '../util/compose_settings_display.dart';
@@ -37,6 +38,7 @@ import '../util/reaction_acceptance.dart';
 import '../util/relative_time.dart';
 import '../util/sensitive_media.dart';
 import '../util/visible_timeline.dart';
+import 'clip_add_sheet.dart';
 import 'content_parser.dart';
 import 'cross_account_boost.dart';
 import 'emoji_action_sheet.dart';
@@ -213,26 +215,17 @@ class _PostTileState extends ConsumerState<PostTile> {
     }
   }
 
-  static final _tcoPattern = RegExp(r'https?://t\.co/\S+');
-
   /// t.co の解決が終わった回数。本文の span の鍵に入れて、解決した URL で
   /// 描き直させる（[ContentSpanCache] は鍵が変わらないと作り直さない・#1365）。
   int _tcoResolvedCount = 0;
 
   void _resolveTcoUrls() {
-    final content = (post.reblog ?? post).content;
-    if (content == null) return;
-    for (final match in _tcoPattern.allMatches(content)) {
-      final url = match.group(0)!;
-      if (TcoResolver.getCached(url) != null) continue;
-      TcoResolver.resolve(url).then((resolved) {
-        if (resolved != null && mounted) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) setState(() => _tcoResolvedCount++);
-          });
-        }
+    TcoResolver.resolveAllIn((post.reblog ?? post).content, () {
+      if (!mounted) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _tcoResolvedCount++);
       });
-    }
+    });
   }
 
   /// Misskey の本文中 URL からプレビューカードを取得する準備をする (#772)。
@@ -527,7 +520,7 @@ class _PostTileState extends ConsumerState<PostTile> {
         final url = emojis[shortcode];
         if (url != null) return url;
         if (fallbackHost != null) {
-          return 'https://$fallbackHost/emoji/$shortcode.webp';
+          return fallbackEmojiUrl(fallbackHost, shortcode);
         }
         return null;
       },
@@ -1552,6 +1545,14 @@ class _PostTileState extends ConsumerState<PostTile> {
                       ),
                       '$bookmarkLabelに追加しました',
                     ),
+                  ),
+                // クリップ (#1050)。入れる・外すはシートの中で切り替える。
+                if (adapter is ClipManagementSupport)
+                  item(
+                    leading: const Icon(Icons.content_paste),
+                    title: const Text('クリップに追加'),
+                    onSelected: () =>
+                        showAddToClipSheet(context, ref, targetPost),
                   ),
                 // 会話のミュート (#1208)。この会話から届く通知だけを止める。
                 // ⚠ 自分の投稿と自分宛ての投稿にだけ出す（[threadMuteApplies]）。
@@ -2804,7 +2805,7 @@ class _ReactionChips extends StatelessWidget {
                 ? (post.emojiHost ?? post.author.host)
                 : hostPart;
             if (emojiHost != null) {
-              emojiUrl = 'https://$emojiHost/emoji/$nameOnly.webp';
+              emojiUrl = fallbackEmojiUrl(emojiHost, nameOnly);
             }
           }
           return _ReactionChip(
@@ -3445,7 +3446,24 @@ class _QuoteCardState extends ConsumerState<_QuoteCard> {
   /// 引用元の本文の span (#1364)。⚠ CW と同じ理由で別インスタンスにする。
   final _bodySpans = ContentSpanCache();
 
+  /// 引用元の本文の t.co を解決できた回数 (#1372)。本文の span の鍵に入れる。
+  int _tcoResolvedCount = 0;
+
   Post get quote => widget.quote;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolveTcoUrls();
+  }
+
+  /// 引用元の本文の t.co を解決しに行く (#1372)。本体の投稿と同じく、解決した
+  /// 先を表示とタップに使う（以前は本体の側で解決済みのものしか使えなかった）。
+  void _resolveTcoUrls() {
+    TcoResolver.resolveAllIn(quote.content, () {
+      if (mounted) setState(() => _tcoResolvedCount++);
+    });
+  }
 
   @override
   void dispose() {
@@ -3460,7 +3478,7 @@ class _QuoteCardState extends ConsumerState<_QuoteCard> {
     final emojiSize = ref.watch(emojiSizeProvider);
     final animateMfm = ref.watch(mfmAnimationEnabledProvider);
     return _bodySpans.resolve(
-      [quote, content, baseStyle, emojiSize, animateMfm],
+      [quote, content, baseStyle, emojiSize, animateMfm, _tcoResolvedCount],
       () => ContentRenderer(
         baseStyle: baseStyle ?? const TextStyle(),
         applyNyaize: quote.author.isCat,
@@ -3468,7 +3486,7 @@ class _QuoteCardState extends ConsumerState<_QuoteCard> {
           final url = quote.emojis[shortcode];
           if (url != null) return url;
           final host = quote.emojiHost;
-          return host != null ? 'https://$host/emoji/$shortcode.webp' : null;
+          return host != null ? fallbackEmojiUrl(host, shortcode) : null;
         },
         resolveUrl: (url) =>
             TcoResolver.isTcoUrl(url) ? TcoResolver.getCached(url) : null,
@@ -3498,7 +3516,7 @@ class _QuoteCardState extends ConsumerState<_QuoteCard> {
           final url = quote.emojis[shortcode];
           if (url != null) return url;
           final host = quote.emojiHost;
-          return host != null ? 'https://$host/emoji/$shortcode.webp' : null;
+          return host != null ? fallbackEmojiUrl(host, shortcode) : null;
         },
         onLinkTap: (url) => openFediverseLink(context, ref, url),
         onHashtagTap: (tag) => showHashtagActionMenu(context, tag),
@@ -3516,6 +3534,7 @@ class _QuoteCardState extends ConsumerState<_QuoteCard> {
     if (oldWidget.quote.id != widget.quote.id) {
       _cwExpanded = false;
     }
+    if (!identical(oldWidget.quote, widget.quote)) _resolveTcoUrls();
   }
 
   @override

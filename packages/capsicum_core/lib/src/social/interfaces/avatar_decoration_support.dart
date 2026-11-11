@@ -35,16 +35,34 @@ class AvatarDecorationLimitReached implements Exception {
   final int limit;
 }
 
-/// アイコンデコレーションの付け外し (#1349)。
+/// アイコンデコレーションの付け外しと調整 (#1349 / #1359)。
 ///
-/// ⚠⚠ **位置・角度・反転はここでは変えない。**付けたままにするものは今の値を
-/// 添えて送るので、Web で調整した位置は崩れない。
+/// ⚠⚠ **付け外しでは位置・角度・反転を変えない。**付けたままにするものは今の
+/// 値を添えて送るので、Web で調整した位置は崩れない。変えるのは
+/// [adjustAvatarDecoration] だけ。
 abstract mixin class AvatarDecorationSupport {
   Future<List<AvatarDecorationOption>> getAvatarDecorationOptions();
+
+  /// 付けられる数の上限 (#1359)。読めなければ null。
+  Future<int?> getAvatarDecorationLimit();
 
   /// [id] を付ける。付けられる数が 1 つのサーバーでは、今のものと入れ替える。
   Future<User> attachAvatarDecoration(String id);
 
   /// [id] を外す。
   Future<User> detachAvatarDecoration(String id);
+
+  /// 付けている [id] の位置・角度・反転を変える (#1359)。ほかのデコレーションは
+  /// 今の値のまま。値の範囲は Misskey の `i/update` に合わせて丸める
+  /// （[angle] -0.5〜0.5・[offsetX] / [offsetY] -0.25〜0.25）。
+  ///
+  /// サーバー側で既に外れていたら、保存せずに今の状態を返す（呼び出し側は
+  /// 戻り値に [id] があるかで見分ける）。
+  Future<User> adjustAvatarDecoration(
+    String id, {
+    required double angle,
+    required bool flipH,
+    required double offsetX,
+    required double offsetY,
+  });
 }

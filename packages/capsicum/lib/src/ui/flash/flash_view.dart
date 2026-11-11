@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../provider/preferences_provider.dart';
+import '../../util/emoji_url.dart';
 import '../util/fediverse_link.dart';
 import '../util/provider_scope_carrier.dart';
 import '../widget/content_parser.dart';
@@ -292,7 +293,7 @@ class _MfmState extends ConsumerState<_Mfm> {
       _renderer = ContentRenderer(
         baseStyle: baseStyle,
         resolveEmoji: (shortcode) =>
-            'https://${widget.runtime.host}/emoji/$shortcode.webp',
+            fallbackEmojiUrl(widget.runtime.host, shortcode),
         // ⚠ **渡さないと `content_parser` が `launchUrlSafely` へ落ちる** —
         // Play 本文の fediverse リンクがアプリ内ではなくブラウザで開く (#1030)。
         // サマリ側 (`flash_view_screen`) は渡していたので、同じ画面の中で

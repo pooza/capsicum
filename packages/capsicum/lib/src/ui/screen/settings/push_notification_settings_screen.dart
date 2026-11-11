@@ -313,7 +313,7 @@ class _AccountStatusTileState extends ConsumerState<_AccountStatusTile> {
     final account = widget.account;
     final snapshot = widget.snapshot;
     final hasPreset = widget.hasPreset;
-    final label = '@${account.key.username}@${account.key.host}';
+    final label = account.key.handle;
     final state = snapshot?.state ?? PushRegistrationState.idle;
     // ⚠⚠ **判定はサービス側の 1 本を呼ぶ (#1218)。**ここに書き写すと、
     // 経路が増えたときに**サービス側だけ直って画面が取り残される** ——

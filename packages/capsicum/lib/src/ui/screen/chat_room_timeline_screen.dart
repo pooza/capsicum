@@ -8,6 +8,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/chat_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../util/chat_attachment_label.dart';
+import '../../util/emoji_url.dart';
 import '../../util/oauth_scope_error.dart';
 import '../util/chat_error.dart';
 import '../util/chat_message_jump.dart';
@@ -594,7 +595,7 @@ class _RoomMessageBubbleState extends ConsumerState<_RoomMessageBubble> {
           resolveEmoji: (shortcode) {
             final url = allEmojis[shortcode];
             if (url != null) return url;
-            if (host != null) return 'https://$host/emoji/$shortcode.webp';
+            if (host != null) return fallbackEmojiUrl(host, shortcode);
             return null;
           },
           onLinkTap: (url) => openFediverseLink(context, ref, url),

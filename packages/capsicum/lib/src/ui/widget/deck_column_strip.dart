@@ -121,7 +121,7 @@ class _DeckColumnStripState extends ConsumerState<DeckColumnStrip> {
             return Tooltip(
               message: spansAccounts
                   ? 'カラム ${index + 1}（すべてのアカウント）'
-                  : 'カラム ${index + 1}（@${account.username}@${account.host}）',
+                  : 'カラム ${index + 1}（${account.handle}）',
               child: Semantics(
                 selected: focused,
                 button: true,

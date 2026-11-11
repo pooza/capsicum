@@ -31,6 +31,7 @@ import '../../service/post_account_idle_tracker.dart';
 import '../../service/sentry_op_failure.dart';
 import '../../url_helper.dart';
 import '../../util/action_labels.dart';
+import '../../util/emoji_url.dart';
 import '../../util/exception_scrub.dart';
 import '../../util/misskey_api_error.dart';
 import '../../util/now_playing_formatter.dart';
@@ -42,6 +43,7 @@ import '../../util/upstream_error_message.dart';
 import '../../util/user_acct.dart';
 import '../util/annict_link.dart';
 import '../util/compose_draft_notice.dart';
+import '../util/compose_reset.dart';
 import '../util/compose_settings_display.dart';
 import '../util/compose_template_display.dart';
 import '../util/compose_text_style.dart';
@@ -264,7 +266,7 @@ class AttachmentMenuCallbacks {
 /// AppBar のオーバーフローメニュー ([compose_screen] の actions) の選択結果。
 /// 主 CTA の送信は独立した IconButton に残し、保存系（下書き保存・将来のテンプレート
 /// 保存 #767）とプレビューを overflow に畳んで actions の飽和を防ぐ。
-enum _ComposeMenuAction { saveDraft, saveTemplate, preview }
+enum _ComposeMenuAction { saveDraft, saveTemplate, preview, reset }
 
 /// 添付 1 件のデスクトップメニュー項目 (#941)。
 ///
@@ -567,7 +569,23 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     // CW 欄を最初から開く (#1322・Mastodon 5.0〜)。⚠ 開くのは欄だけで、文字を
     // 入れなければ CW も閲覧注意も付かない（[_effectiveSensitive]）。
     if (user.defaultSpoilerField == true) _cwEnabled = true;
+    // 「入力を空にする…」で戻す先 (#1368)。
+    _defaultSensitive = user.defaultSensitive;
+    _defaultSpoilerField = user.defaultSpoilerField == true;
   }
+
+  /// [_applyAccountDefaults] で当てた既定 (#1368)。当てない開き方では null / false。
+  bool? _defaultSensitive;
+  bool _defaultSpoilerField = false;
+
+  /// 開いた時点の値。「入力を空にする…」で戻す先 (#1368)。initState の終わりで
+  /// 控え、言語だけは最初のフレームで控え直す。
+  late ComposeOpening _opening;
+
+  /// 「入力を空にする…」の確認を出している間か (#1368)。ショートカット
+  /// （⇧⌘K / Ctrl+Shift+K）はダイアログを開いたままでも届くので、続けて押すと
+  /// 確認が重なる。
+  bool _confirmingReset = false;
 
   /// ⚠ **この投稿が返信として送られるか (#1113)。**
   ///
@@ -1121,6 +1139,18 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       _draftAutoSave = true;
       _restoreDraft();
     }
+    // ⚠ 下書きの復元（非同期）より前に控える。復元した中身は「開いたあとに
+    // 書き足したもの」と同じ扱い。
+    _opening = ComposeOpening(
+      scope: _scope,
+      language: _language,
+      localOnly: _localOnly,
+      quoteApprovalPolicy: _quoteApprovalPolicy,
+      chosen: {..._chosen},
+      recipientIds: [..._recipients.keys],
+      defaultSensitive: _defaultSensitive,
+      defaultSpoilerField: _defaultSpoilerField,
+    );
     if (widget.insertNowPlaying) {
       // 「ナウプレで新規投稿」(#1300)。⚠ 取得は非同期で SnackBar も出すので、
       // フレームの後で行う。
@@ -1158,6 +1188,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
               serverDefault ?? Localizations.localeOf(context).languageCode,
         );
       }
+      // 言語はここで決まるので、戻す先も控え直す (#1368)。
+      _opening = _opening.withLanguage(_language);
       // CustomEmojiSupport 対応サーバーなら絵文字を先読み (#308)。
       // 補完候補のフィルタはローカルで行うため、起動時に 1 回ロードして
       // 以降は in-memory で絞り込む。Fire-and-forget で UI を待たせない。
@@ -1612,6 +1644,153 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     // 消しうる。[_saveDraft] は最初にこれを待って直列化する。
     _draftClearing = _clearDraft(discard: false);
     unawaited(_draftClearing);
+  }
+
+  /// 「入力を空にする…」(#1368)。確かめてから、開いたときの状態へ戻す。
+  ///
+  /// ⚠ 削除して再編集の途中は、元の投稿がもう消えているので、空にすると文面を
+  /// 戻せないことを確認の文に書く。
+  Future<void> _confirmAndResetCompose() async {
+    if (_confirmingReset) return;
+    if (_pendingWorkBlocksReset()) return;
+    _confirmingReset = true;
+    final bool? ok;
+    try {
+      ok = await _showResetConfirmation();
+    } finally {
+      _confirmingReset = false;
+    }
+    // ⚠ 確認の間に送信が始まっていたら空にしない。macOS の native メニューは
+    // ダイアログに遮られないので、確認を出したまま「投稿する」を押せる。送信は
+    // 本文・アンケートを await の後で読むので、空にすると空の投稿になりうる。
+    if (ok != true || !mounted || _sending) return;
+    if (_pendingWorkBlocksReset()) return;
+    _resetCompose();
+  }
+
+  /// 下書きを戻している最中・ナウプレを挿入している最中なら、空にせずに知らせて
+  /// `true` を返す（v2.11 のリリース前レビューの Codex P2）。
+  ///
+  /// ⚠ 戻している最中に空にすると、あとから `_restoreDraft` が本文・CW・宛先を
+  /// 書き戻し、空にしたはずのフォームが元に戻る。条件は投稿の守り
+  /// （`_submit` の「下書きを読み込んでいます」）と同じ —— `_draftAutoSave` を
+  /// 外すと、復元の走らない画面（返信・引用など）で永久に空にできなくなる。
+  ///
+  /// ⚠ ナウプレを挿入している最中も同じ（締めの Codex P2）。曲・ジャケットを
+  /// 取りに行っている間に空にすると、あとから `_insertNowPlaying` が本文に
+  /// 書き足し、ジャケットを添付する。
+  bool _pendingWorkBlocksReset() {
+    final String message;
+    if (_draftAutoSave && !_draftRestored) {
+      message = '下書きを読み込んでいます。少し待ってから、もう一度お試しください。';
+    } else if (_insertingNowPlaying) {
+      message = 'ナウプレを挿入しています。少し待ってから、もう一度お試しください。';
+    } else {
+      return false;
+    }
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+    return true;
+  }
+
+  Future<bool?> _showResetConfirmation() {
+    final redraft = widget.redraft != null;
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('入力を空にする'),
+        content: Text(
+          redraft
+              ? '本文・添付・アンケートなどを消して、開いたときの状態に戻します。'
+                    '元の投稿は削除済みなので、消した文面は戻せません。よろしいですか？'
+              : '本文・添付・アンケートなどを消して、開いたときの状態に戻します。'
+                    'よろしいですか？',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('キャンセル'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('空にする'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 開いたときの状態へ戻す (#1368)。扱いの表は [ComposeOpening]。
+  ///
+  /// 返信先・引用先・チャンネルは触らない（どれも widget から決まり、
+  /// [_redraftReplyDropped] も開いたあとの利用者の判断なので残す）。
+  void _resetCompose() {
+    _draftDebounceTimer?.cancel();
+    final opening = _opening;
+    final account = ref.read(currentAccountProvider);
+    final replyTo = _isReply ? _replyToPost : null;
+    _controller.value = composeResetBody(
+      replyMentions: replyTo == null
+          ? const []
+          : buildReplyMentions(
+              replyTo: replyTo,
+              me: account?.user,
+              localHost: account?.key.host ?? '',
+            ),
+      // ⚠ 開いたときにタグを入れたのは返信・引用などでない開き方だけ。
+      hashtags: replyTo == null && widget.quoteTo == null
+          ? widget.hashtags
+          : const [],
+    );
+    _cwController.clear();
+    final keepRecipients = opening.recipientIds.toSet();
+    final missingRecipients = [
+      for (final id in opening.recipientIds)
+        if (!_recipients.containsKey(id)) id,
+    ];
+    setState(() {
+      _cwEnabled = opening.defaultSpoilerField;
+      _sensitiveEnabled = opening.defaultSensitive ?? false;
+      _sensitiveExplicit = opening.defaultSensitive != null;
+      _attachments.clear();
+      _unrestoredDraftAttachments = const [];
+      _pollEnabled = false;
+      for (final c in _pollControllers) {
+        c.dispose();
+      }
+      _pollControllers
+        ..clear()
+        ..addAll([TextEditingController(), TextEditingController()]);
+      _pollMultiple = false;
+      _pollExpiresIn = 86400;
+      _scheduledAt = null;
+      _scope = opening.scope;
+      _language = opening.language;
+      _localOnly = opening.localOnly;
+      _quoteApprovalPolicy = opening.quoteApprovalPolicy;
+      _chosen
+        ..clear()
+        ..addAll(opening.chosen);
+      _recipients.removeWhere((id, _) => !keepRecipients.contains(id));
+      for (final id in missingRecipients) {
+        _recipients[id] = null;
+      }
+      _draftRestoredNotice = false;
+      _draftBeforeRestore = null;
+      _draftSavedAt = null;
+    });
+    for (final id in missingRecipients) {
+      unawaited(_resolveRecipient(id));
+    }
+    // ⚠ 自動保存の下書きも消す。消さないと、閉じて開き直したときに消したはずの
+    // 文面が戻る。⚠ 自動保存しているまっさらな投稿だけ（「下書きを開く」と同じ
+    // 条件）。返信などはもともと保存しておらず、無条件に消すと別の下書きを
+    // 巻き添えにする。自動保存は止めない（この画面に留まるので・#1008）。
+    if (_draftAutoSave) {
+      _draftClearing = _clearDraft(discard: false);
+      unawaited(_draftClearing);
+    }
   }
 
   /// 入力停止から [_draftDebounce] 後に自動保存する (#964)。打鍵のたびに
@@ -3732,8 +3911,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           resolveEmoji: (shortcode) {
             final url = allEmojis[shortcode];
             if (url != null) return url;
-            if (user.host != null) {
-              return 'https://${user.host}/emoji/$shortcode.webp';
+            final host = user.host;
+            if (host != null) {
+              return fallbackEmojiUrl(host, shortcode);
             }
             return null;
           },
@@ -4590,6 +4770,16 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         icon: Icons.preview_outlined,
         onSelected: busy ? null : _showPreview,
       ),
+      MenuActionEntry(
+        label: '入力を空にする…',
+        icon: Icons.clear_all,
+        // ⇧⌘K / Ctrl+Shift+K (#1368)。⚠ ⇧⌘⌫ は使えない —— Flutter のテキスト
+        // 入力が ⌘⌫（行頭まで削除）を Shift 付きでも受けるので本文の編集と
+        // ぶつかる。押し間違えても確認のダイアログで止まる。
+        shortcut: const MenuShortcut(LogicalKeyboardKey.keyK, shift: true),
+        globalShortcut: true,
+        onSelected: busy ? null : _confirmAndResetCompose,
+      ),
       const MenuGroupSeparator(),
       MenuActionEntry(
         label: 'メディアを添付…',
@@ -5338,6 +5528,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                       _saveCurrentAsTemplate();
                     case _ComposeMenuAction.preview:
                       _showPreview();
+                    case _ComposeMenuAction.reset:
+                      _confirmAndResetCompose();
                   }
                 },
                 itemBuilder: (context) => [
@@ -5364,6 +5556,15 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                     child: ListTile(
                       leading: Icon(Icons.preview_outlined),
                       title: Text('プレビュー'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                  // メニューバーと同じ項目を出す（#1368・出し分けの条件は同一）。
+                  const PopupMenuItem(
+                    value: _ComposeMenuAction.reset,
+                    child: ListTile(
+                      leading: Icon(Icons.clear_all),
+                      title: Text('入力を空にする…'),
                       contentPadding: EdgeInsets.zero,
                     ),
                   ),

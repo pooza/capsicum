@@ -10,6 +10,7 @@ import '../../main.dart' show appLaunchStopwatch;
 import '../model/account.dart';
 import '../model/account_key.dart';
 import '../service/stream_connect_failure_reporter.dart';
+import '../service/stream_disconnect_reporter.dart';
 import '../service/timeline_cache.dart';
 import '../util/conversion_skip_report.dart';
 import '../util/exception_scrub.dart';
@@ -1222,9 +1223,8 @@ mixin TimelineLiveIngest<Arg>
   // _lastListenCapture を独立に持つ。
   DateTime? _lastParseCapture;
   DateTime? _lastListenCapture;
-  // 切断 (onDone) の closeCode 観測用バケット (#788)。性質が違うので
-  // connect/parse/listen とは独立に持つ。
-  DateTime? _lastDisconnectCapture;
+  // 切断 (onDone) の closeCode 観測 (#788) の間引きは、購読ごとではなく
+  // streamDisconnectReporter がアプリ全体で持つ (#1378)。
   static const _captureThrottle = Duration(seconds: 60);
 
   void _startStreaming(StreamSupport adapter) {
@@ -1364,31 +1364,15 @@ mixin TimelineLiveIngest<Arg>
       // (protocol error) が支配的で、1001 (going away) / 1000 (正常) /
       // 1006 (異常) が続く。host タグで発生サーバーを切り分ける (#826) が、
       // 挙動は host で分岐しない (per-server workaround は入れない)。closeReason
-      // はサーバー任意文字列を持ちうるため内容は載せず、有無のみ。throttle で
-      // 切断連発の spam を抑える。
-      onDisconnect: (closeCode, closeReason) {
-        final now = DateTime.now();
-        if (_lastDisconnectCapture != null &&
-            now.difference(_lastDisconnectCapture!) < _captureThrottle) {
-          return;
-        }
-        _lastDisconnectCapture = now;
-        final code = closeCode?.toString() ?? 'none';
-        Sentry.captureMessage(
-          'timeline.stream.disconnected',
-          level: SentryLevel.info,
-          withScope: (scope) {
-            scope.setTag('timeline.stream', 'disconnected');
-            if (host != null) scope.setTag('timeline.stream.host', host);
-            scope.setTag('timeline.stream.close_code', code);
-            scope.setTag(
-              'timeline.stream.has_reason',
-              (closeReason != null && closeReason.isNotEmpty).toString(),
-            );
-            scope.fingerprint = ['timeline.stream.disconnected', code];
-          },
-        );
-      },
+      // はサーバー任意文字列を持ちうるため内容は載せず、有無のみ。
+      // ⚠ 間引きと送る割合はアプリ全体で 1 つの報告役が持つ (#1378)。購読ごとに
+      // 間引くと、同じサーバーへのカラムの数だけ送られ、Sentry の枠の大半を
+      // この記録が使っていた。
+      onDisconnect: (closeCode, closeReason) => streamDisconnectReporter.report(
+        host: host,
+        closeCode: closeCode,
+        closeReason: closeReason,
+      ),
     );
     _streamSubscription = stream.listen(
       (newPost) => _ingestLivePosts([newPost]),

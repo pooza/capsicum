@@ -8,12 +8,15 @@ import 'package:test/test.dart';
 
 /// #1052: アンテナの作成・編集・削除。
 class _Server implements HttpClientAdapter {
-  _Server({this.tooMany = false, this.deleteErrorCode});
+  _Server({this.tooMany = false, this.deleteErrorCode, this.writeErrorCode});
 
   final bool tooMany;
 
   /// 削除に返すエラーコード（null なら成功）。
   final String? deleteErrorCode;
+
+  /// 作成・更新に返すエラーコード（null なら成功・#1372）。
+  final String? writeErrorCode;
   final requests = <String, Map<String, dynamic>>{};
 
   @override
@@ -26,6 +29,13 @@ class _Server implements HttpClientAdapter {
     if (tooMany && options.path.endsWith('/api/antennas/create')) {
       return _json({
         'error': {'code': 'TOO_MANY_ANTENNAS'},
+      }, 400);
+    }
+    if (writeErrorCode != null &&
+        (options.path.endsWith('/api/antennas/create') ||
+            options.path.endsWith('/api/antennas/update'))) {
+      return _json({
+        'error': {'code': writeErrorCode},
       }, 400);
     }
     if (deleteErrorCode != null &&
@@ -191,5 +201,39 @@ void main() {
       adapter.createAntenna(const AntennaDraft(name: 'x')),
       throwsA(isA<AntennaLimitReached>()),
     );
+  });
+
+  group('#1372: 既に消えたものは型に写す（画面が Sentry へ送らないため）', () {
+    test('更新先のアンテナが無い（NO_SUCH_ANTENNA）は AntennaNotFound', () async {
+      await install(_Server(writeErrorCode: 'NO_SUCH_ANTENNA'));
+
+      await expectLater(
+        adapter.updateAntenna('a1', const AntennaDraft(name: 'x')),
+        throwsA(isA<AntennaNotFound>()),
+      );
+    });
+
+    test('受信元のリストが無い（NO_SUCH_USER_LIST）は作成でも更新でも '
+        'AntennaUserListNotFound', () async {
+      await install(_Server(writeErrorCode: 'NO_SUCH_USER_LIST'));
+
+      await expectLater(
+        adapter.createAntenna(const AntennaDraft(name: 'x')),
+        throwsA(isA<AntennaUserListNotFound>()),
+      );
+      await expectLater(
+        adapter.updateAntenna('a1', const AntennaDraft(name: 'x')),
+        throwsA(isA<AntennaUserListNotFound>()),
+      );
+    });
+
+    test('⚠ ほかのエラーはそのまま投げる（握りつぶさない）', () async {
+      await install(_Server(writeErrorCode: 'EMPTY_KEYWORD'));
+
+      await expectLater(
+        adapter.updateAntenna('a1', const AntennaDraft(name: 'x')),
+        throwsA(isA<DioException>()),
+      );
+    });
   });
 }

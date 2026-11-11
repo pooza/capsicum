@@ -213,6 +213,27 @@ class MastodonClient {
     return MastodonToken.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// POST /oauth/revoke
+  ///
+  /// 発行済みのアクセストークンを無効にする。⚠ Mastodon は `reuse_access_token`
+  /// が有効なので、同じアプリ・同じ利用者・同じスコープなら**既存のセッションと
+  /// 同じトークン**が返っている。呼ぶ側は、そのトークンで動いているセッションが
+  /// 無いと言える場面に限ること（#1372）。
+  Future<void> revokeToken({
+    required String clientId,
+    required String clientSecret,
+    required String token,
+  }) async {
+    await dio.post(
+      '/oauth/revoke',
+      data: {
+        'client_id': clientId,
+        'client_secret': clientSecret,
+        'token': token,
+      },
+    );
+  }
+
   /// GET /api/v1/accounts/verify_credentials
   ///
   /// [allowNonfunctional] はログインの直後だけ立てる (#1320)。アカウントが

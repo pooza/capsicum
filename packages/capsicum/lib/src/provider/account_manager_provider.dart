@@ -338,29 +338,38 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
   /// ⚠ デッキのドロワーを開くときの切り替え（#1286）がこれ。ドロワーを開いて
   /// 閉じただけで未読の印が消えていた (#1293)。利用者がアカウントを選んだ
   /// 切り替えは、従来どおり消す。
+  ///
+  /// ⚠ [account] が一覧に無ければ何もしない（v2.10 リリース前レビュー・#1372）。
+  /// メニューを組んでから選ぶまでの間にそのアカウントをログアウトすると、
+  /// ログアウト済みのアカウントが現在のアカウントとして戻っていた。⚠ 一覧に
+  /// あれば、渡されたものではなく**一覧の側**を使う（渡されたものは組んだ時点の
+  /// 写しで、その後の [updateUserOf] を取りこぼしている）。
   void switchAccount(Account account, {bool clearUnread = true}) {
-    final reordered = [
-      account,
-      ...state.accounts.where((a) => a.key != account.key),
-    ];
-    state = state.copyWith(accounts: reordered, current: account);
+    final live = state.accounts.where((a) => a.key == account.key).firstOrNull;
+    if (live == null) {
+      debugPrint(
+        'capsicum: switchAccount: ${sentrySafeAccount(account.key)} '
+        'is no longer in the account list; ignored',
+      );
+      return;
+    }
+    final reordered = [live, ...state.accounts.where((a) => a.key != live.key)];
+    state = state.copyWith(accounts: reordered, current: live);
 
     // Persist MRU order in background (failure is non-fatal).
     final storage = ref.read(accountStorageProvider);
-    storage.touchAccount(account.key.toStorageKey()).catchError((_) {});
+    storage.touchAccount(live.key.toStorageKey()).catchError((_) {});
 
     // Clear unread notification count for the account we're switching to.
     if (clearUnread) {
-      BackgroundNotificationService.clearUnreadCount(
-        account.key.toStorageKey(),
-      );
+      BackgroundNotificationService.clearUnreadCount(live.key.toStorageKey());
     }
 
     // Prefetch server metadata for badge display (non-blocking). Misskey
     // フォークの偽 Mastodon 互換版で name/icon が化けないよう型ヒントを渡す (#827)。
     ServerMetadataCache.instance.fetch(
-      account.key.host,
-      preferMisskey: account.adapter is ReactionSupport,
+      live.key.host,
+      preferMisskey: live.adapter is ReactionSupport,
     );
   }
 

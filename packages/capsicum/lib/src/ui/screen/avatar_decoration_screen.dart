@@ -26,10 +26,41 @@ final avatarDecorationOptionsProvider =
       );
     }, dependencies: [currentAdapterProvider, currentAccountProvider]);
 
-/// アイコンデコレーションの付け外し (#1349)。
+/// 付けられる数の上限 (#1359)。⚠ 読めなくても画面は使えるので、失敗は null
+/// （残りの数を出さないだけ）。
+final avatarDecorationLimitProvider = FutureProvider.autoDispose<int?>((
+  ref,
+) async {
+  final adapter = ref.watch(currentAdapterProvider);
+  if (adapter is! AvatarDecorationSupport) return null;
+  try {
+    return await (adapter as AvatarDecorationSupport)
+        .getAvatarDecorationLimit();
+  } catch (_) {
+    return null;
+  }
+}, dependencies: [currentAdapterProvider, currentAccountProvider]);
+
+/// 一覧の上に出す、あといくつ付けられるか (#1359)。上限が読めなければ null。
+///
+/// ⚠ 上限が 1 のサーバーでは、付けると入れ替わる（#1349）。「あと 0 個」と
+/// 出すと付けられないように読めるので、入れ替わることを言う。
+String? avatarDecorationRemainingLabel({
+  required int attached,
+  required int? limit,
+}) {
+  if (limit == null) return null;
+  if (limit <= 0) return 'このアカウントではデコレーションを付けられません';
+  if (limit == 1) return '付けられるのは 1 個です。ほかを選ぶと入れ替わります';
+  final remaining = (limit - attached).clamp(0, limit);
+  return 'あと $remaining 個付けられます（$attached / $limit）';
+}
+
+/// アイコンデコレーションの付け外しと調整 (#1349 / #1359)。
 ///
 /// 季節のイベントなどで気軽に付け替えられるよう、押したらその場で保存する。
-/// ⚠ 位置・角度・反転の調整は置かない（Web で調整した値は崩さない）。
+/// 位置・角度・反転は、付けているものの「調整」から変える（スライダー・
+/// 2026-11-10 pooza）。
 class AvatarDecorationScreen extends ConsumerStatefulWidget {
   const AvatarDecorationScreen({super.key});
 
@@ -47,7 +78,12 @@ class _AvatarDecorationScreenState
   /// （#1361 で消した）は、別アカウントのカラムから来たときに別の人を書き換える。
   User? _localUser;
 
-  Future<void> _toggle(AvatarDecorationOption option, bool attached) async {
+  /// [save] を 1 件ずつ走らせ、応答を手元とアカウントへ反映する。
+  Future<void> _run(
+    AvatarDecorationOption option,
+    String operation,
+    Future<User> Function(AvatarDecorationSupport support) save,
+  ) async {
     if (_savingId != null) return;
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! AvatarDecorationSupport) return;
@@ -57,11 +93,16 @@ class _AvatarDecorationScreenState
     final accounts = ref.read(accountManagerProvider.notifier);
     setState(() => _savingId = option.id);
     try {
-      final user = attached
-          ? await support.detachAvatarDecoration(option.id)
-          : await support.attachAvatarDecoration(option.id);
+      final user = await save(support);
       if (account != null) accounts.updateUserOf(account.key, user);
       if (mounted) setState(() => _localUser = user);
+      if (operation == 'adjust' &&
+          !user.avatarDecorations.any((d) => d.id == option.id)) {
+        // サーバー側（Web など）で既に外れていた。
+        messenger.showSnackBar(
+          SnackBar(content: Text('「${option.name}」はもう外れていました')),
+        );
+      }
     } on AvatarDecorationRejected catch (e) {
       // ⚠ サーバーの今の状態で揃える（入れ替えで外したものは付け直してある）。
       if (account != null) accounts.updateUserOf(account.key, e.user);
@@ -94,7 +135,7 @@ class _AvatarDecorationScreenState
       } else {
         reportOpFailure(
           tagKey: 'avatar_decoration.op',
-          operation: attached ? 'detach' : 'attach',
+          operation: operation,
           error: e,
           stackTrace: st,
           account: account,
@@ -108,14 +149,57 @@ class _AvatarDecorationScreenState
     }
   }
 
+  Future<void> _toggle(AvatarDecorationOption option, bool attached) => _run(
+    option,
+    attached ? 'detach' : 'attach',
+    (support) => attached
+        ? support.detachAvatarDecoration(option.id)
+        : support.attachAvatarDecoration(option.id),
+  );
+
+  /// 位置・角度・反転を調整する (#1359)。
+  Future<void> _adjust(
+    AvatarDecorationOption option,
+    User user,
+    AvatarDecoration decoration,
+  ) async {
+    final result = await showModalBottomSheet<AvatarDecoration>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) => AvatarDecorationAdjustSheet(
+        user: user,
+        name: option.name,
+        target: decoration,
+      ),
+    );
+    if (result == null || !mounted) return;
+    await _run(
+      option,
+      'adjust',
+      (support) => support.adjustAvatarDecoration(
+        option.id,
+        angle: result.angle,
+        flipH: result.flipH,
+        offsetX: result.offsetX,
+        offsetY: result.offsetY,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final options = ref.watch(avatarDecorationOptionsProvider);
+    final limit = ref.watch(avatarDecorationLimitProvider).value;
     final user = _localUser ?? ref.watch(currentAccountProvider)?.user;
-    final attachedIds = {
+    final attachedById = {
       for (final d in user?.avatarDecorations ?? const <AvatarDecoration>[])
-        d.id,
+        d.id: d,
     };
+    final remaining = avatarDecorationRemainingLabel(
+      attached: attachedById.length,
+      limit: limit,
+    );
     return Scaffold(
       appBar: AppBar(title: const Text('アイコンデコレーション')),
       body: BottomSafeArea(
@@ -125,6 +209,14 @@ class _AvatarDecorationScreenState
               Padding(
                 padding: const EdgeInsets.all(24),
                 child: UserAvatar(user: user, size: 96),
+              ),
+            if (remaining != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Text(
+                  remaining,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
               ),
             Expanded(
               child: options.when(
@@ -143,7 +235,8 @@ class _AvatarDecorationScreenState
                     itemCount: list.length,
                     itemBuilder: (context, index) {
                       final option = list[index];
-                      final attached = attachedIds.contains(option.id);
+                      final decoration = attachedById[option.id];
+                      final attached = decoration != null;
                       final description = option.description;
                       return ListTile(
                         leading: Image.network(
@@ -169,13 +262,30 @@ class _AvatarDecorationScreenState
                                   strokeWidth: 2,
                                 ),
                               )
-                            : Icon(
-                                attached
-                                    ? Icons.check_circle
-                                    : Icons.circle_outlined,
-                                color: attached
-                                    ? Theme.of(context).colorScheme.primary
-                                    : null,
+                            : Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (attached && user != null)
+                                    IconButton(
+                                      icon: const Icon(Icons.tune),
+                                      tooltip: '位置と角度を調整',
+                                      onPressed: _savingId != null
+                                          ? null
+                                          : () => _adjust(
+                                              option,
+                                              user,
+                                              decoration,
+                                            ),
+                                    ),
+                                  Icon(
+                                    attached
+                                        ? Icons.check_circle
+                                        : Icons.circle_outlined,
+                                    color: attached
+                                        ? Theme.of(context).colorScheme.primary
+                                        : null,
+                                  ),
+                                ],
                               ),
                         selected: attached,
                         onTap: () => _toggle(option, attached),
@@ -184,6 +294,146 @@ class _AvatarDecorationScreenState
                   );
                 },
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// デコレーション 1 つの位置・角度・反転を調整するシート (#1359)。決めたら
+/// 新しい値を返し、やめたら null。
+///
+/// ⚠ プレビューは表示側と同じ [UserAvatar] で描く（ずれた見た目で保存させない）。
+/// ほかのデコレーションも今の値のまま一緒に描く。
+class AvatarDecorationAdjustSheet extends StatefulWidget {
+  const AvatarDecorationAdjustSheet({
+    super.key,
+    required this.user,
+    required this.name,
+    required this.target,
+  });
+
+  final User user;
+  final String name;
+  final AvatarDecoration target;
+
+  @override
+  State<AvatarDecorationAdjustSheet> createState() =>
+      _AvatarDecorationAdjustSheetState();
+}
+
+class _AvatarDecorationAdjustSheetState
+    extends State<AvatarDecorationAdjustSheet> {
+  late double _angle = widget.target.angle.clamp(-0.5, 0.5);
+  late bool _flipH = widget.target.flipH;
+  late double _offsetX = widget.target.offsetX.clamp(-0.25, 0.25);
+  late double _offsetY = widget.target.offsetY.clamp(-0.25, 0.25);
+
+  AvatarDecoration get _edited => AvatarDecoration(
+    id: widget.target.id,
+    url: widget.target.url,
+    angle: _angle,
+    flipH: _flipH,
+    offsetX: _offsetX,
+    offsetY: _offsetY,
+  );
+
+  Widget _slider({
+    required String label,
+    required double value,
+    required double limit,
+    required ValueChanged<double> onChanged,
+  }) => Row(
+    children: [
+      SizedBox(width: 40, child: Text(label)),
+      Expanded(
+        child: Slider(
+          value: value,
+          min: -limit,
+          max: limit,
+          divisions: 100,
+          label: value.toStringAsFixed(2),
+          onChanged: (v) => setState(() => onChanged(v)),
+        ),
+      ),
+    ],
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final decorations = [
+      for (final d in widget.user.avatarDecorations)
+        d.id == widget.target.id ? _edited : d,
+    ];
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              '「${widget.name}」の位置と角度',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: UserAvatar(
+                  user: widget.user,
+                  size: 96,
+                  decorations: decorations,
+                ),
+              ),
+            ),
+            _slider(
+              label: '角度',
+              value: _angle,
+              limit: 0.5,
+              onChanged: (v) => _angle = v,
+            ),
+            _slider(
+              label: '横',
+              value: _offsetX,
+              limit: 0.25,
+              onChanged: (v) => _offsetX = v,
+            ),
+            _slider(
+              label: '縦',
+              value: _offsetY,
+              limit: 0.25,
+              onChanged: (v) => _offsetY = v,
+            ),
+            SwitchListTile(
+              title: const Text('左右反転'),
+              value: _flipH,
+              contentPadding: EdgeInsets.zero,
+              onChanged: (v) => setState(() => _flipH = v),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                TextButton(
+                  onPressed: () => setState(() {
+                    _angle = 0;
+                    _flipH = false;
+                    _offsetX = 0;
+                    _offsetY = 0;
+                  }),
+                  child: const Text('リセット'),
+                ),
+                const Spacer(),
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('キャンセル'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(context, _edited),
+                  child: const Text('保存'),
+                ),
+              ],
             ),
           ],
         ),

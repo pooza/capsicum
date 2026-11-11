@@ -90,7 +90,7 @@ Future<void> showCrossAccountBoostPicker({
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '@${account.user.username}@${account.key.host}',
+                      account.key.handle,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),

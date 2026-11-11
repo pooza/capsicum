@@ -11,6 +11,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../service/tco_resolver.dart';
+import '../../util/emoji_url.dart';
 import '../../util/notification_filter.dart';
 import '../util/deck_navigation.dart';
 import '../util/fediverse_link.dart';
@@ -26,6 +27,7 @@ import '../util/provider_scope_carrier.dart';
 import '../util/reaction_acceptance.dart';
 import '../util/relative_time.dart';
 import '../util/visible_timeline.dart';
+import 'clip_add_sheet.dart';
 import 'content_parser.dart';
 import 'cross_account_boost.dart';
 import 'emoji_action_sheet.dart';
@@ -58,8 +60,6 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
 
   Notification get notification => widget.notification;
 
-  static final _tcoPattern = RegExp(r'https?://t\.co/\S+');
-
   /// t.co の解決が終わった回数。本文の span の鍵に入れて、解決した URL で
   /// 描き直させる（#1365）。
   int _tcoResolvedCount = 0;
@@ -71,19 +71,12 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
   }
 
   void _resolveTcoUrls() {
-    final content = notification.post?.content;
-    if (content == null) return;
-    for (final match in _tcoPattern.allMatches(content)) {
-      final url = match.group(0)!;
-      if (TcoResolver.getCached(url) != null) continue;
-      TcoResolver.resolve(url).then((resolved) {
-        if (resolved != null && mounted) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) setState(() => _tcoResolvedCount++);
-          });
-        }
+    TcoResolver.resolveAllIn(notification.post?.content, () {
+      if (!mounted) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _tcoResolvedCount++);
       });
-    }
+    });
   }
 
   @override
@@ -109,7 +102,7 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
           resolveEmoji: (shortcode) {
             final url = allEmojis[shortcode];
             if (url != null) return url;
-            if (host != null) return 'https://$host/emoji/$shortcode.webp';
+            if (host != null) return fallbackEmojiUrl(host, shortcode);
             return null;
           },
           resolveUrl: (url) =>
@@ -529,6 +522,16 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
                     );
                   },
                 ),
+              // クリップ (#1050)。投稿のメニューと揃える。
+              if (adapter is ClipManagementSupport)
+                ListTile(
+                  leading: const Icon(Icons.content_paste),
+                  title: const Text('クリップに追加'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    showAddToClipSheet(context, ref, targetPost);
+                  },
+                ),
               // 会話のミュート (#1208)。⚠ **通知では常に出す** —— 通知が来ている
               // 時点でその会話に関わっており、「荒れたスレッドの通知を止める」の
               // 入口はここが本命。
@@ -858,7 +861,7 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
         ? (post?.emojiHost ?? post?.author.host)
         : hostPart;
     if (emojiHost != null) {
-      return 'https://$emojiHost/emoji/$nameOnly.webp';
+      return fallbackEmojiUrl(emojiHost, nameOnly);
     }
     return null;
   }

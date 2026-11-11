@@ -27,9 +27,7 @@ class SettingsScreen extends ConsumerWidget {
             ListTile(
               leading: const Icon(Icons.person),
               title: const Text('アカウント設定'),
-              subtitle: account != null
-                  ? Text('@${account.key.username}@${account.key.host}')
-                  : null,
+              subtitle: account != null ? Text(account.key.handle) : null,
               trailing: const Icon(Icons.chevron_right),
               onTap: () => context.push('/settings/account'),
             ),
