@@ -414,11 +414,18 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/clips/manage',
             builder: (context, state) => const ClipManagementScreen(),
           ),
+          // ⚠⚠ 開いた側（デッキのカラム）のスコープで動かす。運ばないと、別
+          // アカウントのカラムの投稿から「新しいクリップ」を開いたとき、ルートで
+          // 選ばれているアカウントにクリップを作る。
           GoRoute(
             path: '/clips/edit',
             builder: (context, state) {
-              final clip = state.extra;
-              return ClipEditScreen(clip: clip is NoteClip ? clip : null);
+              final extra = state.extra;
+              final clip = extra is Map ? extra['clip'] : null;
+              return withExtraProviderScope(
+                extra,
+                ClipEditScreen(clip: clip is NoteClip ? clip : null),
+              );
             },
           ),
           // アンテナを管理する (#1052)。

@@ -8,6 +8,7 @@ import '../../provider/clip_provider.dart';
 import '../../service/sentry_op_failure.dart';
 import '../../util/oauth_scope_error.dart';
 import '../util/op_error.dart';
+import '../util/provider_scope_carrier.dart';
 
 enum _ClipAction { edit, delete }
 
@@ -29,6 +30,8 @@ Future<bool> showClipActions(
   final account = ref.read(currentAccountProvider);
   final messenger = ScaffoldMessenger.of(context);
   final container = ProviderScope.containerOf(context, listen: false);
+  // 編集の画面へ開いた側のスコープを運ぶ（`await` の前に作っておく）。
+  final editExtra = extraWithProviderScope(context, {'clip': clip});
 
   final action = await showModalBottomSheet<_ClipAction>(
     context: context,
@@ -53,7 +56,7 @@ Future<bool> showClipActions(
   if (action == null || !context.mounted) return false;
 
   if (action == _ClipAction.edit) {
-    final saved = await context.push<bool>('/clips/edit', extra: clip);
+    final saved = await context.push<bool>('/clips/edit', extra: editExtra);
     // ⚠ 編集の間に行が破棄されていることがあるので、コンテナへ当てる。
     if (saved == true) container.invalidate(clipsProvider);
     return false;

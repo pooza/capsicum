@@ -9,6 +9,7 @@ import '../../provider/clip_provider.dart';
 import '../../service/sentry_op_failure.dart';
 import '../../util/oauth_scope_error.dart';
 import '../util/op_error.dart';
+import '../util/provider_scope_carrier.dart';
 import 'clip_actions_sheet.dart';
 
 /// 投稿の「クリップに追加」(#1050)。
@@ -30,15 +31,22 @@ Future<void> showAddToClipSheet(
   if (adapter is! ClipSupport || adapter is! ClipManagementSupport) return;
   // ⚠ 開いた時点で控える（#1064 の書き方。シートの中の失敗の記録に添える）。
   final account = ref.read(currentAccountProvider);
+  // ⚠⚠ シートは別のルートに乗るので、中の `context` はルートのスコープになる。
+  // 開いた側（デッキのカラム）のスコープで包まないと、「新しいクリップ」の
+  // 画面が**ルートで選ばれている別のアカウント**にクリップを作る。
+  final container = ProviderScope.containerOf(context, listen: false);
   await showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
-    builder: (_) => ClipAddSheet(
-      post: post,
-      clips: adapter as ClipSupport,
-      manage: adapter as ClipManagementSupport,
-      account: account,
+    builder: (_) => carryProviderScope(
+      container,
+      ClipAddSheet(
+        post: post,
+        clips: adapter as ClipSupport,
+        manage: adapter as ClipManagementSupport,
+        account: account,
+      ),
     ),
   );
   // 新しいクリップを作ったかもしれないので、一覧を取り直させる。
@@ -87,6 +95,8 @@ class _ClipAddSheetState extends State<ClipAddSheet> {
   }
 
   Future<void> _load() async {
+    // ⚠ 通信中にシートを閉じたあとでも呼ばれる（`_add` / `_remove` の後始末）。
+    if (!mounted) return;
     setState(() => _loadError = null);
     try {
       final clips = await widget.clips.getClips();
@@ -110,7 +120,12 @@ class _ClipAddSheetState extends State<ClipAddSheet> {
     }
   }
 
-  void _say(String message) => setState(() => _message = message);
+  /// ⚠ 通信中にシートを払って閉じたあとで呼ばれることがあるので、`mounted` を
+  /// ここで見る（呼ぶ側の各 `on` 節では見ていない）。
+  void _say(String message) {
+    if (!mounted) return;
+    setState(() => _message = message);
+  }
 
   Future<void> _toggle(NoteClip clip) async {
     if (_busyId != null) return;
@@ -213,7 +228,12 @@ class _ClipAddSheetState extends State<ClipAddSheet> {
 
   Future<void> _createAndAdd() async {
     if (_busyId != null) return;
-    final created = await context.push<Object?>('/clips/edit');
+    // ⚠⚠ 開いた側のスコープを運ぶ。運ばないと、デッキで別アカウントのカラムから
+    // 開いたとき、ルートで選ばれているアカウントにクリップを作る。
+    final created = await context.push<Object?>(
+      '/clips/edit',
+      extra: extraWithProviderScope(context),
+    );
     if (!mounted || created is! NoteClip) return;
     setState(() => _list = [...?_list, created]);
     await _toggle(created);

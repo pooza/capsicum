@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../provider/clip_provider.dart';
 import '../../util/oauth_scope_error.dart';
 import '../util/op_error.dart';
+import '../util/provider_scope_carrier.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/clip_actions_sheet.dart';
 import '../widget/retry_error_view.dart';
@@ -17,8 +18,14 @@ class ClipManagementScreen extends ConsumerWidget {
   const ClipManagementScreen({super.key});
 
   Future<void> _create(BuildContext context, WidgetRef ref) async {
-    final saved = await context.push<Object?>('/clips/edit');
-    if (saved != null) ref.invalidate(clipsProvider);
+    // ⚠ 編集の間にこの画面が破棄されることがあるので、コンテナへ当てる
+    // （`clip_actions_sheet.dart` と同じ）。
+    final container = ProviderScope.containerOf(context, listen: false);
+    final saved = await context.push<Object?>(
+      '/clips/edit',
+      extra: extraWithProviderScope(context),
+    );
+    if (saved != null) container.invalidate(clipsProvider);
   }
 
   @override

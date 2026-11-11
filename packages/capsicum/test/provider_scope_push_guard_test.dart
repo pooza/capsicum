@@ -23,6 +23,10 @@ import 'support/source_files.dart';
 /// カラムから開いても別サーバーのモロヘイヤへ行き、Annict が未連携扱いになって
 /// 連携もできなかった。
 ///
+/// v2.11 のリリース前レビューでクリップの編集（`/clips/edit`・#1050）も足した。
+/// 投稿の「クリップに追加 → 新しいクリップ」から開くので、運ばないと別アカウントの
+/// カラムから開いても、ルートで選ばれているアカウントにクリップを作っていた。
+///
 /// ⚠ 対象外: `main.dart`（共有インテント）と `splash_screen.dart`（起動時）は
 /// アプリの入口から開くので、ルートのスコープで正しい。`share_account_screen.dart`
 /// （#1348）も共有インテントの続きで、選んだアカウントへ切り替えてから開く。
@@ -39,7 +43,7 @@ void main() {
   // ⚠ 型引数は入れ子になる（`push<List<Attachment>>(`）。`<[^>]*>` だと最初の
   // `>` で切れて当たらない（歯の確認で実際に取りこぼした）。
   final callStart = RegExp(
-    r'''\b(?:push|go|pushReplacement)(?:<[^(]*>)?\(\s*['"]/(?:compose|media|profile/edit|episodes|annict/(?:record|review)|templates/manage)['"]''',
+    r'''\b(?:push|go|pushReplacement)(?:<[^(]*>)?\(\s*['"]/(?:compose|media|profile/edit|episodes|annict/(?:record|review)|templates/manage|clips/edit)['"]''',
   );
 
   /// 呼び出し全体（開き括弧から対応する閉じ括弧まで）を切り出す。
@@ -130,6 +134,9 @@ void main() {
         "context.push(\n  '/annict/record',\n  extra: AnnictRecordScreenArgs(episodeId: 1),\n);",
         "context.push('/annict/review', extra: AnnictReviewScreenArgs(workId: 1));",
         "context.push('/templates/manage');",
+        // v2.11 レビュー: クリップの編集
+        "await context.push<Object?>('/clips/edit');",
+        "context.push<bool>('/clips/edit', extra: clip);",
       ];
       for (final sample in samples) {
         expect(offendersIn(sample), isNotEmpty, reason: sample);
@@ -152,6 +159,8 @@ void main() {
         "context.push('/templates');",
         "context.push(\n  '/annict/record',\n  extra: extraWithProviderScope(context, {'args': a}),\n);",
         "context.push('/post', extra: post);",
+        "context.push('/clips/manage');",
+        "context.push('/clips/edit', extra: extraWithProviderScope(context));",
         // コメントでの言及
         "// context.push('/compose') はしない",
         // #1170: メニューからの ⌘N。`context` からスコープを取れないので
@@ -204,6 +213,19 @@ void main() {
     });
   });
 
+  test('修正前のクリップのシートと管理画面は当たる（v2.11 レビュー）', () {
+    // ⚠ SHA で固定する。`527e509b` = レビューで直す前の develop。
+    String at(String path) {
+      final r = gitShow('527e509b:packages/capsicum/lib/src/ui/$path');
+      expect(r.exitCode, 0, reason: (r.stderr as String));
+      return r.stdout as String;
+    }
+
+    expect(offendersIn(at('widget/clip_add_sheet.dart')), hasLength(1));
+    expect(offendersIn(at('widget/clip_actions_sheet.dart')), hasLength(1));
+    expect(offendersIn(at('screen/clip_management_screen.dart')), hasLength(1));
+  });
+
   test('全画面へ開く push はスコープを載せている', () {
     final offenders = <String>[];
     for (final file in sources) {
@@ -215,7 +237,7 @@ void main() {
     }
     if (offenders.isNotEmpty) {
       fail(
-        '/compose・/media・/profile/edit・/episodes・/annict/*・/templates/manage へは extraWithProviderScope(context, …) で push '
+        '/compose・/media・/profile/edit・/episodes・/annict/*・/templates/manage・/clips/edit へは extraWithProviderScope(context, …) で push '
         'すること (#1149)。素のままだとカラムから開いても現在のアカウントで'
         '動く:\n${offenders.join('\n')}',
       );
