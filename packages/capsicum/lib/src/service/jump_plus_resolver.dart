@@ -56,17 +56,40 @@ Future<Uri?> jumpPlusAppUrlFor(
   final key = uri.toString();
   var aban = _cache[key];
   if (aban == null) {
-    final String? html;
-    try {
-      html = await (fetch ?? _fetch)(uri);
-    } catch (_) {
-      return null;
-    }
-    if (html == null) return null;
-    aban = isAbanEpisodePage(html);
-    _cache[key] = aban;
+    // ⚠ 取得中にもう一度押されたら、同じ取得を待つ（v2.11 のリリース前レビュー）。
+    // 取得の間は画面に何も出ないので押し直されやすく、別々に取りに行くと、
+    // 終わったところでアプリ（かブラウザ）が 2 回開く。
+    //
+    // ⚠⚠ `whenComplete` の中で `remove` の戻り値を返さない。返るのはこの
+    // Future 自身で、`whenComplete` は返された Future を待つので、自分の完了を
+    // 待って永久に止まる（初版で実際に踏んだ）。
+    final pending = _inflight[key] ??= _resolve(uri, fetch).whenComplete(() {
+      _inflight.remove(key);
+    });
+    aban = await pending;
+    if (aban == null) return null;
   }
   return aban ? Uri.parse(abanAppUrl) : null;
+}
+
+/// 取得中の判定（URL ごと）。
+final _inflight = <String, Future<bool?>>{};
+
+/// ページを取得して見分ける。見分けられなければ null（キャッシュしない）。
+Future<bool?> _resolve(
+  Uri uri,
+  Future<String?> Function(Uri uri)? fetch,
+) async {
+  final String? html;
+  try {
+    html = await (fetch ?? _fetch)(uri);
+  } catch (_) {
+    return null;
+  }
+  if (html == null) return null;
+  final aban = isAbanEpisodePage(html);
+  _cache[uri.toString()] = aban;
+  return aban;
 }
 
 Future<String?> _fetch(Uri uri) async {

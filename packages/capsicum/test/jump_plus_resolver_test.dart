@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:capsicum/src/service/jump_plus_resolver.dart';
 import 'package:capsicum/src/url_helper.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -111,6 +113,40 @@ void main() {
 
       expect(second, isNotNull);
       expect(fetched, 1);
+    });
+
+    test('⚠ 取得中にもう一度押しても、取りに行くのは 1 回（v2.11 レビュー）', () async {
+      var fetched = 0;
+      final gate = Completer<String?>();
+      Future<String?> fetch(Uri _) {
+        fetched++;
+        return gate.future;
+      }
+
+      final uri = Uri.parse('https://shonenjumpplus.com/episode/1006');
+      final first = jumpPlusAppUrlFor(uri, fetch: fetch);
+      final second = jumpPlusAppUrlFor(uri, fetch: fetch);
+      gate.complete(_abanFirst);
+
+      expect(await first, isNotNull);
+      expect(await second, isNotNull);
+      expect(fetched, 1);
+    });
+
+    test('⚠ 取得中の失敗は、待っていた側にも null を返し、覚えない', () async {
+      final gate = Completer<String?>();
+      final uri = Uri.parse('https://shonenjumpplus.com/episode/1007');
+      final first = jumpPlusAppUrlFor(uri, fetch: (_) => gate.future);
+      final second = jumpPlusAppUrlFor(uri, fetch: (_) => gate.future);
+      gate.completeError(Exception('timeout'));
+
+      expect(await first, isNull);
+      expect(await second, isNull);
+      final third = await jumpPlusAppUrlFor(
+        uri,
+        fetch: (_) async => _abanFirst,
+      );
+      expect(third, isNotNull);
     });
 
     test('⚠ 失敗は覚えない（次に押したときは取り直す）', () async {
