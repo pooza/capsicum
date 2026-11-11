@@ -1652,7 +1652,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// 戻せないことを確認の文に書く。
   Future<void> _confirmAndResetCompose() async {
     if (_confirmingReset) return;
-    if (_restoringDraftBlocksReset()) return;
+    if (_pendingWorkBlocksReset()) return;
     _confirmingReset = true;
     final bool? ok;
     try {
@@ -1664,22 +1664,33 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     // ダイアログに遮られないので、確認を出したまま「投稿する」を押せる。送信は
     // 本文・アンケートを await の後で読むので、空にすると空の投稿になりうる。
     if (ok != true || !mounted || _sending) return;
-    if (_restoringDraftBlocksReset()) return;
+    if (_pendingWorkBlocksReset()) return;
     _resetCompose();
   }
 
-  /// 下書きを戻している最中なら、空にせずに知らせて `true` を返す（v2.11 の
-  /// リリース前レビューの Codex P2）。
+  /// 下書きを戻している最中・ナウプレを挿入している最中なら、空にせずに知らせて
+  /// `true` を返す（v2.11 のリリース前レビューの Codex P2）。
   ///
   /// ⚠ 戻している最中に空にすると、あとから `_restoreDraft` が本文・CW・宛先を
   /// 書き戻し、空にしたはずのフォームが元に戻る。条件は投稿の守り
   /// （`_submit` の「下書きを読み込んでいます」）と同じ —— `_draftAutoSave` を
   /// 外すと、復元の走らない画面（返信・引用など）で永久に空にできなくなる。
-  bool _restoringDraftBlocksReset() {
-    if (!_draftAutoSave || _draftRestored) return false;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('下書きを読み込んでいます。少し待ってから、もう一度お試しください。')),
-    );
+  ///
+  /// ⚠ ナウプレを挿入している最中も同じ（締めの Codex P2）。曲・ジャケットを
+  /// 取りに行っている間に空にすると、あとから `_insertNowPlaying` が本文に
+  /// 書き足し、ジャケットを添付する。
+  bool _pendingWorkBlocksReset() {
+    final String message;
+    if (_draftAutoSave && !_draftRestored) {
+      message = '下書きを読み込んでいます。少し待ってから、もう一度お試しください。';
+    } else if (_insertingNowPlaying) {
+      message = 'ナウプレを挿入しています。少し待ってから、もう一度お試しください。';
+    } else {
+      return false;
+    }
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
     return true;
   }
 
