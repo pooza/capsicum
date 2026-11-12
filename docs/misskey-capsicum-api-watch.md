@@ -154,7 +154,9 @@ daisskey（ダイスキー本番のフォーク本体）への**本番適用**�
 - ⚠ **サーバーの運用側**: Node v22 のサポート終了・最低版が 24.22.3 / 26.13.1 に上がった・起動スクリプト `scripts/start.mjs` が入り、`NODE_OPTIONS` の `--require` / `--import` の基準ディレクトリが変わる（chubo2 の管轄）
 - **③ `@syuilo/aiscript` は 1.2.1 で据え置き**。Flash 互換ハーネスは本番昇格後に回す
 
-→ fork が取り込んだら、`481883ac2a..daisskey` で上流以外の差分が無いかだけ確かめ、次の baseline をその SHA にする。
+**同日の追記（ステージング適用後）**: fork の `merge/2026.11.0`（`4e9bbed566`）がステージング `st2.misskey.delmulin.com` に入り、`/api/meta` は **2026.11.0+0**。fork 独自の変更（autogen・`server/api`・`models/json-schema`・`core` の 15 ファイル）は、`2026.10.1..481883ac2a` と `2026.11.0..merge/2026.11.0` で**変更行が完全に一致**した（上流と同じファイルを触る `MfmService.ts` / `ApNoteService.ts` も含めて崩れていない）。`sw/unregister` は endpoint だけを送ると従来どおり 400 `must have required property 'auth'`。
+
+→ `daisskey` に入ったら（ダイスキー本番は週末の想定）、次の baseline をその SHA にし、Flash 互換ハーネスを回す。
 
 ### baseline: `481883ac2a`（**2026.10.1**、2026-11-07 記録）
 
