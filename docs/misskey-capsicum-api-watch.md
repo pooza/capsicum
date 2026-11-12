@@ -139,6 +139,23 @@ daisskey（ダイスキー本番のフォーク本体）への**本番適用**�
 
 ## トリアージ履歴
 
+### 前倒し: 上流タグ `2026.10.1..2026.11.0`（2026-11-12 記録）
+
+⚠ **fork（`daisskey`）が 2026.11.0 を取り込む前の前倒し**で、上流のタグどうしで差分した（64 commits）。`daisskey` は `481883ac2a`（2026.10.1+0）のまま。ダイスキー本番・ステージングとも **2026.10.1+0**、きゅあすきーは **2026.9.1**（いずれも `/api/meta` で実測）。
+
+✅ **actionable なし。**
+
+- ① は `types.ts` の −1 だけ（`i/2fa/register` の応答から `qr` が消えた）。`entities.ts` / `endpoint.ts`・② の `models/json-schema/`・新規 endpoint・endpoint の `required` / `limit` / `requireCredential` / `kind` はいずれも 0 件。④ の `router.definition.ts` も不変
+- **passive**: 他ソフトウェアの引用で、サーバーが取り込み時に本文の `quote-inline`（`RE: <URL>`）を外すようになった（`MfmService.fromHtml` の `hasQuote`）。capsicum は `quote_fallback.dart` で同じものを外しているので二重にはならない。⚠ 取り込み済みの投稿は従来の形のままなので、capsicum 側の除去は残す
+- **passive**: Misskey が push の配信先から **404** を受けたときも購読を消すようになった（従来は 410 だけ）。relay の `/push` は 404 を返す経路を持たない（未知 token と利用権なしは 410、混雑・キュー満杯・未設定は 503）
+- **passive**: ストリームの `localTimeline` で「他の人への返信を含めない」が、フォロー相手ごとの `withReplies` に関係なく効くようになった / `antenna` が自分の投票状態を載せるようになった（応答の形は不変）
+- **none**: `i/2fa/register` の `qr`（capsicum は 2FA の登録を持たない）/ `drive/files` の並び順のインデックス対策 / identicon / ユーザー取得のクエリ削減 / 起動スクリプト
+- ⚠ **フォークの取り込み**: fork 独自の変更がある `stream/channels/local-timeline.ts`（fork #448）は上流の修正と自動で混ざる（`git merge-tree` で確認）。衝突はフォークが消した CI 定義・`package.json`・frontend 2 件で、毎回と同じ種類
+- ⚠ **サーバーの運用側**: Node v22 のサポート終了・最低版が 24.22.3 / 26.13.1 に上がった・起動スクリプト `scripts/start.mjs` が入り、`NODE_OPTIONS` の `--require` / `--import` の基準ディレクトリが変わる（chubo2 の管轄）
+- **③ `@syuilo/aiscript` は 1.2.1 で据え置き**。Flash 互換ハーネスは本番昇格後に回す
+
+→ fork が取り込んだら、`481883ac2a..daisskey` で上流以外の差分が無いかだけ確かめ、次の baseline をその SHA にする。
+
 ### baseline: `481883ac2a`（**2026.10.1**、2026-11-07 記録）
 
 フォーク（`daisskey`）が 2026.10.1 を取り込んだ。ダイスキー本番は `/api/meta` で **2026.10.1+0**、きゅあすきーは **2026.9.1** のまま。上流の分は下の前倒しで見てあり、actionable の 2 件（#1334 / #1335）は v2.6 で出荷済み。
