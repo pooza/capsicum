@@ -249,7 +249,7 @@ capsicum-relay の Issue・マイルストーンは、**capsicum 本体と同じ
   | 2 | 本番 | 同上を本番 URL で |
 
   ⚠ **ステージングで確かめてから本番へ進む。**手順（pull → 依存更新 → サービス再起動 → `/health`）は 2 台とも同じ（逐語は chubo2 側）。⚠ **変更系と確認系を同じ ssh セッションに混ぜない**（本番を意図せず再起動した事故がある）。⚠ **ステージングは購読数が小さく `supporters` が 0** なので、`/health` の数値が本番と違っても異常ではない。
-- **新しい Ruby を検出したら、relay の版を合わせる**（2026-10-24 pooza 指示）。⚠⚠ **relay は ginseng を使っていないので、ginseng-style から来る「新しい Ruby が出た」というお知らせが届かない。**他のリポジトリより取り残されやすく、**拾えるのはここだけ**:
+- **新しい Ruby を検出したら、relay の版を合わせる**（2026-10-24 pooza 指示）。⚠⚠ **relay は ginseng の gem を使っていないので（ginseng-style は rubocop の設定だけ）、ginseng 側から来る「新しい Ruby が出た」というお知らせが届かない。**他のリポジトリより取り残されやすく、**拾えるのはここだけ**:
 
   ```sh
   gh api repos/ruby/ruby/releases/latest --jq '.tag_name, .published_at'   # 最新の安定版（v4.0.9 の形）
@@ -261,6 +261,16 @@ capsicum-relay の Issue・マイルストーンは、**capsicum 本体と同じ
   - ⚠ 起票の前に、**ステージング・本番の両機の rbenv に新しい版が入っているか**を読み取りで確かめ、前提の節に書く（入れるのは chubo2 側の作業・接続先は chubo2 の `docs/infra-servers.md`）。入っていなければ「chubo2 側が先」と書く
   - ⚠⚠ **すぐ作業するかは、直前の版からの差分で決める**（2026-10-24 pooza）。リリースノート（`gh api repos/ruby/ruby/releases --jq '.[] | select(.tag_name=="vX.Y.Z") | .body'`）を読み、**修正が relay の通る経路に効くか**を確かめて Issue のコメントに書く。例: 4.0.9 は「巨大な正規表現のコンパイル」の修正で、relay は外部入力から正規表現を組み立てないので急がない（relay#108）
   - ⚠ **急ぐと判断しない限り、起票までで止める。**版上げに着手するのは言われてから
+- **relay の依存が古くなっていないかを見る**（2026-11-13 pooza 指示「relay は ginseng-style や Ruby の追従等もあるので、古いものがないか、時々様子をみてほしい」）。⚠⚠ **relay には依存を上げる契機が無い**（CI も ginseng の版上げの波も来ない）。2026-11-13 に初めて引いたら、**ginseng-style が約 3 か月・124 コミット遅れ**、ほかに 7 本（sentry-ruby / json はメジャー）が古かった（→ relay#113）。⚠ **ginseng-style は git の main 参照なので、lock の revision は手で上げないと進まない**:
+
+  ```sh
+  (cd ~/repos/capsicum-relay && bundle outdated --only-explicit)   # ⚠ 古いものがあると exit 1（失敗ではない）
+  gh api repos/pooza/capsicum-relay/dependabot/alerts --jq '[.[] | select(.state == "open")] | length'
+  ```
+
+  - **追従の Issue（`gh issue list --repo pooza/capsicum-relay --state open --search '依存の追従 in:title'`）が open なら、件数の増減だけ報告する**（毎回起票し直さない）
+  - 無くて古いものがあれば、**ginseng-style が動いている / メジャーが出た / セキュリティのアラートがある**のどれかで起票する。パッチだけの差なら報告に留め、次に relay を触る回にまとめる
+  - ⚠ **セキュリティのアラートは別の Issue にする**（relay#111 の形・経路に乗るかをコードで確かめて書く）。⚠ dependabot の PR は main 向きなので、そのままマージせず develop 経由で入れる
 - **Mastodon / Misskey の現行バージョン確認**: 自前サーバーのソフトウェアは pooza フォークがリリース追従しているため、ローカルの fork を pull すれば現行バージョンを正確に確認できる（推測しない）。
   - Mastodon: `git -C ~/repos/mastodon pull --ff-only` → `lib/mastodon/version.rb` の major/minor/patch（または `git -C ~/repos/mastodon tag --sort=-creatordate | head` で `vX.Y.Z-bshockdon`）
   - Misskey: `git -C ~/repos/misskey pull --ff-only` → `package.json` の `version`（`jq -r .version ~/repos/misskey/package.json`）
