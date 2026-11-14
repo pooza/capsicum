@@ -131,12 +131,20 @@ def main(argv):
         elif op == "move":
             s.move(args[0], args[1])
         elif op == "drag":
-            s.move(args[0], args[1])
+            # ツールキットのドラッグ開始の判定 (押したまま閾値を超えて動く) に
+            # 掛かるよう、押した直後は小刻みに動かし、落とす先では少し止まる。
+            x1, y1, x2, y2 = (float(a) for a in args[:4])
+            s.move(x1, y1)
             s.button("left", True)
-            steps = 10
+            time.sleep(0.2)
+            for d in (2, 4, 8, 16):
+                s.move(x1 + d, y1 + d)
+                time.sleep(0.1)
+            steps = 40
             for i in range(1, steps + 1):
-                s.move(float(args[0]) + (float(args[2]) - float(args[0])) * i / steps,
-                       float(args[1]) + (float(args[3]) - float(args[1])) * i / steps)
+                s.move(x1 + (x2 - x1) * i / steps, y1 + (y2 - y1) * i / steps)
+                time.sleep(0.03)
+            time.sleep(0.6)
             s.button("left", False)
         elif op == "scroll":
             s.move(args[0], args[1])
