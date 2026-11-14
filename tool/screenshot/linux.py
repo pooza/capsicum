@@ -46,7 +46,9 @@ result = {"ok": False}
 def on_stream_added(_conn, _sender, _path, _iface, _signal, params):
     (node_id,) = params.unpack()
     pipeline = Gst.parse_launch(
-        f"pipewiresrc path={node_id} num-buffers=3 do-timestamp=true ! videoconvert ! "
+        # Mutter は画面が変わったときにしかフレームを送らないので、静止した
+        # 画面でも撮れるよう 1 フレームで止める (最初の 1 枚は必ず来る)。
+        f"pipewiresrc path={node_id} num-buffers=1 do-timestamp=true ! videoconvert ! "
         f"pngenc snapshot=false ! multifilesink location={out} max-files=1")
     pipeline.set_state(Gst.State.PLAYING)
     msg = pipeline.get_bus().timed_pop_filtered(

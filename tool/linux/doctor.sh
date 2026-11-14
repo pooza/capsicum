@@ -60,6 +60,16 @@ for r in "${RELATED_REPOS[@]}"; do
   if [[ -d "$HOME/repos/$r/.git" ]]; then ok "$r"; else ng "$r is not cloned (setup.sh)"; fi
 done
 
+echo "== Claude Code"
+# autoMode の文面には本番・ステージングの固有名が入るので、settings.local.json
+# (gitignore) にしか置けない。setup.sh では入れず、無ければ Claude が書く
+# (pooza の一言の承認が要る・docs/dev-environment-claude-code.md「Claude Code の権限設定」)。
+if jq -e '.autoMode.allow and .autoMode.soft_deny' "$ROOT/.claude/settings.local.json" >/dev/null 2>&1; then
+  ok ".claude/settings.local.json has autoMode"
+else
+  ng ".claude/settings.local.json has no autoMode (ask Claude to write it; see docs/dev-environment-claude-code.md)"
+fi
+
 echo "== secrets"
 if [[ -f "${CAPSICUM_SECRETS:-$HOME/.config/capsicum/secrets.env}" ]]; then ok "secrets.env"; else ng "secrets.env is missing (docs/dev-environment.md)"; fi
 if [[ -f "$HOME/.sentryclirc" ]]; then ok "$HOME/.sentryclirc"; else ng "$HOME/.sentryclirc is missing"; fi
