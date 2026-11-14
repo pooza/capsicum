@@ -47,3 +47,8 @@ melos:
       packageFilters:
         fileExists: l10n.yaml
       description: Generate localizations
+
+# flutter_secure_storage_linux 3.0.3 は xdg:schema が壊れ、ログインのたびに他アカウントのトークンが消える（#1387・上流 #1230 / #1249）。
+# 修正は 4.0.0-beta.1 にしか無い。正式版が pub.dev に出たら override を外す（docs/flutter-upstream-watch.md の監視対象）。
+dependency_overrides:
+  flutter_secure_storage_linux: 4.0.0-beta.1
