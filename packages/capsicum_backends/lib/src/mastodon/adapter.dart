@@ -233,6 +233,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       }
     } catch (_) {
       // v2 instance API failed — fall back to probing.
+      await _detectMaxCharactersFromV1();
       try {
         localEnabled = await client.probePublicTimeline(local: true);
         federatedEnabled = await client.probePublicTimeline();
@@ -249,6 +250,27 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       if (federatedEnabled) TimelineType.remote,
       TimelineType.directMessages,
     };
+  }
+
+  /// `/api/v2/instance` が無いサーバー（Akkoma などの Pleroma 系・#1287）の
+  /// 投稿の上限を `/api/v1/instance` から読む。
+  ///
+  /// Mastodon の v1 は `configuration.statuses.max_characters`、Pleroma 系は
+  /// `max_toot_chars` に出す（Akkoma 3.20 は後者だけ・既定 5000）。⚠ 読めなければ
+  /// 既定の 500 のまま（上限は付加情報なので、ここで TL の判定を壊さない）。
+  Future<void> _detectMaxCharactersFromV1() async {
+    try {
+      final instance = await client.getInstanceV1();
+      final config = instance['configuration'] as Map<String, dynamic>?;
+      final statuses = config?['statuses'] as Map<String, dynamic>?;
+      final maxCharacters =
+          statuses?['max_characters'] ?? instance['max_toot_chars'];
+      if (maxCharacters is int) {
+        capabilities.maxPostContentLength = maxCharacters;
+      }
+    } catch (_) {
+      // v1 も読めなければ既定値のまま。
+    }
   }
 
   // BackendAdapter
