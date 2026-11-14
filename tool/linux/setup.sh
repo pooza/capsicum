@@ -21,7 +21,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-# shellcheck source=packages.sh
+# shellcheck source-path=SCRIPTDIR source=packages.sh
 source "$ROOT/tool/linux/packages.sh"
 SECRETS="${CAPSICUM_SECRETS:-$HOME/.config/capsicum/secrets.env}"
 

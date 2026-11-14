@@ -14,7 +14,7 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-# shellcheck source=packages.sh
+# shellcheck source-path=SCRIPTDIR source=packages.sh
 source "$ROOT/tool/linux/packages.sh"
 
 missing=0
@@ -62,7 +62,7 @@ done
 
 echo "== secrets"
 if [[ -f "${CAPSICUM_SECRETS:-$HOME/.config/capsicum/secrets.env}" ]]; then ok "secrets.env"; else ng "secrets.env is missing (docs/dev-environment.md)"; fi
-if [[ -f "$HOME/.sentryclirc" ]]; then ok "~/.sentryclirc"; else ng "~/.sentryclirc is missing"; fi
+if [[ -f "$HOME/.sentryclirc" ]]; then ok "$HOME/.sentryclirc"; else ng "$HOME/.sentryclirc is missing"; fi
 
 echo "== desktop session"
 info "session type: ${XDG_SESSION_TYPE:-unknown} (over ssh this is the ssh session, not the screen)"
