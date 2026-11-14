@@ -9,6 +9,7 @@
 | [`linux/doctor.sh`](linux/doctor.sh) | Linux の開発・検証機で、足りないものを一覧にする（何も変えない） |
 | [`linux/setup.sh`](linux/setup.sh) | 同上の足りないものを入れる。sudo のパスワードは最初の 1 回だけ（一覧の正本は [`linux/packages.sh`](linux/packages.sh)・説明は [docs/dev-environment-desktop.md](../docs/dev-environment-desktop.md) の「Linux 固有」） |
 | [`screenshot/`](screenshot/) | ストア用スクリーンショットの撮影（手順は [docs/screenshot-procedure.md](../docs/screenshot-procedure.md)） |
+| [`screenshot/linux.py`](screenshot/linux.py) | GNOME（Wayland）の画面を 1 枚 PNG に撮る。Mutter の画面配信の口を直接使うので、portal と違って撮るたびの許可のダイアログが出ない（[#1383](https://github.com/pooza/capsicum/issues/1383) の検証用・`python3 -I tool/screenshot/linux.py OUT.png`）。⚠ auto モードでは `settings.local.json` に `Bash(python3 -I tool/screenshot/linux.py *)` が要る |
 
 ## dev-run（debug で動かす）
 
