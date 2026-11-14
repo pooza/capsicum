@@ -41,6 +41,7 @@ chmod +x install.sh
 - hicolor アイコンを `~/.local/share/icons/hicolor/*/apps/` に展開
 - `~/Applications/` に溜まった旧バージョンの `capsicum-<version>-x86_64.AppImage` を掃除 (最新 + 直前 1 世代のみ残す。rollback 用に直前だけ残す)
 - `update-desktop-database` / `gtk-update-icon-cache` を実行 (best-effort)
+- (ワンライナーの場合) ダウンロードした AppImage を、Release に載っている SHA-256 と照合する。合わなければ何もインストールせずに止まる
 
 完了後、アプリメニュー / ランチャーから「capsicum」を起動できます。
 書き込み先はすべてユーザー領域 (`$HOME` 配下) なので `sudo` は不要です。
@@ -69,6 +70,22 @@ chmod +x install.sh
    ```
 
 5. (任意) デスクトップ統合 (アプリ一覧への登録): [AppImageLauncher](https://github.com/TheAssassin/AppImageLauncher) を導入しておくと、初回起動時にアプリ一覧への追加とアイコン登録を自動でやってくれます
+
+### うまくいかないとき
+
+ワンライナーは、ダウンロードした AppImage を Release に載っている SHA-256 と照合し、合わなければ何もインストールせずに止まります。止まったときは、原因の候補が表示されます。
+
+- **curl / wget の設定ファイル** (`~/.curlrc`・`$XDG_CONFIG_HOME/.curlrc`・`$CURL_HOME/.curlrc`・`~/.wgetrc`)。ここに書いたオプションは、毎回のダウンロードに加わります。たとえば curl の `-i` (応答のヘッダーを中身に混ぜる) が入っていると、ダウンロードしたファイルが壊れます
+- **プロキシ・証明書の環境変数** (`https_proxy` / `ALL_PROXY` / `CURL_CA_BUNDLE` など)。表示されるのは変数の名前だけで、値は表示しません
+- どちらも見つからなければ、ネットワークか配布側の一時的な問題の可能性があります。時間をおいて試してください
+
+設定を見直すか、ローカルにダウンロードした AppImage を使う方法 (上記) に切り替えてください。それでも進めたいときは `--force` を付けると、照合が合わなくても警告を出したうえでインストールします:
+
+```sh
+curl -fsSL https://capsicum.shrieker.net/install.sh | bash -s -- --force
+```
+
+> `--force` を付けても、AppImage として読めないほど壊れたファイル (先頭にヘッダーが混ざったものなど) はインストールしません。
 
 ## ログイン時に自動起動する (任意)
 
