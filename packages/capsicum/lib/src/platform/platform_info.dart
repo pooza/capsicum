@@ -172,6 +172,31 @@ bool get usesSecretService =>
 @visibleForTesting
 bool? debugSecretServiceOverride;
 
+/// secure storage の**全キーが 1 つの保存項目にまとめて入る**プラットフォームか
+/// (#1387)。Linux だけ true。
+///
+/// `flutter_secure_storage_linux` は全キーを 1 つの JSON にして、Secret Service の
+/// 項目 1 つへ「読む → 足す → 書く」で保存する（`Secret.hpp` の `addItem`）。
+/// ⚠⚠ **1 回でも空で保存されると、次の書き込みが「空 + そのキー 1 つ」で上書き
+/// する**＝ほかのアカウントのトークンと `client_creds_*` がまとめて消える。
+/// gnome-keyring 50.0 のパスワードなしのキーリングで、書き込みの約 6% が空で
+/// 保存されるのを実測した（#1387・2026-11-14 inori）。
+///
+/// ⚠ **[usesSecretService] とは別の事実。**あちらは「触ると固まるか」（D-Bus
+/// 越しか）、こちらは「1 回の書き損じが全キーへ波及するか」（保存の形）。
+/// 今はどちらも Linux だけだが、差し替え口を分けて、書き直しの経路だけを
+/// テストから踏めるようにする。
+///
+/// ⚠⚠ **書き直し（[SharedItemWriteVerifier]）の入口はこの判定だけ。**
+/// Apple / Android / Windows の経路は、これが false なら 1 バイトも変わらない
+/// （`secure_storage_shared_item_test` が固定している）。
+bool get storesSecretsInSharedItem =>
+    debugSharedSecretItemOverride ?? (!kIsWeb && Platform.isLinux);
+
+/// テスト用の差し替え口 (#1387)。
+@visibleForTesting
+bool? debugSharedSecretItemOverride;
+
 /// secure storage の**読み取り失敗**から「permanent（もう二度と読めない）」を
 /// 判別できるプラットフォームか (#1104)。Apple 系（iOS / macOS）だけ true。
 ///

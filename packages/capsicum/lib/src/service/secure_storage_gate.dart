@@ -7,6 +7,7 @@ import '../constants.dart';
 import '../platform/platform_info.dart';
 import 'secret_service_probe.dart';
 import 'secure_storage_health.dart';
+import 'shared_item_write_verifier.dart';
 
 /// Android の secure storage の振る舞い (#1120)。**3 つの店すべてに同じ値を渡す。**
 ///
@@ -110,11 +111,19 @@ class SecureStorageGate {
     required String key,
     IOSOptions? iOptions,
     MacOsOptions? mOptions,
-  }) => _guard(
-    kSecureStorageReadTimeout,
-    'read',
-    () => _storage.read(key: key, iOptions: iOptions, mOptions: mOptions),
-  );
+  }) {
+    final read = _guard(
+      kSecureStorageReadTimeout,
+      'read',
+      () => _storage.read(key: key, iOptions: iOptions, mOptions: mOptions),
+    );
+    final verifier = _verifier;
+    if (verifier == null) return read;
+    return read.then((value) {
+      verifier.noteRead(key, value);
+      return value;
+    });
+  }
 
   /// 存在確認。読み取りと同じ上限を使う。
   Future<bool> containsKey({
@@ -133,11 +142,19 @@ class SecureStorageGate {
   Future<Map<String, String>> readAll({
     IOSOptions? iOptions,
     MacOsOptions? mOptions,
-  }) => _guard(
-    kSecureStorageReadTimeout,
-    'readAll',
-    () => _storage.readAll(iOptions: iOptions, mOptions: mOptions),
-  );
+  }) {
+    final read = _guard(
+      kSecureStorageReadTimeout,
+      'readAll',
+      () => _storage.readAll(iOptions: iOptions, mOptions: mOptions),
+    );
+    final verifier = _verifier;
+    if (verifier == null) return read;
+    return read.then((all) {
+      verifier.noteReadAll(all);
+      return all;
+    });
+  }
 
   /// 書き込み。⚠ **投げる側に倒す** —— 黙って落とすと「ログインできたのに
   /// トークンが無い」を作る (#1117-C)。
@@ -150,29 +167,71 @@ class SecureStorageGate {
     IOSOptions? iOptions,
     MacOsOptions? mOptions,
     AndroidOptions? aOptions,
-  }) => _guard(
-    kSecureStorageWriteTimeout,
-    'write',
-    () => _storage.write(
-      key: key,
-      value: value,
-      iOptions: iOptions,
-      mOptions: mOptions,
-      aOptions: aOptions,
+  }) => _mutate(
+    key,
+    value,
+    () => _guard(
+      kSecureStorageWriteTimeout,
+      'write',
+      () => _storage.write(
+        key: key,
+        value: value,
+        iOptions: iOptions,
+        mOptions: mOptions,
+        aOptions: aOptions,
+      ),
     ),
   );
 
   /// 削除。書き込みと同じ上限。握るかどうかは呼び出し側が決める
   /// （掃除の経路は握って観測へ回す・[AccountStorage] の delete が実例）。
+  ///
+  /// ⚠ Linux では削除も「読む → 1 キー消す → 全体を書く」なので、書き込みと
+  /// 同じく空で保存されうる (#1387)。だから [_mutate] を通す。
   Future<void> delete({
     required String key,
     IOSOptions? iOptions,
     MacOsOptions? mOptions,
-  }) => _guard(
-    kSecureStorageWriteTimeout,
-    'delete',
-    () => _storage.delete(key: key, iOptions: iOptions, mOptions: mOptions),
+  }) => _mutate(
+    key,
+    null,
+    () => _guard(
+      kSecureStorageWriteTimeout,
+      'delete',
+      () => _storage.delete(key: key, iOptions: iOptions, mOptions: mOptions),
+    ),
   );
+
+  /// 全キーが 1 項目に入る OS で、書き損じを読み戻して直す口 (#1387)。
+  ///
+  /// ⚠⚠ **プラットフォームの判定はここ 1 か所だけ**（[storesSecretsInSharedItem]）。
+  /// false の OS では null を返し、各操作は #1387 より前と同じ呼び出しになる。
+  static SharedItemWriteVerifier? get _verifier =>
+      storesSecretsInSharedItem ? SharedItemWriteVerifier.instance : null;
+
+  Future<void> _mutate(
+    String key,
+    String? value,
+    Future<void> Function() body,
+  ) {
+    final verifier = _verifier;
+    if (verifier == null) return body();
+    return verifier.mutate(
+      key: key,
+      value: value,
+      body: body,
+      readAll: () => _guard(
+        kSecureStorageReadTimeout,
+        'readAll',
+        () => _storage.readAll(),
+      ),
+      rewrite: (k, v) => _guard(
+        kSecureStorageWriteTimeout,
+        'write',
+        () => _storage.write(key: k, value: v),
+      ),
+    );
+  }
 
   /// 上限で打ち切ったときの [TimeoutException] のメッセージ。
   ///
