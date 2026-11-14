@@ -29,12 +29,21 @@ class _FilterListScreenState extends ConsumerState<FilterListScreen> {
   String? _loadedFor;
   bool _initialized = false;
 
+  /// サーバーに v2 のフィルターの口が無い（Akkoma など・#1287）。新規作成を出さない。
+  bool _unavailable = false;
+
   /// 取得して、失敗を 1 回だけ報告する。⚠ build の中で報告すると再描画のたびに
   /// 積まれるので、future の側で済ませる。
   Future<List<ServerFilter>> _load(FilterSupport support) async {
     final account = ref.read(currentAccountProvider);
     try {
-      return await support.getFilters();
+      final filters = await support.getFilters();
+      if (mounted && _unavailable) setState(() => _unavailable = false);
+      return filters;
+    } on FiltersUnavailable {
+      // 口が無いサーバー（#1287）。⚠ 失敗ではないので報告しない。
+      if (mounted) setState(() => _unavailable = true);
+      rethrow;
     } catch (e, st) {
       reportOpFailure(
         tagKey: 'filter.list',
@@ -79,7 +88,7 @@ class _FilterListScreenState extends ConsumerState<FilterListScreen> {
       appBar: AppBar(
         title: const Text('フィルター'),
         actions: [
-          if (support != null)
+          if (support != null && !_unavailable)
             IconButton(
               icon: const Icon(Icons.add),
               tooltip: '新規作成',
@@ -95,6 +104,9 @@ class _FilterListScreenState extends ConsumerState<FilterListScreen> {
                 builder: (context, snapshot) {
                   if (snapshot.connectionState != ConnectionState.done) {
                     return const Center(child: CircularProgressIndicator());
+                  }
+                  if (snapshot.error is FiltersUnavailable) {
+                    return const Center(child: Text('このサーバーではフィルターを使えません'));
                   }
                   if (snapshot.hasError) {
                     return Center(

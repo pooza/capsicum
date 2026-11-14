@@ -1737,8 +1737,17 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   // FilterSupport (#1047)
 
   @override
-  Future<List<ServerFilter>> getFilters() async =>
-      (await client.getFilters()).map(parseMastodonFilter).toList();
+  Future<List<ServerFilter>> getFilters() async {
+    try {
+      return (await client.getFilters()).map(parseMastodonFilter).toList();
+    } on DioException catch (e) {
+      // v2 のフィルターの口が無いサーバー（Akkoma などの Pleroma 系・#1287）。
+      // ⚠ 404 だけを写す。401 / 5xx は失敗のまま上げる（取り違えると、
+      // 本家 Mastodon の一時的な不調を「使えない」と見せてしまう）。
+      if (e.response?.statusCode == 404) throw const FiltersUnavailable();
+      rethrow;
+    }
+  }
 
   @override
   Future<ServerFilter> createFilter(FilterDraft draft) async =>
