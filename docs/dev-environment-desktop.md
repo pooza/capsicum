@@ -28,16 +28,9 @@ gh issue list --state open --label Linux     # Linux 機で
 
 ## Linux 固有
 
-[#424](https://github.com/pooza/capsicum/issues/424) で実機検証して確定した system 依存:
+⚠⚠ **新しい Linux 機に着いたら、まず [`tool/linux/doctor.sh`](../tool/linux/doctor.sh) を走らせる**（2026-11-14 inori で新設）。足りないものを一度に全部出す。足りなければ [`tool/linux/setup.sh`](../tool/linux/setup.sh) を **pooza に 1 回だけ**実行してもらう（sudo のパスワード 1 回 + `GH_TOKEN` が無ければ GitHub のログイン）。apt のパッケージ・ロケール・apt をパスワードなしにする sudoers・`gh` のログインと `gh auth setup-git`・関連リポジトリの clone・GNOME の portal の撮影の許可までを入れる。⚠ **要るものを作業しながら 1 つずつ見つけて、何往復もお願いしない**（inori の立ち上げで実際にそうなった）。
 
-```sh
-sudo apt install -y \
-  clang cmake ninja-build pkg-config \
-  libgtk-3-dev libsecret-1-dev libwebkit2gtk-4.1-dev \
-  libcurl4-openssl-dev default-jdk-headless \
-  libmpv-dev libasound2-dev libayatana-appindicator3-dev \
-  libfuse2t64 patchelf
-```
+system 依存の一覧の正本は [`tool/linux/packages.sh`](../tool/linux/packages.sh)（ここには写さない）。[#424](https://github.com/pooza/capsicum/issues/424) で実機検証して確定したビルドの依存の内訳:
 
 - `libgtk-3-dev` / `libsecret-1-dev`: Flutter desktop と flutter_secure_storage 用
 - `libwebkit2gtk-4.1-dev`: `flutter_web_auth_2` が transitive で引く `desktop_webview_window` の OAuth 用 WebView (#382 で OS デフォルトブラウザ方式に切り替えれば不要になる候補)
@@ -47,6 +40,7 @@ sudo apt install -y \
 - `libasound2-dev`: `volume_controller` が ALSA（`find_package(ALSA)`）を要求
 - `libayatana-appindicator3-dev`: `tray_manager`（デスクトップ常駐トレイ [#752](https://github.com/pooza/capsicum/issues/752)）が `ayatana-appindicator3-0.1` を要求
 - `libfuse2t64` / `patchelf`: AppImage 起動と linuxdeploy の依存解決
+- ビルド以外に `packages.sh` が入れるもの: `gh` / `jq` / `shellcheck`（定形作業と install.sh の検査）、`language-pack-ja` / `ibus-mozc`（日本語の表示と入力）、`build-essential` / `libssl-dev` / `libyaml-dev` / `zlib1g-dev` / `libffi-dev` / `libreadline-dev`（capsicum-relay の Ruby を rbenv でホームの下にビルドするため。Ruby 自体は sudo なしで Claude が入れる）
 
 なお、上記 system 依存に加えて、フレッシュな checkout では **`melos bootstrap` + `melos run build_runner`（`fediverse_objects` の `*.g.dart` 生成）が済んでいないと `flutter build/run linux` が `_$XxxFromJson` 未定義でコンパイル失敗**する。melos は Pub Cache bin が PATH 外だと解決に失敗するため `export PATH="$PATH:$HOME/.pub-cache/bin"` を通しておく（Windows 固有節の build_runner 注記と同型）。
 

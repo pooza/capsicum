@@ -6,6 +6,8 @@
 | --- | --- |
 | [`dev-run.sh`](dev-run.sh) | debug で capsicum を動かす（macOS / Linux） |
 | [`dev-run.ps1`](dev-run.ps1) | 同上の Windows 版 |
+| [`linux/doctor.sh`](linux/doctor.sh) | Linux の開発・検証機で、足りないものを一覧にする（何も変えない） |
+| [`linux/setup.sh`](linux/setup.sh) | 同上の足りないものを入れる。sudo のパスワードは最初の 1 回だけ（一覧の正本は [`linux/packages.sh`](linux/packages.sh)・説明は [docs/dev-environment-desktop.md](../docs/dev-environment-desktop.md) の「Linux 固有」） |
 | [`screenshot/`](screenshot/) | ストア用スクリーンショットの撮影（手順は [docs/screenshot-procedure.md](../docs/screenshot-procedure.md)） |
 
 ## dev-run（debug で動かす）
