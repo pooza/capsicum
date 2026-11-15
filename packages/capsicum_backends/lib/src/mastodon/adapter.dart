@@ -866,9 +866,11 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       final MastodonAccount account;
       try {
         account = await client.verifyCredentials(allowNonfunctional: true);
-      } on MastodonAccountNotFunctional catch (e) {
-        await _revokeUnusableToken(e, token.accessToken!, extra);
-        rethrow;
+      } on MastodonAccountNotFunctional catch (e, st) {
+        final revoke = await _revokeUnusableToken(e, token.accessToken!, extra);
+        if (revoke == null) rethrow;
+        // 無効にできたかを、画面の breadcrumb まで運ぶ (#1379)。
+        Error.throwWithStackTrace(e.withTokenRevoke(revoke), st);
       }
       _learnAdminRoles(account);
 
@@ -896,20 +898,24 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   /// で**手元のセッションと同じトークン**が返っていることがある。そちらは従来
   /// どおり残す。
   ///
-  /// 失敗は握りつぶす（ログインを止めた理由のほうを利用者へ出す）。
-  Future<void> _revokeUnusableToken(
+  /// 失敗は握りつぶす（ログインを止めた理由のほうを利用者へ出す）。⚠ 結果は
+  /// 返す（[MastodonAccountNotFunctional.tokenRevoke]・試さなかったら null）。
+  Future<String?> _revokeUnusableToken(
     MastodonAccountNotFunctional e,
     String accessToken,
     Map<String, String> extra,
   ) async {
-    if (!revokesTokenOn(e.errorCode)) return;
+    if (!revokesTokenOn(e.errorCode)) return null;
     try {
       await client.revokeToken(
         clientId: extra['client_id']!,
         clientSecret: extra['client_secret']!,
         token: accessToken,
       );
-    } catch (_) {}
+      return MastodonAccountNotFunctional.tokenRevokeOk;
+    } catch (_) {
+      return MastodonAccountNotFunctional.tokenRevokeFailed;
+    }
   }
 
   /// [_revokeUnusableToken] がトークンを無効にする状態か (#1372)。テスト用に

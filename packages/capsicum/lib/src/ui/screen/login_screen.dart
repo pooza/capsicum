@@ -876,7 +876,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             final error = completeResult.error as MastodonAccountNotFunctional;
             _logLoginStep(
               'completeLogin.not_functional',
-              data: {'error_code': error.errorCode},
+              data: {
+                'error_code': error.errorCode,
+                // 発行したトークンを無効にできたか (#1372 / #1379)。
+                'token_revoke': ?error.tokenRevoke,
+              },
             );
             if (mounted) setState(() => _error = notFunctional);
             return;
@@ -1375,7 +1379,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           final error = result.error as MastodonAccountNotFunctional;
           _logLoginStep(
             'completeLogin.not_functional',
-            data: {'error_code': error.errorCode},
+            data: {
+              'error_code': error.errorCode,
+              // 発行したトークンを無効にできたか (#1372 / #1379)。
+              'token_revoke': ?error.tokenRevoke,
+            },
           );
           if (mounted) setState(() => _error = notFunctional);
           return true;
