@@ -47,6 +47,17 @@ class ClipNotFound implements Exception {
   const ClipNotFound();
 }
 
+/// 入れる / 外す投稿が見つからない (#1379)。Misskey の `NO_SUCH_NOTE`。
+///
+/// - 入れるとき: 投稿が消えていた（上流は外部キーの違反として返す）
+/// - 外すとき: **もう外れていた**（上流 `ClipService.removeNote` は消えた行が
+///   0 件だと返す）
+///
+/// ⚠ どちらも利用者の操作で起きる状態なので、失敗として Sentry へ送らない。
+class ClipNoteNotFound implements Exception {
+  const ClipNoteNotFound();
+}
+
 /// その投稿はもうクリップに入っている (#1050)。Web と同じく、外すかを尋ねる
 /// きっかけに使う。
 class AlreadyClipped implements Exception {

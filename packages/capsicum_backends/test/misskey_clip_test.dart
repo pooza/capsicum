@@ -191,6 +191,27 @@ void main() {
       );
     });
 
+    // #1379: 入れる投稿が消えていた / 外す投稿がもう外れていた。
+    test('投稿が無い（NO_SUCH_NOTE）は入れる・外すとも ClipNoteNotFound', () async {
+      await install(
+        _Server(
+          errors: {
+            '/api/clips/add-note': 'NO_SUCH_NOTE',
+            '/api/clips/remove-note': 'NO_SUCH_NOTE',
+          },
+        ),
+      );
+
+      expect(
+        adapter.addNoteToClip('c1', 'n1'),
+        throwsA(isA<ClipNoteNotFound>()),
+      );
+      expect(
+        adapter.removeNoteFromClip('c1', 'n1'),
+        throwsA(isA<ClipNoteNotFound>()),
+      );
+    });
+
     test('入っている公開クリップの id を返す（ほかの人のものも含む）', () async {
       final server = await install(
         _Server(

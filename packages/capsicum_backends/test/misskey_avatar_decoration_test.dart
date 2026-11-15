@@ -262,6 +262,83 @@ void main() {
     );
   });
 
+  // #1379: ロールで上限が下がり、付いている数が上限を超えたままだと、外す・
+  // 調整でも `i/update` が断る（上流は件数で見る）。
+  group('⚠ 外す・調整もロールで断られたら上限に当たったものとして投げる', () {
+    const second = {'id': 'b', 'url': 'https://x/b'};
+    const third = {'id': 'c', 'url': 'https://x/c'};
+
+    test('外す', () async {
+      await install(
+        _Server(
+          decorations: [_adjusted, second, third],
+          limit: 1,
+          restrictedByRole: true,
+        ),
+      );
+
+      await expectLater(
+        adapter.detachAvatarDecoration('c'),
+        throwsA(
+          isA<AvatarDecorationLimitReached>().having(
+            (e) => e.limit,
+            'limit',
+            1,
+          ),
+        ),
+      );
+    });
+
+    test('調整', () async {
+      await install(
+        _Server(
+          decorations: [_adjusted, second],
+          limit: 1,
+          restrictedByRole: true,
+        ),
+      );
+
+      await expectLater(
+        adapter.adjustAvatarDecoration(
+          'keep',
+          angle: 0,
+          flipH: false,
+          offsetX: 0,
+          offsetY: 0,
+        ),
+        throwsA(
+          isA<AvatarDecorationLimitReached>().having(
+            (e) => e.limit,
+            'limit',
+            1,
+          ),
+        ),
+      );
+    });
+
+    test('上限が読めなければ、保存しようとした数より 1 つ少ない数を上限とみなす', () async {
+      await install(
+        _Server(
+          decorations: [_adjusted, second, third],
+          limit: null,
+          restrictedByRole: true,
+        ),
+      );
+
+      // 外したあとの 2 個が断られた ＝ 上限は 1 個以下。
+      await expectLater(
+        adapter.detachAvatarDecoration('c'),
+        throwsA(
+          isA<AvatarDecorationLimitReached>().having(
+            (e) => e.limit,
+            'limit',
+            1,
+          ),
+        ),
+      );
+    });
+  });
+
   test('付けるときに /api/i を 1 回しか引かない（上限は同じ応答から読む）', () async {
     final server = await install(_Server(decorations: [], limit: 3));
 

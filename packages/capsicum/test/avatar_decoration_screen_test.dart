@@ -301,6 +301,32 @@ void main() {
     });
   });
 
+  // #1379: 外す・調整で上限に当たったときに、付けるときの文面（「先にどれかを
+  // 外してください」）を出すと、外そうとしているのに外せと言っているように読める。
+  group('avatarDecorationLimitMessage', () {
+    test('付けるときは従来の文面', () {
+      expect(
+        avatarDecorationLimitMessage('attach', 3),
+        '付けられるのは 3 個までです。先にどれかを外してください',
+      );
+      expect(
+        avatarDecorationLimitMessage('attach', 0),
+        'このアカウントではデコレーションを付けられません',
+      );
+    });
+
+    test('⚠ 外す・調整では、上限を超えて付いていることを言う', () {
+      for (final op in ['detach', 'adjust']) {
+        expect(
+          avatarDecorationLimitMessage(op, 1),
+          '付けられる数（1 個）を超えて付いているため、保存できません。'
+          'ほかのデコレーションを外して、1 個以下にしてください',
+          reason: op,
+        );
+      }
+    });
+  });
+
   test('updateUserOf: 指定のアカウントだけを書き換える', () {
     final a = account('a');
     final b = account('b');

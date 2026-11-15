@@ -150,6 +150,10 @@ void main() {
     when(
       () => adapter.addNoteToClip('priv', 'n1'),
     ).thenThrow(const ClipNoteLimitReached());
+    // 満杯のクリップの中身に、この投稿は無い。
+    when(
+      () => adapter.getClipNotes('priv', query: any(named: 'query')),
+    ).thenAnswer((_) async => []);
     await pump(tester);
 
     await tester.tap(find.text('非公開のクリップ'));
@@ -157,5 +161,62 @@ void main() {
 
     expect(find.text('「非公開のクリップ」には、これ以上入れられません'), findsOneWidget);
     expect(rowIcon('非公開のクリップ', Icons.circle_outlined), findsOneWidget);
+  });
+
+  // #1379: 上流は重複より先に件数を見るので、満杯のクリップにもう入っている
+  // 投稿は `ALREADY_CLIPPED` ではなく `TOO_MANY_CLIP_NOTES` になる。
+  testWidgets('⚠ 満杯のクリップにもう入っていたら、外すかを尋ねる', (tester) async {
+    when(
+      () => adapter.getPublicClipIdsContaining('n1'),
+    ).thenAnswer((_) async => {});
+    when(
+      () => adapter.addNoteToClip('priv', 'n1'),
+    ).thenThrow(const ClipNoteLimitReached());
+    when(
+      () => adapter.getClipNotes('priv', query: any(named: 'query')),
+    ).thenAnswer((_) async => [_post]);
+    await pump(tester);
+
+    await tester.tap(find.text('非公開のクリップ'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('外しますか'), findsOneWidget);
+    expect(find.text('「非公開のクリップ」には、これ以上入れられません'), findsNothing);
+    await tester.tap(find.text('外す'));
+    await tester.pumpAndSettle();
+    verify(() => adapter.removeNoteFromClip('priv', 'n1')).called(1);
+  });
+
+  testWidgets('入れる投稿が消えていたら、その旨を出す（#1379）', (tester) async {
+    when(
+      () => adapter.getPublicClipIdsContaining('n1'),
+    ).thenAnswer((_) async => {});
+    when(
+      () => adapter.addNoteToClip('priv', 'n1'),
+    ).thenThrow(const ClipNoteNotFound());
+    await pump(tester);
+
+    await tester.tap(find.text('非公開のクリップ'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('投稿が見つかりませんでした（削除された可能性があります）'), findsOneWidget);
+    expect(find.textContaining('保存できませんでした'), findsNothing);
+  });
+
+  testWidgets('⚠ 外す投稿がもう外れていたら、印を外す（#1379）', (tester) async {
+    when(
+      () => adapter.getPublicClipIdsContaining('n1'),
+    ).thenAnswer((_) async => {'pub'});
+    when(
+      () => adapter.removeNoteFromClip('pub', 'n1'),
+    ).thenThrow(const ClipNoteNotFound());
+    await pump(tester);
+
+    await tester.tap(find.text('公開のクリップ'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('「公開のクリップ」からは、もう外れていました'), findsOneWidget);
+    expect(rowIcon('公開のクリップ', Icons.circle_outlined), findsOneWidget);
+    expect(find.textContaining('保存できませんでした'), findsNothing);
   });
 }

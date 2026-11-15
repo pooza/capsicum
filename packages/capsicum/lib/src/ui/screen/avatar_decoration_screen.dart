@@ -56,6 +56,24 @@ String? avatarDecorationRemainingLabel({
   return 'あと $remaining 個付けられます（$attached / $limit）';
 }
 
+/// 上限に当たったときの案内 (#1361 / #1379)。[operation] は `attach` /
+/// `detach` / `adjust`。
+///
+/// ⚠ 外す・調整で当たるのは、**ロールで上限が下がり、付いている数が上限を
+/// 超えたまま**のとき（上流は件数で断る）。付けるときと同じ文面だと、外そうと
+/// しているのに「外してください」と言っているように読めるので分ける。
+String avatarDecorationLimitMessage(String operation, int limit) {
+  if (operation == 'attach') {
+    return limit == 0
+        ? 'このアカウントではデコレーションを付けられません'
+        : '付けられるのは $limit 個までです。先にどれかを外してください';
+  }
+  return limit == 0
+      ? 'このアカウントではデコレーションを付けられなくなったため、保存できません'
+      : '付けられる数（$limit 個）を超えて付いているため、保存できません。'
+            'ほかのデコレーションを外して、$limit 個以下にしてください';
+}
+
 /// アイコンデコレーションの付け外しと調整 (#1349 / #1359)。
 ///
 /// 季節のイベントなどで気軽に付け替えられるよう、押したらその場で保存する。
@@ -113,16 +131,13 @@ class _AvatarDecorationScreenState
     } on AvatarDecorationLimitReached catch (e) {
       messenger.showSnackBar(
         SnackBar(
-          content: Text(
-            e.limit == 0
-                ? 'このアカウントではデコレーションを付けられません'
-                : '付けられるのは ${e.limit} 個までです。先にどれかを外してください',
-          ),
+          content: Text(avatarDecorationLimitMessage(operation, e.limit)),
         ),
       );
     } catch (e, st) {
-      // ⚠ ロールで数を絞られたとき（`RESTRICTED_BY_ROLE`）は、アダプターが
-      // AvatarDecorationLimitReached に写すので、ここには来ない（上の on 節・#1361）。
+      // ⚠ ロールで数を絞られたとき（`RESTRICTED_BY_ROLE`）は、付ける・外す・調整の
+      // どれでも、アダプターが AvatarDecorationLimitReached に写すので、ここには
+      // 来ない（上の on 節・#1361 / #1379）。
       if (isOAuthScopeError(e)) {
         messenger.showSnackBar(
           const SnackBar(content: Text(oauthScopeErrorMessage)),

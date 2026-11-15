@@ -2431,6 +2431,8 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       }
       if (_hasErrorCode(e, 'ALREADY_CLIPPED')) throw const AlreadyClipped();
       if (_hasErrorCode(e, 'NO_SUCH_CLIP')) throw const ClipNotFound();
+      // 入れる投稿が消えていた / 外す投稿がもう外れていた (#1379)。
+      if (_hasErrorCode(e, 'NO_SUCH_NOTE')) throw const ClipNoteNotFound();
       rethrow;
     }
   }
@@ -2671,16 +2673,39 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
 
   @override
   Future<User> detachAvatarDecoration(String id) async {
-    final current = (await client.getI())
+    final (rawMe, limit) = await client.getIWithAvatarDecorationLimit();
+    final current = rawMe
         .toCapsicum(host, adminRoleIds: _adminRoleIds)
         .avatarDecorations;
-    final user = await client.updateI(
-      avatarDecorations: current
-          .where((d) => d.id != id)
-          .map(_decorationParams)
-          .toList(),
+    final kept = current.where((d) => d.id != id).toList();
+    final user = await _updateDecorations(
+      kept.map(_decorationParams).toList(),
+      limit: limit,
+      count: kept.length,
     );
     return user.toCapsicum(host, adminRoleIds: _adminRoleIds);
+  }
+
+  /// `i/update` でデコを置き換える。⚠ ロールで上限が下がり、付いている数が上限を
+  /// 超えたままだと、調整・外すときも `RESTRICTED_BY_ROLE` で断られる（上流
+  /// `i/update.ts` は件数で見る）。付けるとき（[attachAvatarDecoration]）と同じく
+  /// [AvatarDecorationLimitReached] に写す (#1379)。上限が読めなかったときは、
+  /// 保存しようとした数（[count]）より 1 つ少ない数を上限とみなす。
+  Future<MisskeyUser> _updateDecorations(
+    List<Map<String, Object>> decorations, {
+    required int? limit,
+    required int count,
+  }) async {
+    try {
+      return await client.updateI(avatarDecorations: decorations);
+    } on DioException catch (e) {
+      if (_hasErrorCode(e, 'RESTRICTED_BY_ROLE')) {
+        throw AvatarDecorationLimitReached(
+          limit ?? (count > 0 ? count - 1 : 0),
+        );
+      }
+      rethrow;
+    }
   }
 
   @override
@@ -2696,30 +2721,26 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     required double offsetX,
     required double offsetY,
   }) async {
-    final me = (await client.getI()).toCapsicum(
-      host,
-      adminRoleIds: _adminRoleIds,
-    );
+    final (rawMe, limit) = await client.getIWithAvatarDecorationLimit();
+    final me = rawMe.toCapsicum(host, adminRoleIds: _adminRoleIds);
     final current = me.avatarDecorations;
     if (!current.any((d) => d.id == id)) return me;
-    final user = await client.updateI(
-      avatarDecorations: [
-        for (final d in current)
-          if (d.id == id)
-            _decorationParams(
-              AvatarDecoration(
-                id: d.id,
-                url: d.url,
-                angle: angle.clamp(-0.5, 0.5),
-                flipH: flipH,
-                offsetX: offsetX.clamp(-0.25, 0.25),
-                offsetY: offsetY.clamp(-0.25, 0.25),
-              ),
-            )
-          else
-            _decorationParams(d),
-      ],
-    );
+    final user = await _updateDecorations(limit: limit, count: current.length, [
+      for (final d in current)
+        if (d.id == id)
+          _decorationParams(
+            AvatarDecoration(
+              id: d.id,
+              url: d.url,
+              angle: angle.clamp(-0.5, 0.5),
+              flipH: flipH,
+              offsetX: offsetX.clamp(-0.25, 0.25),
+              offsetY: offsetY.clamp(-0.25, 0.25),
+            ),
+          )
+        else
+          _decorationParams(d),
+    ]);
     return user.toCapsicum(host, adminRoleIds: _adminRoleIds);
   }
 
