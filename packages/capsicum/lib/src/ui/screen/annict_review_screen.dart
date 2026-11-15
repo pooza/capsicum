@@ -4,7 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../../service/annict_draft_store.dart';
+import '../../util/exception_scrub.dart';
 import '../../util/mulukhiya_conflict.dart';
+import '../util/annict_draft_auto_save.dart';
 import '../util/annict_error.dart';
 import '../util/annict_link.dart';
 import '../util/compose_text_style.dart';
@@ -37,7 +40,8 @@ class AnnictReviewScreen extends ConsumerStatefulWidget {
   ConsumerState<AnnictReviewScreen> createState() => _AnnictReviewScreenState();
 }
 
-class _AnnictReviewScreenState extends ConsumerState<AnnictReviewScreen> {
+class _AnnictReviewScreenState extends ConsumerState<AnnictReviewScreen>
+    with AnnictDraftAutoSave {
   final _bodyController = TextEditingController();
   AnnictRatingState? _overall;
   AnnictRatingState? _animation;
@@ -55,8 +59,47 @@ class _AnnictReviewScreenState extends ConsumerState<AnnictReviewScreen> {
   /// 押し直せる状態に戻すと**先の要求が成功していた場合に二重に記録される**。
   bool _duplicateSent = false;
 
+  // 自動保存 (#1382)。作品ごと・アカウント別。
+  @override
+  TextEditingController get draftBodyController => _bodyController;
+  @override
+  AnnictDraftKind get draftKind => AnnictDraftKind.review;
+  @override
+  int get draftId => widget.args.workId;
+
+  @override
+  Map<String, AnnictRatingState> currentDraftRatings() => {
+    'overall': ?_overall,
+    'animation': ?_animation,
+    'music': ?_music,
+    'story': ?_story,
+    'character': ?_character,
+  };
+
+  @override
+  void applyDraftRatings(Map<String, AnnictRatingState> ratings) {
+    _overall = ratings['overall'];
+    _animation = ratings['animation'];
+    _music = ratings['music'];
+    _story = ratings['story'];
+    _character = ratings['character'];
+  }
+
+  /// 評価を変えて、下書きの保存を予約する。
+  void _rate(void Function() change) {
+    setState(change);
+    onAnnictDraftRatingChanged();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    initAnnictDraft();
+  }
+
   @override
   void dispose() {
+    disposeAnnictDraft();
     _bodyController.dispose();
     super.dispose();
   }
@@ -95,6 +138,11 @@ class _AnnictReviewScreenState extends ConsumerState<AnnictReviewScreen> {
         ratingMusic: _music,
         ratingStory: _story,
         ratingCharacter: _character,
+      );
+      // 投稿できたら下書きを消す (#1382)。⚠ 失敗しても投稿は済んでいるので進む。
+      await clearAnnictDraft().catchError(
+        (Object e) =>
+            debugLogException('capsicum: annict draft clear failed', e),
       );
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -177,18 +225,14 @@ class _AnnictReviewScreenState extends ConsumerState<AnnictReviewScreen> {
               const SizedBox(height: 16),
               Text('評価', style: Theme.of(context).textTheme.titleSmall),
               const SizedBox(height: 8),
-              _ratingRow('総合', _overall, (v) => setState(() => _overall = v)),
-              _ratingRow(
-                '映像',
-                _animation,
-                (v) => setState(() => _animation = v),
-              ),
-              _ratingRow('音楽', _music, (v) => setState(() => _music = v)),
-              _ratingRow('物語', _story, (v) => setState(() => _story = v)),
+              _ratingRow('総合', _overall, (v) => _rate(() => _overall = v)),
+              _ratingRow('映像', _animation, (v) => _rate(() => _animation = v)),
+              _ratingRow('音楽', _music, (v) => _rate(() => _music = v)),
+              _ratingRow('物語', _story, (v) => _rate(() => _story = v)),
               _ratingRow(
                 'キャラクター',
                 _character,
-                (v) => setState(() => _character = v),
+                (v) => _rate(() => _character = v),
               ),
               const SizedBox(height: 16),
               Text('感想', style: Theme.of(context).textTheme.titleSmall),
@@ -204,6 +248,7 @@ class _AnnictReviewScreenState extends ConsumerState<AnnictReviewScreen> {
                 decoration: const InputDecoration(
                   border: OutlineInputBorder(),
                   hintText: '感想を入力 (必須)',
+                  helperText: annictDraftNote,
                 ),
               ),
               if (_submitting) ...[

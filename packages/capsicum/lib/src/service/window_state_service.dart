@@ -23,7 +23,16 @@ class WindowStateService with WindowListener {
   static const _kMaximized = 'window_state.maximized';
 
   static const _defaultSize = Size(1024, 768);
-  static const _minSize = Size(640, 480);
+
+  /// ウィンドウの最小サイズ。
+  ///
+  /// ⚠ **Linux では runner（`linux/runner/my_application.cc`）にも同じ値がある**
+  /// (#1385)。window_manager の `minimumSize` は、GTK のクライアント側装飾
+  /// （ヘッダーバー）のウィンドウでは GtkWindow に書き直されて効かないため、
+  /// runner で Flutter のビューに直接付けている。`window_state_min_size_test` が
+  /// 2 つの値が揃っていることを確かめる。
+  @visibleForTesting
+  static const minSize = Size(640, 480);
   static const _saveDebounce = Duration(milliseconds: 500);
 
   Timer? _saveTimer;
@@ -44,14 +53,12 @@ class WindowStateService with WindowListener {
     // runner がウィンドウを show する直前に適用される (短いがちらつきは残る。
     // 完全に潰すには native runner を hidden start に切り替える必要があり、
     // 今回はスコープ外)。
-    final restoreSize = (savedWidth != null && savedHeight != null)
-        ? Size(savedWidth, savedHeight)
-        : _defaultSize;
+    final restoreSize = restoreSizeFor(savedWidth, savedHeight);
     final hasPosition = savedX != null && savedY != null;
 
     final options = WindowOptions(
       size: restoreSize,
-      minimumSize: _minSize,
+      minimumSize: minSize,
       center: !hasPosition,
     );
     await windowManager.waitUntilReadyToShow(options, () async {
@@ -67,6 +74,21 @@ class WindowStateService with WindowListener {
 
     windowManager.addListener(this);
     _initialized = true;
+  }
+
+  /// 起動時に復元する大きさ。保存が無ければ既定の大きさ。
+  ///
+  /// ⚠ **[minSize] より小さく保存されていたら、[minSize] まで広げる** (#1385)。
+  /// Linux では最小サイズが効かず、いくらでも縮めた大きさが保存されていた。
+  /// runner で縮められなくしたあとも、**すでに保存されている小さい値**は
+  /// 残っているので、復元の側でも切る。
+  @visibleForTesting
+  static Size restoreSizeFor(double? savedWidth, double? savedHeight) {
+    if (savedWidth == null || savedHeight == null) return _defaultSize;
+    return Size(
+      savedWidth < minSize.width ? minSize.width : savedWidth,
+      savedHeight < minSize.height ? minSize.height : savedHeight,
+    );
   }
 
   void dispose() {

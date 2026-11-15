@@ -4,7 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../../service/annict_draft_store.dart';
+import '../../util/exception_scrub.dart';
 import '../../util/mulukhiya_conflict.dart';
+import '../util/annict_draft_auto_save.dart';
 import '../util/annict_error.dart';
 import '../util/annict_link.dart';
 import '../util/compose_text_style.dart';
@@ -56,7 +59,8 @@ class AnnictRecordScreen extends ConsumerStatefulWidget {
   ConsumerState<AnnictRecordScreen> createState() => _AnnictRecordScreenState();
 }
 
-class _AnnictRecordScreenState extends ConsumerState<AnnictRecordScreen> {
+class _AnnictRecordScreenState extends ConsumerState<AnnictRecordScreen>
+    with AnnictDraftAutoSave {
   final _commentController = TextEditingController();
   AnnictRatingState? _rating;
   bool _submitting = false;
@@ -72,8 +76,31 @@ class _AnnictRecordScreenState extends ConsumerState<AnnictRecordScreen> {
   /// 壊れて見える**ので別のフラグにする。
   bool _duplicateSent = false;
 
+  // 自動保存 (#1382)。話数ごと・アカウント別。
+  @override
+  TextEditingController get draftBodyController => _commentController;
+  @override
+  AnnictDraftKind get draftKind => AnnictDraftKind.record;
+  @override
+  int get draftId => widget.args.episodeId;
+
+  @override
+  Map<String, AnnictRatingState> currentDraftRatings() => {'rating': ?_rating};
+
+  @override
+  void applyDraftRatings(Map<String, AnnictRatingState> ratings) {
+    _rating = ratings['rating'];
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    initAnnictDraft();
+  }
+
   @override
   void dispose() {
+    disposeAnnictDraft();
     _commentController.dispose();
     super.dispose();
   }
@@ -127,6 +154,11 @@ class _AnnictRecordScreenState extends ConsumerState<AnnictRecordScreen> {
         episodeId: widget.args.episodeId,
         comment: comment.isNotEmpty ? comment : null,
         ratingState: _rating,
+      );
+      // 投稿できたら下書きを消す (#1382)。⚠ 失敗しても投稿は済んでいるので進む。
+      await clearAnnictDraft().catchError(
+        (Object e) =>
+            debugLogException('capsicum: annict draft clear failed', e),
       );
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -248,6 +280,7 @@ class _AnnictRecordScreenState extends ConsumerState<AnnictRecordScreen> {
                   decoration: const InputDecoration(
                     border: OutlineInputBorder(),
                     hintText: '感想を入力 (任意)',
+                    helperText: annictDraftNote,
                   ),
                 ),
               ),
@@ -278,7 +311,10 @@ class _AnnictRecordScreenState extends ConsumerState<AnnictRecordScreen> {
       selected: selected,
       onSelected: _submitting
           ? null
-          : (s) => setState(() => _rating = s ? value : null),
+          : (s) {
+              setState(() => _rating = s ? value : null);
+              onAnnictDraftRatingChanged();
+            },
     );
   }
 }

@@ -28,17 +28,20 @@ sudo apt install -y \
 mkdir -p ~/.local/bin
 cd ~/.local/bin
 
-curl -L -o linuxdeploy \
-  https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+curl -fL -o linuxdeploy \
+  https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-x86_64.AppImage
 
-curl -L -o linuxdeploy-plugin-gtk.sh \
-  https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/master/linuxdeploy-plugin-gtk.sh
+curl -fL -o linuxdeploy-plugin-gtk.sh \
+  https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/3b67a1d1c1b0c8268f57f2bce40fe2d33d409cea/linuxdeploy-plugin-gtk.sh
 
-curl -L -o appimagetool \
-  https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+curl -fL -o appimagetool \
+  https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
 
+sha256sum -c ~/repos/capsicum/distribution/linux/appimage/tooling.sha256
 chmod +x linuxdeploy linuxdeploy-plugin-gtk.sh appimagetool
 ```
+
+⚠ **URL は CI（[linux-release.yml](../../../.github/workflows/linux-release.yml)）と同じ版に揃える。**`continuous` / `master` を取ると、上流が進んだ時点で [tooling.sha256](tooling.sha256) と合わなくなり、CI とは違う道具で組むことになる（2026-11-14 に inori で `linuxdeploy` / `appimagetool` が不一致だった）。
 
 `~/.local/bin` を `PATH` に通しておく (`~/.zshrc` / `~/.bashrc` で
 `export PATH="$HOME/.local/bin:$PATH"`)。

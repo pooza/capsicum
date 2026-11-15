@@ -1,5 +1,7 @@
 import 'package:dio/dio.dart';
 
+import '../constants.dart';
+
 /// 少年ジャンプ＋の作品 URL を、アプリで開く URL へ写す (#1352)。
 ///
 /// ⚠⚠ **「勇者アバンと獄炎の魔王」だけの決め打ち**（2026-11-10 pooza）。
@@ -36,10 +38,14 @@ bool isAbanEpisodePage(String html) => _abanTitle.hasMatch(html);
 /// 見分けた結果（URL ごと）。同じリンクを何度押しても取りに行かない。
 final _cache = <String, bool>{};
 
+/// ⚠ リダイレクトは追わない (#1379・`tco_resolver.dart` と同じ)。追っても害は
+/// 無い（判定に使うのは `<title>` だけ・開く先は固定）が、明示しておく。30x は
+/// 取得の失敗として扱い、ブラウザで開く。時間切れも共通の値に揃える。
 final _dio = Dio(
   BaseOptions(
-    connectTimeout: const Duration(seconds: 3),
-    receiveTimeout: const Duration(seconds: 3),
+    followRedirects: false,
+    connectTimeout: kNetworkConnectTimeout,
+    receiveTimeout: kNetworkReceiveTimeout,
     responseType: ResponseType.plain,
   ),
 );

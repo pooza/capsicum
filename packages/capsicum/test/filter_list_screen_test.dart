@@ -9,15 +9,21 @@ import 'package:mocktail/mocktail.dart';
 /// #1047: フィルターの一覧。
 class _FakeAdapter extends Mock
     implements DecentralizedBackendAdapter, FilterSupport {
-  _FakeAdapter(this.filters);
+  _FakeAdapter(this.filters, {this.error});
 
   final List<ServerFilter> filters;
+
+  /// 非 null なら getFilters はこれを投げる。
+  final Object? error;
 
   @override
   String get host => 'mstdn.example';
 
   @override
-  Future<List<ServerFilter>> getFilters() async => filters;
+  Future<List<ServerFilter>> getFilters() async {
+    if (error != null) throw error!;
+    return filters;
+  }
 }
 
 Future<void> _pump(WidgetTester tester, _FakeAdapter adapter) async {
@@ -57,5 +63,24 @@ void main() {
   testWidgets('空なら案内を出す', (tester) async {
     await _pump(tester, _FakeAdapter(const []));
     expect(find.text('フィルターはありません'), findsOneWidget);
+  });
+
+  // #1287: Akkoma などは v2 のフィルターの口が無い。失敗ではないので
+  // 「読み込みに失敗しました」にせず、新規作成も出さない。
+  testWidgets('⚠ 口が無いサーバーでは使えない旨を出し、新規作成を出さない', (tester) async {
+    await _pump(
+      tester,
+      _FakeAdapter(const [], error: const FiltersUnavailable()),
+    );
+    expect(find.text('このサーバーではフィルターを使えません'), findsOneWidget);
+    expect(find.text('読み込みに失敗しました'), findsNothing);
+    expect(find.byTooltip('新規作成'), findsNothing);
+  });
+
+  testWidgets('⚠ ほかの失敗は従来どおり「読み込みに失敗しました」', (tester) async {
+    await _pump(tester, _FakeAdapter(const [], error: Exception('x')));
+    expect(find.text('読み込みに失敗しました'), findsOneWidget);
+    expect(find.text('このサーバーではフィルターを使えません'), findsNothing);
+    expect(find.byTooltip('新規作成'), findsOneWidget);
   });
 }

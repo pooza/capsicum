@@ -44,6 +44,38 @@ class SecureStorageHealth {
 
   static bool get unavailable => notifier.value;
 
+  /// 読み出せない理由が「キーリングがロックされている」と分かっているか
+  /// (#1386)。
+  ///
+  /// 自動の再試行は、ロックされたキーリングを読まない（読むと OS の解除の
+  /// 画面が出るため）。そのとき [markLocked] で立てる。UI はこれを見て、案内の
+  /// 文面を「ロックされています（解除すると戻ります）」に切り替える。
+  ///
+  /// ⚠ **[notifier] の代わりではない。**ロック中も「読み出せない」ことに
+  /// 変わりはないので [notifier] も立てる。こちらは理由の補足。
+  static final ValueNotifier<bool> lockedNotifier = ValueNotifier<bool>(false);
+
+  static bool get locked => lockedNotifier.value;
+
+  /// 自動の再試行で、キーリングのロックを確かめた結果を記録する (#1386)。
+  ///
+  /// ロック中なら [notifier] も立てる（読み出せない案内を出す）。解除されて
+  /// いたら理由の補足だけを下ろし、[notifier] は実際に読んだ結果
+  /// （[markRecovered] など）に任せる。
+  static void markLocked(bool isLocked) {
+    if (isLocked) {
+      if (!lockedNotifier.value) {
+        debugPrint(
+          'capsicum: keyring is locked; automatic retry skips the read',
+        );
+      }
+      lockedNotifier.value = true;
+      notifier.value = true;
+      return;
+    }
+    lockedNotifier.value = false;
+  }
+
   /// Sentry へ送ったか。⚠ **1 プロセス 1 回。**アカウントの数だけ同じ事実を
   /// 送っても母数が水増しされるだけ。
   static bool _reported = false;
@@ -178,6 +210,8 @@ class SecureStorageHealth {
   /// 辿れる唯一の手掛かりなので、1 件でも失敗が残っているあいだは出し続ける。
   static void markRecovered() {
     if (_failuresInSweep > 0) return;
+    // 読めた＝ロックは解けている (#1386)。
+    lockedNotifier.value = false;
     if (!notifier.value) return;
     debugPrint('capsicum: secure storage is readable again');
     notifier.value = false;
@@ -186,6 +220,7 @@ class SecureStorageHealth {
   @visibleForTesting
   static void resetForTest() {
     notifier.value = false;
+    lockedNotifier.value = false;
     _reported = false;
     _failuresInSweep = 0;
   }

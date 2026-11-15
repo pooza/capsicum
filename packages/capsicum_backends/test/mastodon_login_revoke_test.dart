@@ -151,6 +151,43 @@ void main() {
     expect(http.revokeBody, isNull);
   });
 
+  // #1379: revoke の失敗は握りつぶすので、効いたかを breadcrumb で後から
+  // 確かめられるよう、結果を例外に載せて運ぶ。
+  group('revoke の結果を tokenRevoke に載せる', () {
+    Future<String?> revokeOf(_LoginAdapter http) async {
+      final result = await _login(http);
+      final error = (result as LoginFailure).error;
+      return (error as MastodonAccountNotFunctional).tokenRevoke;
+    }
+
+    test('成功 → ok', () async {
+      final http = _LoginAdapter(
+        verifyStatus: 200,
+        verifyBody: _account(_nonFunctional('pending_approval')),
+      );
+      expect(await revokeOf(http), MastodonAccountNotFunctional.tokenRevokeOk);
+    });
+
+    test('失敗 → failed', () async {
+      final http = _LoginAdapter(
+        verifyStatus: 200,
+        verifyBody: _account(_nonFunctional('pending_approval')),
+      )..failRevoke = true;
+      expect(
+        await revokeOf(http),
+        MastodonAccountNotFunctional.tokenRevokeFailed,
+      );
+    });
+
+    test('⚠ 試さなかった（凍結）→ null', () async {
+      final http = _LoginAdapter(
+        verifyStatus: 200,
+        verifyBody: _account(_nonFunctional('account_suspended')),
+      );
+      expect(await revokeOf(http), isNull);
+    });
+  });
+
   test('⚠⚠ 4.7 以前の 403 の login_disabled は revoke しない', () async {
     final http = _LoginAdapter(
       verifyStatus: 403,

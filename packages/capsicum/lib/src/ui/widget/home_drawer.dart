@@ -312,7 +312,7 @@ Widget buildHomeDrawer(
                           onPressed: () {
                             ref
                                 .read(accountManagerProvider.notifier)
-                                .retryOfflineRestores();
+                                .retryOfflineRestores(userInitiated: true);
                             dismiss();
                           },
                         ),
@@ -337,7 +337,7 @@ Widget buildHomeDrawer(
                     }
                     ref
                         .read(accountManagerProvider.notifier)
-                        .retryOfflineRestores();
+                        .retryOfflineRestores(userInitiated: true);
                     dismiss();
                   },
                 );

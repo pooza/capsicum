@@ -108,7 +108,21 @@ class FilterDraft {
   });
 }
 
+/// サーバーに v2 のフィルターの口が無い (#1287)。
+///
+/// Akkoma などの Pleroma 系は v1 のフィルターしか持たず、`api/v2/filters` が
+/// 404 になる。⚠ **失敗ではない**ので、画面は「このサーバーでは使えません」を
+/// 出し、Sentry へは送らない。
+class FiltersUnavailable implements Exception {
+  const FiltersUnavailable();
+
+  @override
+  String toString() => 'FiltersUnavailable';
+}
+
 /// サーバーに保存するフィルターの管理 (#1047)。Mastodon の `api/v2/filters`。
+///
+/// ⚠ [getFilters] は、口が無いサーバーでは [FiltersUnavailable] を投げる (#1287)。
 ///
 /// ⚠ **保存は、読み込み済みの投稿には効かない。**一致の判定はサーバーが投稿を
 /// 返すときに行うため（Mastodon Web も同じ）。画面はその旨を出す。

@@ -167,12 +167,48 @@ class _ClipAddSheetState extends State<ClipAddSheet> {
       if (mounted) setState(() => _contains.add(clip.id));
       return true;
     } on ClipNoteLimitReached {
+      // ⚠ 満杯のクリップにこの投稿が入っていても、上流は重複より先に件数を見る
+      // ので `ALREADY_CLIPPED` ではなくこちらが返る (#1379)。非公開のクリップは
+      // 印が付かないので、入っているかを確かめて、入っていれば外すかを尋ねる。
+      if (await _clipHasPost(clip)) {
+        if (mounted) setState(() => _contains.add(clip.id));
+        return true;
+      }
       _say('「${clip.name}」には、これ以上入れられません');
     } on ClipNotFound {
       _say('「${clip.name}」は見つかりませんでした（削除された可能性があります）');
       await _load();
+    } on ClipNoteNotFound {
+      // 投稿が消えていた (#1379)。⚠ 利用者の操作で起きる状態なので報告しない。
+      _say('投稿が見つかりませんでした（削除された可能性があります）');
     } catch (e, st) {
       _fail(e, st, 'add');
+    }
+    return false;
+  }
+
+  /// 引く頁の上限。上流の `noteEachClipsLimit` の既定は 200 件で、1 頁は 100 件。
+  static const _maxContainPages = 10;
+
+  /// [clip] にこの投稿が入っているか (#1379)。満杯で入れられなかったときに
+  /// だけ使う。⚠ 確かめられなければ「入っていない」に倒す（従来の表示に戻る）。
+  Future<bool> _clipHasPost(NoteClip clip) async {
+    final manage = widget.manage;
+    if (manage is! ClipSupport) return false;
+    final notes = manage as ClipSupport;
+    try {
+      String? cursor;
+      for (var page = 0; page < _maxContainPages; page++) {
+        final chunk = await notes.getClipNotes(
+          clip.id,
+          query: TimelineQuery(maxId: cursor, limit: 100),
+        );
+        if (chunk.any((p) => p.id == widget.post.id)) return true;
+        if (chunk.isEmpty) return false;
+        cursor = chunk.last.id;
+      }
+    } catch (_) {
+      // 確かめられなかった。従来どおり「これ以上入れられません」を出す。
     }
     return false;
   }
@@ -205,6 +241,10 @@ class _ClipAddSheetState extends State<ClipAddSheet> {
     } on ClipNotFound {
       _say('「${clip.name}」は見つかりませんでした（削除された可能性があります）');
       await _load();
+    } on ClipNoteNotFound {
+      // もう外れていた (#1379)。⚠ 印も外す（残すと、押すたびに同じ失敗になる）。
+      if (mounted) setState(() => _contains.remove(clip.id));
+      _say('「${clip.name}」からは、もう外れていました');
     } catch (e, st) {
       _fail(e, st, 'remove');
     }

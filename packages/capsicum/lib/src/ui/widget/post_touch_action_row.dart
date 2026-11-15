@@ -13,6 +13,7 @@ import '../util/post_actions.dart';
 import '../util/post_scope_display.dart';
 import '../util/provider_scope_carrier.dart';
 import '../util/reaction_acceptance.dart';
+import '../util/reply_compose_extra.dart';
 import '../util/visible_timeline.dart';
 import 'reaction_picker_sheet.dart';
 
@@ -75,7 +76,10 @@ class PostTouchActionRow extends ConsumerWidget {
       add(Icons.reply, '返信', () {
         context.push(
           '/compose',
-          extra: extraWithProviderScope(context, {'replyTo': targetPost}),
+          extra: extraWithProviderScope(
+            context,
+            replyComposeExtra(outer: outerPost, target: targetPost),
+          ),
         );
       });
     }

@@ -2065,7 +2065,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     if (match == null) return null;
     final host = match.group(1)!;
     final username = match.group(2)!;
-    return '@$username@$host';
+    // ⚠ アカウントでない acct なので acctOf（AccountKey.handle の写しにしない）。
+    return '@${acctOf(username, host)}';
   }
 
   String _stripHtml(String html) => stripHtml(html);

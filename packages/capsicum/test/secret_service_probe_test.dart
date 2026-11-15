@@ -30,6 +30,18 @@ void main() {
     debugSecretServiceOverride = null;
   });
 
+  // v2.12 のリリース前レビュー: ロックの確認（#1386）が探す `account` 属性は、
+  // プラグインが `APPLICATION_ID` から組む値の写し。食い違うと 0 件で返り、
+  // ロックを黙って見落とす。
+  test('探す account 属性は linux/CMakeLists.txt の APPLICATION_ID と揃っている', () {
+    final cmake = File('linux/CMakeLists.txt').readAsStringSync();
+    final id = RegExp(
+      r'set\(APPLICATION_ID "([^"]+)"\)',
+    ).firstMatch(cmake)?.group(1);
+    expect(id, isNotNull, reason: 'APPLICATION_ID が読めない（書き方が変わった）');
+    expect(SecretServiceProbe.accountAttribute, '$id.secureStorage');
+  });
+
   group('Secret Service を使わない OS', () {
     test('確かめずに true を返す（相手が居ない）', () async {
       debugSecretServiceOverride = false;
@@ -311,7 +323,8 @@ void main() {
     /// `_retryOfflineRestoresNow` の本体。クラス直下のメソッドなので、閉じ括弧は
     /// 2 桁字下げの行になる。
     String retryBody(String code) {
-      final start = code.indexOf('Future<void> _retryOfflineRestoresNow()');
+      // ⚠ 引数の有無で取りこぼさない（#1386 で `userInitiated` を足した）。
+      final start = code.indexOf('Future<void> _retryOfflineRestoresNow(');
       if (start == -1) return '';
       final end = code.indexOf('\n  }\n', start);
       return code.substring(start, end == -1 ? code.length : end);
@@ -384,7 +397,7 @@ void main() {
     test('探索が空振りしていない', () {
       final button = retryButton(maskComments(File(path).readAsStringSync()));
       expect(button, isNotEmpty, reason: '「今すぐ再試行」ボタンを拾えていない');
-      expect(button, contains('retryOfflineRestores()'));
+      expect(button, contains('retryOfflineRestores('));
     });
 
     test('判定そのものが当たる（合成ソース）', () {

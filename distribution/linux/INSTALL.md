@@ -41,6 +41,7 @@ chmod +x install.sh
 - hicolor アイコンを `~/.local/share/icons/hicolor/*/apps/` に展開
 - `~/Applications/` に溜まった旧バージョンの `capsicum-<version>-x86_64.AppImage` を掃除 (最新 + 直前 1 世代のみ残す。rollback 用に直前だけ残す)
 - `update-desktop-database` / `gtk-update-icon-cache` を実行 (best-effort)
+- (ワンライナーの場合) ダウンロードした AppImage を、Release に載っている SHA-256 と照合する。合わなければ何もインストールせずに止まる
 
 完了後、アプリメニュー / ランチャーから「capsicum」を起動できます。
 書き込み先はすべてユーザー領域 (`$HOME` 配下) なので `sudo` は不要です。
@@ -68,7 +69,25 @@ chmod +x install.sh
    ~/Applications/capsicum-<version>-x86_64.AppImage
    ```
 
-5. (任意) デスクトップ統合 (アプリ一覧への登録): [AppImageLauncher](https://github.com/TheAssassin/AppImageLauncher) を導入しておくと、初回起動時にアプリ一覧への追加とアイコン登録を自動でやってくれます
+5. (任意) デスクトップ統合 (アプリ一覧への登録): [AppImageLauncher](https://github.com/TheAssassin/AppImageLauncher) を導入しておくと、初回起動時にアプリ一覧への追加とアイコン登録を自動でやってくれます (Ubuntu 26.04 と AppImageLauncher 3.0.0-beta-2 で確認)
+
+   > ⚠ **ワンライナー / `install.sh` と併用しないでください。**AppImageLauncher は `~/Applications/` にある AppImage を見つけるたびにアプリ一覧へ登録するので、`install.sh` が置く安定 symlink と直前 1 世代の AppImage もそれぞれ登録され、アプリ一覧に「capsicum」がいくつも並びます。`install.sh` で導入済みなら、アプリ一覧への登録は済んでいるので AppImageLauncher は要りません。
+
+### うまくいかないとき
+
+ワンライナーは、ダウンロードした AppImage を Release に載っている SHA-256 と照合し、合わなければ何もインストールせずに止まります。止まったときは、原因の候補が表示されます。
+
+- **curl / wget の設定ファイル** (`~/.curlrc`・`$XDG_CONFIG_HOME/.curlrc`・`$CURL_HOME/.curlrc`・`~/.wgetrc`)。ここに書いたオプションは、毎回のダウンロードに加わります。たとえば curl の `-i` (応答のヘッダーを中身に混ぜる) が入っていると、ダウンロードしたファイルが壊れます
+- **プロキシ・証明書の環境変数** (`https_proxy` / `ALL_PROXY` / `CURL_CA_BUNDLE` など)。表示されるのは変数の名前だけで、値は表示しません
+- どちらも見つからなければ、ネットワークか配布側の一時的な問題の可能性があります。時間をおいて試してください
+
+設定を見直すか、ローカルにダウンロードした AppImage を使う方法 (上記) に切り替えてください。それでも進めたいときは `--force` を付けると、照合が合わなくても警告を出したうえでインストールします:
+
+```sh
+curl -fsSL https://capsicum.shrieker.net/install.sh | bash -s -- --force
+```
+
+> `--force` を付けても、AppImage として読めないほど壊れたファイル (先頭にヘッダーが混ざったものなど) はインストールしません。
 
 ## ログイン時に自動起動する (任意)
 
@@ -125,9 +144,9 @@ AppImage は **libfuse2** に依存します (`libfuse2` / `libfuse2t64` 等の�
 
 | IM | 同梱 | 検証 |
 |---|---|---|
-| ibus | ✓ | **動作確認済み** (Debian 13 + ibus-mozc + LXQt / X11) |
-| fcitx5 | ✓ | **動作報告あり** (外部ユーザーによる確認、開発者環境では未検証) |
-| uim | ✓ | best-effort (開発者環境で未検証、動作報告歓迎) |
+| ibus | ✓ | **動作確認済み** (Debian 13 + ibus-mozc + LXQt / X11、Ubuntu 26.04 + ibus-mozc + GNOME / Wayland) |
+| fcitx5 | ✓ | **動作確認済み** (Ubuntu 26.04 + fcitx5-mozc + GNOME / Wayland。外部ユーザーからも動作報告あり) |
+| uim | ✓ | **動作確認済み** (Ubuntu 26.04 + uim-mozc + GNOME / Wayland) |
 
 ホスト側に該当 IM フレームワークがインストールされていれば、capsicum 起動時に環境変数 `GTK_IM_MODULE` で自動的に拾われます。動作しない場合は明示指定で試してください:
 
@@ -135,7 +154,7 @@ AppImage は **libfuse2** に依存します (`libfuse2` / `libfuse2t64` 等の�
 GTK_IM_MODULE=ibus ./capsicum-1.25.0-x86_64.AppImage
 ```
 
-ibus-mozc 以外の組み合わせは未検証のため、問題があれば [Issue](https://github.com/pooza/capsicum/issues) にご報告ください。
+上記以外の組み合わせは未検証のため、問題があれば [Issue](https://github.com/pooza/capsicum/issues) にご報告ください。
 
 ## ログ場所
 

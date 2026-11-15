@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:capsicum/src/service/jump_plus_resolver.dart';
 import 'package:capsicum/src/url_helper.dart';
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// #1352: 少年ジャンプ＋の「勇者アバンと獄炎の魔王」だけ、アプリの作品ページで
@@ -186,6 +187,59 @@ void main() {
       final uri = Uri.parse('https://github.com/pooza/capsicum');
 
       expect(await preferredAppUriFor(github, uri), uri);
+    });
+
+    // #1379: 取得の間（最長 6 秒ほど）画面が変わらなかった。長引いたときだけ
+    // 「開いています…」を出す。
+    group('長引いたときの知らせ（onSlow）', () {
+      PreferredAppService slow(Completer<Uri?> done) => PreferredAppService(
+        'slow',
+        '遅い',
+        const {'example.com'},
+        appUrlFor: (_) => done.future,
+      );
+      final uri = Uri.parse('https://example.com/');
+
+      test('⚠ 長引いたら 1 回だけ呼ぶ', () {
+        fakeAsync((async) {
+          final done = Completer<Uri?>();
+          var calls = 0;
+          unawaited(preferredAppUriFor(slow(done), uri, onSlow: () => calls++));
+          async.elapse(preferredAppSlowAfter - const Duration(milliseconds: 1));
+          expect(calls, 0);
+          async.elapse(const Duration(milliseconds: 2));
+          expect(calls, 1);
+          async.elapse(const Duration(seconds: 5));
+          expect(calls, 1);
+          done.complete(uri);
+          async.flushMicrotasks();
+        });
+      });
+
+      test('⚠ 速く返れば呼ばない（覚えている URL など）', () {
+        fakeAsync((async) {
+          final done = Completer<Uri?>();
+          var calls = 0;
+          unawaited(preferredAppUriFor(slow(done), uri, onSlow: () => calls++));
+          async.elapse(const Duration(milliseconds: 100));
+          done.complete(uri);
+          async.flushMicrotasks();
+          async.elapse(const Duration(seconds: 1));
+          expect(calls, 0);
+        });
+      });
+
+      test('⚠ 失敗で終わっても、あとから呼ばない', () {
+        fakeAsync((async) {
+          final done = Completer<Uri?>();
+          var calls = 0;
+          unawaited(preferredAppUriFor(slow(done), uri, onSlow: () => calls++));
+          done.completeError(StateError('boom'));
+          async.flushMicrotasks();
+          async.elapse(const Duration(seconds: 1));
+          expect(calls, 0);
+        });
+      });
     });
 
     test('⚠ 求める処理が投げたら null（ブラウザで開く）', () async {

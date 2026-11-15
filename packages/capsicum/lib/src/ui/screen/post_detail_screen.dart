@@ -15,6 +15,7 @@ import '../util/keyboard_list_navigation.dart';
 import '../util/op_error.dart';
 import '../util/post_actions.dart';
 import '../util/provider_scope_carrier.dart';
+import '../util/reply_compose_extra.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/desktop_menu_model.dart';
 import '../widget/filter_scope.dart';
@@ -169,7 +170,10 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen>
     (a) => a.canReply,
     (a) => context.push(
       '/compose',
-      extra: extraWithProviderScope(context, {'replyTo': a.targetPost}),
+      extra: extraWithProviderScope(
+        context,
+        replyComposeExtra(outer: a.outerPost, target: a.targetPost),
+      ),
     ),
   );
 

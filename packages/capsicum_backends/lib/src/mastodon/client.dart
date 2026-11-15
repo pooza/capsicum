@@ -33,7 +33,11 @@ class MastodonGroupedNotificationsUnsupported implements Exception {
 /// - 4.7 以前: `allow_nonfunctional` を知らないので 403 のまま。本文の `error` は
 ///   `Api::BaseController#require_user!` の固定の英文で、5.0 でも同じ
 class MastodonAccountNotFunctional implements Exception {
-  const MastodonAccountNotFunctional(this.errorCode, [this.serverMessage]);
+  const MastodonAccountNotFunctional(
+    this.errorCode, [
+    this.serverMessage,
+    this.tokenRevoke,
+  ]);
 
   /// `pending_confirmation` / `pending_approval` / そのほか
   /// （`account_suspended` / `login_disabled` 等・4.7 では区別できず `login_disabled`）。
@@ -41,6 +45,20 @@ class MastodonAccountNotFunctional implements Exception {
 
   /// サーバーの言語で書かれた説明（5.0 の `state.error`）。4.7 では無い。
   final String? serverMessage;
+
+  /// ログインを止めたときに、発行したトークンを無効にしたか (#1372 / #1379)。
+  /// [tokenRevokeOk] / [tokenRevokeFailed]。試さなかった（凍結など）なら null。
+  ///
+  /// ⚠ revoke の失敗は握りつぶしているので、効いているかを後から確かめる
+  /// 手段がこれしか無い。ログイン画面が breadcrumb に載せる。
+  final String? tokenRevoke;
+
+  static const tokenRevokeOk = 'ok';
+  static const tokenRevokeFailed = 'failed';
+
+  /// [tokenRevoke] だけを差し替えた写し。
+  MastodonAccountNotFunctional withTokenRevoke(String result) =>
+      MastodonAccountNotFunctional(errorCode, serverMessage, result);
 
   static const pendingConfirmation = 'pending_confirmation';
   static const pendingApproval = 'pending_approval';
