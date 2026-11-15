@@ -485,6 +485,8 @@ final routerProvider = Provider<GoRouter>((ref) {
                       (extra?['hashtags'] as List?)?.cast<String>() ?? const [],
                   // 「ナウプレで新規投稿」(#1300)。
                   insertNowPlaying: extra?['insertNowPlaying'] == true,
+                  // 返信がチャンネルの外に出る (#1380)。
+                  replyLeavesChannel: extra?['replyLeavesChannel'] as String?,
                 ),
               );
             },

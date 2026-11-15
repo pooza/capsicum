@@ -36,6 +36,7 @@ import '../util/quote_actions.dart';
 import '../util/quote_fallback.dart';
 import '../util/reaction_acceptance.dart';
 import '../util/relative_time.dart';
+import '../util/reply_compose_extra.dart';
 import '../util/sensitive_media.dart';
 import '../util/visible_timeline.dart';
 import 'clip_add_sheet.dart';
@@ -1413,9 +1414,10 @@ class _PostTileState extends ConsumerState<PostTile> {
                   title: const Text('返信'),
                   onSelected: () => context.push(
                     '/compose',
-                    extra: extraWithProviderScope(context, {
-                      'replyTo': targetPost,
-                    }),
+                    extra: extraWithProviderScope(
+                      context,
+                      replyComposeExtra(outer: post, target: targetPost),
+                    ),
                   ),
                 ),
                 if (targetPost.quotable)

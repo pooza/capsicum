@@ -60,6 +60,7 @@ import '../util/program_schedule_display.dart';
 import '../util/provider_scope_carrier.dart';
 import '../util/redraft_carry_over.dart';
 import '../util/relative_time.dart';
+import '../util/reply_compose_extra.dart';
 import '../util/reply_mentions.dart';
 import '../util/schedule_picker.dart';
 import '../util/shortcode_warning_controller.dart';
@@ -470,6 +471,14 @@ class ComposeScreen extends ConsumerStatefulWidget {
   /// 決まらなくなる。[hashtags] の枝と同じ理由）。
   final bool insertNowPlaying;
 
+  /// 返信がチャンネルの外に出るときの、押した場所のチャンネル名 (#1380)。
+  /// 名前が不明なら空文字・出ないなら null。
+  ///
+  /// Misskey のチャンネルの中のリノートから返信すると、返信先はリノートの中身に
+  /// なり、中身にチャンネルが無ければ返信はチャンネルの外に出る（サーバーの仕様）。
+  /// 送る前に分かるよう、注意書きを出す。判定は `reply_compose_extra.dart`。
+  final String? replyLeavesChannel;
+
   const ComposeScreen({
     super.key,
     this.redraft,
@@ -483,6 +492,7 @@ class ComposeScreen extends ConsumerStatefulWidget {
     this.template,
     this.hashtags = const [],
     this.insertNowPlaying = false,
+    this.replyLeavesChannel,
   });
 
   @override
@@ -5602,8 +5612,15 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (_replyToPost != null)
-                    _CollapsiblePreview(post: _replyToPost!, icon: Icons.reply)
+                  if (_replyToPost != null) ...[
+                    _CollapsiblePreview(post: _replyToPost!, icon: Icons.reply),
+                    // 返信がチャンネルの外に出る (#1380)。⚠ 返信先を消した
+                    // （_isReply が偽）ときは出さない。
+                    if (_isReply && widget.replyLeavesChannel != null)
+                      _ReplyLeavesChannelNotice(
+                        channelName: widget.replyLeavesChannel!,
+                      ),
+                  ]
                   // ⚠ **元投稿が引けなくても、返信として送ることは伝える
                   // (#1113)。**黙っていると「見えないまま効いている」形になる。
                   else if (_isReply && _redraftReplyToUnavailable)
@@ -6032,6 +6049,34 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         if (didPop) _saveDraft();
       },
       child: menu,
+    );
+  }
+}
+
+/// 返信がチャンネルの外に出ることの注意書き (#1380)。
+class _ReplyLeavesChannelNotice extends StatelessWidget {
+  const _ReplyLeavesChannelNotice({required this.channelName});
+
+  final String channelName;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.info_outline, size: 16, color: scheme.tertiary),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              replyLeavesChannelMessage(channelName),
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
