@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:url_launcher/url_launcher.dart';
@@ -100,10 +101,14 @@ bool hasPreferredApp(String host, {Set<String> disabled = const {}}) =>
 /// アプリ未インストール等で失敗したら [browserMode] でブラウザにフォールバック
 /// する。それ以外（非対象ホスト・[disabledServices] で外したサービス・デスクトップ
 /// ・非 http(s)）は [launchUrlSafely] にそのまま流す。
+///
+/// [onSlowResolve] は、開く URL を求めに行くサービス（ジャンプ＋）で、求める
+/// 処理が長引いたときに呼ぶ (#1379)。
 Future<bool> launchInPreferredApp(
   Uri uri, {
   LaunchMode browserMode = LaunchMode.platformDefault,
   Set<String> disabledServices = const {},
+  void Function()? onSlowResolve,
 }) async {
   final isMobile = Platform.isIOS || Platform.isAndroid;
   final service = isMobile && (uri.scheme == 'http' || uri.scheme == 'https')
@@ -121,7 +126,12 @@ Future<bool> launchInPreferredApp(
   final key = uri.toString();
   return _pendingPreferredLaunches[key] ??= () async {
     try {
-      return await _launchViaPreferredApp(service, uri, browserMode);
+      return await _launchViaPreferredApp(
+        service,
+        uri,
+        browserMode,
+        onSlowResolve: onSlowResolve,
+      );
     } finally {
       _pendingPreferredLaunches.remove(key);
     }
@@ -134,9 +144,10 @@ final _pendingPreferredLaunches = <String, Future<bool>>{};
 Future<bool> _launchViaPreferredApp(
   PreferredAppService service,
   Uri uri,
-  LaunchMode browserMode,
-) async {
-  final appUri = await preferredAppUriFor(service, uri);
+  LaunchMode browserMode, {
+  void Function()? onSlowResolve,
+}) async {
+  final appUri = await preferredAppUriFor(service, uri, onSlow: onSlowResolve);
   if (appUri != null) {
     try {
       final opened = await launchUrl(
@@ -151,16 +162,31 @@ Future<bool> _launchViaPreferredApp(
   return launchUrlSafely(uri, mode: browserMode);
 }
 
+/// 求める処理がこれより長くかかったら、[preferredAppUriFor] の `onSlow` を呼ぶ
+/// (#1379)。速く返る回（覚えている URL）では何も出さない。
+const preferredAppSlowAfter = Duration(milliseconds: 300);
+
 /// [service] のアプリへ渡す URL (#1352)。null ならアプリを試さない。
 ///
 /// ⚠ 求める処理の失敗は null（ブラウザで開く）。リンクが開かなくなるより、
 /// ブラウザで開くほうがよい。
-Future<Uri?> preferredAppUriFor(PreferredAppService service, Uri uri) async {
+///
+/// [onSlow] は、求める処理が [preferredAppSlowAfter] を超えたときに 1 回だけ
+/// 呼ぶ (#1379)。回線しだいで最長 6 秒ほど画面が変わらないので、「開いています…」
+/// を出すのに使う。
+Future<Uri?> preferredAppUriFor(
+  PreferredAppService service,
+  Uri uri, {
+  void Function()? onSlow,
+}) async {
   final appUrlFor = service.appUrlFor;
   if (appUrlFor == null) return uri;
+  final slow = onSlow == null ? null : Timer(preferredAppSlowAfter, onSlow);
   try {
     return await appUrlFor(uri);
   } catch (_) {
     return null;
+  } finally {
+    slow?.cancel();
   }
 }

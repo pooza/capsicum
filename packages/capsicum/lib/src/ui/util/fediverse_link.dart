@@ -77,15 +77,28 @@ Future<void> openFediverseLink(
     final messenger = ScaffoldMessenger.of(context);
     final disabledServices = ref.read(disabledPreferredAppsProvider);
     var opened = false;
+    var slowShown = false;
     try {
       opened = await launchInPreferredApp(
         uri,
         browserMode: browserMode,
         disabledServices: disabledServices,
+        // 開く URL を求めに行くサービス（ジャンプ＋）で長引いたら、押したことが
+        // 伝わるよう出す (#1379)。⚠ 二度押しで二重に開くことは url_helper が塞ぐ。
+        onSlowResolve: () {
+          slowShown = true;
+          messenger.showSnackBar(
+            const SnackBar(
+              content: Text('開いています…'),
+              duration: Duration(seconds: 8),
+            ),
+          );
+        },
       );
     } catch (_) {
       opened = false;
     }
+    if (slowShown) messenger.hideCurrentSnackBar();
     if (!opened) {
       messenger.showSnackBar(const SnackBar(content: Text('リンクを開けませんでした')));
     }
