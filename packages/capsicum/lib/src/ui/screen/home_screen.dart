@@ -1804,9 +1804,11 @@ class _OfflineHomeScaffold extends ConsumerWidget {
                     onPressed: () async {
                       // ⚠ await の前に捕まえる（押した後に画面が差し替わりうる）。
                       final messenger = ScaffoldMessenger.of(context);
+                      // ⚠ 利用者が押した再試行。キーリングがロックされていたら
+                      // 解除の画面を出す（#1386・自動の経路は出さない）。
                       final ran = await ref
                           .read(accountManagerProvider.notifier)
-                          .retryOfflineRestores();
+                          .retryOfflineRestores(userInitiated: true);
                       // ⚠⚠ **確かめ直してもまだ読めなければ、そう言う (#1085)。**
                       // 画面の案内は押す前と同じ文面のままなので、黙ると「押しても
                       // 何も起こらない」に見える（報告者の 181 の検証がその形）。
@@ -1863,10 +1865,17 @@ class _SecretServiceNotice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<bool>(
-      valueListenable: SecureStorageHealth.notifier,
-      builder: (context, unavailable, _) {
-        if (!unavailable) return const SizedBox.shrink();
+    return ListenableBuilder(
+      listenable: Listenable.merge([
+        SecureStorageHealth.notifier,
+        SecureStorageHealth.lockedNotifier,
+      ]),
+      builder: (context, _) {
+        if (!SecureStorageHealth.unavailable) return const SizedBox.shrink();
+        // ⚠ ロック中と分かっているときは、原因と戻し方を言う (#1386)。
+        // 自動の再試行はロックされたキーリングを読まない（読むと OS の解除の
+        // 画面が出続ける）ので、利用者が解除するまで戻らない。
+        final locked = SecureStorageHealth.locked;
         final scheme = Theme.of(context).colorScheme;
         return Padding(
           padding: const EdgeInsets.only(top: 16),
@@ -1886,7 +1895,7 @@ class _SecretServiceNotice extends StatelessWidget {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          'ログイン情報を読み出せません',
+                          locked ? 'キーリングがロックされています' : 'ログイン情報を読み出せません',
                           style: Theme.of(context).textTheme.titleSmall
                               ?.copyWith(color: scheme.onErrorContainer),
                         ),
@@ -1894,20 +1903,29 @@ class _SecretServiceNotice extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 8),
-                  Text(
-                    // ⚠ OS の呼び名を出す。「セキュアストレージ」だけでは何を
-                    // 調べればいいか分からない。
-                    // ⚠ **「応答しませんでした」と言い切らない (#1104)。**旗は
-                    // 応答が返らない場合（#1085）だけでなく、**応答は返ったが
-                    // 解錠できなかった**場合にも立つ。後者で「応答しなかった」
-                    // と書くと、キーリングが動いていることを知っている
-                    // ユーザーには嘘に見える。
-                    'この端末のパスワード保管庫（キーリング / Secret Service）'
-                    'を読み出せませんでした。アカウント情報は消えていません。'
-                    'ほかのアプリでもパスワードの保存・読み出しに失敗している'
-                    '場合は、端末を再起動すると直ることがあります。',
-                    style: TextStyle(color: scheme.onErrorContainer),
-                  ),
+                  if (locked)
+                    Text(
+                      'この端末のパスワード保管庫（キーリング）がロックされて'
+                      'いるため、ログイン情報を読み出せません。アカウント情報は'
+                      '消えていません。キーリングを解除すると自動で戻ります。'
+                      '「今すぐ再試行」を押すと、解除の画面を出せます。',
+                      style: TextStyle(color: scheme.onErrorContainer),
+                    )
+                  else
+                    Text(
+                      // ⚠ OS の呼び名を出す。「セキュアストレージ」だけでは何を
+                      // 調べればいいか分からない。
+                      // ⚠ **「応答しませんでした」と言い切らない (#1104)。**旗は
+                      // 応答が返らない場合（#1085）だけでなく、**応答は返ったが
+                      // 解錠できなかった**場合にも立つ。後者で「応答しなかった」
+                      // と書くと、キーリングが動いていることを知っている
+                      // ユーザーには嘘に見える。
+                      'この端末のパスワード保管庫（キーリング / Secret Service）'
+                      'を読み出せませんでした。アカウント情報は消えていません。'
+                      'ほかのアプリでもパスワードの保存・読み出しに失敗している'
+                      '場合は、端末を再起動すると直ることがあります。',
+                      style: TextStyle(color: scheme.onErrorContainer),
+                    ),
                 ],
               ),
             ),

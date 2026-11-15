@@ -1302,11 +1302,18 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
   /// **実際に再試行を走らせたら true**、進行中の呼び出しがあって no-op で
   /// 返したら false。⚠ 背景ループ ([_runOfflineRetryLoop]) が ramp-up の
   /// 消費をこの戻り値で判断するので、意味を変えない (#982)。
-  Future<bool> retryOfflineRestores() async {
+  ///
+  /// [userInitiated] は**利用者が押した再試行**（「今すぐ再試行」・ドロワーの
+  /// 再試行）のとき true。⚠⚠ **自動の経路（背景ループ・前面への復帰）は
+  /// false のまま呼ぶ** (#1386)。自動の経路はキーリングがロックされていたら
+  /// 読まない —— 読むと OS の解除の画面が出て、Cancel しても約 60 秒ごとに
+  /// 出続けていた。利用者が押したときは今どおり読み、解除の画面を出す
+  /// （自分で解除できる唯一の入口なので）。
+  Future<bool> retryOfflineRestores({bool userInitiated = false}) async {
     if (_manualRetryRunning) return false;
     _manualRetryRunning = true;
     try {
-      await _retryOfflineRestoresNow();
+      await _retryOfflineRestoresNow(userInitiated: userInitiated);
       return true;
     } finally {
       _manualRetryRunning = false;
@@ -1315,7 +1322,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
 
   bool _manualRetryRunning = false;
 
-  Future<void> _retryOfflineRestoresNow() async {
+  Future<void> _retryOfflineRestoresNow({required bool userInitiated}) async {
     final storage = ref.read(accountStorageProvider);
     // 反復中に state.offlineAccounts が変化するのでスナップショットを取る。
     // ⚠ **secret 消失分は対象外** (#967)。トークンが無いので probe を組み立て
@@ -1335,6 +1342,27 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
       // ⚠ **1 周の定義を 2 つ持たない (#1117-C)。**案内を下ろしてよいかは
       // 「この 1 周で 1 件も落ちていないか」で決めるので、同じ場所で頭を切る。
       SecureStorageHealth.beginSweep();
+      // ⚠⚠ **自動の経路は、ロックされたキーリングを読まない (#1386)。**
+      // 読むと libsecret が OS の解除の画面を出し、60 秒ごとの再試行のたびに
+      // 画面全体を覆っていた（Cancel しても止まらない）。ロックの確認は解除の
+      // 画面を出さない（[SecretServiceProbe.isLocked]）。
+      // ⚠ **アカウントごとではなく 1 周で 1 回。**キーリングは全アカウントで
+      // 共通なので、1 件でも読めばそこで画面が出る。
+      // ⚠ 利用者が押したときは確かめずに読む（解除の画面を出す）。
+      if (!userInitiated) {
+        final locked = await SecretServiceProbe.isLocked();
+        SecureStorageHealth.markLocked(locked);
+        if (locked) {
+          // ⚠ **「再試行中」の印を外してから返す。**オフラインのアカウントは
+          // 作られた時点で印が付いており（[OfflineAccount.retrying] の既定）、
+          // ふだんは下のループの失敗で外れる。読まずに返すと外れず、
+          // 「再試行中…」「接続中…」が出たままになる（inori の実機で実測）。
+          for (final offline in targets) {
+            _markOfflineRetrying(offline.key, false);
+          }
+          return;
+        }
+      }
     }
     for (final offline in targets) {
       final keyStr = offline.key.toStorageKey();

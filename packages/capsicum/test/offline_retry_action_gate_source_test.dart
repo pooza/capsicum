@@ -48,7 +48,10 @@ void main() {
   });
 
   test('再試行の導線はオフラインホームに 1 つだけ', () {
-    final occurrences = '今すぐ再試行'.allMatches(homeScreenSource()).length;
+    // ⚠ **ボタンのラベルの文字列リテラルだけを数える。**案内の本文がボタンの
+    // 名前を出す（#1386 の「「今すぐ再試行」を押すと、解除の画面を出せます」）
+    // のは写しではないので、引用符ごと `'今すぐ再試行'` で探す。
+    final occurrences = "'今すぐ再試行'".allMatches(homeScreenSource()).length;
 
     expect(
       occurrences,

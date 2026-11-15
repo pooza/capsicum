@@ -311,7 +311,8 @@ void main() {
     /// `_retryOfflineRestoresNow` の本体。クラス直下のメソッドなので、閉じ括弧は
     /// 2 桁字下げの行になる。
     String retryBody(String code) {
-      final start = code.indexOf('Future<void> _retryOfflineRestoresNow()');
+      // ⚠ 引数の有無で取りこぼさない（#1386 で `userInitiated` を足した）。
+      final start = code.indexOf('Future<void> _retryOfflineRestoresNow(');
       if (start == -1) return '';
       final end = code.indexOf('\n  }\n', start);
       return code.substring(start, end == -1 ? code.length : end);
@@ -384,7 +385,7 @@ void main() {
     test('探索が空振りしていない', () {
       final button = retryButton(maskComments(File(path).readAsStringSync()));
       expect(button, isNotEmpty, reason: '「今すぐ再試行」ボタンを拾えていない');
-      expect(button, contains('retryOfflineRestores()'));
+      expect(button, contains('retryOfflineRestores('));
     });
 
     test('判定そのものが当たる（合成ソース）', () {

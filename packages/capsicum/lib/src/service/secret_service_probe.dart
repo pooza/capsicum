@@ -86,6 +86,7 @@ class SecretServiceProbe {
   static void resetForTest() {
     _cached = null;
     debugProbeOverride = null;
+    debugLockedOverride = null;
   }
 
   /// 「応答しない」と覚えた結果だけを捨て、次の [isResponsive] で確かめ直す
@@ -129,6 +130,86 @@ class SecretServiceProbe {
     final result = await (override ?? _ping)();
     _cached = result;
     return result;
+  }
+
+  /// capsicum の項目が入ったキーリングが**ロックされているか** (#1386)。
+  ///
+  /// ## なぜ要るのか
+  ///
+  /// ロックされたキーリングを `flutter_secure_storage_linux` で読むと、
+  /// libsecret が **OS のロック解除の画面**を出す。オフラインのアカウントの
+  /// 自動の再試行（60 秒ごと）がそのたびに読むので、**Cancel しても約 60 秒
+  /// ごとに画面全体を覆う解除の画面が出続けていた。**[isResponsive] は
+  /// 「居ない / 応答しない」は見るが、「居て応答するがロックされている」は
+  /// 見ていなかった。
+  ///
+  /// ## どう確かめるか
+  ///
+  /// Secret Service の `SearchItems` は、属性に合う項目を**解除済み**と
+  /// **ロック中**の 2 つの一覧で返し、**解除の画面は出さない**（仕様）。
+  /// [_ping] と同じ純 Dart の D-Bus で呼ぶので、プラットフォームスレッドも
+  /// 使わない。属性はプラグインが付けるもの（`account` =
+  /// `<APPLICATION_ID>.secureStorage`）。
+  ///
+  /// - 解除済みが 1 件でもあれば false（読める）
+  /// - 解除済みが 0 件で、ロック中が 1 件以上なら true
+  /// - ⚠ **どちらも 0 件なら false。**項目がまだ無い（初回）か、消えている。
+  ///   読んでも解除の画面は出ないので止める理由が無い
+  /// - ⚠ **確かめられなかったら false。**ここで止めると、確かめる手段が
+  ///   壊れているだけで自動の再試行が永久に止まる。従来どおり読みに行く
+  ///
+  /// ⚠ Secret Service を使わない OS では常に false。
+  static Future<bool> isLocked() async {
+    if (!usesSecretService) return false;
+    final override = debugLockedOverride ?? debugLockedFallback;
+    if (override != null) return override();
+    return _searchLocked();
+  }
+
+  /// テスト用の差し替え口 (#1386)。[resetForTest] で空に戻る。
+  @visibleForTesting
+  static Future<bool> Function()? debugLockedOverride;
+
+  /// テスト全体の既定（`test/flutter_test_config.dart` が「ロックされて
+  /// いない」を入れる）。⚠ [resetForTest] では消さない。
+  ///
+  /// ⚠⚠ **これが無いと、Linux の上のテストが本物の D-Bus に問い合わせる。**
+  /// `fakeAsync` の中では本物の通信が終わらないので、オフラインの再試行の
+  /// ループが進まなくなる（`offline_retry_loop_transient_test` が inori で
+  /// 落ちた・Mac では分岐を通らないので緑のまま）。
+  @visibleForTesting
+  static Future<bool> Function()? debugLockedFallback;
+
+  /// プラグインが項目に付ける `account` 属性の値（`linux/CMakeLists.txt` の
+  /// `APPLICATION_ID` + `.secureStorage`・`flutter_secure_storage_linux_plugin.cc`）。
+  static const _accountAttribute = 'net.shrieker.capsicum.secureStorage';
+
+  static Future<bool> _searchLocked() async {
+    DBusClient? opened;
+    try {
+      final client = opened = DBusClient.session();
+      final service = DBusRemoteObject(
+        client,
+        name: _busName,
+        path: DBusObjectPath('/org/freedesktop/secrets'),
+      );
+      final reply = await service
+          .callMethod('org.freedesktop.Secret.Service', 'SearchItems', [
+            DBusDict(DBusSignature('s'), DBusSignature('s'), {
+              const DBusString('account'): const DBusString(_accountAttribute),
+            }),
+          ], replySignature: DBusSignature('aoao'))
+          .timeout(_probeTimeout);
+      final unlocked = (reply.values[0] as DBusArray).children;
+      final locked = (reply.values[1] as DBusArray).children;
+      return unlocked.isEmpty && locked.isNotEmpty;
+    } catch (e) {
+      debugLogException('capsicum: secret service lock check could not run', e);
+      return false;
+    } finally {
+      final client = opened;
+      if (client != null) unawaited(client.close().catchError((_) {}));
+    }
   }
 
   static Future<bool> _ping() async {
