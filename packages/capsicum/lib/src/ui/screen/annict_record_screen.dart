@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../service/annict_draft_store.dart';
+import '../../util/exception_scrub.dart';
 import '../../util/mulukhiya_conflict.dart';
 import '../util/annict_draft_auto_save.dart';
 import '../util/annict_error.dart';
@@ -155,7 +156,10 @@ class _AnnictRecordScreenState extends ConsumerState<AnnictRecordScreen>
         ratingState: _rating,
       );
       // 投稿できたら下書きを消す (#1382)。⚠ 失敗しても投稿は済んでいるので進む。
-      await clearAnnictDraft().catchError((_) {});
+      await clearAnnictDraft().catchError(
+        (Object e) =>
+            debugLogException('capsicum: annict draft clear failed', e),
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
