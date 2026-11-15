@@ -257,8 +257,8 @@ chmod +x "$APPDIR/AppRun"
 # v1.24.1 → v1.24.2 で CI runner image の構成変化により im-ibus.so が
 # 静かに同梱されなくなる事故があった。回帰防止のため、GTK IM module の
 # bundle と immodules.cache 登録を mechanical に検証する (#536)。
-# fcitx5 / uim は best-effort (動作未検証) だが、CI assertion 自体は
-# 同等にかける。
+# ibus / fcitx5 / uim とも動作確認済み (Ubuntu 26.04・#1383) なので、
+# 3 つとも同じ assertion をかける。
 echo "==> Verifying GTK IM module bundling (regression guard, #536)"
 IM_DIR="$APPDIR/usr/lib/gtk-3.0/3.0.0/immodules"
 IM_CACHE="$APPDIR/usr/lib/gtk-3.0/3.0.0/immodules.cache"
