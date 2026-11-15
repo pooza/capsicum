@@ -95,6 +95,7 @@ SIM=iphone tool/screenshot/sim.sh shot s01         # 撮って縮小版の場所
 ### 落とし穴
 
 - **Xcode 27 は Simulator.app ではなく DeviceHub**（`Xcode.app/Contents/Applications/DeviceHub.app`）。窓の一覧の行は、座標のクリックでは選べない。AX で `set selected of row N of outline 1 of …` する。表示は「ウィンドウに合わせる」で拡大する
+- ⚠ **DeviceHub の窓が、起動していない別の機種を表示していることがある**（2026-11-15 に、`SIM=ipad` で起動したのに窓は iPhone の「起動していない」画面のままだった）。このとき Device メニューに Orientation が出ず（`boot` の向きの切り替えが -1728 で落ちる）、`simctl io` の撮影は通るのでタップの座標だけが合わない。窓の題（`get name of every window`）で機種を確かめ、違えばサイドバーの行を AX で選び直してから「ウィンドウに合わせる」をやり直す
 - ⚠ **System Events の `click at` はシミュレータの画面に効かない**（-25204）。`simtap`（CGEvent）で押す
 - ⚠ **`simctl pbcopy` が効かない**（入れた直後でも空）。貼り付けは使わず、キー入力で入れる
 - ⌘ 付きのキー（iPad のメニューバーのショートカット）を端末へ送るときは、DeviceHub の Device ＞ Keyboard ＞ Keyboard Capture をオンにして `simtap key <code> cmd` で送る（#1268）。⚠ オフのままだと DeviceHub が受けてしまう。終わったらオフに戻す
