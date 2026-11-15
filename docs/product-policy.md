@@ -188,6 +188,8 @@ capsicum は Mastodon 本家および Misskey 本家の API に対して実装�
 
 ただし、自前のサーバー（モロヘイヤ導入済み環境）が提供する独自機能には最大限対応する。capsicum の主目的は自前のインフラとの連携であり、フォーク互換とは別の話である。
 
+Pleroma 系（Akkoma）も同じ線で扱う（[#1287](https://github.com/pooza/capsicum/issues/1287)）。probing で Mastodon 系と判定されるので、Mastodon 互換の API の範囲の差（`/api/v2/instance` が無いときに v1 から読む・使えない API を「使えない」と見せる、など）は吸収し、プッシュ通知も対応する（[#1390](https://github.com/pooza/capsicum/issues/1390)）。⚠ **Akkoma 固有の機能（絵文字リアクション・Akkoma 形式の引用・MFM・バブル TL など）はやらない** —— フォーク専用のコードを足すことになるため。
+
 ### 機能不足時の通知
 
 probing の結果、基本的な機能が欠けているサーバーに対しては「このサーバーは一部の機能に対応していません」旨の通知を表示する。バージョン番号には言及しない。接続自体は拒否せず、利用可能な範囲で動作させる。
