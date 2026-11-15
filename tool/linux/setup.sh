@@ -37,6 +37,8 @@ if ! locale -a | grep -qi '^ja_JP\.utf-\?8$'; then
   sudo locale-gen ja_JP.UTF-8
 fi
 
+# ⚠ 開発・検証機専用。apt はオプションやローカルの .deb を通せば root で任意の
+# コマンドを動かせるので、これは実質 root 権限を渡すのと同じ（承知の上・pooza）。
 step "sudoers: apt / apt-get without a password for $USER"
 tmp=$(mktemp)
 printf '%s ALL=(root) NOPASSWD: /usr/bin/apt, /usr/bin/apt-get\n' "$USER" > "$tmp"
