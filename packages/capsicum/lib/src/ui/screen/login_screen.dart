@@ -24,6 +24,7 @@ import '../../util/exception_scrub.dart';
 import '../../util/login_error.dart';
 import '../../util/web_auth_presenter.dart';
 import '../util/launch_url_toast.dart';
+import '../util/mastodon_instance_preview.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/content_parser.dart';
 import 'login_attempts.dart';
@@ -224,34 +225,34 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     try {
       final dio = Dio();
       if (_isMastodon) {
-        final res = await dio.get('https://${widget.host}/api/v2/instance');
-        if (res.statusCode == 200) {
-          final data = res.data as Map<String, dynamic>;
-          if (mounted) {
-            setState(() {
-              _serverName = data['title'] as String?;
-              _serverDescription = _stripHtml(
-                data['description'] as String? ?? '',
-              );
-              final thumbnail = data['thumbnail'] as Map<String, dynamic>?;
-              // thumbnail (バナー) が未設定だと Mastodon はバンドルのデフォルト
-              // preview 画像を返すので、それは「指定なし」とみなして PWA アイコン
-              // (icon[] の 192px / 最大) にフォールバックする。/api/v2/instance に
-              // マスコットは無い (#658)。
-              final rawThumb = thumbnail?['url'] as String?;
-              final customThumb = _isDefaultMastodonThumbnail(rawThumb)
-                  ? null
-                  : rawThumb;
-              final picked = _pickImageUrl([
-                (customThumb, true),
-                (_mastodonIcon192(data['icon']), false),
-              ]);
-              _serverThumbnail = picked?.url;
-              _serverThumbnailFit = (picked?.wide ?? true)
-                  ? BoxFit.cover
-                  : BoxFit.contain;
-            });
+        MastodonInstancePreview? preview;
+        try {
+          final res = await dio.get('https://${widget.host}/api/v2/instance');
+          if (res.statusCode == 200) {
+            preview = mastodonInstancePreviewFromV2(
+              res.data as Map<String, dynamic>,
+            );
           }
+        } on DioException {
+          // v2 が無いサーバー（Akkoma などの Pleroma 系・#1287）は v1 から読む。
+          final res = await dio.get('https://${widget.host}/api/v1/instance');
+          if (res.statusCode == 200) {
+            preview = mastodonInstancePreviewFromV1(
+              res.data as Map<String, dynamic>,
+            );
+          }
+        }
+        if (preview != null && mounted) {
+          final p = preview;
+          setState(() {
+            _serverName = p.name;
+            _serverDescription = _stripHtml(p.description);
+            final picked = _pickImageUrl(p.imageCandidates);
+            _serverThumbnail = picked?.url;
+            _serverThumbnailFit = (picked?.wide ?? true)
+                ? BoxFit.cover
+                : BoxFit.contain;
+          });
         }
       } else {
         final res = await dio.post('https://${widget.host}/api/meta', data: {});
@@ -308,39 +309,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (url == null || url.isEmpty) return null;
     if (url.startsWith('/')) return 'https://${widget.host}$url';
     return url;
-  }
-
-  /// Mastodon の thumbnail が未設定時のバンドルデフォルト preview 画像かを
-  /// 判定する (#658)。デフォルトは `/packs/.../preview-<hash>.png` のように
-  /// webpack/Vite の bundle assets 配下に preview ファイル名で置かれる。管理者が
-  /// アップロードしたカスタム thumbnail は `/site_uploads/` 配下なので preview
-  /// ファイル名にはならず、ここで false になる。
-  bool _isDefaultMastodonThumbnail(String? url) {
-    if (url == null || url.isEmpty) return false;
-    final path = Uri.tryParse(url)?.path ?? url;
-    final base = path.split('/').last;
-    return path.contains('/packs/') && base.startsWith('preview');
-  }
-
-  /// Mastodon `/api/v2/instance` の `icon[]`（PWA アイコン配列）から 192px を
-  /// 優先で選ぶ。無ければ最大サイズ。マスコットは API に無いためこれで代替 (#658)。
-  String? _mastodonIcon192(dynamic icons) {
-    if (icons is! List) return null;
-    String? best;
-    int bestWidth = 0;
-    for (final entry in icons) {
-      if (entry is! Map) continue;
-      final src = entry['src'] as String?;
-      if (src == null || src.isEmpty) continue;
-      final width =
-          int.tryParse((entry['size'] as String?)?.split('x').first ?? '') ?? 0;
-      if (width == 192) return src;
-      if (width > bestWidth) {
-        bestWidth = width;
-        best = src;
-      }
-    }
-    return best;
   }
 
   void _logLoginStep(String step, {Map<String, Object?>? data}) {
