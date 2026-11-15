@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -77,7 +79,7 @@ Future<void> openFediverseLink(
     final messenger = ScaffoldMessenger.of(context);
     final disabledServices = ref.read(disabledPreferredAppsProvider);
     var opened = false;
-    var slowShown = false;
+    void Function()? closeSlow;
     try {
       opened = await launchInPreferredApp(
         uri,
@@ -86,10 +88,10 @@ Future<void> openFediverseLink(
         // 開く URL を求めに行くサービス（ジャンプ＋）で長引いたら、押したことが
         // 伝わるよう出す (#1379)。⚠ 二度押しで二重に開くことは url_helper が塞ぐ。
         onSlowResolve: () {
-          slowShown = true;
-          messenger.showSnackBar(
+          closeSlow = showLeadingSnackBar(
+            messenger,
             const SnackBar(
-              content: Text('開いています…'),
+              content: Text('リンクを開いています…'),
               duration: Duration(seconds: 8),
             ),
           );
@@ -98,11 +100,35 @@ Future<void> openFediverseLink(
     } catch (_) {
       opened = false;
     }
-    if (slowShown) messenger.hideCurrentSnackBar();
+    closeSlow?.call();
     if (!opened) {
       messenger.showSnackBar(const SnackBar(content: Text('リンクを開けませんでした')));
     }
   }
+}
+
+/// 進捗の SnackBar を**先頭に**出し、それだけを閉じる関数を返す（#1379・
+/// v2.12 のリリース前レビュー）。
+///
+/// ⚠ 後ろに並べると、閉じるときの `hideCurrentSnackBar` が表示中の**別の**
+/// SnackBar を消し、こちらは用が済んだあとに出てしまう。だから前のものを
+/// 片付けてから出す（押した直後なので、前の知らせは役目を終えている）。
+/// ⚠ `clearSnackBars` は先頭を「隠すアニメーション中」で残すので、
+/// `removeCurrentSnackBar` も要る（残ると `close` の「先頭である」の前提が崩れる）。
+/// ⚠ 返す関数は、時間切れなどで既に閉じていたら何もしない。
+void Function() showLeadingSnackBar(
+  ScaffoldMessengerState messenger,
+  SnackBar snackBar,
+) {
+  messenger
+    ..clearSnackBars()
+    ..removeCurrentSnackBar();
+  final controller = messenger.showSnackBar(snackBar);
+  var closed = false;
+  unawaited(controller.closed.whenComplete(() => closed = true));
+  return () {
+    if (!closed) controller.close();
+  };
 }
 
 /// URL が fediverse の投稿 / アカウント URL らしいか。無条件 resolve を避ける
