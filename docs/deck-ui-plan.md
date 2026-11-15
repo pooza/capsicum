@@ -112,6 +112,8 @@
 | **14** →2 | アカウントをまたぐカラム（「すべての通知」）は、アカウントを持たないものとして扱う | `deck_column.dart` / `deck_screen.dart` |
 | **15** →2 | デッキにも、タブ表示と同じドロワーを置く（2026-10-15 に #1286 でフォーカスへの追従を足した） | `deck_screen.dart` / `home_drawer.dart` |
 | **16** →2 | カラムはロックできる（止めるのは見出しの × だけ） | `deck_screen.dart` / `preferences_provider.dart` |
+| **17** →2 | ロックしていないカラムをまとめて閉じる | `deck_close_unlocked.dart` / `deck_screen.dart` |
+| **18** →2 | デッキの間は、テーマの元の色を固定の緑にする（フォーカスで変えない） | `server_config_provider.dart` |
 
 「→2」は [deck-ui-decisions-2.md](deck-ui-decisions-2.md) にあるもの。
 

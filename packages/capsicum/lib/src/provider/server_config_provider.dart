@@ -155,8 +155,11 @@ final postLengthRuleProvider = Provider<PostLengthRule>((ref) {
   return adapter?.capabilities.postLengthRule ?? PostLengthRule.codePoints;
 }, dependencies: [currentAdapterProvider]);
 
+/// テーマの元の色の既定（上書きもモロヘイヤの色も無いとき）。
+const defaultThemeSeedColor = Colors.green;
+
 /// デッキの間のテーマの元の色 (#1381)。既定の緑と同じ。
-const deckThemeSeedColor = Colors.green;
+const deckThemeSeedColor = defaultThemeSeedColor;
 
 /// Theme seed color: user override > mulukhiya > default green.
 ///
@@ -183,7 +186,7 @@ final themeSeedColorProvider = Provider<Color>(
         return Color(0xFF000000 | colorValue);
       } catch (_) {}
     }
-    return Colors.green;
+    return defaultThemeSeedColor;
   },
   dependencies: [
     mountedDeckCountProvider,
