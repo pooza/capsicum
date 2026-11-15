@@ -30,6 +30,18 @@ void main() {
     debugSecretServiceOverride = null;
   });
 
+  // v2.12 のリリース前レビュー: ロックの確認（#1386）が探す `account` 属性は、
+  // プラグインが `APPLICATION_ID` から組む値の写し。食い違うと 0 件で返り、
+  // ロックを黙って見落とす。
+  test('探す account 属性は linux/CMakeLists.txt の APPLICATION_ID と揃っている', () {
+    final cmake = File('linux/CMakeLists.txt').readAsStringSync();
+    final id = RegExp(
+      r'set\(APPLICATION_ID "([^"]+)"\)',
+    ).firstMatch(cmake)?.group(1);
+    expect(id, isNotNull, reason: 'APPLICATION_ID が読めない（書き方が変わった）');
+    expect(SecretServiceProbe.accountAttribute, '$id.secureStorage');
+  });
+
   group('Secret Service を使わない OS', () {
     test('確かめずに true を返す（相手が居ない）', () async {
       debugSecretServiceOverride = false;

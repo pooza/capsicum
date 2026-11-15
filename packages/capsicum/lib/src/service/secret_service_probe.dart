@@ -182,7 +182,11 @@ class SecretServiceProbe {
 
   /// プラグインが項目に付ける `account` 属性の値（`linux/CMakeLists.txt` の
   /// `APPLICATION_ID` + `.secureStorage`・`flutter_secure_storage_linux_plugin.cc`）。
-  static const _accountAttribute = 'net.shrieker.capsicum.secureStorage';
+  /// ⚠ 食い違うと `SearchItems` が 0 件を返し、ロックを黙って見落とす（#1386 が
+  /// 戻る）。`secret_service_probe_test.dart` が CMakeLists.txt と突き合わせる。
+  @visibleForTesting
+  static const accountAttribute = 'net.shrieker.capsicum.secureStorage';
+  static const _accountAttribute = accountAttribute;
 
   static Future<bool> _searchLocked() async {
     DBusClient? opened;
