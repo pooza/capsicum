@@ -475,8 +475,9 @@ class ComposeScreen extends ConsumerStatefulWidget {
   /// 名前が不明なら空文字・出ないなら null。
   ///
   /// Misskey のチャンネルの中のリノートから返信すると、返信先はリノートの中身に
-  /// なり、中身にチャンネルが無ければ返信はチャンネルの外に出る（サーバーの仕様）。
-  /// 送る前に分かるよう、注意書きを出す。判定は `reply_compose_extra.dart`。
+  /// なり、返信は中身のチャンネル（無ければチャンネルの外）に入る（サーバーの
+  /// 仕様）。送る前に分かるよう出す注意書きの文面。判定と文面は
+  /// `reply_compose_extra.dart`。
   final String? replyLeavesChannel;
 
   const ComposeScreen({
@@ -5618,7 +5619,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                     // （_isReply が偽）ときは出さない。
                     if (_isReply && widget.replyLeavesChannel != null)
                       _ReplyLeavesChannelNotice(
-                        channelName: widget.replyLeavesChannel!,
+                        message: widget.replyLeavesChannel!,
                       ),
                   ]
                   // ⚠ **元投稿が引けなくても、返信として送ることは伝える
@@ -6053,11 +6054,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   }
 }
 
-/// 返信がチャンネルの外に出ることの注意書き (#1380)。
+/// 返信が押した場所のチャンネルに入らないことの注意書き (#1380)。文面は
+/// `reply_compose_extra.dart` の [replyLeavesChannelMessage] で組んである。
 class _ReplyLeavesChannelNotice extends StatelessWidget {
-  const _ReplyLeavesChannelNotice({required this.channelName});
+  const _ReplyLeavesChannelNotice({required this.message});
 
-  final String channelName;
+  final String message;
 
   @override
   Widget build(BuildContext context) {
@@ -6070,10 +6072,7 @@ class _ReplyLeavesChannelNotice extends StatelessWidget {
           Icon(Icons.info_outline, size: 16, color: scheme.tertiary),
           const SizedBox(width: 6),
           Expanded(
-            child: Text(
-              replyLeavesChannelMessage(channelName),
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
+            child: Text(message, style: Theme.of(context).textTheme.bodySmall),
           ),
         ],
       ),

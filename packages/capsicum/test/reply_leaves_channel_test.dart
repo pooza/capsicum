@@ -35,7 +35,7 @@ List<String> directReplyToOffenders(Map<String, String> sources) => [
 
 void main() {
   group('replyLeavesChannel', () {
-    test('チャンネルの外の投稿をチャンネルへリノートしたもの → チャンネル名', () {
+    test('チャンネルの外の投稿をチャンネルへリノートしたもの → 外に出る', () {
       final inner = _post('atf5ccywta');
       final outer = _post(
         'atf5d1nxtr',
@@ -43,17 +43,32 @@ void main() {
         channelName: 'エア番組実況',
         reblog: inner,
       );
-      expect(replyLeavesChannel(outer: outer, target: inner), 'エア番組実況');
+      final message = replyLeavesChannelMessage(from: 'エア番組実況');
+      expect(replyLeavesChannel(outer: outer, target: inner), message);
       expect(replyComposeExtra(outer: outer, target: inner), {
         'replyTo': inner,
-        'replyLeavesChannel': 'エア番組実況',
+        'replyLeavesChannel': message,
       });
     });
 
-    test('チャンネル名が不明なら空文字（出すことは出す）', () {
+    test('チャンネル名が不明でも出す（名前は出さない）', () {
       final inner = _post('i');
       final outer = _post('o', channelId: 'c', reblog: inner);
-      expect(replyLeavesChannel(outer: outer, target: inner), '');
+      expect(
+        replyLeavesChannel(outer: outer, target: inner),
+        replyLeavesChannelMessage(from: ''),
+      );
+    });
+
+    // v2.12 のリリース前レビュー: 外へのリノートを許すチャンネル B の投稿を
+    // チャンネル A へリノートしたもの。返信は B に入る。
+    test('別のチャンネルの投稿をリノートしたもの → そのチャンネルに入る', () {
+      final inner = _post('i', channelId: 'b', channelName: 'B');
+      final outer = _post('o', channelId: 'a', channelName: 'A', reblog: inner);
+      expect(
+        replyLeavesChannel(outer: outer, target: inner),
+        replyLeavesChannelMessage(from: 'A', to: 'B'),
+      );
     });
 
     test('⚠ チャンネルの投稿そのものへの返信では出さない（チャンネルに入る）', () {
@@ -82,11 +97,21 @@ void main() {
 
   test('注意書きの文面', () {
     expect(
-      replyLeavesChannelMessage('エア番組実況'),
+      replyLeavesChannelMessage(from: 'エア番組実況'),
       'この返信はチャンネル「エア番組実況」の外に投稿されます。'
       'リノートの元の投稿がチャンネルの外にあるためです。',
     );
-    expect(replyLeavesChannelMessage(''), startsWith('この返信はチャンネルの外に'));
+    expect(replyLeavesChannelMessage(from: ''), startsWith('この返信はチャンネルの外に'));
+    expect(
+      replyLeavesChannelMessage(from: 'エア番組実況', to: 'アニメ実況'),
+      'この返信はチャンネル「エア番組実況」ではなく、チャンネル「アニメ実況」に'
+      '投稿されます。リノートの元の投稿がチャンネル「アニメ実況」にあるためです。',
+    );
+    expect(
+      replyLeavesChannelMessage(from: 'A', to: ''),
+      'この返信はチャンネル「A」ではなく、別のチャンネルに投稿されます。'
+      'リノートの元の投稿が別のチャンネルにあるためです。',
+    );
   });
 
   // 集約したものは「委譲していること」まで見る（docs/CLAUDE.md）。入口が
