@@ -9,6 +9,7 @@ import '../util/action_labels.dart';
 import '../util/exception_scrub.dart';
 import '../util/login_error.dart';
 import 'account_manager_provider.dart';
+import 'deck_provider.dart';
 import 'preferences_provider.dart';
 
 /// Host → theme color map from mulukhiya services (logged-in servers only).
@@ -154,26 +155,42 @@ final postLengthRuleProvider = Provider<PostLengthRule>((ref) {
   return adapter?.capabilities.postLengthRule ?? PostLengthRule.codePoints;
 }, dependencies: [currentAdapterProvider]);
 
-/// Theme seed color: user override > mulukhiya > default green.
-final themeSeedColorProvider = Provider<Color>((ref) {
-  final account = ref.watch(currentAccountProvider);
-  if (account != null) {
-    final custom = ref.watch(
-      accountThemeColorProvider(account.key.toStorageKey()),
-    );
-    if (custom != null) return custom;
-  }
+/// デッキの間のテーマの元の色 (#1381)。既定の緑と同じ。
+const deckThemeSeedColor = Colors.green;
 
-  final mulukhiya = ref.watch(currentMulukhiyaProvider);
-  final hex = mulukhiya?.themeColorHex;
-  if (hex != null && hex.startsWith('#') && hex.length >= 7) {
-    try {
-      final colorValue = int.parse(hex.substring(1, 7), radix: 16);
-      return Color(0xFF000000 | colorValue);
-    } catch (_) {}
-  }
-  return Colors.green;
-}, dependencies: [currentAccountProvider, currentMulukhiyaProvider]);
+/// Theme seed color: user override > mulukhiya > default green.
+///
+/// ⚠⚠ **デッキが開いている間は [deckThemeSeedColor] に固定する**（#1381・
+/// `docs/deck-ui-decisions-2.md` 決定済み事項 18）。現在のアカウントはフォーカス中の
+/// カラムと関係が無いので、その色で塗ると、どのカラムとも合わない帯になる。
+/// アカウントごとの上書きもデッキの間は効かせない。
+final themeSeedColorProvider = Provider<Color>(
+  (ref) {
+    if (ref.watch(mountedDeckCountProvider) > 0) return deckThemeSeedColor;
+    final account = ref.watch(currentAccountProvider);
+    if (account != null) {
+      final custom = ref.watch(
+        accountThemeColorProvider(account.key.toStorageKey()),
+      );
+      if (custom != null) return custom;
+    }
+
+    final mulukhiya = ref.watch(currentMulukhiyaProvider);
+    final hex = mulukhiya?.themeColorHex;
+    if (hex != null && hex.startsWith('#') && hex.length >= 7) {
+      try {
+        final colorValue = int.parse(hex.substring(1, 7), radix: 16);
+        return Color(0xFF000000 | colorValue);
+      } catch (_) {}
+    }
+    return Colors.green;
+  },
+  dependencies: [
+    mountedDeckCountProvider,
+    currentAccountProvider,
+    currentMulukhiyaProvider,
+  ],
+);
 
 /// URL of the :sabacan: custom emoji on the current server (null if unavailable).
 ///
