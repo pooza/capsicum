@@ -75,6 +75,15 @@ static void my_application_activate(GApplication* application) {
   gdk_rgba_parse(&background_color, "#000000");
   fl_view_set_background_color(view, &background_color);
   gtk_widget_show(GTK_WIDGET(view));
+  // Minimum window size (#1385). window_manager's setMinimumSize writes the
+  // geometry hints straight to the GdkWindow, but with client-side decorations
+  // (the header bar above) GtkWindow rewrites those hints from its own size
+  // request on every resize, so the 640x480 never stuck and the window could
+  // be shrunk to almost nothing (leanflutter/window_manager#189). A size
+  // request on the view is part of what GtkWindow computes the hints from, so
+  // it survives. Keep in sync with WindowStateService.minSize (Dart); the
+  // window_state_min_size_test checks that the two match.
+  gtk_widget_set_size_request(GTK_WIDGET(view), 640, 480);
   gtk_container_add(GTK_CONTAINER(window), GTK_WIDGET(view));
 
   // Show the window when Flutter renders.
