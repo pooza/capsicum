@@ -69,7 +69,9 @@ chmod +x install.sh
    ~/Applications/capsicum-<version>-x86_64.AppImage
    ```
 
-5. (任意) デスクトップ統合 (アプリ一覧への登録): [AppImageLauncher](https://github.com/TheAssassin/AppImageLauncher) を導入しておくと、初回起動時にアプリ一覧への追加とアイコン登録を自動でやってくれます
+5. (任意) デスクトップ統合 (アプリ一覧への登録): [AppImageLauncher](https://github.com/TheAssassin/AppImageLauncher) を導入しておくと、初回起動時にアプリ一覧への追加とアイコン登録を自動でやってくれます (Ubuntu 26.04 と AppImageLauncher 3.0.0-beta-2 で確認)
+
+   > ⚠ **ワンライナー / `install.sh` と併用しないでください。**AppImageLauncher は `~/Applications/` にある AppImage を見つけるたびにアプリ一覧へ登録するので、`install.sh` が置く安定 symlink と直前 1 世代の AppImage もそれぞれ登録され、アプリ一覧に「capsicum」がいくつも並びます。`install.sh` で導入済みなら、アプリ一覧への登録は済んでいるので AppImageLauncher は要りません。
 
 ### うまくいかないとき
 
