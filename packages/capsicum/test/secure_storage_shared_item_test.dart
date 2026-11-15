@@ -328,7 +328,7 @@ void main() {
       });
     });
 
-    test('元の書き込みが失敗したら、控えを変えずにそのまま投げる', () async {
+    test('元の書き込みが失敗したら、そのキーを書き直しの対象にせずそのまま投げる', () async {
       final storage = _FailingWriteStorage({'secret_a': 'token-a'});
       final gate = SecureStorageGate(storage);
 
@@ -342,7 +342,84 @@ void main() {
       await gate.write(key: 'secret_c', value: 'token-c');
       expect(storage.item.containsKey('secret_b'), isFalse);
     });
+
+    // v2.12 のリリース前レビュー: 打ち切り（timeout）は待つのをやめるだけで、
+    // 裏の書き込み / 削除は遅れて効く。効いたのに投げた形を写す。
+    test('削除が投げたあとに実は効いていても、次の書き込みで生き返らない', () async {
+      final storage = _LandsThenThrowsStorage({
+        'secret_a': 'token-a',
+        'secret_b': 'token-b',
+      });
+      final gate = SecureStorageGate(storage);
+      await gate.readAll();
+
+      storage.throwAfterApply = true;
+      await expectLater(
+        gate.delete(key: 'secret_a'),
+        throwsA(isA<StateError>()),
+      );
+      expect(storage.item.containsKey('secret_a'), isFalse);
+
+      storage.throwAfterApply = false;
+      await gate.write(key: 'secret_c', value: 'token-c');
+      expect(storage.item, {'secret_b': 'token-b', 'secret_c': 'token-c'});
+    });
+
+    test('書き込みが投げたあとに実は効いていても、次の書き込みで古い値に戻さない', () async {
+      final storage = _LandsThenThrowsStorage({
+        'secret_a': 'token-old',
+        'secret_b': 'token-b',
+      });
+      final gate = SecureStorageGate(storage);
+      await gate.readAll();
+
+      storage.throwAfterApply = true;
+      await expectLater(
+        gate.write(key: 'secret_a', value: 'token-new'),
+        throwsA(isA<StateError>()),
+      );
+
+      storage.throwAfterApply = false;
+      await gate.write(key: 'secret_c', value: 'token-c');
+      expect(storage.item['secret_a'], 'token-new');
+    });
   });
+}
+
+/// 書き込み / 削除を保存まで終えてから投げる（打ち切ったが裏で効いた形）。
+class _LandsThenThrowsStorage extends _SharedItemStorage {
+  _LandsThenThrowsStorage(super.initial);
+
+  bool throwAfterApply = false;
+
+  @override
+  Future<void> write({
+    required String key,
+    required String? value,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    await super.write(key: key, value: value);
+    if (throwAfterApply) throw StateError('timed out after applying');
+  }
+
+  @override
+  Future<void> delete({
+    required String key,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    await super.delete(key: key);
+    if (throwAfterApply) throw StateError('timed out after applying');
+  }
 }
 
 /// 別の店（`PushKeyStore` など）が同じ項目へ届くための中継。

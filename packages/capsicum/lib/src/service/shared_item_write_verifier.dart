@@ -82,7 +82,8 @@ class SharedItemWriteVerifier {
 
   /// 書き込み / 削除を 1 つ行い、そのあと読み戻して書き直す。
   ///
-  /// [body] が投げたら控えを更新せずにそのまま投げる。[value] が null なら
+  /// [body] が投げたら、そのキーを控えから外して（結果が分からないので書き直し
+  /// の対象にしない）そのまま投げる。[value] が null なら
   /// 削除（プラグインの `write(value: null)` と同じ意味）。
   Future<void> mutate({
     required String key,
@@ -123,7 +124,18 @@ class SharedItemWriteVerifier {
       }
     }
 
-    await body();
+    try {
+      await body();
+    } catch (_) {
+      // ⚠⚠ **失敗したキーは控えから外す**（v2.12 のリリース前レビュー）。
+      // 打ち切り（`SecureStorageGate` の timeout）は待つのをやめるだけで、
+      // プラグインの書き込み / 削除は裏で遅れて効くことがある。控えに前の値を
+      // 残すと、次の読み戻しで「失われた」と見なして書き戻し、**消したはずの
+      // トークンが生き返る**（削除）・**新しい値が古い値に戻る**（書き込み）。
+      // 結果の分からないキーは書き直しの対象にしない。
+      _known.remove(key);
+      rethrow;
+    }
     if (value == null) {
       _known.remove(key);
     } else {
@@ -150,6 +162,15 @@ class SharedItemWriteVerifier {
       if (lost.isEmpty) {
         if (round > 0) {
           debugPrint('capsicum: shared item restored after $round round(s)');
+          // 書き直しで救えた回も、後から数えられるよう残す（v2.12 のリリース前
+          // レビュー）。⚠ キーも値も載せない。周回数だけ。
+          Sentry.addBreadcrumb(
+            Breadcrumb(
+              category: 'secure_storage',
+              message: 'shared item restored',
+              data: {'rounds': round},
+            ),
+          );
         }
         return;
       }
