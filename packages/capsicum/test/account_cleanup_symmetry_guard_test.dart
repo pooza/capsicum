@@ -61,6 +61,11 @@ void main() {
       offline: 'ComposeDraftStore.clearForAccount(',
     ),
     (
+      what: 'Annict の感想・記録の下書き (#1382)',
+      logout: 'AnnictDraftStore.clearForAccount(',
+      offline: 'AnnictDraftStore.clearForAccount(',
+    ),
+    (
       what: 'Windows の push_labels.json',
       logout: '_syncWindowsPushLabels(',
       offline: '_syncWindowsPushLabels(',

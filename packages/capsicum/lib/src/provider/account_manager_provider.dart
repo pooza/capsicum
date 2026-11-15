@@ -15,6 +15,7 @@ import '../model/account_key.dart';
 import '../model/offline_account.dart';
 import '../preset_servers.dart';
 import '../service/account_storage.dart';
+import '../service/annict_draft_store.dart';
 import '../service/background_notification_service.dart';
 import '../service/compose_draft_store.dart';
 import '../service/notification_label_cache.dart';
@@ -405,6 +406,8 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     // 書きかけの自動保存スロットも捨てる (#964)。放っておくと孤児キーが溜まり、
     // 同じ `@user@host` で入り直したときに前の持ち主の書きかけが出てくる。
     await ComposeDraftStore.clearForAccount(account.key.toStorageKey());
+    // Annict の感想・記録の下書きも同じ理由で捨てる (#1382)。
+    await AnnictDraftStore.clearForAccount(account.key.toStorageKey());
 
     final remaining = state.accounts
         .where((a) => a.key != account.key)
@@ -1480,6 +1483,8 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     // 自動保存した本文が残っていると、**削除したあとで同じ `@user@host` へ
     // 入り直したときに消したはずの下書きが復活する**。
     await ComposeDraftStore.clearForAccount(key.toStorageKey());
+    // Annict の感想・記録の下書きも同じ理由で捨てる (#1382)。
+    await AnnictDraftStore.clearForAccount(key.toStorageKey());
     _removeOffline(key);
     await _syncWindowsPushLabels();
   }
