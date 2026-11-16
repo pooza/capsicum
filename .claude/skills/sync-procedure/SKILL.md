@@ -281,6 +281,7 @@ capsicum-relay の Issue・マイルストーンは、**capsicum 本体と同じ
     ```
 
     - **5.0 の RC が出ていたら、その同期のうちに報告し、5.0 待ちの Issue（`gh issue list --search 'Mastodon 5.0 in:title'`）をその時点の稼働枠へ引き取る提案をする**。pooza は「RC が出たらなるべく早くやりたい」。⚠ 上流が遅れるあいだは、枠の移行のたびに送り続けてよい（待つのは先方の都合）
+    - ⚠ **用語の追従（#1373）だけは起点が違う**（2026-11-17 pooza）。RC では引き取らず、**5.0 の正式リリースの後なるべく早く**、その時点で確定している訳語だけを当てる。RC の段階では `ja.json` の訳の付き方を測って #1373 に記録するだけ
     - beta は報告だけでよい（フィールド名が RC で変わりうる）
   - 前回同期からメジャー/マイナーが上がっていれば、API 変更トリアージ（`docs/mastodon-capsicum-api-watch.md` / `docs/misskey-capsicum-api-watch.md`）の要否を判断し、メモリの「対応方針」系（例 `project_mastodon_46_posture`）の版表記を更新する
 
