@@ -216,6 +216,10 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       final maxCharacters = statuses?['max_characters'];
       if (maxCharacters is int) {
         capabilities.maxPostContentLength = maxCharacters;
+      } else {
+        // ⚠ v2 が 200 でも上限を欠くサーバーがありうる（#1396）。そのときは
+        // v1 を見る（Akkoma 3.20 は v2 が 404 なので下の catch 側を通る）。
+        await _detectMaxCharactersFromV1();
       }
       final translation = config?['translation'] as Map<String, dynamic>?;
       _translationAvailable = translation?['enabled'] as bool? ?? false;
