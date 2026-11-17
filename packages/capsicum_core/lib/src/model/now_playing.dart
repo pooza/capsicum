@@ -36,6 +36,19 @@ class NowPlayingInfo {
   /// 使わない。⚠ 同じ曲かどうかに関係しないので、`==` / `hashCode` には入れない。
   final String? artworkSkipReason;
 
+  /// 源が教えてくれた「いま鳴っている曲」のページの URL（分かるときだけ・
+  /// #1388）。Linux の Spotify は MPRIS で曲の ID を返す。
+  ///
+  /// ⚠⚠ **投稿の URL（[url]）ではない。**名義を引き直すためだけに使う。OS の
+  /// メディア情報は名義が欠けることがあり（Spotify の `xesam:artist` は 1 人目
+  /// だけ）、この URL でモロヘイヤに引き直すと全員が取れる。[url] に入れると、
+  /// 利用者が選んだ共有 URL のプロバイダ（Apple Music 等・#681）を無視して
+  /// Spotify の URL を載せてしまう。
+  ///
+  /// ⚠ 同じ曲かどうかは曲名・名義で見るので、`==` / `hashCode` には入れない
+  /// （[artworkSkipReason] と同じ扱い）。
+  final Uri? sourceTrackUrl;
+
   const NowPlayingInfo({
     required this.sourceAppName,
     this.title,
@@ -44,6 +57,7 @@ class NowPlayingInfo {
     this.artworkUrl,
     this.url,
     this.artworkSkipReason,
+    this.sourceTrackUrl,
   });
 
   /// フィールドを差し替えたコピーを返す。モロヘイヤ enrich (#669) が URL を
@@ -64,6 +78,7 @@ class NowPlayingInfo {
     artworkUrl: artworkUrl ?? this.artworkUrl,
     url: url ?? this.url,
     artworkSkipReason: artworkSkipReason,
+    sourceTrackUrl: sourceTrackUrl,
   );
 
   @override
