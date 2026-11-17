@@ -3,20 +3,20 @@
   <id>net.shrieker.capsicum</id>
 
   <name>capsicum</name>
-  <summary>Mastodon / Misskey クライアント</summary>
-  <summary xml:lang="en">Mastodon / Misskey client</summary>
+  <summary>Mastodon / Misskey / Akkoma クライアント</summary>
+  <summary xml:lang="en">Mastodon / Misskey / Akkoma client</summary>
 
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>AGPL-3.0-or-later</project_license>
 
   <description>
     <p>
-      capsicum は Mastodon と Misskey の両方に対応した Fediverse クライアント。
+      capsicum は Mastodon・Misskey・Akkoma（Pleroma 系）に対応した Fediverse クライアント。
       自前サーバーで稼働するモロヘイヤ拡張を検出すると、お気に入りタグ・タグセット・
       番組情報などの拡張機能が利用可能になる。
     </p>
     <p xml:lang="en">
-      capsicum is a Fediverse client supporting both Mastodon and Misskey.
+      capsicum is a Fediverse client supporting Mastodon, Misskey and Akkoma (Pleroma).
       Extra features such as favorite tags, tag sets, and program information
       become available on servers running the mulukhiya-toot-proxy extension.
     </p>

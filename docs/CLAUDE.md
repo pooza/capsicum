@@ -2,7 +2,7 @@
 
 ## プロジェクト概要
 
-Flutter ベースの Mastodon / Misskey クライアント。
+Flutter ベースの Mastodon / Misskey / Akkoma クライアント（Akkoma は Pleroma 系・3 つ目の系統として段階的に育てる。方針は [product-policy.md](product-policy.md) のフォークの節）。
 汎用クライアントとして動作しつつ、[mulukhiya-toot-proxy](https://github.com/pooza/mulukhiya-toot-proxy)（通称モロヘイヤ）導入済みサーバーでは拡張機能が利用可能になる。
 
 - **技術スタック**: Flutter / Dart

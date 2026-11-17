@@ -18,7 +18,7 @@ Fediverse クライアント
 
 ## 詳細な説明文
 
-capsicum は、Mastodon / Misskey 対応の Fediverse クライアントアプリです。
+capsicum は、Mastodon / Misskey / Akkoma（Pleroma 系）対応の Fediverse クライアントアプリです。
 
 capsicum is a Japanese-only app.
 There is no English localization, and an English version is not planned. The interface, in-app text, documentation, and support are all provided in Japanese only. Please take this into account before downloading.
