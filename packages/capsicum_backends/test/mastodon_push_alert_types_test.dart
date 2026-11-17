@@ -115,8 +115,9 @@ void main() {
 
     test('⚠ subscription[standard] は true のまま（aes128gcm を選ぶ・#336）', () async {
       // #1204 でこの行の隣を触るので、一緒に固定しておく。落とすと Mastodon が
-      // legacy aesgcm へフォールバックし、relay がヘッダを転送しないため
-      // クライアント側で復号できなくなる。
+      // legacy aesgcm へフォールバックする。⚠ aesgcm も #1390（Akkoma）から
+      // 復号できるようになったが、本文が長くなり（ヘッダ 2 本ぶん）APNs の 4KB で
+      // 縮退しやすくなるので、Mastodon には引き続き aes128gcm を選ばせる。
       final adapter = await MastodonAdapter.create('mastodon.example');
       final capture = _CapturingAdapter();
       adapter.client.dio.httpClientAdapter = capture;

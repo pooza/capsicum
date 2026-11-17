@@ -41,6 +41,26 @@ bool DecryptWebPushAes128Gcm(const std::vector<uint8_t>& body,
                              std::vector<uint8_t>* out,
                              std::string* error = nullptr);
 
+// aesgcm（旧方式・draft-ietf-webpush-encryption-04）の Web Push ペイロードを
+// 復号する (capsicum#1390)。Akkoma（Pleroma 系）と古い Mastodon はこちらでしか
+// 送らない（Akkoma 3.20.1 で実測）。
+//
+// `crypto_key` は `Crypto-Key` ヘッダの値（`dh=<送信側の公開鍵>` を含む。
+// Akkoma は `dh=…;p256ecdsa=…`）、`encryption` は `Encryption` ヘッダの値
+// （`salt=<16 バイト>`、任意で `rs=`）。relay はこの 2 つを WNS raw の
+// エンベロープに `crypto_key` / `encryption` として載せている。
+//
+// 単一レコードだけを扱う（本文は 4KB 以下で、既定の rs 4096 に収まる）。
+// ベクタは Dart の `web_push_decryptor_test.dart` と同じものを使う。
+bool DecryptWebPushAesGcm(const std::vector<uint8_t>& body,
+                          const std::string& crypto_key,
+                          const std::string& encryption,
+                          const std::vector<uint8_t>& ua_private_key_d,
+                          const std::vector<uint8_t>& ua_public_key,
+                          const std::vector<uint8_t>& auth_secret,
+                          std::vector<uint8_t>* out,
+                          std::string* error = nullptr);
+
 }  // namespace capsicum
 
 #endif  // RUNNER_WEB_PUSH_DECRYPT_H_

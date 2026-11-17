@@ -106,6 +106,8 @@ class NotificationDedupChannel {
               account: entry['account']! as String,
               body: entry['body'] as String?,
               encoding: entry['encoding'] as String?,
+              cryptoKey: entry['crypto_key'] as String?,
+              encryption: entry['encryption'] as String?,
               stampedId: entry['stampedId'] as String?,
             ),
       ];
@@ -144,6 +146,11 @@ class DeliveredRemoteNotification {
   /// `aes128gcm` 等。[body] とセットで復号可否の判定に使う。
   final String? encoding;
 
+  /// aesgcm（Akkoma・古い Mastodon）の復号に要る `Crypto-Key` / `Encryption`
+  /// （relay が userInfo に載せる `crypto_key` / `encryption`・#1390）。
+  final String? cryptoKey;
+  final String? encryption;
+
   /// NSE が stamp した通知 ID。macOS では NSE が機能しない (#673) ため通常
   /// null だが、OS 側が直った場合は復号せずこれで突き合わせる。
   final String? stampedId;
@@ -153,6 +160,8 @@ class DeliveredRemoteNotification {
     required this.account,
     this.body,
     this.encoding,
+    this.cryptoKey,
+    this.encryption,
     this.stampedId,
   });
 }

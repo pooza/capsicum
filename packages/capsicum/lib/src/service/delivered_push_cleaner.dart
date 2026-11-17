@@ -129,13 +129,19 @@ class DeliveredPushCleaner {
       return '${notification.account}|$stamped';
     }
     final bodyB64 = notification.body;
-    if (bodyB64 == null || notification.encoding != 'aes128gcm') {
+    final encoding = notification.encoding;
+    if (bodyB64 == null ||
+        encoding == null ||
+        !WebPushDecryptor.supports(encoding)) {
       return null;
     }
     final keys = await PushMessageDispatcher.findKeys(notification.account);
     if (keys == null) return null;
     try {
-      final plaintext = WebPushDecryptor.decryptAes128gcm(
+      final plaintext = WebPushDecryptor.decrypt(
+        encoding: encoding,
+        cryptoKey: notification.cryptoKey,
+        encryption: notification.encryption,
         body: base64Url.decode(base64Url.normalize(bodyB64)),
         uaPrivateKeyD: base64Url.decode(
           base64Url.normalize(keys.privateKeyBase64),

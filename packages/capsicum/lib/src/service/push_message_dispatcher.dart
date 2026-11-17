@@ -187,7 +187,11 @@ class PushMessageDispatcher {
 
     final bodyB64 = data['body'] as String?;
     final encoding = data['encoding'] as String?;
-    if (bodyB64 == null || encoding != 'aes128gcm') {
+    // aesgcm（Akkoma・古い Mastodon）は relay が転送する `crypto_key` /
+    // `encryption` も使う（#1390）。
+    if (bodyB64 == null ||
+        encoding == null ||
+        !WebPushDecryptor.supports(encoding)) {
       _trace('skipped decrypt (body=${bodyB64 != null}, encoding=$encoding)');
       return null;
     }
@@ -235,11 +239,14 @@ class PushMessageDispatcher {
     }
 
     try {
-      final plaintext = WebPushDecryptor.decryptAes128gcm(
+      final plaintext = WebPushDecryptor.decrypt(
+        encoding: encoding,
         body: bodyBytes,
         uaPrivateKeyD: privateKeyD,
         uaPublicKey: uaPublicKey,
         authSecret: authSecret,
+        cryptoKey: data['crypto_key'] as String?,
+        encryption: data['encryption'] as String?,
       );
       _trace('decrypt ok, ${plaintext.length} bytes');
       final parsed = parsePayload(plaintext);

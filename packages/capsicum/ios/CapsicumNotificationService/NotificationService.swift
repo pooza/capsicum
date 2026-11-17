@@ -75,7 +75,7 @@ class NotificationService: UNNotificationServiceExtension {
         guard
             let account = rawAccount, !account.isEmpty,
             let bodyB64 = userInfo["body"] as? String,
-            let encoding = rawEncoding, encoding == "aes128gcm"
+            let encoding = rawEncoding, WebPushDecryptor.supports(encoding)
         else {
             deliverOnce(bestAttempt)
             return
@@ -114,11 +114,16 @@ class NotificationService: UNNotificationServiceExtension {
 
         let plaintext: Data
         do {
-            plaintext = try WebPushDecryptor.decryptAes128gcm(
+            // aesgcm（Akkoma・古い Mastodon）は relay が載せる crypto_key /
+            // encryption も使う（#1390）。
+            plaintext = try WebPushDecryptor.decrypt(
+                encoding: encoding,
                 body: bodyData,
                 uaPrivateKeyD: privateKey,
                 uaPublicKey: p256dh,
-                authSecret: authSecret
+                authSecret: authSecret,
+                cryptoKey: userInfo["crypto_key"] as? String,
+                encryption: userInfo["encryption"] as? String
             )
         } catch {
             // #436: Misskey 限定で発生している decrypt_failed の切り分け。

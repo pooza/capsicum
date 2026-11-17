@@ -151,12 +151,13 @@ bool HandleWnsRawPayloadImpl(const std::string& raw_payload,
   if (body_b64.empty() || encoding.empty()) {
     return fail("not an encrypted notification");
   }
-  // 本体も encoding もあるが aes128gcm 以外（レガシー aesgcm 等）は、
-  // iOS / Android / macOS が扱える暗号化 push を Windows だけ静かに捨てている
-  // 可能性がある。announcement（body / encoding 無し）と区別できる別エラーに
-  // して観測へ載せる (#765)。プリセット 5 サーバーは aes128gcm のため通常は
-  // 起きない。
-  if (encoding != "aes128gcm") {
+  // 本体も encoding もあるが、復号できない形式のものは、iOS / Android / macOS が
+  // 扱える暗号化 push を Windows だけ静かに捨てている可能性がある。
+  // announcement（body / encoding 無し）と区別できる別エラーにして観測へ載せる
+  // (#765)。⚠ aesgcm（Akkoma・古い Mastodon）は 2026-11-18 から復号する
+  // （#1390）。
+  const bool is_aesgcm = encoding == "aesgcm";
+  if (encoding != "aes128gcm" && !is_aesgcm) {
     return fail("unsupported encoding");
   }
 
@@ -179,8 +180,17 @@ bool HandleWnsRawPayloadImpl(const std::string& raw_payload,
   }
 
   std::vector<uint8_t> plaintext;
-  if (!DecryptWebPushAes128Gcm(body, keys.private_d, keys.p256dh, keys.auth,
-                               &plaintext, nullptr)) {
+  // aesgcm は relay がエンベロープに載せる crypto_key / encryption も使う。
+  // 欠けていれば復号の失敗として扱う（ヘッダの欠けも鍵不一致も、利用者から
+  // 見れば同じく届かない）。
+  const bool decrypted =
+      is_aesgcm
+          ? DecryptWebPushAesGcm(body, MapGet(envelope, "crypto_key"),
+                                 MapGet(envelope, "encryption"), keys.private_d,
+                                 keys.p256dh, keys.auth, &plaintext, nullptr)
+          : DecryptWebPushAes128Gcm(body, keys.private_d, keys.p256dh,
+                                    keys.auth, &plaintext, nullptr);
+  if (!decrypted) {
     return fail("decryption failed");
   }
 

@@ -5,7 +5,9 @@
 #include <bcrypt.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <initializer_list>
 
@@ -276,6 +278,80 @@ std::vector<uint8_t> Bytes(const char* s) {
   return std::vector<uint8_t>(s, s + std::strlen(s));
 }
 
+std::string Trim(const std::string& s) {
+  size_t b = 0;
+  size_t e = s.size();
+  while (b < e && (s[b] == ' ' || s[b] == '\t')) ++b;
+  while (e > b && (s[e - 1] == ' ' || s[e - 1] == '\t')) --e;
+  return s.substr(b, e - b);
+}
+
+// `Crypto-Key: dh=…;p256ecdsa=…` / `Encryption: salt=…;rs=…` から 1 つ取る。
+// 区切りは `;` と `,` の両方を見る。引用符は外す。見つからなければ false。
+bool HeaderParam(const std::string& header, const char* name,
+                 std::string* value) {
+  size_t start = 0;
+  while (start <= header.size()) {
+    size_t end = header.find_first_of(";,", start);
+    if (end == std::string::npos) end = header.size();
+    const std::string part = header.substr(start, end - start);
+    const size_t eq = part.find('=');
+    if (eq != std::string::npos) {
+      std::string key = Trim(part.substr(0, eq));
+      std::transform(key.begin(), key.end(), key.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+      });
+      if (key == name) {
+        std::string v = Trim(part.substr(eq + 1));
+        if (v.size() >= 2 && v.front() == '"' && v.back() == '"') {
+          v = v.substr(1, v.size() - 2);
+        }
+        *value = v;
+        return true;
+      }
+    }
+    start = end + 1;
+  }
+  return false;
+}
+
+// base64url（`=` の有無を問わない・`+` / `/` も受ける）を読む。
+bool DecodeB64Url(const std::string& in, std::vector<uint8_t>* out) {
+  out->clear();
+  uint32_t buf = 0;
+  int bits = 0;
+  for (char c : in) {
+    int v;
+    if (c >= 'A' && c <= 'Z') {
+      v = c - 'A';
+    } else if (c >= 'a' && c <= 'z') {
+      v = c - 'a' + 26;
+    } else if (c >= '0' && c <= '9') {
+      v = c - '0' + 52;
+    } else if (c == '-' || c == '+') {
+      v = 62;
+    } else if (c == '_' || c == '/') {
+      v = 63;
+    } else if (c == '=') {
+      break;
+    } else {
+      return false;
+    }
+    buf = (buf << 6) | static_cast<uint32_t>(v);
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      out->push_back(static_cast<uint8_t>((buf >> bits) & 0xff));
+    }
+  }
+  return true;
+}
+
+std::vector<uint8_t> U16Be(size_t value) {
+  return {static_cast<uint8_t>((value >> 8) & 0xff),
+          static_cast<uint8_t>(value & 0xff)};
+}
+
 uint32_t ReadU32Be(const std::vector<uint8_t>& b, size_t off) {
   return (static_cast<uint32_t>(b[off]) << 24) |
          (static_cast<uint32_t>(b[off + 1]) << 16) |
@@ -335,6 +411,84 @@ bool DecryptWebPushAes128Gcm(const std::vector<uint8_t>& body,
   if (!AesGcmDecrypt(ciphertext, cek, nonce, &plaintext_with_padding, error))
     return false;
   return StripPadding(plaintext_with_padding, out, error);
+}
+
+bool DecryptWebPushAesGcm(const std::vector<uint8_t>& body,
+                          const std::string& crypto_key,
+                          const std::string& encryption,
+                          const std::vector<uint8_t>& ua_private_key_d,
+                          const std::vector<uint8_t>& ua_public_key,
+                          const std::vector<uint8_t>& auth_secret,
+                          std::vector<uint8_t>* out, std::string* error) {
+  if (out == nullptr) return Fail(error, "out must not be null");
+
+  std::string dh_param;
+  std::string salt_param;
+  if (!HeaderParam(crypto_key, "dh", &dh_param) ||
+      !HeaderParam(encryption, "salt", &salt_param)) {
+    return Fail(error, "aesgcm header is missing dh or salt");
+  }
+  std::vector<uint8_t> as_public;
+  std::vector<uint8_t> salt;
+  if (!DecodeB64Url(dh_param, &as_public) || !DecodeB64Url(salt_param, &salt))
+    return Fail(error, "aesgcm header is not base64url");
+  if (as_public.size() != 65 || as_public[0] != 0x04)
+    return Fail(error, "invalid dh: expected uncompressed P-256 public key");
+  if (salt.size() != 16) return Fail(error, "invalid salt length");
+
+  size_t rs = 4096;
+  std::string rs_param;
+  if (HeaderParam(encryption, "rs", &rs_param)) {
+    char* end = nullptr;
+    const unsigned long parsed = std::strtoul(rs_param.c_str(), &end, 10);
+    if (rs_param.empty() || end == nullptr || *end != '\0' || parsed <= 2)
+      return Fail(error, "invalid record size");
+    rs = static_cast<size_t>(parsed);
+  }
+  // 1 レコードは rs バイトの平文 + 16 バイトのタグ。
+  if (body.size() > rs + 16)
+    return Fail(error, "multi-record aesgcm is not supported");
+
+  std::vector<uint8_t> ecdh_secret;
+  if (!EcdhP256(ua_private_key_d, ua_public_key, as_public, &ecdh_secret, error))
+    return false;
+
+  // draft-ietf-webpush-encryption-04 §3.3: auth_secret を salt にした HKDF。
+  std::vector<uint8_t> ikm;
+  if (!Hkdf(ecdh_secret, auth_secret,
+            Concat({Bytes("Content-Encoding: auth"), {0x00}}), 32, &ikm, error))
+    return false;
+
+  // context = "P-256" || 0x00 || len(ua) || ua || len(as) || as（長さは 2 バイト BE）
+  const std::vector<uint8_t> context =
+      Concat({Bytes("P-256"), {0x00}, U16Be(ua_public_key.size()), ua_public_key,
+              U16Be(as_public.size()), as_public});
+
+  std::vector<uint8_t> cek;
+  if (!Hkdf(ikm, salt,
+            Concat({Bytes("Content-Encoding: aesgcm"), {0x00}, context}), 16,
+            &cek, error))
+    return false;
+  std::vector<uint8_t> nonce;
+  if (!Hkdf(ikm, salt,
+            Concat({Bytes("Content-Encoding: nonce"), {0x00}, context}), 12,
+            &nonce, error))
+    return false;
+
+  std::vector<uint8_t> padded;
+  if (!AesGcmDecrypt(body, cek, nonce, &padded, error)) return false;
+
+  // 先頭 2 バイト（BE）がパディング長。その分の 0x00 のあとが平文。
+  if (padded.size() < 2) return Fail(error, "aesgcm record too short");
+  const size_t pad_length =
+      (static_cast<size_t>(padded[0]) << 8) | static_cast<size_t>(padded[1]);
+  const size_t start = 2 + pad_length;
+  if (start > padded.size()) return Fail(error, "aesgcm padding exceeds record");
+  for (size_t i = 2; i < start; ++i) {
+    if (padded[i] != 0x00) return Fail(error, "aesgcm padding is not zero");
+  }
+  out->assign(padded.begin() + start, padded.end());
+  return true;
 }
 
 }  // namespace capsicum
