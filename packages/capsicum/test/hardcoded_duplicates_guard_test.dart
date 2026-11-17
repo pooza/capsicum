@@ -17,11 +17,12 @@ const _accountKeyPath = 'lib/src/model/account_key.dart';
 
 final _emojiUrlPattern = RegExp(r'/emoji/\$');
 
-/// `'@${a.username}@${...}'` と、波括弧なしの `'@$username@$host'`（#1379）。
-/// ⚠ 後者は変数名が `username` で終わるものだけ（`'@$name@$host'` のような
+/// `'@${a.username}@${...}'` と、波括弧なしの `'@$username@$host'`（#1379）、
+/// 波括弧つきの素の変数名 `'@${username}@$host'`（#1396）。
+/// ⚠ どれも名前が `username` で終わるものだけ（`'@$name@$host'` のような
 /// メンションの acct は対象外）。アカウントでない acct は `acctOf` を使う。
 final _handlePattern = RegExp(
-  r'@\$(?:\{[A-Za-z_.!?]+\.username\}|[A-Za-z_]*[uU]sername)@\$',
+  r'@\$(?:\{(?:[A-Za-z_.!?]+\.)?[A-Za-z_]*[uU]sername\}|[A-Za-z_]*[uU]sername)@\$',
 );
 
 /// [source] の中で、写しになっている行番号。
@@ -111,6 +112,9 @@ void main() {
         // 波括弧なし（#1379）。
         "'@\$username@\$host'",
         "'@\$accountUsername@\${key.host}'",
+        // 波括弧つきの素の変数名（#1396）。
+        "'@\${username}@\$host'",
+        "'@\${accountUsername}@\${key.host}'",
       ]) {
         expect(offendingLines(src, _handlePattern), [1], reason: src);
       }
@@ -143,6 +147,15 @@ void main() {
         offendingLines("final a = '@\$name@\$host';", _handlePattern),
         isEmpty,
         reason: 'アカウントでない acct（メンション）は対象外',
+      );
+      // 波括弧つきでも同じ（#1396 で波括弧の中を広げたので、当てない側も固定する）。
+      expect(
+        offendingLines("final a = '@\${name}@\$host';", _handlePattern),
+        isEmpty,
+      );
+      expect(
+        offendingLines("final a = '@\${user.name}@\$host';", _handlePattern),
+        isEmpty,
       );
     });
   });
