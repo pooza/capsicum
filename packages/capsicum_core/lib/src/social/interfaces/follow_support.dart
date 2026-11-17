@@ -6,6 +6,12 @@ abstract mixin class FollowSupport {
   Future<UserRelationship> getRelationship(String userId);
   Future<void> followUser(String id);
   Future<void> unfollowUser(String id);
+
+  /// 承認待ちのフォローのリクエストを取り下げる (#1400)。
+  ///
+  /// Mastodon は `unfollow` がリクエストの取り下げも兼ねる。Misskey は
+  /// `following/requests/cancel`（`following/delete` はフォロー中でないと断る）。
+  Future<void> cancelFollowRequest(String id);
   Future<void> muteUser(String id, {Duration? duration});
   Future<void> unmuteUser(String id);
   Future<void> blockUser(String id);

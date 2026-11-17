@@ -1171,6 +1171,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     final r = await client.getUserRelation(userId);
     return UserRelationship(
       following: r['isFollowing'] as bool? ?? false,
+      requested: r['hasPendingFollowRequestFromYou'] as bool? ?? false,
       followedBy: r['isFollowed'] as bool? ?? false,
       muting: r['isMuted'] as bool? ?? false,
       blocking: r['isBlocking'] as bool? ?? false,
@@ -1207,6 +1208,10 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
 
   @override
   Future<void> unfollowUser(String id) => client.unfollowUser(id);
+
+  /// ⚠ `following/delete` はフォロー中でないと断るので、別の口 (#1400)。
+  @override
+  Future<void> cancelFollowRequest(String id) => client.cancelFollowRequest(id);
 
   @override
   Future<void> muteUser(String id, {Duration? duration}) {

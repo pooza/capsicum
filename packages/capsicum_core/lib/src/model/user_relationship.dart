@@ -1,5 +1,14 @@
 class UserRelationship {
   final bool following;
+
+  /// フォローをリクエストして、相手の承認を待っているか (#1400)。
+  ///
+  /// Mastodon は Relationship の `requested`、Misskey は
+  /// `hasPendingFollowRequestFromYou`。⚠ **承認制のアカウントだけではない。**
+  /// Mastodon は外部のサーバーのアカウントをフォローすると、相手のサーバーから
+  /// Accept が届くまで `following: false` / `requested: true` を返す。
+  final bool requested;
+
   final bool followedBy;
   final bool muting;
   final bool blocking;
@@ -25,6 +34,7 @@ class UserRelationship {
 
   const UserRelationship({
     this.following = false,
+    this.requested = false,
     this.followedBy = false,
     this.muting = false,
     this.blocking = false,

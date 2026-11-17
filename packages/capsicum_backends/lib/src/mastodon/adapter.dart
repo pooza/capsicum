@@ -1089,6 +1089,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     final r = rels.first;
     return UserRelationship(
       following: r['following'] as bool? ?? false,
+      requested: r['requested'] as bool? ?? false,
       followedBy: r['followed_by'] as bool? ?? false,
       muting: r['muting'] as bool? ?? false,
       blocking: r['blocking'] as bool? ?? false,
@@ -1113,6 +1114,10 @@ class MastodonAdapter extends DecentralizedBackendAdapter
 
   @override
   Future<void> unfollowUser(String id) => client.unfollowAccount(id);
+
+  /// ⚠ Mastodon は `unfollow` がリクエストの取り下げも兼ねる (#1400)。
+  @override
+  Future<void> cancelFollowRequest(String id) => client.unfollowAccount(id);
 
   @override
   Future<void> muteUser(String id, {Duration? duration}) =>

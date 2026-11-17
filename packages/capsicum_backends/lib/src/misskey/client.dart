@@ -281,6 +281,17 @@ class MisskeyClient {
     );
   }
 
+  /// POST /api/following/requests/cancel (#1400)
+  ///
+  /// 自分が送った、承認待ちのフォローのリクエストを取り下げる。⚠ `userId` は
+  /// **フォローしようとした相手**の User id。
+  Future<void> cancelFollowRequest(String userId) async {
+    await dio.post(
+      '/api/following/requests/cancel',
+      data: createBody({'userId': userId}),
+    );
+  }
+
   /// POST /api/following/requests/reject (#1040)
   Future<void> rejectFollowRequest(String userId) async {
     await dio.post(

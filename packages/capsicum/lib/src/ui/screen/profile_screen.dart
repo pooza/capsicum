@@ -66,6 +66,35 @@ bool showsAchievementsButton({
     accountHost != null &&
     isSameServerUser(user, accountHost);
 
+/// プロフィールのフォローボタンの状態 (#1400)。
+///
+/// ⚠ 以前は `following` だけで 2 状態にしていたので、**リクエスト中**（承認制の
+/// 相手・Mastodon の外部のアカウントで Accept が届くまで）も「フォロー」と出て、
+/// 押すとフォローをもう一度送っていた。取り下げる手段も無かった。
+enum FollowButtonState {
+  /// フォローしていない。押すとフォローする。
+  follow('フォロー', Icons.person_add),
+
+  /// 承認待ち。押すとリクエストを取り下げる。
+  requested('リクエスト中', Icons.hourglass_top),
+
+  /// フォロー中。押すとフォローを解除する。
+  unfollow('フォロー解除', Icons.person_remove);
+
+  const FollowButtonState(this.label, this.icon);
+
+  final String label;
+  final IconData icon;
+}
+
+/// [rel] からボタンの状態を決める。⚠ フォロー中を先に見る（両方立つことは
+/// 無いはずだが、立っていたらフォロー中として扱う）。
+FollowButtonState followButtonStateOf(UserRelationship rel) {
+  if (rel.following) return FollowButtonState.unfollow;
+  if (rel.requested) return FollowButtonState.requested;
+  return FollowButtonState.follow;
+}
+
 class ProfileScreen extends ConsumerStatefulWidget {
   final User user;
 
@@ -1525,13 +1554,21 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
         onPressed: _relationshipLoading
             ? null
             : () => _performAction(
-                () => rel.following
-                    ? adapter.unfollowUser(widget.user.id)
-                    : adapter.followUser(widget.user.id),
+                () => switch (followButtonStateOf(rel)) {
+                  FollowButtonState.unfollow => adapter.unfollowUser(
+                    widget.user.id,
+                  ),
+                  FollowButtonState.requested => adapter.cancelFollowRequest(
+                    widget.user.id,
+                  ),
+                  FollowButtonState.follow => adapter.followUser(
+                    widget.user.id,
+                  ),
+                },
               ),
-        icon: Icon(rel.following ? Icons.person_remove : Icons.person_add),
-        label: Text(rel.following ? 'フォロー解除' : 'フォロー'),
-        style: rel.following
+        icon: Icon(followButtonStateOf(rel).icon),
+        label: Text(followButtonStateOf(rel).label),
+        style: followButtonStateOf(rel) != FollowButtonState.follow
             ? FilledButton.styleFrom(
                 backgroundColor: Theme.of(
                   context,
