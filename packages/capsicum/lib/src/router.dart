@@ -63,6 +63,7 @@ import 'ui/screen/pages_screen.dart';
 import 'ui/screen/post_detail_screen.dart';
 import 'ui/screen/post_list_screen.dart';
 import 'ui/screen/posting_defaults_screen.dart';
+import 'ui/screen/privacy_settings_screen.dart';
 import 'ui/screen/profile_edit_screen.dart';
 import 'ui/screen/profile_screen.dart';
 import 'ui/screen/scheduled_posts_screen.dart';
@@ -355,6 +356,11 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/settings/posting-defaults',
             builder: (context, state) => const PostingDefaultsScreen(),
+          ),
+          // プライバシーとつながりやすさ (#1375)。
+          GoRoute(
+            path: '/settings/privacy',
+            builder: (context, state) => const PrivacySettingsScreen(),
           ),
           // フィルターの一覧と編集 (#1047)。Mastodon の `api/v2/filters`。
           GoRoute(

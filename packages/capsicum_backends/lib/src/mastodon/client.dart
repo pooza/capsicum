@@ -1789,6 +1789,44 @@ class MastodonClient {
     return MastodonAccount.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// GET /api/v1/accounts/verify_credentials を生の JSON で返す (#1375)。
+  ///
+  /// ⚠ [MastodonAccount] には `indexable` / `noindex` が無いので、プライバシーの
+  /// 設定はこちらから読む（生成コードを増やさない）。
+  Future<Map<String, dynamic>> verifyCredentialsJson() async {
+    final response = await dio.get('/api/v1/accounts/verify_credentials');
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// プライバシーとつながりやすさの設定を書く (#1375)。応答は生の JSON。
+  ///
+  /// `PATCH /api/v1/accounts/update_credentials` の `locked` / `discoverable` /
+  /// `indexable` / `hide_collections`（v4.7.5 の permit で確認）。null は送らない
+  /// （上流は送らなかった項目を今の値のまま残す）。
+  ///
+  /// ⚠ `noindex`（検索エンジンに載せない）は permit に無く、API で変えられない。
+  Future<Map<String, dynamic>> updatePrivacyCredentials({
+    bool? locked,
+    bool? discoverable,
+    bool? indexable,
+    bool? hideCollections,
+  }) async {
+    FormData build() => FormData.fromMap({
+      'locked': ?locked?.toString(),
+      'discoverable': ?discoverable?.toString(),
+      'indexable': ?indexable?.toString(),
+      'hide_collections': ?hideCollections?.toString(),
+    });
+    final response = await dio.patch(
+      '/api/v1/accounts/update_credentials',
+      data: build(),
+      options: Options(
+        extra: {RateLimitInterceptor.formDataFactoryKey: () async => build()},
+      ),
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
   /// DELETE /api/v1/profile/avatar（Mastodon 4.6、#736）
   /// アバターを削除しデフォルトに戻す。応答は CredentialAccount（account 互換）。
   Future<MastodonAccount> deleteProfileAvatar() async {

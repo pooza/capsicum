@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 import 'package:fediverse_objects/fediverse_objects.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
+import '../privacy_settings_mapping.dart';
 import 'client.dart';
 import 'extensions.dart';
 import 'filters.dart';
@@ -146,6 +147,8 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         ReportSupport,
         PinSupport,
         PushSubscriptionSupport,
+        // プライバシーとつながりやすさ (#1375)。
+        PrivacySettingsSupport,
         ScheduleSupport,
         CollectionsSupport,
         // プロフィールの掲載タグ (#1075)。Misskey には無い。
@@ -2093,6 +2096,25 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     );
     return account.toCapsicum(host, adminRoleIds: _adminRoleIds);
   }
+
+  // PrivacySettingsSupport (#1375)
+
+  @override
+  Future<PrivacySettings> getPrivacySettings() async =>
+      mastodonPrivacySettingsFromJson(await client.verifyCredentialsJson());
+
+  /// ⚠ `searchEngineHidden`（`noindex`）は送らない（API が無い・#1375）。
+  @override
+  Future<PrivacySettings> updatePrivacySettings(
+    PrivacySettings changes,
+  ) async => mastodonPrivacySettingsFromJson(
+    await client.updatePrivacyCredentials(
+      locked: changes.locked,
+      discoverable: changes.discoverable,
+      indexable: changes.indexable,
+      hideCollections: changes.hideCollections,
+    ),
+  );
 
   // ReportSupport
 

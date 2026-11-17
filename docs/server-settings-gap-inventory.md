@@ -99,6 +99,7 @@ capsicum は `draft.sensitive ? true : null` と書いてこれを回避して�
 - capsicum: モデルまでは読んでいる（`mastodon/extensions.dart:71-73`）が **UI 層で 0 ヒット**。`profile_screen.dart:607-613` は Posts / Media / Gallery / Pages を**無条件に**出している
 - ⚠ **投稿自体は公開なので情報漏洩ではない。**ただし **pooza の判断で「本来やってなきゃいけない」側**として扱う（§0）。「意思表示の無視」で済ませない
 - **`hide_collections` もここに束ねる**: サーバーが空を返すので漏れは無いが、capsicum は**「本人が隠している」旨を出さずに 0 件に見せている**。同じ「本人の設定に従った見せ方」の問題
+  - ⚠ **自分の `hide_collections` を変えられるようにする話は別**（2026-11-18・[#1375](https://github.com/pooza/capsicum/issues/1375) の「プライバシーとつながりやすさ」の画面）。ここで扱っているのは**他人の設定に従った見せ方**のほう
 
 ⚠ **#993 の §6 が予告していたのはこれ。**「Account の設定系フィールドは capsicum が既に半分読んでいる。#992 では**読んでいるが UI に反映していない**の側から入るのが早い」— 実際その側にだけ残っていた。
 
@@ -132,7 +133,7 @@ capsicum は `draft.sensitive ? true : null` と書いてこれを回避して�
 | Misskey `i/registry/*` | WebUI のクライアント設定ストア。**capsicum には capsicum の設定がある**（#857 の設定バックアップが端末間移行を担当）。#993 の分類 C と同じ判断。⚠⚠ **2026-09-29 に理由を差し替えた。**中に**投稿の挙動を決める値が実在する**（`defaultNoteVisibility` 等）ので「紛れていないから拾わない」は成り立たない。**§5-1 が正本** |
 | Misskey `roles/*`（ロールによる機能可否） | ⚠ **#993 §6 から回ってきたが、ここでも拾わない。**ロールは**サーバーが強制する**ので、capsicum が先読みして UI を出し分ける必要はない。出し分けないと「押せるが失敗する」になるが、それは**エラー処理の話**であって設定の反映漏れではない |
 | テーマ・フォント・カスタム CSS・サウンド・ウィジェット配置（両 SNS） | **#992 の優先順 3 で最初に切り離すと決めてあるもの。**サーバー側に保存されていても capsicum が従う筋合いはない |
-| Mastodon `indexable` / `discoverable` / `noindex` | 検索エンジン・ディレクトリへの掲載可否で、**サーバーとサーバー間の話**。⚠ `discoverable` は**既に対応済み**（プロフィール編集のトグル・[#865](https://github.com/pooza/capsicum/issues/865)） |
+| Mastodon `noindex`（検索エンジンからアクセスできるようにする） | ⚠⚠ **2026-11-18 に判定を書き換えた**（[#1375](https://github.com/pooza/capsicum/issues/1375)）。「サーバー間の話だから拾わない」ではなく、**自分の設定として変えたいが API が無い**（`update_credentials` の permit に無い・v4.7.5 / v5.0.0-beta.1）。画面では**状態を出して Web の `/settings/privacy` へ誘導する**。上流が API を用意するまで待つ（フォークの改造・モロヘイヤの UPDATE は取らない）。⚠ `indexable` / `discoverable` は同じ画面で**変えられる**ようにしたので、この表から外した（`discoverable` は以前プロフィール編集にあった・[#865](https://github.com/pooza/capsicum/issues/865)） |
 | Mastodon `attribution_domains` | 記事の著者表示に使うサーバー側の検証情報。クライアントの表示に効かない |
 
 ## 5. 宿題 3 点の確定（2026-09-29・[#1078](https://github.com/pooza/capsicum/issues/1078)）
