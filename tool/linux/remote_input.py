@@ -16,6 +16,11 @@ portal (XWayland の XTEST も -enable-ei-portal で portal を通る) と違っ
   key KEY [KEY...]                キーを押す (同時押しは ctrl+a の形・例: Return, ctrl+shift+k)
   type-secret NAME                secrets.env の NAME の値を打つ (値は画面にも引数にも出さない)
 ⚠ 送る前に、狙ったウィンドウが前面にあるかを撮って確かめること (端末へ誤入力しない)。
+⚠ xdotool / xev / ImageMagick の import など X11 の道具の座標とは**違う**。XWayland は
+  拡大率 (inori は 1.25) の上に自前の倍率を掛けた座標を使う (inori ではモニターの物理
+  画素 1920x1080 に対して X11 は 3072x1728・1.6 倍)。X11 の道具で窓の位置を測って
+  ここへ渡すとずれる (2026-11-18 に踏んだ)。位置は tool/screenshot/linux.py で撮った
+  画像から読む。
 """
 import sys
 import time
