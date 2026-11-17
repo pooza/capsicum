@@ -132,10 +132,14 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
   /// ⚠ **`mounted` で握り潰さない。**開いた直後に閉じた場合でも、増やす側が
   /// 飛んで減らす側だけが走ると数が負に振り切れる。予約の順は保たれるので、
   /// 対称に投げておけば辻褄が合う。
-  void _shiftMountedDecks(int delta) {
+  void _shiftMountedDecks(int delta) =>
+      _shiftCount(mountedDeckCountProvider, delta);
+
+  /// [provider] の数を [delta] だけ動かす。理由は [_shiftMountedDecks] と同じ。
+  void _shiftCount(StateProvider<int> provider, int delta) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       try {
-        _root.read(mountedDeckCountProvider.notifier).update((n) => n + delta);
+        _root.read(provider.notifier).update((n) => n + delta);
       } on StateError {
         // ⚠ 減らす側の予約が、ルートのコンテナごと畳まれた後のフレームで走ること
         // がある（アプリの終了・テストのツリー差し替え）。戻す先そのものが無く
@@ -194,6 +198,8 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
     // 閉じている間に列を読むと、片づいたはずの TL provider を起こしてしまう。
     _shiftMountedDecks(1);
     _countedAsMounted = true;
+    // 見た目（テーマの色）用の数は dispose まで残す (#1396)。
+    _shiftCount(presentDeckCountProvider, 1);
     // 最後に開いていた側を覚える (#1239)。開き直したとき、前回の側で始める。
     unawaited(writeLastViewMode(LastViewMode.deck));
     _scrollController.addListener(_syncFocusToVisibleColumn);
@@ -224,6 +230,9 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
   @override
   void dispose() {
     _leaveMountedDecks();
+    // ⚠ こちらは pop の始まりでは減らさない（閉じるアニメーションの間も
+    // デッキの色で描く・#1396）。
+    _shiftCount(presentDeckCountProvider, -1);
     _liveScreens--;
     // タブ UI へ戻った (#1239)。⚠⚠ **アプリが前面に居るときだけ書く。**画面が
     // 捨てられるのは利用者が戻ったときだけではなく、アプリが終了へ向かうときにも

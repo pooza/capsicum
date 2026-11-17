@@ -29,7 +29,10 @@ void main() {
         currentMulukhiyaProvider.overrideWithValue(_Mulukhiya('#8e4d2f')),
       ],
     );
+    // DeckScreen は 2 つの数を両方動かす（開いている数は pop の始まりで、
+    // 画面に載っている数は dispose で減る・#1396）。
     c.read(mountedDeckCountProvider.notifier).state = decks;
+    c.read(presentDeckCountProvider.notifier).state = decks;
     addTearDown(c.dispose);
     return c;
   }
@@ -48,7 +51,17 @@ void main() {
     final c = containerWith(decks: 1);
     final sub = c.listen(themeSeedColorProvider, (_, _) {});
     expect(sub.read(), Colors.green);
-    c.read(mountedDeckCountProvider.notifier).state = 0;
+    c.read(presentDeckCountProvider.notifier).state = 0;
     expect(sub.read(), const Color(0xFF8E4D2F));
+  });
+
+  // #1396: 閉じるアニメーションの間（pop は始まったが dispose の前）は、
+  // 「開いている数」（mountedDeckCountProvider）だけが先に 0 になる。色は
+  // そちらを見ないので、閉じかけのデッキはデッキの色のまま描かれる。
+  test('⚠ 閉じかけ（開いている数だけ 0）ではデッキの色のまま', () {
+    final c = containerWith(decks: 1);
+    final sub = c.listen(themeSeedColorProvider, (_, _) {});
+    c.read(mountedDeckCountProvider.notifier).state = 0;
+    expect(sub.read(), Colors.green);
   });
 }
