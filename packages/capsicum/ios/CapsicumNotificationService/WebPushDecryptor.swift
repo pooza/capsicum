@@ -81,7 +81,9 @@ enum WebPushDecryptor {
             }
             rs = parsed
         }
-        guard body.count <= rs + 16 else {
+        // ⚠ `rs + 16` と書かない。`rs` はヘッダの値そのままなので、Int.max 近くが
+        // 来ると加算が trap して NSE ごと落ちる。引く側に寄せる（body.count は小さい）。
+        guard body.count - 16 <= rs else {
             throw WebPushError.multiRecordUnsupported
         }
 
