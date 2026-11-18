@@ -81,7 +81,7 @@ https://capsicum.shrieker.net
 
 ## App Store キーワード（100文字以内）
 
-Mastodon,Misskey,Fediverse,SNS,分散型,マストドン,ミスキー,ソーシャル
+Mastodon,Misskey,Akkoma,Fediverse,SNS,分散型,マストドン,ミスキー,ソーシャル
 
 ## 年齢レーティング
 
