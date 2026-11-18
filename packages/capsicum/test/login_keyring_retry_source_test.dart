@@ -26,12 +26,23 @@ void main() {
   const loginSignature = 'Future<void> _login(';
   const finishSignature = 'Future<void> _finishLogin(';
   const forget = 'SecretServiceProbe.forgetUnresponsive()';
+  const fallbackSignatures = [
+    'Future<bool> _tryMiAuthFallback(',
+    'Future<bool> _tryManualCodeFallback(',
+  ];
+  const releaseSignature = 'bool _releaseAfterFallbackFailure(';
+  const releaseCall = '_releaseAfterFallbackFailure()';
 
   group('探索が空振りしていない', () {
     test('対象のメソッドが見つかる', () {
       expect(File(path).existsSync(), isTrue);
       final source = masked();
-      for (final signature in [loginSignature, finishSignature]) {
+      for (final signature in [
+        loginSignature,
+        finishSignature,
+        ...fallbackSignatures,
+        releaseSignature,
+      ]) {
         final body = methodBody(source, signature);
         expect(body, isNotEmpty, reason: '$signature のシグネチャが変わった。検査も直す');
       }
@@ -45,6 +56,11 @@ void main() {
       final finish = methodBody(masked(), finishSignature);
       expect(finish, contains('saveHostClientCredentials('));
       expect(finish, contains('addAccount('));
+      for (final signature in fallbackSignatures) {
+        final body = methodBody(masked(), signature);
+        expect(body, contains('_finishLogin('), reason: signature);
+        expect(body, contains('catch ('), reason: signature);
+      }
     });
   });
 
@@ -68,6 +84,28 @@ void main() {
     test('⚠ コメントの中の呼び出しは数えない', () {
       final source = maskStrings(maskComments('{ // $forget\n save(); }'));
       expect(isBefore(source, forget, 'save('), isFalse);
+    });
+
+    test('catch の中の呼び出し: catch の中なら当たり・try の中や無しは外れ', () {
+      expect(
+        callsInLastCatch(
+          '{ try { a(); } catch (e) { $releaseCall; } }',
+          releaseCall,
+        ),
+        isTrue,
+      );
+      expect(
+        callsInLastCatch(
+          '{ try { $releaseCall; } catch (e) { b(); } }',
+          releaseCall,
+        ),
+        isFalse,
+      );
+      expect(callsInLastCatch('{ a(); $releaseCall; }', releaseCall), isFalse);
+      final commented = maskStrings(
+        maskComments('{ try { a(); } catch (e) { // $releaseCall\n } }'),
+      );
+      expect(callsInLastCatch(commented, releaseCall), isFalse);
     });
   });
 
@@ -115,7 +153,30 @@ void main() {
         reason: 'エラーを表示する分岐の中で戻す',
       );
     });
+
+    test('フォールバックの中で保存に失敗しても、_loginCompleted を戻す', () {
+      // ⚠ フォールバックは自前の catch で握るので、上の _login の分岐を通らない
+      // （v2.13 のリリース前レビューで 2 観点が独立に指摘）。
+      final source = masked();
+      for (final signature in fallbackSignatures) {
+        expect(
+          callsInLastCatch(methodBody(source, signature), releaseCall),
+          isTrue,
+          reason: '$signature の catch で戻さないと、次に押しても黙って抜ける',
+        );
+      }
+      expect(
+        methodBody(source, releaseSignature),
+        contains('_loginCompleted = false'),
+      );
+    });
   });
+}
+
+/// [body] の最後の `catch (` 以降に [call] があるか。
+bool callsInLastCatch(String body, String call) {
+  final at = body.lastIndexOf('catch (');
+  return at >= 0 && body.indexOf(call, at) >= 0;
 }
 
 /// [signature] で始まるメソッドの本体（`{` から対応する `}` まで）。

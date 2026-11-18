@@ -1190,6 +1190,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         data: {'type': e.runtimeType.toString()},
       );
       // Fallback failed — let the original error handling proceed.
+      if (_releaseAfterFallbackFailure() && mounted) {
+        setState(() => _error = classifyLoginFailure(e).message);
+      }
     }
     return false;
   }
@@ -1415,11 +1418,31 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       // の AppRun ログ (~/.local/share/capsicum/logs/) に平文で残る (#499)。
       // util/exception_scrub.dart で URL を含まない安全な表現に詰め替える。
       debugLogException('Manual code fallback error', e);
+      final savingFailed = _releaseAfterFallbackFailure();
       if (mounted) {
-        setState(() => _error = '認証コードが正しくありません');
+        setState(
+          () => _error = savingFailed
+              ? classifyLoginFailure(e).message
+              : '認証コードが正しくありません',
+        );
       }
     }
     return false;
+  }
+
+  /// フォールバックの中で投げられたときの後始末（#1394 の取り残し）。
+  ///
+  /// ⚠⚠ **`_finishLogin` は先頭で `_loginCompleted` を立てる。**フォールバックから
+  /// 呼んで保存（キーリング）が失敗すると、ここの `catch` が握るので、`_login` の
+  /// エラー分岐（キャンセル以外の側）で戻す処理を通らない。キャンセル扱いの側へ
+  /// 進んで旗が立ったまま残り、**次に押しても `_login` の 1 行目で黙って抜ける。**
+  ///
+  /// 戻り値は「保存の段階で失敗したか」（旗が立っていたか）。true なら原因は
+  /// 認可コードではないので、呼び出し側は「認証コードが正しくありません」を出さない。
+  bool _releaseAfterFallbackFailure() {
+    final savingFailed = _loginCompleted;
+    _loginCompleted = false;
+    return savingFailed;
   }
 
   Future<void> _finishLogin(
