@@ -4,7 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../model/account.dart';
 import '../../provider/account_manager_provider.dart';
+import '../../provider/server_config_provider.dart';
 import '../../service/sentry_op_failure.dart';
+import '../../util/upstream_error_message.dart';
 import '../util/launch_url_toast.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/retry_error_view.dart';
@@ -83,6 +85,7 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen> {
     final account = _account;
     final accountManager = ref.read(accountManagerProvider.notifier);
     final messenger = ScaffoldMessenger.of(context);
+    final reblogLabel = ref.read(reblogLabelProvider);
     setState(() {
       _saving = true;
       _settings = before.merge(changes);
@@ -109,7 +112,15 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen> {
         account: account,
       );
       if (mounted) setState(() => _settings = before);
-      messenger.showSnackBar(const SnackBar(content: Text('保存できませんでした')));
+      // 上流が理由を返していれば添える。プロフィール編集にあった頃
+      // （`profile_edit_screen.dart`・#1335）と同じ部品で組む。
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            upstreamFailureText('保存に失敗しました', e, reblogLabel: reblogLabel),
+          ),
+        ),
+      );
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -233,8 +244,9 @@ List<Widget> privacySettingsTiles(
     if (s.searchEngineHidden != null)
       s.searchEngineEditable
           ? toggle(
-              // ⚠ Misskey の `noCrawle` は「載せない」側。画面は Web と同じく
-              // 「載せる」で聞くので反転する。
+              // ⚠ Misskey の `noCrawle` は「載せない」側（Web の文言も
+              // 「クローラーによるインデックスを拒否」で否定形）。画面は
+              // Mastodon の項目と向きをそろえて「載せる」で聞くので反転する。
               !s.searchEngineHidden!,
               '検索エンジンに載せる',
               'Google などの検索エンジンが、プロフィールや投稿を拾えるようにします',

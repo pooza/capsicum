@@ -17,12 +17,24 @@ bool? _flag(Map<String, dynamic> json, String key) {
 PrivacySettings mastodonPrivacySettingsFromJson(Map<String, dynamic> json) =>
     PrivacySettings(
       locked: _flag(json, 'locked'),
-      discoverable: _flag(json, 'discoverable'),
+      discoverable: _flag(json, 'discoverable') ?? _pleromaDiscoverable(json),
       indexable: _flag(json, 'indexable'),
       hideCollections: _flag(json, 'hide_collections'),
       searchEngineHidden: _flag(json, 'noindex'),
       searchEngineEditable: false,
     );
+
+/// Akkoma（Pleroma 系）の `discoverable` は最上位ではなく `source.pleroma` の下に
+/// ある（`account_view.ex`）。最上位だけを読むと null になって「おすすめへの掲載」が
+/// 出なかった（v2.13 のリリース前レビュー）。書き込みは Mastodon と同じ
+/// `discoverable` で効く（`account_controller.ex`）。
+bool? _pleromaDiscoverable(Map<String, dynamic> json) {
+  final source = json['source'];
+  if (source is! Map<String, dynamic>) return null;
+  final pleroma = source['pleroma'];
+  if (pleroma is! Map<String, dynamic>) return null;
+  return _flag(pleroma, 'discoverable');
+}
 
 /// Misskey の `/api/i` / `i/update` の応答から。
 ///

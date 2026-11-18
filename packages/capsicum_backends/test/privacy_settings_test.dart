@@ -101,6 +101,34 @@ void main() {
       expect(s.searchEngineHidden, isNull);
     });
 
+    test('Akkoma: おすすめへの掲載は source.pleroma.discoverable から読む', () async {
+      final (adapter, _) = await adapterWith({
+        'id': '1',
+        'locked': false,
+        'source': {
+          'pleroma': {'discoverable': true},
+        },
+      });
+      final s = await adapter.getPrivacySettings();
+
+      expect(s.locked, isFalse);
+      expect(s.discoverable, isTrue);
+      expect(s.indexable, isNull, reason: 'Akkoma に無い項目は出さない');
+    });
+
+    test('⚠ 最上位の discoverable があればそちらを使う（Mastodon）', () async {
+      final (adapter, _) = await adapterWith({
+        'id': '1',
+        'discoverable': false,
+        'source': {
+          'pleroma': {'discoverable': true},
+        },
+      });
+      final s = await adapter.getPrivacySettings();
+
+      expect(s.discoverable, isFalse);
+    });
+
     test('変えた項目だけを update_credentials で送る', () async {
       final (adapter, http) = await adapterWith(_mastodonMe);
       await adapter.updatePrivacySettings(
