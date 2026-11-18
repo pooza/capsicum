@@ -558,6 +558,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
         ).showSnackBar(SnackBar(content: Text('操作に失敗しました')));
       }
       debugLogException('User action error', e);
+      // ⚠ 失敗したときも関係を取り直す（v2.13 のリリース前レビュー）。開いている
+      // 間に相手がフォローを承認すると、Misskey の取り下げ（#1400）は
+      // FOLLOW_REQUEST_NOT_FOUND で失敗する。取り直さないと、実際はフォロー中なのに
+      // 「リクエスト中」のまま残る。`_loadRelationship` は自分で例外を握る。
+      await _loadRelationship();
       return false;
     } finally {
       if (mounted) setState(() => _relationshipLoading = false);
