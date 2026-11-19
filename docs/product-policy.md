@@ -170,6 +170,14 @@ v1.15 の観測性強化（#293）により、iOS のバックグラウンド通
   - ⚠ **取れなくても投稿は止めない。**ジャケットは上積みで、失敗した回は本文だけのナウプレになる
   - 出どころは 2 つ: 源が自前で持つもの（Linux の MPRIS・macOS のミュージックアプリ）と、モロヘイヤの `artwork_url`（5.39.0〜・全プラットフォーム）。**源が持っていればそちらを優先する**（いま鳴っている音源そのものの絵）。⚠ モロヘイヤ非導入サーバーで Windows / iOS のジャケットを出すには OS ごとの実装が要り、未着手（iOS は [#1275](https://github.com/pooza/capsicum/issues/1275)・Windows は [#1274](https://github.com/pooza/capsicum/issues/1274)）。⚠ **macOS → ミュージックアプリの経路が、要望の本体**（2026-10-11 pooza）。macOS は AppleScript の `raw data of artwork 1` で取る（[#1273](https://github.com/pooza/capsicum/issues/1273)・ストリーミングの曲でも返る・native helper は要らなかった）
 
+### 再提案しない表示の決定
+
+理由があって決めた表示の線引き。⚠ **「直す / 揃える」提案として持ち出さない。**覆すのは実害のある矛盾が出たときだけ（2026-11-19 にメモリから移した）。
+
+- **Mastodon の CW に書かれた `#タグ` は、投稿の `tags` 配列に無くてもリンクにする**（[#1068](https://github.com/pooza/capsicum/issues/1068)）。ユーザー要望で入れた動きで、Mastodon が CW をタグに登録しない（押した先に当の投稿が載らない）ことを説明したうえでの決定（2026-10-10 pooza「よほどの矛盾でなければ譲れません」）。「サーバーの判定に合わせる」系の作業（[#1151](https://github.com/pooza/capsicum/issues/1151) など）でも、CW は対象から外す
+- **カスタム絵文字の幅に固定倍率の上限（`emojiSize * N`）を入れない**（[#858](https://github.com/pooza/capsicum/issues/858)）。頭打ちは利用可能な幅で行う。ダイスキーには「ダイの大冒険」の名言・技名の横長の絵文字が定常的に登録される（全数計測で最長 9.85:1）ので、固定の上限で潰れるのは端の例ではなく主要な中身そのもの。絵文字の描画を変えるときも再導入しない（`content_parser.dart` のコメントが同じことを書いている）
+- **メディアビューア（`/media`）はデスクトップのメニューバーの対象に含めない**（[#834](https://github.com/pooza/capsicum/issues/834)）。没入のフルスクリーンと独自のキーボード操作のため、ShellRoute の外に置いている（`router.dart` のコメント）。メニューの対象を広げる作業（[#912](https://github.com/pooza/capsicum/issues/912) の続き）でも外す
+
 ### サポート優先順位
 
 自前のサーバー（美食丼・デルムリン丼・キュアスタ！・ダイスキー）以外では、サーバーログの確認やサーバー側の操作（レートリミット解除等）ができないため、サポートの優先順位を下げる。自前サーバー以外での問題はクライアント側で対処可能な範囲に限定し、サーバー側の問題が疑われる場合は「サーバー管理者に問い合わせてください」等の案内に留める。
@@ -187,6 +195,8 @@ capsicum は Mastodon 本家および Misskey 本家の API に対して実装�
 なお、Mastodon フォークが Misskey 互換の API を提供するケースもありうる。この場合も同様に probing の結果に従い、利用可能な機能があればそのまま使う。フォーク固有の対応は行わない。
 
 ただし、自前のサーバー（モロヘイヤ導入済み環境）が提供する独自機能には最大限対応する。capsicum の主目的は自前のインフラとの連携であり、フォーク互換とは別の話である。
+
+自前のサーバー側に機能が要るときは、まずモロヘイヤでできないかを見て、できなければ自前のフォーク（[pooza/mastodon](https://github.com/pooza/mastodon) / [pooza/misskey](https://github.com/pooza/misskey)）で持つ。⚠ **Misskey の上流（misskey-dev）には期待せず、催促もしない**（2026-11-19 pooza）。上流の Issue は年単位で動かないことがある（例: 登録時の自動フォロー misskey-dev/misskey#12451 は 2023-11 から open → フォークの [pooza/misskey#467](https://github.com/pooza/misskey/issues/467) で持つ）。⚠ ただしフォークの変更は差分が上流への追従のたびに衝突しうるので、小さく保つ。
 
 Pleroma 系（Akkoma）も同じ線で扱う（[#1287](https://github.com/pooza/capsicum/issues/1287)）。probing で Mastodon 系と判定されるので、Mastodon 互換の API の範囲の差（`/api/v2/instance` が無いときに v1 から読む・使えない API を「使えない」と見せる、など）は吸収し、プッシュ通知も対応する（[#1390](https://github.com/pooza/capsicum/issues/1390)）。⚠ **Akkoma 固有の機能（絵文字リアクション・Akkoma 形式の引用・MFM・バブル TL など）は当面やらない。**⚠⚠ **ただし恒久の方針ではない**（2026-11-17 pooza）。**段階的に Misskey 相当の機能を実装していきたい**意向があり、その頃には Akkoma 対応を積極的に謳う（アプリやサイトの「Mastodon / Misskey クライアント」の表現に Akkoma を加える）。＝ Akkoma は「フォークだから対応しない」側ではなく、**Mastodon / Misskey に次ぐ 3 つ目の系統として育てていく**対象。着手は段階ごとに Issue を起こしてから。
 
