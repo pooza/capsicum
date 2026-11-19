@@ -108,4 +108,60 @@ void main() {
       expect(info.artist, 'Artist');
     });
   });
+
+  // #1388: Linux の Spotify は xesam:artist に 1 人目しか入れない。名義を
+  // 引き直すために、曲のページの URL を拾う（投稿の URL にはしない）。
+  group('spotifyTrackUrlFromMpris (#1388)', () {
+    const id = '2VsQl1PGaT9zcbkn01qYtO'; // 報告で実測された曲の ID
+    final expected = Uri.parse('https://open.spotify.com/track/$id');
+
+    test('mpris:trackid のオブジェクトパスの形', () {
+      expect(
+        spotifyTrackUrlFromMpris({'mpris:trackid': '/com/spotify/track/$id'}),
+        expected,
+      );
+    });
+
+    test('mpris:trackid の URI の形（古い版）', () {
+      expect(
+        spotifyTrackUrlFromMpris({'mpris:trackid': 'spotify:track:$id'}),
+        expected,
+      );
+    });
+
+    test('xesam:url の open.spotify.com（クエリは落とす）', () {
+      expect(
+        spotifyTrackUrlFromMpris({
+          'xesam:url': 'https://open.spotify.com/track/$id?si=abc',
+        }),
+        expected,
+      );
+    });
+
+    test('⚠ 曲以外・Spotify 以外は拾わない', () {
+      for (final metadata in <Map<String, Object?>>[
+        {'mpris:trackid': '/com/spotify/ad/$id'},
+        {'mpris:trackid': 'spotify:local:a:b:c:180'},
+        {'mpris:trackid': '/org/mpris/MediaPlayer2/Track/3'},
+        {'xesam:url': 'file:///home/user/music/song.flac'},
+        {'xesam:url': 'https://open.spotify.com/episode/$id'},
+        {'xesam:url': 'https://example.com/track/$id'},
+        {'mpris:trackid': '/com/spotify/track/short'},
+        <String, Object?>{},
+      ]) {
+        expect(spotifyTrackUrlFromMpris(metadata), isNull, reason: '$metadata');
+      }
+    });
+
+    test('nowPlayingFromMprisMetadata が sourceTrackUrl に載せ、url は null のまま', () {
+      final info = nowPlayingFromMprisMetadata({
+        'xesam:title': 'HEART GOES ON',
+        'xesam:artist': ['工藤真由'],
+        'mpris:trackid': '/com/spotify/track/$id',
+        'xesam:url': 'https://open.spotify.com/track/$id',
+      }, sourceAppName: 'Spotify');
+      expect(info!.sourceTrackUrl, expected);
+      expect(info.url, isNull, reason: '共有 URL は利用者が選んだプロバイダで後段が決める (#681)');
+    });
+  });
 }

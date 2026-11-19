@@ -167,9 +167,13 @@ const deckThemeSeedColor = defaultThemeSeedColor;
 /// `docs/deck-ui-decisions-2.md` 決定済み事項 18）。現在のアカウントはフォーカス中の
 /// カラムと関係が無いので、その色で塗ると、どのカラムとも合わない帯になる。
 /// アカウントごとの上書きもデッキの間は効かせない。
+///
+/// ⚠ 見るのは [presentDeckCountProvider]（閉じるアニメーションの間も数に入る）。
+/// pop の始まりで減る [mountedDeckCountProvider] を見ると、閉じかけのデッキが
+/// アカウントの色で描かれる（#1396）。
 final themeSeedColorProvider = Provider<Color>(
   (ref) {
-    if (ref.watch(mountedDeckCountProvider) > 0) return deckThemeSeedColor;
+    if (ref.watch(presentDeckCountProvider) > 0) return deckThemeSeedColor;
     final account = ref.watch(currentAccountProvider);
     if (account != null) {
       final custom = ref.watch(
@@ -189,7 +193,7 @@ final themeSeedColorProvider = Provider<Color>(
     return defaultThemeSeedColor;
   },
   dependencies: [
-    mountedDeckCountProvider,
+    presentDeckCountProvider,
     currentAccountProvider,
     currentMulukhiyaProvider,
   ],

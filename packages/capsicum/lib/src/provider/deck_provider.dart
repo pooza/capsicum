@@ -49,6 +49,16 @@ bool shouldStartInDeck({
 /// 始まり**（閉じるアニメーションより前）か dispose の早いほうで減らす (#1332)。
 final mountedDeckCountProvider = StateProvider<int>((ref) => 0);
 
+/// 画面に載っているデッキの数。[mountedDeckCountProvider] と違い、**閉じる
+/// アニメーションの間も数に入れ**、dispose で減らす（#1396）。
+///
+/// ⚠ 見るのは**見た目だけ**（テーマの元の色・#1381）。pop の始まりで減る
+/// [mountedDeckCountProvider] で塗ると、閉じかけのデッキが約 300ms のあいだ
+/// アカウントの色で描かれる。⚠ 通知の振り替えや反映先の判定には使わない
+/// （そちらは閉じかけを「居ない」と見たいので、#1332 のとおり pop の始まりで減る
+/// ほうを使う）。
+final presentDeckCountProvider = StateProvider<int>((ref) => 0);
+
 /// 通知のタップで、デッキの通知カラムへ送ってほしいアカウント (#1295)。
 ///
 /// デッキで使っているときに通知をタップしたら、タブ UI へは行かず、宛先の

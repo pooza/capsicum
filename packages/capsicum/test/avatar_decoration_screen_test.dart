@@ -306,24 +306,37 @@ void main() {
   group('avatarDecorationLimitMessage', () {
     test('付けるときは従来の文面', () {
       expect(
-        avatarDecorationLimitMessage('attach', 3),
+        avatarDecorationLimitMessage(AvatarDecorationOperation.attach, 3),
         '付けられるのは 3 個までです。先にどれかを外してください',
       );
       expect(
-        avatarDecorationLimitMessage('attach', 0),
+        avatarDecorationLimitMessage(AvatarDecorationOperation.attach, 0),
         'このアカウントではデコレーションを付けられません',
       );
     });
 
     test('⚠ 外す・調整では、上限を超えて付いていることを言う', () {
-      for (final op in ['detach', 'adjust']) {
+      for (final op in [
+        AvatarDecorationOperation.detach,
+        AvatarDecorationOperation.adjust,
+      ]) {
         expect(
           avatarDecorationLimitMessage(op, 1),
           '付けられる数（1 個）を超えて付いているため、保存できません。'
           'ほかのデコレーションを外して、1 個以下にしてください',
-          reason: op,
+          reason: op.name,
         );
       }
+    });
+
+    // ⚠ name は Sentry の operation タグにそのまま出る。変えると過去の記録と
+    // 突き合わせられなくなるので固定する。
+    test('name は従来の文字列のまま', () {
+      expect(AvatarDecorationOperation.values.map((o) => o.name), [
+        'attach',
+        'detach',
+        'adjust',
+      ]);
     });
   });
 

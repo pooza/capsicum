@@ -56,14 +56,22 @@ String? avatarDecorationRemainingLabel({
   return 'あと $remaining 個付けられます（$attached / $limit）';
 }
 
-/// 上限に当たったときの案内 (#1361 / #1379)。[operation] は `attach` /
-/// `detach` / `adjust`。
+/// デコレーションへの操作の種類。綴り違いを型で防ぐ（#1396・以前は文字列）。
+///
+/// ⚠ `name`（`attach` / `detach` / `adjust`）は Sentry の `operation` タグに
+/// そのまま出る。⚠ 値の名前を変えると過去の記録と突き合わせられなくなる。
+enum AvatarDecorationOperation { attach, detach, adjust }
+
+/// 上限に当たったときの案内 (#1361 / #1379)。
 ///
 /// ⚠ 外す・調整で当たるのは、**ロールで上限が下がり、付いている数が上限を
 /// 超えたまま**のとき（上流は件数で断る）。付けるときと同じ文面だと、外そうと
 /// しているのに「外してください」と言っているように読めるので分ける。
-String avatarDecorationLimitMessage(String operation, int limit) {
-  if (operation == 'attach') {
+String avatarDecorationLimitMessage(
+  AvatarDecorationOperation operation,
+  int limit,
+) {
+  if (operation == AvatarDecorationOperation.attach) {
     return limit == 0
         ? 'このアカウントではデコレーションを付けられません'
         : '付けられるのは $limit 個までです。先にどれかを外してください';
@@ -99,7 +107,7 @@ class _AvatarDecorationScreenState
   /// [save] を 1 件ずつ走らせ、応答を手元とアカウントへ反映する。
   Future<void> _run(
     AvatarDecorationOption option,
-    String operation,
+    AvatarDecorationOperation operation,
     Future<User> Function(AvatarDecorationSupport support) save,
   ) async {
     if (_savingId != null) return;
@@ -114,7 +122,7 @@ class _AvatarDecorationScreenState
       final user = await save(support);
       if (account != null) accounts.updateUserOf(account.key, user);
       if (mounted) setState(() => _localUser = user);
-      if (operation == 'adjust' &&
+      if (operation == AvatarDecorationOperation.adjust &&
           !user.avatarDecorations.any((d) => d.id == option.id)) {
         // サーバー側（Web など）で既に外れていた。
         messenger.showSnackBar(
@@ -150,7 +158,7 @@ class _AvatarDecorationScreenState
       } else {
         reportOpFailure(
           tagKey: 'avatar_decoration.op',
-          operation: operation,
+          operation: operation.name,
           error: e,
           stackTrace: st,
           account: account,
@@ -166,7 +174,9 @@ class _AvatarDecorationScreenState
 
   Future<void> _toggle(AvatarDecorationOption option, bool attached) => _run(
     option,
-    attached ? 'detach' : 'attach',
+    attached
+        ? AvatarDecorationOperation.detach
+        : AvatarDecorationOperation.attach,
     (support) => attached
         ? support.detachAvatarDecoration(option.id)
         : support.attachAvatarDecoration(option.id),
@@ -191,7 +201,7 @@ class _AvatarDecorationScreenState
     if (result == null || !mounted) return;
     await _run(
       option,
-      'adjust',
+      AvatarDecorationOperation.adjust,
       (support) => support.adjustAvatarDecoration(
         option.id,
         angle: result.angle,

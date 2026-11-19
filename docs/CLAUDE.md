@@ -2,7 +2,7 @@
 
 ## プロジェクト概要
 
-Flutter ベースの Mastodon / Misskey クライアント。
+Flutter ベースの Mastodon / Misskey / Akkoma クライアント（Akkoma は Pleroma 系・3 つ目の系統として段階的に育てる。方針は [product-policy.md](product-policy.md) のフォークの節）。
 汎用クライアントとして動作しつつ、[mulukhiya-toot-proxy](https://github.com/pooza/mulukhiya-toot-proxy)（通称モロヘイヤ）導入済みサーバーでは拡張機能が利用可能になる。
 
 - **技術スタック**: Flutter / Dart
@@ -182,7 +182,7 @@ claude plugin install ginseng@ginseng-style
 
 - **大更新は独立マイルストーンに単独配置**。UI の構造変更・既存モデルの拡張・複数画面への影響などが絡む「大更新」は、他に同規模以上の項目がないマイルストーンに入れる。並走させると設計検討・実装・動作確認がいずれも中途半端になるため
 - **規模の測り方は「大更新の数」が主軸**。1 マイルストーンに入れるのは大更新 0〜1 件 + 小粒・中粒 5〜12 件程度を目安とする。件数は目安であって閾値ではない。リリース前レビュー（5 観点）の followup が膨らんだ場合、上限に縛られて後送りするより同一マイルストーンに取り込んで消化する方が望ましい（直前リリースの設計理解が新鮮なうちに直したいため）。**P1（緊急性あり）に加え、極めて容易な P2/P3 も同一マイルストーンで消化する**（数行の bug fix・コメント書き直し・リネーム・型変更等）。それでも入りきらない場合は、(a) リファクタ系を次マイルストーンに送る、(b) 観測性強化系を分離する、のどちらかで調整する
-- **マイルストーン未設定は意図的な場合がある**。実現性検討中・Flutter 側の対応待ち・横断的タスクなどで pooza が意図的に未割り当てにしていることがあるため、「トリアージが必要」等と機械的に指摘しない。同期報告では一覧として淡々と列挙するに留める
+- **マイルストーンが無い open Issue は `on-hold` だけにする**（2026-11-17 pooza）。`on-hold` でないものは、**末尾（いちばん先）のマイルストーンに置く**。外の都合待ち（上流の正式版・モロヘイヤのリリース）・再現待ち（`reproduction-needed`）で着手できないものは `on-hold` を付けて枠の外に置き、再開の合図を Issue に書く。⚠ **起票した時点でどちらかにする**（未割り当てのまま置かない）。同期で「on-hold でも枠でもない」ものを見つけたら、その場でどちらかに寄せる（判断が要るものは推奨つきで pooza に聞く）。relay も同じ
 - **ユーザー要望の振り分け基準**:
   - 不具合 → 可能なら着手中のマイルストーンに入れる
   - 改善要求（小規模）→ 着手中のマイルストーンに入れる
@@ -323,9 +323,9 @@ dart analyze --fatal-infos > /tmp/analyze.log 2>&1; echo "ANALYZE_EXIT=$?"
 
 [GitHub Milestones](https://github.com/pooza/capsicum/milestones) が正本。各マイルストーンの概要・スコープはマイルストーンの description に記載し、CLAUDE.md には複写しない。個別 Issue の一覧・ステータスも同様。
 
-最新リリース: **v2.11.0**（2026-11-11 タグ、build 219、リリース PR [#1374](https://github.com/pooza/capsicum/pull/1374)、merge `7c6200fe`）。**大更新は Misskey のクリップ [#1050](https://github.com/pooza/capsicum/issues/1050)**（見るだけだったものを、作る・編集する・消す・投稿を入れる / 外すまで）。ほかに Misskey のアイコンデコの位置・角度・反転の調整 [#1359](https://github.com/pooza/capsicum/issues/1359)、投稿フォームの「入力を空にする…」（⇧⌘K / Ctrl+Shift+K）[#1368](https://github.com/pooza/capsicum/issues/1368)、少年ジャンプ＋の「勇者アバンと獄炎の魔王」をアプリの作品ページで開く [#1352](https://github.com/pooza/capsicum/issues/1352)（決め打ち）、ウィンドウを前面に出すクリックで投稿やカラムを開かない [#1366](https://github.com/pooza/capsicum/issues/1366)、v2.10 の送り分 [#1372](https://github.com/pooza/capsicum/issues/1372)、Sentry の切断の記録の間引き [#1378](https://github.com/pooza/capsicum/issues/1378)（確認は v2.12）。**全 5 プラットフォーム公開完了（2026-11-12 実測）**: iOS / macOS とも 2.11.0 が `READY_FOR_SALE`（ASC API）/ Android は production track の versionCode 219（Play API）/ Windows は Microsoft Store が `2.11.219.0` を返す（displaycatalog）/ Linux AppImage は [GitHub Release v2.11.0](https://github.com/pooza/capsicum/releases/tag/v2.11.0)（Latest）。
+最新リリース: **v2.12.0**（2026-11-15 タグ、build 220、リリース PR [#1395](https://github.com/pooza/capsicum/pull/1395)、merge `e53facd2`）。**大更新なし — Akkoma（Pleroma 系）の段階 1 と Linux の検証の回**。Akkoma で基本の操作が使えるようにする [#1287](https://github.com/pooza/capsicum/issues/1287)（段階 1・プッシュ通知の段階 2 は [#1390](https://github.com/pooza/capsicum/issues/1390) に分けて v2.13 の主に）、Linux の専用の検証機（inori・Ubuntu 26.04・Wayland）で best-effort の仕様と未検証の項目を確かめる [#1383](https://github.com/pooza/capsicum/issues/1383) と、そこで見つかったログインし直すたびに他アカウントのトークンが消える [#1387](https://github.com/pooza/capsicum/issues/1387)（`flutter_secure_storage_linux` を `4.0.0-beta.1` へ override・正式版へ戻すのは [#1389](https://github.com/pooza/capsicum/issues/1389)）・キーリングのロック解除の画面が出続ける [#1386](https://github.com/pooza/capsicum/issues/1386)・最小サイズが効かない [#1385](https://github.com/pooza/capsicum/issues/1385)・install.sh の digest の照合 [#1384](https://github.com/pooza/capsicum/issues/1384)。ほかに Annict の感想・記録の自動保存 [#1382](https://github.com/pooza/capsicum/issues/1382)、デッキの間はテーマの色を固定の緑にする [#1381](https://github.com/pooza/capsicum/issues/1381)、チャンネルの中のリノートから返信するときに入る先を示す [#1380](https://github.com/pooza/capsicum/issues/1380)、v2.11 の送り分 [#1379](https://github.com/pooza/capsicum/issues/1379)、Sentry の切断の記録の間引きの確認 [#1378](https://github.com/pooza/capsicum/issues/1378)。#1373（Mastodon 5.0 の用語）は訳語待ちで v2.13 へ送った。**全 5 プラットフォーム公開完了（2026-11-17 確認）**: iOS / macOS とも 2.12.0 が `READY_FOR_SALE`（ASC API）/ Android は production の versionCode 220（公開は pooza が確認）/ Windows は Microsoft Store が `2.12.220.0` を返す（displaycatalog）/ Linux AppImage は [GitHub Release v2.12.0](https://github.com/pooza/capsicum/releases/tag/v2.12.0)（Latest）。
 
-⚠ リリース前レビュー（5 観点 + Codex）は赤 1 件（デッキの別アカウントのカラムから作ったクリップがルートのアカウントにできる・`0458d805`・Codex P1 と同じ）を直してからビルドした。Codex の締めで出た P2 2 件（`93e7bfbd`・`17495057`）もビルド前に直した。送り分は [#1379](https://github.com/pooza/capsicum/issues/1379)（v2.12）。
+⚠ リリース前レビュー（5 観点 + Codex）は赤 1 件（#1387 の書き直しの控え）ほかを直してからビルドした。リリース PR の Codex P2 1 件（ほかのインスタンスが書き換えたキーリングを考慮していない）は、2 つ同時に起動できること自体が原因として [#1391](https://github.com/pooza/capsicum/issues/1391)（v2.13）で扱う。締めの再レビューは指摘なし。送り分は [#1396](https://github.com/pooza/capsicum/issues/1396)（v2.13）。⚠ v2.12 の Linux の束は、inori の別セッションと並走して進めた。
 
 過去リリースの詳細ログは [archive/release-log.md](archive/release-log.md) に退避した（正本は [GitHub Releases](https://github.com/pooza/capsicum/releases) / Milestones）。マイルストーン移行時のログトリム手順は [milestone-transition スキル](../.claude/skills/milestone-transition/SKILL.md) の step 7。
 
@@ -365,7 +365,7 @@ dart analyze --fatal-infos > /tmp/analyze.log 2>&1; echo "ANALYZE_EXIT=$?"
   - **実機が要るものは端末ラベルと併用する**（例: #1190 は `verification-pending` + `Windows`）。⚠ **`verification-pending` 単独なら「手元の Mac で見られる」**と読めるようにしておく
 - **`observing` は「実装は済んでいて、本番の値が閉じる条件を満たすのを待っている」の目印**（2026-10-18 新設・capsicum / relay 共通）。例: 修正を入れた端末が次に起動して登録が通るか（relay#101）、counter の水準を見て切り替えの時期を決める（relay#91）、最初の返金で状態が追随するか（relay#63）。⚠ **`verification-pending` と分ける** —— あちらは **pooza が手で触って確かめる**札、こちらは**同期のたびに Claude が測る**札。⚠ **`on-hold` にしない**（on-hold は確認そのものが忘れられる）
   - **付けるときは、閉じる条件と測り方を Issue に書く**（測るコマンド・見る値・「満たした / 満たしていない / まだ分からない」の読み分け）。書いていないものには付けない
-  - **マイルストーンに載せたまま持ち越す。**移行時に条件を満たしていなければ次の枠へ移す（[milestone-transition](../.claude/skills/milestone-transition/SKILL.md) の 1.）。⚠ **枠の目安（大更新 0〜1 + 小中 5〜12）の件数には数えない**・**進捗報告でも作業の残件と分けて書く**（作業が残っているように見せない）
+  - **マイルストーンに載せたまま持ち越す。**移行時に条件を満たしていなければ次の枠へ移す（[milestone-transition](../.claude/skills/milestone-transition/SKILL.md) の 1.）。⚠ **例外は relay#63（返金の追随）**: 本番で最初の返金が出るまでこちらから起こせないので、`on-hold` を併せて付けて枠の外に置く（2026-11-17 pooza）。`observing` が付いている限り、同期での測定は続ける。⚠ **枠の目安（大更新 0〜1 + 小中 5〜12）の件数には数えない**・**進捗報告でも作業の残件と分けて書く**（作業が残っているように見せない）
   - 条件を満たしたら、測った値を添えて close する
 - Flutter framework 由来の不具合（capsicum 側で根治不能なもの、`flutter` ラベル付き）は [flutter-upstream-watch.md](flutter-upstream-watch.md) で集中管理し、**月初のセッションで手動 chase** して上流の進捗を巡回する。⚠⚠ **`flutter` ラベルを付けたら、同じ作業で同 doc の表に行を足す**（外すときも同じ・規約は同 doc の冒頭）。⚠ **クラウドの schedule routine は 2026-08-21 に廃止した**（4 か月連続で発火しても成果コミットが 1 件も残らず、実務はローカル頼みだった）。**資格情報の満了チェックがこの巡回に相乗りしている**点に注意
 

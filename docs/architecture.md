@@ -409,6 +409,17 @@ sequenceDiagram
 
 Web Push ペイロードはリレーで復号せずそのまま APNs / FCM に転送し、端末側で復号する。
 
+暗号方式は 2 つあり、端末は**両方を復号する**（Dart・iOS / macOS の NSE・Windows の 4 か所）:
+
+| 方式 | 送ってくるもの | 復号に要るもの |
+| --- | --- | --- |
+| `aes128gcm`（RFC 8291） | Mastodon（`subscription[standard]=true` で選ばせる・#336）/ Misskey | body だけ |
+| `aesgcm`（旧方式） | **Akkoma（Pleroma 系）**・古い Mastodon（4.3 以前） | body と `Crypto-Key`（`dh=`）/ `Encryption`（`salt=`）のヘッダ。relay が `crypto_key` / `encryption` として転送する |
+
+⚠ **`aesgcm` は 2026-11-18 まで「対応しない」としていた。**線引きを変えたのは Akkoma のプッシュ通知のため（[#1390](https://github.com/pooza/capsicum/issues/1390)・Akkoma 3.20.1 が `aesgcm` でしか送らないことを実測）。⚠ Mastodon には引き続き `aes128gcm` を選ばせる（ヘッダ 2 本ぶん本文が長くなり、APNs の 4KB で縮退しやすいため）。
+
+⚠ **Akkoma は本文に `Content-Type` を付けてこない。**relay は `/push` の本文を常にバイナリとして読む（フォームとして読むと route の手前で 400 になり、上流は購読を消す・[capsicum-relay#118](https://github.com/pooza/capsicum-relay/issues/118)）。
+
 ```mermaid
 sequenceDiagram
     autonumber

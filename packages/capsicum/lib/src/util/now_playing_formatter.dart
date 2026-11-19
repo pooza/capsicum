@@ -121,3 +121,27 @@ String _oneLine(String? value) {
   // 末尾に残った区切りは書き出さない（trim 相当）。
   return buffer.toString();
 }
+
+/// 源の名義（[info]）を、曲のページから引き直した名義（[resolved]）で置き換える
+/// (#1388)。引き直せなかったら [info] のまま。
+///
+/// ⚠⚠ **OS のメディア情報は「いま何が鳴っているか」の仕組みで、名義が正しい
+/// ことまでは保証しない。**Linux の Spotify は `xesam:artist` に 1 人目しか
+/// 入れない。曲のページ（[NowPlayingInfo.sourceTrackUrl]）をモロヘイヤの
+/// `/nowplaying/resolve-url` で引くと、API が返す全員が取れる。URL を貼る投稿の
+/// 経路（#729）と結果もそろう。
+///
+/// ⚠ **差し替えるのは名義だけ。**曲名・アルバムは源のものを使う（いま鳴って
+/// いる音源そのもので、表記を引き直す理由が無い）。⚠ **[NowPlayingInfo.url] も
+/// 載せない** —— 共有 URL は利用者が選んだプロバイダ（#681）で後段の補完が
+/// 決める。
+///
+/// ⚠ 引き直した名義が空なら置き換えない（欠けた名義を空で上書きしない）。
+NowPlayingInfo nowPlayingWithResolvedArtist(
+  NowPlayingInfo info,
+  NowPlayingInfo? resolved,
+) {
+  final artist = _oneLine(resolved?.artist);
+  if (artist.isEmpty) return info;
+  return info.copyWith(artist: artist);
+}

@@ -189,6 +189,13 @@ class NotificationDedupPlugin: NSObject, UNUserNotificationCenterDelegate {
         if let encoding = userInfo["encoding"] as? String {
           entry["encoding"] = encoding
         }
+        // aesgcm（Akkoma・古い Mastodon）の復号に要る (#1390)。
+        if let cryptoKey = userInfo["crypto_key"] as? String {
+          entry["crypto_key"] = cryptoKey
+        }
+        if let encryption = userInfo["encryption"] as? String {
+          entry["encryption"] = encryption
+        }
         // NSE が動く環境 (OS 側が直った場合) では stamp をそのまま使えるよう
         // 復号不要の手がかりも渡す。
         if let stamped = userInfo["capsicum_notification_id"] as? String {

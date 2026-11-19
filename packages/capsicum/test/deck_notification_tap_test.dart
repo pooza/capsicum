@@ -324,6 +324,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(container.read(mountedDeckCountProvider), 1);
+    expect(container.read(presentDeckCountProvider), 1);
 
     // 閉じるアニメーションの途中。
     navigator.pop();
@@ -335,6 +336,12 @@ void main() {
       0,
       reason: 'dispose を待たずに抜ける（通知の経路が振り替えられるように）',
     );
+    // #1396: 見た目（テーマの色）用の数は、閉じかけの間は残る。
+    expect(
+      container.read(presentDeckCountProvider),
+      1,
+      reason: '閉じかけのデッキはデッキの色で描く',
+    );
 
     container.read(pendingDeckNotificationsProvider.notifier).state = _other;
     await tester.pumpAndSettle();
@@ -343,6 +350,11 @@ void main() {
     expect(container.read(deckColumnsProvider), hasLength(1), reason: '足さない');
     expect(find.byType(DeckScreen), findsNothing);
     expect(container.read(mountedDeckCountProvider), 0, reason: '二重に減らさない');
+    expect(
+      container.read(presentDeckCountProvider),
+      0,
+      reason: 'dispose で減る（#1396）',
+    );
   });
 
   testWidgets('⚠ アカウントは切り替えない（デッキでは読み直しを起こす）', (tester) async {

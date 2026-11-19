@@ -2,10 +2,10 @@
 Type=Application
 Version=1.0
 Name=capsicum
-GenericName=Mastodon / Misskey クライアント
-GenericName[en]=Mastodon / Misskey Client
-Comment=Mastodon / Misskey 互換の Fediverse クライアント
-Comment[en]=Fediverse client compatible with Mastodon and Misskey
+GenericName=Mastodon / Misskey / Akkoma クライアント
+GenericName[en]=Mastodon / Misskey / Akkoma Client
+Comment=Mastodon / Misskey / Akkoma（Pleroma 系）に対応した Fediverse クライアント
+Comment[en]=Fediverse client compatible with Mastodon, Misskey and Akkoma (Pleroma)
 Icon=net.shrieker.capsicum
 Exec=capsicum %U
 Terminal=false

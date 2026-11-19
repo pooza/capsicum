@@ -123,6 +123,8 @@ ls -lt ~/.local/share/capsicum/logs/ | head -3
 
 ログは起動時に最新 10 件のみ残してローテーションされる（`chmod 700` / 各ファイル 600）。古い不具合の追跡には間に合わないことがあるので、**再現直後に取得する**。
 
+⚠ **Dart の出力（`debugPrint` / `print`）はこのログに出ない**（2026-11-15 に検証機で確認・#1387）。残るのは GTK / GLib などネイティブ側の出力だけ。アプリ側の `capsicum: ...` 行を見たいときは `flutter run`（debug）の出力を使う。**「ログに行が無い」を「その処理が走らなかった」と読まない。**
+
 過去事例（#532、v1.24.0〜v1.24.2 の日本語 IME 不能）: AppRun ログに `libibus-1.0.so.5: undefined symbol: g_task_set_static_name` / `Loading IM context type 'ibus' failed` が記録されていた。これを最初に見ていれば「bundled GLib（build host = ubuntu-22.04 / GLib 2.72）と host libibus（GLib 2.76+ で追加されたシンボルを要求）の symbol mismatch」と一発で特定でき、2 段階の誤診を回避できた。
 
 ## 制約

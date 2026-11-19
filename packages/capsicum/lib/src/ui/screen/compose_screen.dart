@@ -3299,7 +3299,13 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       // 本文の挿入まで巻き込まない（元の info のまま進める）。
       var enriched = info;
       try {
-        enriched = await _enrichNowPlayingUrl(info);
+        enriched = await _resolveNowPlayingArtist(enriched);
+      } catch (e) {
+        // 名義の引き直しも上積み (#1388)。失敗したら源の名義のまま進める。
+        debugLogException('nowplaying artist resolve error', e);
+      }
+      try {
+        enriched = await _enrichNowPlayingUrl(enriched);
       } catch (e) {
         debugLogException('nowplaying enrich error', e);
         Sentry.addBreadcrumb(
@@ -3371,6 +3377,27 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     final upgraded = '${formatNowPlayingFallback(info)}\n';
     _controller.text = upgraded;
     _controller.selection = TextSelection.collapsed(offset: upgraded.length);
+  }
+
+  /// 源が曲のページを教えてくれた回（Linux の Spotify・#1388）に、モロヘイヤの
+  /// resolve-by-URL (#729) で名義を引き直す。整形の規則は
+  /// [nowPlayingWithResolvedArtist] の doc。機能が無効・引けない・失敗のときは
+  /// [info] のまま。
+  Future<NowPlayingInfo> _resolveNowPlayingArtist(NowPlayingInfo info) async {
+    final trackUrl = info.sourceTrackUrl;
+    if (trackUrl == null) return info;
+    final account = ref.read(currentAccountProvider);
+    final mulukhiya = account?.mulukhiya;
+    if (account == null ||
+        mulukhiya == null ||
+        !mulukhiya.nowplayingUrlResolverEnabled) {
+      return info;
+    }
+    final resolved = await mulukhiya.resolveNowPlayingByUrl(
+      accessToken: account.userSecret.accessToken,
+      url: trackUrl.toString(),
+    );
+    return nowPlayingWithResolvedArtist(info, resolved);
   }
 
   /// URL を持たないナウプレ源に、モロヘイヤ enrich (#669 / mulukhiya #4382) で

@@ -235,14 +235,15 @@ int main() {
     CheckErr(ok, err, "invalid envelope", "壊れたエンベロープ");
   }
 
-  // 8) aes128gcm 以外（レガシー aesgcm）→ unsupported encoding。#800: 復号前に
-  //    account を out へ載せ、失敗パスでも host を観測に出せることを確認する。
+  // 8) 復号できない形式 → unsupported encoding。#800: 復号前に account を out へ
+  //    載せ、失敗パスでも host を観測に出せることを確認する。
+  //    ⚠ aesgcm は capsicum#1390 から復号する（8b）ので、ここでは未知の形式を使う。
   {
     PushDisplay d;
     std::string err;
-    bool ok = HandleWnsRawPayload(Envelope(kAccount, "aesgcm", kBody), dat, &d,
-                                  &err);
-    CheckErr(ok, err, "unsupported encoding", "レガシー aesgcm は unsupported");
+    bool ok =
+        HandleWnsRawPayload(Envelope(kAccount, "gzip", kBody), dat, &d, &err);
+    CheckErr(ok, err, "unsupported encoding", "未知の encoding は unsupported");
     if (d.account == kAccount) {
       std::printf("  ok   - unsupported encoding でも account が観測に載る (#800)\n");
     } else {
@@ -251,6 +252,18 @@ int main() {
           d.account.c_str());
       ++g_failures;
     }
+  }
+
+  // 8b) aesgcm は unsupported にしない（capsicum#1390）。crypto_key /
+  //     encryption の無いエンベロープは、復号へ進んで失敗する。復号そのものの
+  //     正否は web_push_decrypt_test.cpp が見る。
+  {
+    PushDisplay d;
+    std::string err;
+    bool ok = HandleWnsRawPayload(Envelope(kAccount, "aesgcm", kBody), dat, &d,
+                                  &err);
+    CheckErr(ok, err, "decryption failed",
+             "aesgcm は復号へ進む（ヘッダが無ければ復号の失敗）");
   }
 
   // ---- 無暗号化のお知らせ push (#978) ----

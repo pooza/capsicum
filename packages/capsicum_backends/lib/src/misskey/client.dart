@@ -79,6 +79,48 @@ class MisskeyClient {
     return MisskeyUser.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// POST /api/i を生の JSON で返す (#1375)。
+  ///
+  /// ⚠ [MisskeyUser] にはプライバシーの項目（`noCrawle` ほか）が無いので、
+  /// 設定の画面はこちらから読む。
+  Future<Map<String, dynamic>> getIJson() async {
+    final response = await dio.post('/api/i', data: createBody());
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// プライバシーとつながりやすさの設定を書く (#1375)。応答は生の JSON。
+  ///
+  /// `POST /api/i/update`（`endpoints/i/update.ts`）。null は送らない（変えない）。
+  Future<Map<String, dynamic>> updateIPrivacy({
+    bool? isLocked,
+    bool? isExplorable,
+    bool? autoAcceptFollowed,
+    bool? publicReactions,
+    String? followingVisibility,
+    String? followersVisibility,
+    bool? hideOnlineStatus,
+    bool? noCrawle,
+    bool? preventAiLearning,
+    bool? requireSigninToViewContents,
+  }) async {
+    final response = await dio.post(
+      '/api/i/update',
+      data: createBody({
+        'isLocked': ?isLocked,
+        'isExplorable': ?isExplorable,
+        'autoAcceptFollowed': ?autoAcceptFollowed,
+        'publicReactions': ?publicReactions,
+        'followingVisibility': ?followingVisibility,
+        'followersVisibility': ?followersVisibility,
+        'hideOnlineStatus': ?hideOnlineStatus,
+        'noCrawle': ?noCrawle,
+        'preventAiLearning': ?preventAiLearning,
+        'requireSigninToViewContents': ?requireSigninToViewContents,
+      }),
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
   /// POST /api/get-avatar-decorations (#1349)。認証不要。
   Future<List<Map<String, dynamic>>> getAvatarDecorations() async {
     final response = await dio.post(
@@ -235,6 +277,17 @@ class MisskeyClient {
   Future<void> acceptFollowRequest(String userId) async {
     await dio.post(
       '/api/following/requests/accept',
+      data: createBody({'userId': userId}),
+    );
+  }
+
+  /// POST /api/following/requests/cancel (#1400)
+  ///
+  /// 自分が送った、承認待ちのフォローのリクエストを取り下げる。⚠ `userId` は
+  /// **フォローしようとした相手**の User id。
+  Future<void> cancelFollowRequest(String userId) async {
+    await dio.post(
+      '/api/following/requests/cancel',
       data: createBody({'userId': userId}),
     );
   }

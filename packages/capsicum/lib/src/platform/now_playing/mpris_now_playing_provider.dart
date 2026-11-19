@@ -140,8 +140,56 @@ NowPlayingInfo? nowPlayingFromMprisMetadata(
     artworkUrl: _artworkUri(metadata['mpris:artUrl']),
     // MPRIS は文字情報源として扱う（URL 源は Spotify provider が担う）。
     url: null,
+    // 名義の引き直し用 (#1388)。投稿の URL には使わない。
+    sourceTrackUrl: spotifyTrackUrlFromMpris(metadata),
   );
 }
+
+/// Linux の Spotify が MPRIS で返す曲の ID から、曲のページの URL を作る
+/// (#1388)。Spotify でなければ null。
+///
+/// ⚠⚠ **Spotify の `xesam:artist` は 1 人目しか入っていない**（2026-11-14 に
+/// makoto2 の側で実測・API では 3 人の曲が `["池田彩"]`）。この URL でモロヘイヤに
+/// 引き直して名義を直す。
+///
+/// 受ける形（版によって違う）:
+/// - `xesam:url` = `https://open.spotify.com/track/<ID>`
+/// - `mpris:trackid` = `/com/spotify/track/<ID>`（D-Bus のオブジェクトパス）
+/// - `mpris:trackid` = `spotify:track:<ID>`（古い版）
+///
+/// ⚠ 曲以外（広告 `/com/spotify/ad/…`・ポッドキャスト・ローカルファイル
+/// `spotify:local:…`）は null。引き直す先が無い。
+Uri? spotifyTrackUrlFromMpris(Map<String, Object?> metadata) {
+  final url = metadata['xesam:url'];
+  if (url is String) {
+    final uri = Uri.tryParse(url.trim());
+    if (uri != null &&
+        uri.scheme == 'https' &&
+        uri.host == 'open.spotify.com' &&
+        uri.pathSegments.length == 2 &&
+        uri.pathSegments.first == 'track' &&
+        _spotifyId.hasMatch(uri.pathSegments.last)) {
+      return Uri.https('open.spotify.com', '/track/${uri.pathSegments.last}');
+    }
+  }
+  final trackId = metadata['mpris:trackid'];
+  // `o`（オブジェクトパス）は toNative で String になるが、念のため両方受ける。
+  final raw = trackId is DBusObjectPath ? trackId.value : trackId;
+  if (raw is String) {
+    final match = _spotifyTrackId.firstMatch(raw.trim());
+    if (match != null) {
+      return Uri.https('open.spotify.com', '/track/${match.group(1)}');
+    }
+  }
+  return null;
+}
+
+/// Spotify の曲 ID（base62・22 文字）。
+final _spotifyId = RegExp(r'^[0-9A-Za-z]{22}$');
+
+final _spotifyTrackId = RegExp(
+  r'^(?:/com/spotify/track/|spotify:track:)([0-9A-Za-z]{22})$',
+);
 
 String? _trimmedString(Object? value) {
   if (value is! String) return null;

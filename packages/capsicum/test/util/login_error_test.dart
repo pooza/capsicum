@@ -122,6 +122,24 @@ void main() {
       expectKeyring(PlatformException(code: 'StorageError', message: 'x'));
     });
 
+    // #1394: キーリングがまだ無い端末では、最初の保存で作成の画面が出る。
+    // 作成を待つあいだの打ち切りも、作成を断った場合も、同じ文言に来る。
+    // 「再起動すると直る」だけだと、作成を断った人は再起動しても直らない。
+    test('作成の画面が出た場合の次の一手を言う (#1394)', () {
+      for (final error in [
+        TimeoutException(
+          SecureStorageGate.timeoutMessage('write'),
+          const Duration(seconds: 5),
+        ),
+        TimeoutException(SecureStorageHealth.probeSkipMessage),
+        PlatformException(code: 'Libsecret error', message: 'x'),
+      ]) {
+        final message = classifyLoginFailure(error).message;
+        expect(message, contains('キーリングの作成'), reason: '$error');
+        expect(message, contains('もう一度お試しください'), reason: '$error');
+      }
+    });
+
     test('ロックされている → 解錠を促す', () {
       final r = classifyLoginFailure(
         PlatformException(code: 'KeyringLocked', message: 'KeyringLocked'),

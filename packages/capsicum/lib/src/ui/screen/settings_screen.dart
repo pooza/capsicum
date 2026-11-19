@@ -64,6 +64,16 @@ class SettingsScreen extends ConsumerWidget {
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => context.push('/settings/posting-defaults'),
               ),
+            // プライバシーとつながりやすさ (#1375)。承認制・おすすめへの掲載は
+            // プロフィール編集からここへ移した（置き場を 1 か所に揃える）。
+            if (ref.watch(currentAdapterProvider) is PrivacySettingsSupport)
+              ListTile(
+                leading: const Icon(Icons.privacy_tip_outlined),
+                title: const Text('プライバシーとつながりやすさ'),
+                subtitle: const Text('承認制・おすすめへの掲載・検索・一覧の公開範囲'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => context.push('/settings/privacy'),
+              ),
             // フィルター (#1047)。⚠ **名前は SNS の本来の用語**（Mastodon は
             // 「フィルター」・2026-10-15 pooza 判断）。Misskey のワードミュートは
             // #1290 で同じ位置に出す。

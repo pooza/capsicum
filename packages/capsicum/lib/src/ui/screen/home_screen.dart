@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
 import '../../../main.dart' show appLaunchStopwatch;
+import '../../model/offline_account.dart';
 import '../../platform/platform_info.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/announcement_provider.dart';
@@ -1692,15 +1693,43 @@ class _OfflineHomeScaffold extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final offline = ref.watch(offlineAccountsProvider);
-    final anyRetrying = offline.any((o) => o.retrying);
     // 到達不能が 1 件も無い＝全部が「未接続」(#967)。設定のインポート直後
     // （#857 はトークンを持ち込まない）はこの状態になる。自動で戻る見込みが
     // 無いので、待たせる文言を出さずログインへ促す。
     final allNeedLogin = offline.every((o) => !o.recoverableByRetry);
 
+    // ⚠ キーリングの旗は `ref` を持たない storage 層が立てるので、riverpod では
+    // なく Listenable で見る（`_SecretServiceNotice` と同じ）。見出しと本文を
+    // 原因に合わせて出し分ける (#1393)。
+    return ListenableBuilder(
+      listenable: Listenable.merge([
+        SecureStorageHealth.notifier,
+        SecureStorageHealth.lockedNotifier,
+      ]),
+      builder: (context, _) => _build(context, ref, offline, allNeedLogin),
+    );
+  }
+
+  Widget _build(
+    BuildContext context,
+    WidgetRef ref,
+    List<OfflineAccount> offline,
+    bool allNeedLogin,
+  ) {
+    final anyRetrying = offline.any((o) => o.retrying);
+    final keyringUnavailable = SecureStorageHealth.unavailable;
+    final keyringLocked = SecureStorageHealth.locked;
+    final copy = offlineHomeCopy(
+      allNeedLogin: allNeedLogin,
+      anyRetrying: anyRetrying,
+      keyringUnavailable: keyringUnavailable,
+      keyringLocked: keyringLocked,
+    );
+    final keyringCause = !allNeedLogin && keyringUnavailable;
+
     return Scaffold(
       appBar: AppBar(
-        title: Text(allNeedLogin ? '未接続のアカウント' : '接続できません'),
+        title: Text(copy.title),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
       body: BottomSafeArea(
@@ -1712,43 +1741,24 @@ class _OfflineHomeScaffold extends ConsumerWidget {
               padding: const EdgeInsets.all(24),
               children: [
                 Icon(
-                  allNeedLogin ? Icons.link_off : Icons.cloud_off,
+                  allNeedLogin
+                      ? Icons.link_off
+                      : keyringCause
+                      ? Icons.key_off_outlined
+                      : Icons.cloud_off,
                   size: 64,
                   color: Theme.of(context).colorScheme.outline,
                 ),
                 const SizedBox(height: 16),
+                // 見出しと本文の出し分けと、その理由（#917 / #938 / #967 /
+                // #1393）は `offlineHomeCopy` の doc にある。
                 Text(
-                  allNeedLogin
-                      ? '接続し直してください'
-                      : anyRetrying
-                      ? '接続中…'
-                      : '接続できません',
+                  copy.heading,
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 8),
-                // 原因を「サーバー側」と断定しない (#917)。この画面は機内モード等で
-                // 端末がオフラインなときにも出る（#792 の想定はサーバー停止 /
-                // 再構築だったが、到達不能の理由はここでは区別できない）。
-                //
-                // **「自動的に戻ります」と再び書けるようになった (#938)。**
-                // 背景再試行は 2/5/15/30 秒の 4 回・計 52 秒で打ち切っていたため、
-                // 一度はこの文言を外していた（打ち切り後は事実に反するため）。
-                // #938 で打ち切りを外し、この画面が出ている間は 60 秒間隔で回り
-                // 続ける + フォアグラウンド復帰でも即座に試すようにしたので、
-                // 文言と実装が一致した。**再び上限を入れるならここも戻すこと。**
-                Text(
-                  allNeedLogin
-                      // 待っても戻らないことを明示する。「自動で再試行」と書くと
-                      // 何もせず待たせることになる (#967)。
-                      ? 'ログイン情報が見つかりません。端末の復元・データ削除・'
-                            '設定のインポートのあとに起こります。アカウントの一覧は'
-                            '残っているので、接続し直せば元に戻ります。'
-                      : '端末がオフラインか、ログイン中のサーバーが停止 / 再構築中の'
-                            '可能性があります。アカウントは保持したまま自動で再試行を'
-                            '続けるので、接続が回復すればタイムラインへ戻ります。',
-                  textAlign: TextAlign.center,
-                ),
+                Text(copy.body, textAlign: TextAlign.center),
                 // ⚠⚠ **キーリングが死んでいると、ここまでの文言は全部嘘になる**
                 // (#1085)。secure storage が応答しないとログイン情報を読めず、
                 // 到達不能と区別がつかないまま「サーバーが停止中かも」「自動で
@@ -1775,9 +1785,11 @@ class _OfflineHomeScaffold extends ConsumerWidget {
                       subtitle: Text(
                         !o.recoverableByRetry
                             ? disconnectedAccountSubtitle
-                            : o.retrying
-                            ? '再試行中…'
-                            : '接続を待っています',
+                            : offlineAccountSubtitle(
+                                retrying: o.retrying,
+                                keyringUnavailable: keyringUnavailable,
+                                keyringLocked: keyringLocked,
+                              ),
                       ),
                       onTap: o.recoverableByRetry
                           ? null

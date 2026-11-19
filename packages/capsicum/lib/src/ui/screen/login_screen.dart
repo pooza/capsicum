@@ -19,6 +19,7 @@ import '../../platform/oauth_keep_alive.dart';
 import '../../platform/platform_info.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../service/account_storage.dart';
+import '../../service/secret_service_probe.dart';
 import '../../url_helper.dart';
 import '../../util/exception_scrub.dart';
 import '../../util/login_error.dart';
@@ -621,6 +622,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       // `finally` を通らず `_isLoggingIn` が true のまま残り、多重起動ガードで
       // **ボタンが二度と効かなくなる**。
       if (sequence != null) await _takeOverLoginAttempt(sequence);
+      // ⚠⚠ **利用者が押した試行では、キーリングが「応答しない」と覚えた結果を
+      // 捨てる (#1394)。**キーリングがまだ無い端末では、下の保存でキーリングの
+      // 作成の画面が出る。作成を待つあいだに上限で打ち切られると
+      // `SecretServiceProbe` が「応答しない」と覚え、以降は触る前に諦める。
+      // それを捨てるのはオフラインの再試行の 1 周だけだったので、**キーリングを
+      // 作ったあとも起動し直すまで保存を試さなかった。**押した操作は「今すぐ
+      // 再試行」(#1085 / #1115) と同じ扱いにする（確かめ直しは純 Dart の D-Bus
+      // なので、まだ固まっていても待つのは上限の 800ms だけ）。
+      if (sequence != null) SecretServiceProbe.forgetUnresponsive();
       adapter = await widget.backendType.createAdapter(widget.host);
       final loginSupport = adapter as LoginSupport;
 
@@ -1126,6 +1136,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         // (#643) 等を通信エラーと誤診させていた。
         final failure = classifyLoginFailure(e);
         debugLogException('Login error (${failure.kind.name})', e);
+        // ⚠⚠ **もう一度押せるように戻す (#1394)。**`_finishLogin` は先頭で
+        // `_loginCompleted` を立てるので、その後の保存（キーリング）が失敗すると
+        // 旗が立ったまま残り、**次に押しても `_login` の 1 行目で黙って抜けて
+        // いた**（エラーの表示だけが残り、起動し直すまで戻らない）。
+        // ⚠ **ここで戻す。**上の手入力のフォールバックは `!_loginCompleted` で
+        // 判定するので、それより前に戻すと保存の失敗で認可コードの入力を求める。
+        // `addAccount` まで終わっていれば `context.go` で画面を離れているので、
+        // この分岐に来るのは保存しきれていないときだけ。
+        _loginCompleted = false;
         Sentry.captureException(
           scrubException(e),
           stackTrace: st,
@@ -1171,6 +1190,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         data: {'type': e.runtimeType.toString()},
       );
       // Fallback failed — let the original error handling proceed.
+      if (_releaseAfterFallbackFailure() && mounted) {
+        setState(() => _error = classifyLoginFailure(e).message);
+      }
     }
     return false;
   }
@@ -1396,11 +1418,31 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       // の AppRun ログ (~/.local/share/capsicum/logs/) に平文で残る (#499)。
       // util/exception_scrub.dart で URL を含まない安全な表現に詰め替える。
       debugLogException('Manual code fallback error', e);
+      final savingFailed = _releaseAfterFallbackFailure();
       if (mounted) {
-        setState(() => _error = '認証コードが正しくありません');
+        setState(
+          () => _error = savingFailed
+              ? classifyLoginFailure(e).message
+              : '認証コードが正しくありません',
+        );
       }
     }
     return false;
+  }
+
+  /// フォールバックの中で投げられたときの後始末（#1394 の取り残し）。
+  ///
+  /// ⚠⚠ **`_finishLogin` は先頭で `_loginCompleted` を立てる。**フォールバックから
+  /// 呼んで保存（キーリング）が失敗すると、ここの `catch` が握るので、`_login` の
+  /// エラー分岐（キャンセル以外の側）で戻す処理を通らない。キャンセル扱いの側へ
+  /// 進んで旗が立ったまま残り、**次に押しても `_login` の 1 行目で黙って抜ける。**
+  ///
+  /// 戻り値は「保存の段階で失敗したか」（旗が立っていたか）。true なら原因は
+  /// 認可コードではないので、呼び出し側は「認証コードが正しくありません」を出さない。
+  bool _releaseAfterFallbackFailure() {
+    final savingFailed = _loginCompleted;
+    _loginCompleted = false;
+    return savingFailed;
   }
 
   Future<void> _finishLogin(
@@ -1427,6 +1469,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     // ここから `addAccount` までは **widget の生死に依存させない** (#930)。
     // 認可は既に成功しているので、画面が消えていても保存は完走させる。
     // `ref` を使わず initState で掴んだ参照を使うのはそのため。
+    //
+    // ⚠ **保存の直前にも「応答しない」の記憶を捨てる (#1394)。**ブラウザを開く
+    // 前の保存でキーリングの作成の画面が出て打ち切られ、ブラウザで認可している
+    // 間に作成を済ませた場合、ここで捨てないとトークンを手にしたまま保存を
+    // 試さずに失敗し、認可をやり直させることになる。
+    SecretServiceProbe.forgetUnresponsive();
     if (result.clientSecret != null) {
       await _accountStorage.saveHostClientCredentials(
         widget.host,

@@ -101,6 +101,40 @@ void main() {
     expect(adapter.capabilities.maxPostContentLength, 500);
   });
 
+  // #1396: v2 が 200 でも上限を欠くサーバーでは、既定の 500 に落ちていた。
+  test('v2 が 200 でも上限を欠いていれば v1 を見る', () async {
+    final (adapter, http) = await detectWith(
+      _Adapter(
+        v2: {
+          'configuration': {'timelines_access': <String, dynamic>{}},
+        },
+        v1: {'max_toot_chars': 5000},
+      ),
+    );
+
+    expect(adapter.capabilities.maxPostContentLength, 5000);
+    expect(
+      http.requested.where((p) => p.contains('/api/v1/instance')),
+      isNotEmpty,
+    );
+  });
+
+  test('v2 の上限が数値でなければ v1 を見る', () async {
+    final (adapter, _) = await detectWith(
+      _Adapter(
+        v2: {
+          'configuration': {
+            'statuses': {'max_characters': '3000'},
+            'timelines_access': <String, dynamic>{},
+          },
+        },
+        v1: {'max_toot_chars': 5000},
+      ),
+    );
+
+    expect(adapter.capabilities.maxPostContentLength, 5000);
+  });
+
   test('⚠ v2 が読めたときは v1 を引かない（本家 Mastodon の経路は変えない）', () async {
     final (adapter, http) = await detectWith(
       _Adapter(

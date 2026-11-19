@@ -22,6 +22,20 @@ static void first_frame_cb(MyApplication* self, FlView* view) {
 // Implements GApplication::activate.
 static void my_application_activate(GApplication* application) {
   MyApplication* self = MY_APPLICATION(application);
+
+  // Single instance (#1391). In release builds the application is unique on
+  // the session bus (see my_application_new), so a second launch forwards its
+  // activate here and exits. Bring the existing window to the front instead of
+  // building a second FlView: two engines would double the WebSocket streams
+  // and notifications and race on shared_preferences / the keyring (#1387's
+  // write verifier would even write stale values back). gtk_window_present
+  // also re-shows a window hidden to the tray by resident mode (#757).
+  GList* windows = gtk_application_get_windows(GTK_APPLICATION(application));
+  if (windows != nullptr) {
+    gtk_window_present(GTK_WINDOW(windows->data));
+    return;
+  }
+
   GtkWindow* window =
       GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
 
@@ -161,7 +175,21 @@ MyApplication* my_application_new() {
   // the application to be recognized beyond its binary name.
   g_set_prgname(APPLICATION_ID);
 
+  // Release builds are single instance (#1391): a second launch (a second
+  // AppImage, autostart racing a manual launch (#757), or a stale
+  // AppRun.wrapped left behind when only the AppImage's outer process was
+  // killed) becomes a remote instance, forwards activate to the running one
+  // and exits. Debug / profile builds stay non-unique on purpose: running a
+  // `flutter run` build next to the daily-driver AppImage is part of the dev
+  // workflow (#1154 tells them apart in the tray menu). Without a session bus
+  // GApplication falls back to behaving as non-unique, so launching never
+  // fails because of this.
+#ifdef CAPSICUM_SINGLE_INSTANCE
+  const GApplicationFlags flags = G_APPLICATION_DEFAULT_FLAGS;
+#else
+  const GApplicationFlags flags = G_APPLICATION_NON_UNIQUE;
+#endif
   return MY_APPLICATION(g_object_new(my_application_get_type(),
                                      "application-id", APPLICATION_ID, "flags",
-                                     G_APPLICATION_NON_UNIQUE, nullptr));
+                                     flags, nullptr));
 }

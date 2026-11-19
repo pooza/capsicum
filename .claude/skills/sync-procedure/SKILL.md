@@ -97,7 +97,7 @@ disable-model-invocation: true
 - `gh issue list --state open --limit 100` — open Issue 一覧（**`--limit 100` を必ず指定**。デフォルト 30 件では古い Issue が取得漏れする）
 - `gh pr list --state open` — open PR 一覧
 - `gh issue list --state closed --limit 10` — 最近クローズされた Issue（前回同期以降の進捗把握）
-- マイルストーン未割り当ての open Issue を一覧として列挙する（割り当てを促す文言は不要）
+- マイルストーン未割り当ての open Issue を数える。⚠ **`on-hold` 以外が出たら、その場で `on-hold` か末尾の枠のどちらかに寄せる**（2026-11-17 pooza・規約は `docs/CLAUDE.md`「マイルストーン運用」）。判断が要るものは推奨つきで pooza に聞く。`on-hold` の一覧は件数だけでよい
 - **capsicum-relay に対しても同じ 4 つを実行する**（`--repo pooza/capsicum-relay` を付ける）。ステップ 8 の「関連リポジトリの同期確認」でリポジトリの差分を見るのとは別で、**relay の Issue 管理は capsicum 本体と同じ工程として扱う**。詳細は下の「relay を同列に扱う」節
 
 ## 4. ユーザーフィードバックの確認（#capsicum タグ + ダイスキー capsicum チャンネル）
@@ -281,6 +281,7 @@ capsicum-relay の Issue・マイルストーンは、**capsicum 本体と同じ
     ```
 
     - **5.0 の RC が出ていたら、その同期のうちに報告し、5.0 待ちの Issue（`gh issue list --search 'Mastodon 5.0 in:title'`）をその時点の稼働枠へ引き取る提案をする**。pooza は「RC が出たらなるべく早くやりたい」。⚠ 上流が遅れるあいだは、枠の移行のたびに送り続けてよい（待つのは先方の都合）
+    - ⚠ **用語の追従（#1373）だけは起点が違う**（2026-11-17 pooza）。RC では引き取らず、**5.0 の正式リリースの後なるべく早く**、その時点で確定している訳語だけを当てる。RC の段階では `ja.json` の訳の付き方を測って #1373 に記録するだけ
     - beta は報告だけでよい（フィールド名が RC で変わりうる）
   - 前回同期からメジャー/マイナーが上がっていれば、API 変更トリアージ（`docs/mastodon-capsicum-api-watch.md` / `docs/misskey-capsicum-api-watch.md`）の要否を判断し、メモリの「対応方針」系（例 `project_mastodon_46_posture`）の版表記を更新する
 

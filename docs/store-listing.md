@@ -18,7 +18,7 @@ Fediverse クライアント
 
 ## 詳細な説明文
 
-capsicum は、Mastodon / Misskey 対応の Fediverse クライアントアプリです。
+capsicum は、Mastodon / Misskey / Akkoma（Pleroma 系）対応の Fediverse クライアントアプリです。
 
 capsicum is a Japanese-only app.
 There is no English localization, and an English version is not planned. The interface, in-app text, documentation, and support are all provided in Japanese only. Please take this into account before downloading.
@@ -43,7 +43,7 @@ capsicum が提案するのは、アプリ単体の体験ではなく、サー�
 
 ◆ プッシュ通知
 
-Mastodon / Misskey の両方でプッシュ通知を受信できます。バックグラウンドやアプリを閉じている状態でも、通知の種別と内容が個別に表示されます。
+Mastodon / Misskey / Akkoma でプッシュ通知を受信できます。バックグラウンドやアプリを閉じている状態でも、通知の種別と内容が個別に表示されます。
 
 Misskey は upstream の仕様上、通常サードパーティアプリからは通知登録ができませんが、プリセットに含まれるモロヘイヤ導入済みサーバー（ダイスキー等）では専用経路でプッシュ通知を受け取れます。
 
@@ -81,7 +81,7 @@ https://capsicum.shrieker.net
 
 ## App Store キーワード（100文字以内）
 
-Mastodon,Misskey,Fediverse,SNS,分散型,マストドン,ミスキー,ソーシャル
+Mastodon,Misskey,Akkoma,Fediverse,SNS,分散型,マストドン,ミスキー,ソーシャル
 
 ## 年齢レーティング
 

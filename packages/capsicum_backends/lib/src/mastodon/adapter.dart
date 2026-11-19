@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 import 'package:fediverse_objects/fediverse_objects.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
+import '../privacy_settings_mapping.dart';
 import 'client.dart';
 import 'extensions.dart';
 import 'filters.dart';
@@ -146,6 +147,8 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         ReportSupport,
         PinSupport,
         PushSubscriptionSupport,
+        // プライバシーとつながりやすさ (#1375)。
+        PrivacySettingsSupport,
         ScheduleSupport,
         CollectionsSupport,
         // プロフィールの掲載タグ (#1075)。Misskey には無い。
@@ -216,6 +219,10 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       final maxCharacters = statuses?['max_characters'];
       if (maxCharacters is int) {
         capabilities.maxPostContentLength = maxCharacters;
+      } else {
+        // ⚠ v2 が 200 でも上限を欠くサーバーがありうる（#1396）。そのときは
+        // v1 を見る（Akkoma 3.20 は v2 が 404 なので下の catch 側を通る）。
+        await _detectMaxCharactersFromV1();
       }
       final translation = config?['translation'] as Map<String, dynamic>?;
       _translationAvailable = translation?['enabled'] as bool? ?? false;
@@ -1082,6 +1089,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     final r = rels.first;
     return UserRelationship(
       following: r['following'] as bool? ?? false,
+      requested: r['requested'] as bool? ?? false,
       followedBy: r['followed_by'] as bool? ?? false,
       muting: r['muting'] as bool? ?? false,
       blocking: r['blocking'] as bool? ?? false,
@@ -1106,6 +1114,10 @@ class MastodonAdapter extends DecentralizedBackendAdapter
 
   @override
   Future<void> unfollowUser(String id) => client.unfollowAccount(id);
+
+  /// ⚠ Mastodon は `unfollow` がリクエストの取り下げも兼ねる (#1400)。
+  @override
+  Future<void> cancelFollowRequest(String id) => client.unfollowAccount(id);
 
   @override
   Future<void> muteUser(String id, {Duration? duration}) =>
@@ -2089,6 +2101,25 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     );
     return account.toCapsicum(host, adminRoleIds: _adminRoleIds);
   }
+
+  // PrivacySettingsSupport (#1375)
+
+  @override
+  Future<PrivacySettings> getPrivacySettings() async =>
+      mastodonPrivacySettingsFromJson(await client.verifyCredentialsJson());
+
+  /// ⚠ `searchEngineHidden`（`noindex`）は送らない（API が無い・#1375）。
+  @override
+  Future<PrivacySettings> updatePrivacySettings(
+    PrivacySettings changes,
+  ) async => mastodonPrivacySettingsFromJson(
+    await client.updatePrivacyCredentials(
+      locked: changes.locked,
+      discoverable: changes.discoverable,
+      indexable: changes.indexable,
+      hideCollections: changes.hideCollections,
+    ),
+  );
 
   // ReportSupport
 

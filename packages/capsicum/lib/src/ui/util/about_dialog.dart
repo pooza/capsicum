@@ -20,7 +20,7 @@ Future<void> showAboutCapsicum(BuildContext context) async {
       borderRadius: BorderRadius.circular(12),
       child: Image.asset('assets/images/logo.png', width: 48, height: 48),
     ),
-    applicationLegalese: 'Mastodon / Misskey クライアント',
+    applicationLegalese: 'Mastodon / Misskey / Akkoma クライアント',
     children: [
       const SizedBox(height: 16),
       _AboutLink(

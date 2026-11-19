@@ -7,6 +7,7 @@ import 'package:fediverse_objects/fediverse_objects.dart';
 import 'package:uuid/uuid.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
+import '../privacy_settings_mapping.dart';
 import 'antenna_mapping.dart';
 import 'chat_room_streaming.dart';
 import 'chat_streaming.dart';
@@ -179,7 +180,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         TimelineCacheSupport,
         MulukhiyaRepostSupport,
         ChatSupport,
-        WordMuteSupport {
+        WordMuteSupport,
+        // プライバシーとつながりやすさ (#1375)。
+        PrivacySettingsSupport {
   /// 本線 TL の購読。キーごとに 1 本ずつソケットを張る (#1089)。
   ///
   /// ⚠ 以前は単数で持っており、2 本目の購読が 1 本目を黙って止めていた（B-1）。
@@ -274,6 +277,30 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   ) {
     client.setAccessToken(userSecret.accessToken);
   }
+
+  // PrivacySettingsSupport (#1375)
+
+  @override
+  Future<PrivacySettings> getPrivacySettings() async =>
+      misskeyPrivacySettingsFromJson(await client.getIJson());
+
+  @override
+  Future<PrivacySettings> updatePrivacySettings(
+    PrivacySettings changes,
+  ) async => misskeyPrivacySettingsFromJson(
+    await client.updateIPrivacy(
+      isLocked: changes.locked,
+      isExplorable: changes.discoverable,
+      autoAcceptFollowed: changes.autoAcceptFollowed,
+      publicReactions: changes.publicReactions,
+      followingVisibility: changes.followingVisibility?.serverValue,
+      followersVisibility: changes.followersVisibility?.serverValue,
+      hideOnlineStatus: changes.hideOnlineStatus,
+      noCrawle: changes.searchEngineHidden,
+      preventAiLearning: changes.preventAiLearning,
+      requireSigninToViewContents: changes.requireSigninToViewContents,
+    ),
+  );
 
   // WordMuteSupport (#1290)
 
@@ -1144,6 +1171,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     final r = await client.getUserRelation(userId);
     return UserRelationship(
       following: r['isFollowing'] as bool? ?? false,
+      requested: r['hasPendingFollowRequestFromYou'] as bool? ?? false,
       followedBy: r['isFollowed'] as bool? ?? false,
       muting: r['isMuted'] as bool? ?? false,
       blocking: r['isBlocking'] as bool? ?? false,
@@ -1180,6 +1208,10 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
 
   @override
   Future<void> unfollowUser(String id) => client.unfollowUser(id);
+
+  /// ⚠ `following/delete` はフォロー中でないと断るので、別の口 (#1400)。
+  @override
+  Future<void> cancelFollowRequest(String id) => client.cancelFollowRequest(id);
 
   @override
   Future<void> muteUser(String id, {Duration? duration}) {
