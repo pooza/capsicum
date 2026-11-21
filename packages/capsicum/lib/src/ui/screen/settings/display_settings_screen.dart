@@ -97,6 +97,14 @@ class DisplaySettingsScreen extends ConsumerWidget {
                 .read(confirmPostAccountAfterIdleProvider.notifier)
                 .setEnabled(value),
           ),
+          // #1404: 既定は無効（広い幅で帯が無い今の見た目を変えない）。
+          SwitchListTile(
+            title: const Text('広い幅でもカラムの帯を出す'),
+            subtitle: const Text('デッキでカラムが並んで見える幅でも、カラムへ飛べる帯を出します'),
+            value: ref.watch(deckStripOnWideProvider),
+            onChanged: (value) =>
+                ref.read(deckStripOnWideProvider.notifier).setEnabled(value),
+          ),
           SwitchListTile(
             title: const Text('カスタム絵文字を隙間なく並べる'),
             subtitle: const Text(

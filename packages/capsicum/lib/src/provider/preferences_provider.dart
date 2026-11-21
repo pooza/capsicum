@@ -65,6 +65,7 @@ const _deckColumnsKey = 'deck_columns';
 const _deckColumnWidthKey = 'deck_column_width';
 const _deckLastColumnKey = 'deck_last_column';
 const _deckLockedColumnsKey = 'deck_locked_columns';
+const _deckStripOnWideKey = 'deck_strip_on_wide';
 const _lastViewModeKey = 'last_view_mode';
 const _tabConfigPrefix = 'tab_config_';
 const _avatarShapeKey = 'avatar_shape';
@@ -2080,6 +2081,28 @@ class ConfirmPostAccountAfterIdleNotifier extends PersistedNotifier<bool> {
   Future<void> setEnabled(bool value) => persist(value);
 }
 
+/// 広い幅でもデッキの帯（#1241）を出すか (#1404)。
+///
+/// ⚠ 既定は無効（2026-11-19 pooza）。広い幅で帯が無い今の見た目に慣れている
+/// 人がいるので、希望する人だけが有効にする。⚠ 判定は端末の種類ではなく幅で
+/// 行う（狭い幅では、この設定に関係なく帯を出す）。
+final deckStripOnWideProvider = NotifierProvider<DeckStripOnWideNotifier, bool>(
+  DeckStripOnWideNotifier.new,
+);
+
+class DeckStripOnWideNotifier extends PersistedNotifier<bool> {
+  @override
+  bool get defaultValue => false;
+  @override
+  bool? readSaved(SharedPreferences prefs) =>
+      prefs.getBool(_deckStripOnWideKey);
+  @override
+  Future<void> writeSaved(SharedPreferences prefs, bool value) =>
+      prefs.setBool(_deckStripOnWideKey, value);
+
+  Future<void> setEnabled(bool value) => persist(value);
+}
+
 /// Whether to show absolute timestamps instead of relative ones.
 final absoluteTimeProvider = NotifierProvider<AbsoluteTimeNotifier, bool>(
   AbsoluteTimeNotifier.new,
@@ -2545,6 +2568,7 @@ final backedUpPreferenceProviders = <ProviderOrFamily>[
   // `background_opacity` は移行専用キー（`accountScopedKeys`）。
   absoluteTimeProvider,
   confirmPostAccountAfterIdleProvider,
+  deckStripOnWideProvider,
   blurAllImagesProvider,
   hideInstanceTickerProvider,
   hideLivecureProvider,

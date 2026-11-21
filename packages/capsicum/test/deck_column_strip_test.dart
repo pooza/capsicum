@@ -45,6 +45,7 @@ void main() {
     required Size size,
     List<String> columnIds = const ['a', 'b', 'c', 'd'],
     List<String> locked = const [],
+    bool stripOnWide = false,
   }) async {
     SharedPreferences.setMockInitialValues({
       'deck_columns': [
@@ -52,6 +53,7 @@ void main() {
           '$id|misskey://me@misskey.example|hashtag:$id',
       ],
       'deck_locked_columns': locked,
+      'deck_strip_on_wide': stripOnWide,
     });
     initSharedPreferencesCache(await SharedPreferences.getInstance());
     tester.view.physicalSize = size;
@@ -248,6 +250,80 @@ void main() {
       final focused = tester.getRect(item(11));
       expect(focused.right, lessThanOrEqualTo(tester.getRect(button).left));
       expect(focused.left, greaterThanOrEqualTo(0));
+    });
+  });
+
+  // #1404: 広い幅でも帯を出す設定（既定 OFF）。
+  group('広い幅でも帯を出す (#1404)', () {
+    const wide = Size(1200, 700);
+    final ids = [for (var i = 0; i < 8; i++) 'w$i'];
+
+    double opacityOf(WidgetTester tester, int number) => tester
+        .widget<Opacity>(
+          find.descendant(of: item(number), matching: find.byType(Opacity)),
+        )
+        .opacity;
+
+    bool marked(WidgetTester tester, int number) =>
+        tester
+            .getSemantics(
+              find.descendant(of: item(number), matching: find.byType(InkWell)),
+            )
+            .flagsCollection
+            .isSelected
+            .toBoolOrNull() ??
+        false;
+
+    testWidgets('⚠ 既定（OFF）では広い幅に出さない（今の見た目を変えない）', (tester) async {
+      await pumpDeck(tester, size: wide, columnIds: ids);
+
+      expect(find.byType(DeckColumnStrip), findsNothing);
+    });
+
+    testWidgets('ON なら広い幅でも出る', (tester) async {
+      await pumpDeck(tester, size: wide, columnIds: ids, stripOnWide: true);
+
+      expect(find.byType(DeckColumnStrip), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('⚠ 1 本なら ON でも出さない（飛ぶ先が無い）', (tester) async {
+      await pumpDeck(
+        tester,
+        size: wide,
+        columnIds: const ['a'],
+        stripOnWide: true,
+      );
+
+      expect(find.byType(DeckColumnStrip), findsNothing);
+    });
+
+    testWidgets('⚠⚠ 画面に見えているカラムのコマは沈ませない。下線はフォーカス中だけ', (tester) async {
+      final handle = tester.ensureSemantics();
+      await pumpDeck(tester, size: wide, columnIds: ids, stripOnWide: true);
+
+      // 先頭の 2 本は見えている（1200 幅に 8 本は収まらない）。
+      expect(opacityOf(tester, 1), 1);
+      expect(opacityOf(tester, 2), 1);
+      // 末尾は見えていないので沈む。
+      expect(opacityOf(tester, 8), lessThan(1));
+      // 印（選択中）はフォーカス中の 1 本だけ。
+      expect(marked(tester, 1), isTrue);
+      expect(marked(tester, 2), isFalse);
+      handle.dispose();
+    });
+
+    testWidgets('⚠ 横に流すと、沈ませないコマも追従する', (tester) async {
+      await pumpDeck(tester, size: wide, columnIds: ids, stripOnWide: true);
+      expect(opacityOf(tester, 8), lessThan(1), reason: '前提: 末尾は見えていない');
+
+      // コマを押して末尾まで送る。
+      await tester.tap(item(8));
+      await tester.pumpAndSettle();
+
+      expect(opacityOf(tester, 8), 1);
+      expect(opacityOf(tester, 1), lessThan(1), reason: '先頭は画面の外へ出た');
+      expect(tester.takeException(), isNull);
     });
   });
 }

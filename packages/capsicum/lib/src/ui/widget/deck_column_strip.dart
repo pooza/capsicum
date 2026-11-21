@@ -26,13 +26,15 @@ const double kDeckColumnStripItemWidth = 52;
 /// ⚠ **色だけで区別しない。**同じサーバーの別アカウントは同じ色になるので、
 /// 並び順と印が位置を、ツールチップがアカウントを伝える。
 ///
-/// ⚠ 出すかどうか（狭幅のときだけ）は呼ぶ側が決める。
+/// ⚠ 出すかどうか（狭幅のとき、または広い幅でも出す設定のとき・#1404）は
+/// 呼ぶ側が決める。
 class DeckColumnStrip extends ConsumerStatefulWidget {
   const DeckColumnStrip({
     super.key,
     required this.columns,
     required this.focusedId,
     required this.onSelected,
+    this.visibleIds,
   });
 
   final List<DeckColumn> columns;
@@ -42,6 +44,14 @@ class DeckColumnStrip extends ConsumerStatefulWidget {
 
   /// コマを押した。引数は [DeckColumn.id]。
   final void Function(String id) onSelected;
+
+  /// 画面に見えているカラムの [DeckColumn.id]（広い幅のときだけ・#1404）。
+  ///
+  /// 渡されたら、見えているカラムのコマは沈ませない（帯を見れば、どこまでが
+  /// 画面に入っているかが分かる）。⚠ 下線（いま見ているカラムの印）は
+  /// フォーカス中のカラムにだけ付ける。null（狭い幅）なら、見えているのは
+  /// フォーカス中の 1 本だけなので、それ以外を沈める。
+  final Set<String>? visibleIds;
 
   @override
   ConsumerState<DeckColumnStrip> createState() => _DeckColumnStripState();
@@ -155,8 +165,13 @@ class _DeckColumnStripState extends ConsumerState<DeckColumnStrip> {
                     children: [
                       Expanded(
                         child: Opacity(
-                          // いま見ているカラム以外は少し沈める。
-                          opacity: focused ? 1 : 0.55,
+                          // 画面に見えていないカラムは少し沈める（#1404）。
+                          opacity:
+                              focused ||
+                                  (widget.visibleIds?.contains(column.id) ??
+                                      false)
+                              ? 1
+                              : 0.55,
                           child: DecoratedBox(
                             decoration: BoxDecoration(
                               color: background,
