@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../model/deck_column.dart';
 import '../../provider/server_config_provider.dart';
+import '../util/deck_close_unlocked.dart';
 import '../util/deck_tabs.dart';
 
 /// 帯の高さ。
@@ -96,82 +97,122 @@ class _DeckColumnStripState extends ConsumerState<DeckColumnStrip> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final hostColors = ref.watch(hostThemeColorProvider);
+    final canCloseUnlocked = canCloseUnlockedDeckColumns(ref);
     return Material(
       color: theme.colorScheme.surfaceContainer,
       child: SizedBox(
         height: kDeckColumnStripHeight,
-        child: ListView.builder(
-          controller: _scrollController,
-          scrollDirection: Axis.horizontal,
-          itemExtent: kDeckColumnStripItemWidth,
-          itemCount: widget.columns.length,
-          itemBuilder: (context, index) {
-            final column = widget.columns[index];
-            final focused = column.id == widget.focusedId;
-            // ⚠ アカウントをまたぐカラムには、特定のアカウントの色を付けない
-            // (#1259)。
-            final spansAccounts = column.tab.spansAccounts;
-            final background = spansAccounts
-                ? theme.colorScheme.surfaceContainerHighest
-                : resolveHostColor(hostColors, column.account.host);
-            final foreground = spansAccounts
-                ? theme.colorScheme.onSurface
-                : foregroundOnHostColor(background);
-            final account = column.account;
-            return Tooltip(
-              message: spansAccounts
-                  ? 'カラム ${index + 1}（すべてのアカウント）'
-                  : 'カラム ${index + 1}（${account.handle}）',
-              child: Semantics(
-                selected: focused,
-                button: true,
-                child: InkWell(
-                  onTap: () => widget.onSelected(column.id),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(4, 6, 4, 3),
-                    child: Column(
-                      children: [
-                        Expanded(
-                          child: Opacity(
-                            // いま見ているカラム以外は少し沈める。
-                            opacity: focused ? 1 : 0.55,
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                color: background,
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Center(
-                                child: Icon(
-                                  deckTabIcon(column.tab),
-                                  size: 20,
-                                  color: foreground,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 3),
-                        // いま見ているカラムの印。⚠ 色の濃淡だけにしない
-                        // （サーバーの色しだいで見分けが付かなくなる）。
-                        Container(
-                          height: 3,
-                          width: 24,
-                          decoration: BoxDecoration(
-                            color: focused
-                                ? theme.colorScheme.primary
-                                : Colors.transparent,
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            );
-          },
+        child: Row(
+          children: [
+            // ⚠ コマの列は Expanded に入れる。右端のボタンのぶん幅が縮むが、
+            // [_revealFocused] は ListView の実際の幅（viewportDimension）で
+            // 寄せる位置を計算するので、そのまま正しく扱える (#1405)。
+            Expanded(child: _buildItems(theme, hostColors)),
+            // 右端に固定する (#1405・2026-11-19 pooza)。コマと一緒に流すと、
+            // カラムが多い（＝閉じたい）ときほど見えなくなる。#1307 は確認も
+            // 「元に戻す」も挟まないので、区切り線と余白でコマから離す。
+            const VerticalDivider(width: 1, indent: 10, endIndent: 10),
+            const SizedBox(width: 4),
+            _CloseUnlockedButton(enabled: canCloseUnlocked),
+            const SizedBox(width: 4),
+          ],
         ),
       ),
     );
   }
+
+  Widget _buildItems(ThemeData theme, Map<String, Color> hostColors) =>
+      ListView.builder(
+        controller: _scrollController,
+        scrollDirection: Axis.horizontal,
+        itemExtent: kDeckColumnStripItemWidth,
+        itemCount: widget.columns.length,
+        itemBuilder: (context, index) {
+          final column = widget.columns[index];
+          final focused = column.id == widget.focusedId;
+          // ⚠ アカウントをまたぐカラムには、特定のアカウントの色を付けない
+          // (#1259)。
+          final spansAccounts = column.tab.spansAccounts;
+          final background = spansAccounts
+              ? theme.colorScheme.surfaceContainerHighest
+              : resolveHostColor(hostColors, column.account.host);
+          final foreground = spansAccounts
+              ? theme.colorScheme.onSurface
+              : foregroundOnHostColor(background);
+          final account = column.account;
+          return Tooltip(
+            message: spansAccounts
+                ? 'カラム ${index + 1}（すべてのアカウント）'
+                : 'カラム ${index + 1}（${account.handle}）',
+            child: Semantics(
+              selected: focused,
+              button: true,
+              child: InkWell(
+                onTap: () => widget.onSelected(column.id),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 6, 4, 3),
+                  child: Column(
+                    children: [
+                      Expanded(
+                        child: Opacity(
+                          // いま見ているカラム以外は少し沈める。
+                          opacity: focused ? 1 : 0.55,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: background,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Center(
+                              child: Icon(
+                                deckTabIcon(column.tab),
+                                size: 20,
+                                color: foreground,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      // いま見ているカラムの印。⚠ 色の濃淡だけにしない
+                      // （サーバーの色しだいで見分けが付かなくなる）。
+                      Container(
+                        height: 3,
+                        width: 24,
+                        decoration: BoxDecoration(
+                          color: focused
+                              ? theme.colorScheme.primary
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      );
+}
+
+/// 帯の右端の「ロックしていないカラムを閉じる」(#1405)。
+///
+/// 押したときの動き（閉じる対象・閉じたあとのフォーカス）は、カラム編集の
+/// シートやメニューバーと同じ [closeUnlockedDeckColumns] に任せる。⚠ **押せない
+/// ときは隠さず、押せなくする**（#1307 の規則）。名前はシートの項目名と揃える。
+class _CloseUnlockedButton extends ConsumerWidget {
+  const _CloseUnlockedButton({required this.enabled});
+
+  final bool enabled;
+
+  static const label = 'ロックしていないカラムを閉じる';
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => IconButton(
+    key: const ValueKey('deck-strip-close-unlocked'),
+    icon: const Icon(Icons.close_fullscreen),
+    // 押せないときは、シートの項目と同じ理由を添える。
+    tooltip: enabled ? label : '$label（ロックしたカラムがあると使えます）',
+    onPressed: enabled ? () => closeUnlockedDeckColumns(ref) : null,
+  );
 }

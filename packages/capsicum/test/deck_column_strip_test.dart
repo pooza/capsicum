@@ -2,6 +2,7 @@ import 'package:capsicum/src/model/account.dart';
 import 'package:capsicum/src/model/account_key.dart';
 import 'package:capsicum/src/provider/account_manager_provider.dart';
 import 'package:capsicum/src/provider/deck_provider.dart';
+import 'package:capsicum/src/provider/preferences_provider.dart';
 import 'package:capsicum/src/ui/screen/deck_screen.dart';
 import 'package:capsicum/src/ui/widget/deck_column_strip.dart';
 import 'package:capsicum/src/util/shared_preferences_cache.dart';
@@ -43,12 +44,14 @@ void main() {
     WidgetTester tester, {
     required Size size,
     List<String> columnIds = const ['a', 'b', 'c', 'd'],
+    List<String> locked = const [],
   }) async {
     SharedPreferences.setMockInitialValues({
       'deck_columns': [
         for (final id in columnIds)
           '$id|misskey://me@misskey.example|hashtag:$id',
       ],
+      'deck_locked_columns': locked,
     });
     initSharedPreferencesCache(await SharedPreferences.getInstance());
     tester.view.physicalSize = size;
@@ -169,5 +172,82 @@ void main() {
 
     expect(container.read(deckFocusProvider).columnId, 'c11');
     expect(left(tester, 'c11'), closeTo(0, 1));
+  });
+
+  // #1405: 帯の右端に「ロックしていないカラムを閉じる」を置く。
+  group('ロックしていないカラムを閉じる (#1405)', () {
+    final button = find.byKey(const ValueKey('deck-strip-close-unlocked'));
+
+    IconButton iconButton(WidgetTester tester) =>
+        tester.widget<IconButton>(button);
+
+    testWidgets('⚠ ロックしたカラムが無ければ、隠さず押せなくする（理由を添える）', (tester) async {
+      await pumpDeck(tester, size: narrow);
+
+      expect(button, findsOneWidget);
+      expect(iconButton(tester).onPressed, isNull);
+      expect(
+        find.byTooltip('ロックしていないカラムを閉じる（ロックしたカラムがあると使えます）'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('⚠⚠ 押すと 1 回でロックしていないカラムが閉じ、ロック中へフォーカスが移る', (tester) async {
+      final container = await pumpDeck(tester, size: narrow, locked: ['a']);
+      // 先にロックしていないカラムへ移っておく。
+      await tester.tap(item(3));
+      await tester.pumpAndSettle();
+      expect(container.read(deckFocusProvider).columnId, 'c');
+      expect(find.byTooltip('ロックしていないカラムを閉じる'), findsOneWidget);
+
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+
+      expect(
+        [for (final c in container.read(deckColumnsProvider)) c.id],
+        ['a'],
+      );
+      expect(container.read(deckFocusProvider).columnId, 'a');
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('⚠ 帯の右端に固定する（コマと一緒に流れない）', (tester) async {
+      final ids = [for (var i = 0; i < 12; i++) 'c$i'];
+      await pumpDeck(tester, size: narrow, columnIds: ids, locked: ['c0']);
+      final strip = tester.getRect(find.byType(DeckColumnStrip));
+      final before = tester.getRect(button);
+      expect(before.right, closeTo(strip.right - 4, 1), reason: '右端にある');
+
+      // 帯を流しても動かない。
+      await tester.drag(
+        find.descendant(
+          of: find.byType(DeckColumnStrip),
+          matching: find.byType(Scrollable),
+        ),
+        const Offset(-300, 0),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.getRect(button), before);
+    });
+
+    testWidgets('⚠ コマはボタンの下に潜らない（いま見ているコマが見える位置へ寄る）', (tester) async {
+      final ids = [for (var i = 0; i < 12; i++) 'c$i'];
+      await pumpDeck(tester, size: narrow, columnIds: ids);
+
+      // 押した先のコマ（列の後ろのほう）が、ボタンより左に収まっている。
+      await tester.scrollUntilVisible(
+        item(11),
+        200,
+        scrollable: find.descendant(
+          of: find.byType(DeckColumnStrip),
+          matching: find.byType(Scrollable),
+        ),
+      );
+      await tester.tap(item(11));
+      await tester.pumpAndSettle();
+      final focused = tester.getRect(item(11));
+      expect(focused.right, lessThanOrEqualTo(tester.getRect(button).left));
+      expect(focused.left, greaterThanOrEqualTo(0));
+    });
   });
 }
