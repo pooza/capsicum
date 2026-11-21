@@ -257,6 +257,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     'write:flash-likes',
     // 自分の Play の削除 (#1351)。旧トークンは 403 で、再ログインを案内する。
     'write:flash',
+    // ギャラリーのいいね / 取り消し (#1053)。旧トークンは 403 で、再ログインを
+    // 案内する（Play のいいねと同じ）。
+    'write:gallery-likes',
     'read:reactions',
     'write:reactions',
     'write:report-abuse',
@@ -2092,6 +2095,8 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       ),
       isSensitive: g['isSensitive'] as bool? ?? false,
       likedCount: g['likedCount'] as int? ?? 0,
+      // ⚠ 認証付きで引いたときだけ返る (#1053)。無ければ null のまま。
+      isLiked: g['isLiked'] as bool?,
     );
   }
 
@@ -2104,6 +2109,25 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     );
     return data.map(_mapGalleryPost).toList();
   }
+
+  @override
+  Future<List<GalleryPost>> getRecentGalleryPosts({
+    TimelineQuery? query,
+  }) async {
+    final data = await client.getRecentGalleryPosts(
+      sinceId: query?.sinceId,
+      untilId: query?.maxId,
+      limit: query?.limit,
+    );
+    return data.map(_mapGalleryPost).toList();
+  }
+
+  @override
+  Future<void> likeGalleryPost(String postId) => client.likeGalleryPost(postId);
+
+  @override
+  Future<void> unlikeGalleryPost(String postId) =>
+      client.unlikeGalleryPost(postId);
 
   @override
   Future<List<GalleryPost>> getUserGalleryPosts(

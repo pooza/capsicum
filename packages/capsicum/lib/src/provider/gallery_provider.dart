@@ -28,19 +28,36 @@ class GalleryState {
   }
 }
 
-/// Featured gallery posts (for drawer menu).
-class GalleryPostsNotifier extends AutoDisposeAsyncNotifier<GalleryState> {
+/// ギャラリーの一覧の種類 (#1053)。
+enum GalleryListKind {
+  /// 注目（`gallery/featured`）。
+  featured,
+
+  /// 新着（`gallery/posts`・新しい順）。
+  recent,
+}
+
+/// ギャラリーの一覧（ドロワーのメニューから開く画面）。注目と新着を [arg] で分ける。
+class GalleryPostsNotifier
+    extends AutoDisposeFamilyAsyncNotifier<GalleryState, GalleryListKind> {
   static const _pageSize = 20;
 
+  Future<List<GalleryPost>> _fetch(GallerySupport gallery, TimelineQuery q) =>
+      switch (arg) {
+        GalleryListKind.featured => gallery.getGalleryPosts(query: q),
+        GalleryListKind.recent => gallery.getRecentGalleryPosts(query: q),
+      };
+
   @override
-  Future<GalleryState> build() async {
+  Future<GalleryState> build(GalleryListKind arg) async {
     final adapter = ref.watch(currentAdapterProvider);
     if (adapter == null || adapter is! GallerySupport) {
       return const GalleryState(hasMore: false);
     }
 
-    final posts = await (adapter as GallerySupport).getGalleryPosts(
-      query: const TimelineQuery(limit: _pageSize),
+    final posts = await _fetch(
+      adapter as GallerySupport,
+      const TimelineQuery(limit: _pageSize),
     );
     return GalleryState(posts: posts, hasMore: posts.length >= _pageSize);
   }
@@ -61,8 +78,9 @@ class GalleryPostsNotifier extends AutoDisposeAsyncNotifier<GalleryState> {
 
         final base = state.valueOrNull ?? current;
         final lastId = base.posts.last.id;
-        final older = await (adapter as GallerySupport).getGalleryPosts(
-          query: TimelineQuery(maxId: lastId, limit: _pageSize),
+        final older = await _fetch(
+          adapter as GallerySupport,
+          TimelineQuery(maxId: lastId, limit: _pageSize),
         );
 
         state = AsyncData(
@@ -86,8 +104,8 @@ class GalleryPostsNotifier extends AutoDisposeAsyncNotifier<GalleryState> {
   }
 }
 
-final galleryPostsProvider =
-    AsyncNotifierProvider.autoDispose<GalleryPostsNotifier, GalleryState>(
+final galleryPostsProvider = AsyncNotifierProvider.autoDispose
+    .family<GalleryPostsNotifier, GalleryState, GalleryListKind>(
       GalleryPostsNotifier.new,
       dependencies: [currentAdapterProvider],
     );

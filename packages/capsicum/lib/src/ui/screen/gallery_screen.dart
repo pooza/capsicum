@@ -20,6 +20,9 @@ class GalleryScreen extends ConsumerStatefulWidget {
 class _GalleryScreenState extends ConsumerState<GalleryScreen> {
   final _scrollController = ScrollController();
 
+  /// 注目と新着のどちらを見ているか (#1053)。既定は従来どおり注目。
+  var _kind = GalleryListKind.featured;
+
   @override
   void initState() {
     super.initState();
@@ -35,25 +38,51 @@ class _GalleryScreenState extends ConsumerState<GalleryScreen> {
 
   void _onScroll() {
     if (shouldLoadMore(_scrollController.position)) {
-      ref.read(galleryPostsProvider.notifier).loadMore();
+      ref.read(galleryPostsProvider(_kind).notifier).loadMore();
     }
+  }
+
+  void _select(GalleryListKind kind) {
+    if (kind == _kind) return;
+    setState(() => _kind = kind);
+    if (_scrollController.hasClients) _scrollController.jumpTo(0);
   }
 
   @override
   Widget build(BuildContext context) {
-    final gallery = ref.watch(galleryPostsProvider);
+    final provider = galleryPostsProvider(_kind);
+    final gallery = ref.watch(provider);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('ギャラリー'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        // 注目 / 新着 (#1053)。
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(52),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: SegmentedButton<GalleryListKind>(
+              segments: const [
+                ButtonSegment(
+                  value: GalleryListKind.featured,
+                  label: Text('注目'),
+                ),
+                ButtonSegment(value: GalleryListKind.recent, label: Text('新着')),
+              ],
+              selected: {_kind},
+              showSelectedIcon: false,
+              onSelectionChanged: (s) => _select(s.first),
+            ),
+          ),
+        ),
       ),
       body: BottomSafeArea(
         child: gallery.when(
           data: (state) => state.posts.isEmpty
               ? const Center(child: Text('ギャラリー投稿はありません'))
               : RefreshIndicator(
-                  onRefresh: () => ref.refresh(galleryPostsProvider.future),
+                  onRefresh: () => ref.refresh(provider.future),
                   child: ListView.separated(
                     controller: _scrollController,
                     padding: const EdgeInsets.all(8),
@@ -75,7 +104,7 @@ class _GalleryScreenState extends ConsumerState<GalleryScreen> {
           error: (error, stack) => RetryErrorView(
             message: '読み込みに失敗しました',
             isRetrying: gallery.isLoading,
-            onRetry: () => ref.invalidate(galleryPostsProvider),
+            onRetry: () => ref.invalidate(provider),
           ),
         ),
       ),
