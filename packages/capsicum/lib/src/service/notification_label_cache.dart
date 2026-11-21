@@ -68,8 +68,42 @@ class NotificationLabelCache {
     }
   }
 
+  /// 複数のアカウントでログインしているか (#1407)。
+  ///
+  /// 復号できたプッシュの見出しに宛先のアカウントを添えるかを、FCM の
+  /// バックグラウンド isolate と iOS / macOS の NSE が決めるために読む。
+  /// デスクトップの WebSocket 経路（`desktop_notification_dispatcher.dart`）と同じく、
+  /// **1 アカウントだけなら添えない**（冗長なため・#675 の線）。
+  ///
+  /// ⚠ キーは NSE の `MultiAccountFlag`（`NotificationService.swift`）と揃えること。
+  static const multiAccountKey = '${_prefix}multi_account';
+
+  /// ⚠ `async` を外さない。外すと、プラットフォームが無いとき（テスト等）に
+  /// `_prefs()` が同期で投げ、呼び出し側の `catchError` を素通りする。
+  static Future<void> saveMultiAccount(bool value) async {
+    await _prefs().setBool(multiAccountKey, value);
+  }
+
+  /// 保存が無ければ false（宛先を添えない＝従来どおり）。
+  static Future<bool> readMultiAccount() async =>
+      (await _prefs().getBool(multiAccountKey)) ?? false;
+
   static String _key(_Slot slot, String account) =>
       '$_prefix${slot.fragment}_$account';
+}
+
+/// 復号できたプッシュの見出しに、宛先のアカウントを添える (#1407)。
+///
+/// 形はデスクトップの WebSocket 経路（`DesktopNotificationDispatcher._title`）と
+/// 揃えて `見出し (@user@host)`。[account] は relay の `username@host`。
+/// ⚠ NSE の `NotificationService.titleWithRecipient` と同じ形にすること。
+String titleWithRecipient(
+  String title,
+  String account, {
+  required bool multiAccount,
+}) {
+  if (!multiAccount || account.isEmpty) return title;
+  return '$title (@$account)';
 }
 
 enum _Slot {

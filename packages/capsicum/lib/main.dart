@@ -1266,6 +1266,16 @@ String _resolveReblogLabelForAccount(String accountString) =>
 String _resolvePostLabelForAccount(String accountString) =>
     postLabelFor(_lookupAccount(accountString));
 
+/// 複数のアカウントでログインしているか (#1407)。フォアグラウンドではコンテナから
+/// 直に読む。コンテナが未確立なら、バックグラウンドと同じく写しを読む。
+FutureOr<bool> _resolveMultiAccountForPush() {
+  final context = rootNavigatorKey.currentContext;
+  if (context == null) return NotificationLabelCache.readMultiAccount();
+  return isMultiAccountForPush(
+    ProviderScope.containerOf(context).read(accountManagerProvider),
+  );
+}
+
 /// Riverpod コンテナから accountManagerProvider を読んで該当アカウントを返す。
 /// コンテナが未確立（ごく初期）の場合は null。
 Account? _lookupAccount(String accountString) {
@@ -1328,6 +1338,7 @@ Future<void> _firebaseBackgroundMessageHandler(RemoteMessage message) async {
       message,
       reblogLabelResolver: NotificationLabelCache.readReblog,
       postLabelResolver: NotificationLabelCache.readPost,
+      multiAccountResolver: NotificationLabelCache.readMultiAccount,
     );
   } catch (e, st) {
     // Sentry はバックグラウンド isolate では init されていないため、
@@ -1398,6 +1409,7 @@ Future<void> _initFirebase() async {
           message,
           reblogLabelResolver: _resolveReblogLabelForAccount,
           postLabelResolver: _resolvePostLabelForAccount,
+          multiAccountResolver: _resolveMultiAccountForPush,
         ),
       );
     });

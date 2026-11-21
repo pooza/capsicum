@@ -11,6 +11,7 @@ import '../util/chat_attachment_label.dart';
 import '../util/exception_scrub.dart';
 import '../util/sentry_tag_hash.dart';
 import 'notification_init.dart';
+import 'notification_label_cache.dart';
 import 'push_failure_recorder.dart';
 import 'push_key_store.dart';
 import 'web_push_decryptor.dart';
@@ -58,10 +59,15 @@ class PushMessageDispatcher {
   /// resolvers は [FutureOr] を返してよい。フォアグラウンド経路は Riverpod
   /// から同期的に返せるが、バックグラウンド isolate では [SharedPreferences]
   /// 経由の非同期読み出しになるため。
+  ///
+  /// [multiAccountResolver] は複数のアカウントでログインしているかを返す (#1407)。
+  /// true なら、復号できた通知の見出しに宛先を添える（[titleWithRecipient]）。
+  /// 未指定時は false（添えない）。
   static Future<void> dispatch(
     RemoteMessage message, {
     FutureOr<String> Function(String account)? reblogLabelResolver,
     FutureOr<String> Function(String account)? postLabelResolver,
+    FutureOr<bool> Function()? multiAccountResolver,
   }) async {
     final data = message.data;
     final account = data['account'] as String?;
@@ -103,6 +109,15 @@ class PushMessageDispatcher {
         title = decrypted.title!;
       }
       body = resolveBody(decrypted, fallback: body);
+      // 宛先を添える (#1407)。⚠ 復号できなかったときの文面は、もともと
+      // 「{account} に通知があります」で宛先を含むので触らない。
+      title = titleWithRecipient(
+        title,
+        account,
+        multiAccount: multiAccountResolver != null
+            ? await multiAccountResolver()
+            : false,
+      );
     }
 
     // タップ payload は JSON 化して type / userId も伝搬する。chat の場合は

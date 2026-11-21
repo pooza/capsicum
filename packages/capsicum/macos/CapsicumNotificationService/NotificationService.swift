@@ -183,6 +183,12 @@ class NotificationService: UNNotificationServiceExtension {
             bestAttempt.body = title
         }
 
+        // 宛先を添える (#1407)。iOS と揃える（この appex は OS 側の不具合で
+        // 今は呼ばれない保険・冒頭の注記）。
+        bestAttempt.title = NotificationService.titleWithRecipient(
+            bestAttempt.title, account: account, multiAccount: MultiAccountFlag.read()
+        )
+
         // 復号で得た通知 ID を userInfo に stamp する (#674)。アプリ起動中は
         // #569 (WebSocket → ローカル通知) と本 APNs の両方が同じ通知イベントを
         // 配信しうるため、main app 側の UNUserNotificationCenter delegate proxy
@@ -201,6 +207,15 @@ class NotificationService: UNNotificationServiceExtension {
                 + "elapsed=\(elapsedMs())ms)"
         )
         contentHandler(bestAttempt)
+    }
+
+    /// 見出しに宛先を添える (#1407)。複数のアカウントでログインしているときだけ。
+    /// ⚠ Dart の `titleWithRecipient`（notification_label_cache.dart）と同じ形にする。
+    static func titleWithRecipient(
+        _ title: String, account: String, multiAccount: Bool
+    ) -> String {
+        guard multiAccount, !account.isEmpty else { return title }
+        return "\(title) (@\(account))"
     }
 
     override func serviceExtensionTimeWillExpire() {
@@ -230,6 +245,17 @@ enum LabelCache {
         let reblog = defaults?.string(forKey: "\(prefix)reblog_\(account)") ?? "ブースト"
         let post = defaults?.string(forKey: "\(prefix)post_\(account)") ?? "投稿"
         return (reblog, post)
+    }
+}
+
+/// 複数のアカウントでログインしているか (#1407)。Dart の
+/// `NotificationLabelCache.multiAccountKey` と同じキーを読む。保存が無ければ false。
+enum MultiAccountFlag {
+    static let key = "capsicum_notif_label_multi_account"
+
+    static func read() -> Bool {
+        return UserDefaults(suiteName: "group.jp.co.b-shock.capsicum")?
+            .bool(forKey: key) ?? false
     }
 }
 

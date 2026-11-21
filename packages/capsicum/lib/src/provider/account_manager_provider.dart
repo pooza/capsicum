@@ -151,10 +151,38 @@ List<Account> withAccountAtFront(List<Account> accounts, Account newcomer) => [
   ...accounts.where((a) => a.key != newcomer.key),
 ];
 
+/// プッシュの宛先を見出しに添えるべき「複数アカウント」か (#1407)。
+///
+/// ⚠ **オフライン保持中のアカウントも数える。**まだ復元できていなくても
+/// relay の購読は生きていて、プッシュは届く。同じキーは 1 つに数える。
+bool isMultiAccountForPush(AccountManagerState state) {
+  final keys = <AccountKey>{
+    for (final a in state.accounts) a.key,
+    for (final o in state.offlineAccounts) o.key,
+  };
+  return keys.length > 1;
+}
+
 class AccountManagerNotifier extends Notifier<AccountManagerState> {
   @override
   AccountManagerState build() {
     ref.onDispose(() => _disposed = true);
+    // 複数アカウントかどうかを、バックグラウンドのプッシュ表示へ写す (#1407)。
+    // ⚠ 一覧を書き換える箇所は 10 か所を超えるので、1 か所ずつ足さずここで受ける。
+    // 起動時の復元は 1 件ずつ埋まるので、値が変わったときだけ書く。
+    listenSelf((previous, next) {
+      final multi = isMultiAccountForPush(next);
+      if (previous != null && isMultiAccountForPush(previous) == multi) return;
+      unawaited(
+        NotificationLabelCache.saveMultiAccount(multi).catchError((Object e) {
+          // 写しが書けなくても、見出しに宛先が付かないだけ（従来どおり）。
+          // ⚠ 例外の中身は出さない（exception_scrub_guard・型だけ）。
+          debugPrint(
+            'capsicum: notif multi_account save failed: ${e.runtimeType}',
+          );
+        }),
+      );
+    });
     return const AccountManagerState();
   }
 
