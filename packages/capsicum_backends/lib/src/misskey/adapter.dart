@@ -182,7 +182,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         ChatSupport,
         WordMuteSupport,
         // プライバシーとつながりやすさ (#1375)。
-        PrivacySettingsSupport {
+        PrivacySettingsSupport,
+        // アカウントの削除でトークンを取り消す (#1401)。
+        TokenRevokeSupport {
   /// 本線 TL の購読。キーごとに 1 本ずつソケットを張る (#1089)。
   ///
   /// ⚠ 以前は単数で持っており、2 本目の購読が 1 本目を黙って止めていた（B-1）。
@@ -277,6 +279,16 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   ) {
     client.setAccessToken(userSecret.accessToken);
   }
+
+  // TokenRevokeSupport (#1401)
+
+  /// アカウントを削除したときに、トークンを `/api/i/revoke-token` で取り消す。
+  /// ⚠ 2026.9.0 より前のサーバーではエラーになる（呼ぶ側はベストエフォート）。
+  @override
+  Future<void> revokeOwnToken(
+    UserSecret userSecret, {
+    ClientSecretData? clientSecret,
+  }) => client.revokeOwnToken(userSecret.accessToken);
 
   // PrivacySettingsSupport (#1375)
 

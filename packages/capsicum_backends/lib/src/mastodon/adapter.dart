@@ -157,7 +157,9 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         MulukhiyaRepostSupport,
         TranslationSupport,
         MediaUpdateSupport,
-        FilterSupport {
+        FilterSupport,
+        // アカウントの削除でトークンを取り消す (#1401)。
+        TokenRevokeSupport {
   final MastodonClient client;
 
   /// 本線 TL の購読。キーごとに 1 本ずつソケットを張る (#1090)。
@@ -930,6 +932,26 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   static bool revokesTokenOn(String errorCode) =>
       errorCode == MastodonAccountNotFunctional.pendingConfirmation ||
       errorCode == MastodonAccountNotFunctional.pendingApproval;
+
+  // TokenRevokeSupport (#1401)
+
+  /// アカウントを削除したときに、トークンを `/oauth/revoke` で取り消す。
+  ///
+  /// ⚠ #1372 で取り消しを絞った理由（凍結などは手元のセッションと同じトークン
+  /// でありうる）は、ここには当たらない。削除は手元から消す前提で、同じ
+  /// `@user@host` のオフライン保持も同時に消える。Akkoma も同じ口で通る。
+  @override
+  Future<void> revokeOwnToken(
+    UserSecret userSecret, {
+    ClientSecretData? clientSecret,
+  }) async {
+    if (clientSecret == null) return;
+    await client.revokeToken(
+      clientId: clientSecret.clientId,
+      clientSecret: clientSecret.clientSecret,
+      token: userSecret.accessToken,
+    );
+  }
 
   // FavoriteSupport
 

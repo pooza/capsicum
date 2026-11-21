@@ -881,6 +881,15 @@ class MisskeyClient {
         .toList();
   }
 
+  /// POST /api/i/revoke-token (#1401)
+  ///
+  /// 自分のトークンを取り消す。MiAuth（サードパーティ）のトークンが取り消せるのは
+  /// 自分自身だけ（他を指すと `PERMISSION_DENIED`）。⚠ Misskey 2026.9.0 から
+  /// （misskey-dev/misskey#17903）。古いサーバーではエラーになる。
+  Future<void> revokeOwnToken(String token) async {
+    await dio.post('/api/i/revoke-token', data: {'i': token, 'token': token});
+  }
+
   /// POST /api/i/pin
   Future<void> pinNote(String noteId) async {
     await dio.post('/api/i/pin', data: createBody({'noteId': noteId}));

@@ -421,8 +421,14 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
   }
 
   Future<void> logout(Account account) async {
-    // プッシュ通知登録解除（ベストエフォート）。
-    PushRegistrationService.unregisterAccount(account);
+    // プッシュ通知登録解除（ベストエフォート）。終わったらトークンを取り消す
+    // (#1401)。⚠ 順番は「解除 → 取り消し」。解除は同じトークンで叩くので、
+    // 先に取り消すと 401 で落ちる。⚠ 削除そのものは待たない（今どおり）。
+    unawaited(
+      PushRegistrationService.unregisterAccount(
+        account,
+      ).whenComplete(() => revokeTokenOnLogout(account)),
+    );
     await NotificationLabelCache.remove(_notificationLabelKey(account.key));
 
     final storage = ref.read(accountStorageProvider);
@@ -454,6 +460,28 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     );
     // 残ったアカウントのラベルで push_labels.json を更新（削除分を落とす、#770）。
     await _syncWindowsPushLabels();
+  }
+
+  /// アカウントの削除で、サーバー側のトークンを取り消す (#1401)。
+  ///
+  /// 取り消さないと、サーバーの「連携アプリ」に capsicum の承認が残り続け、
+  /// ログインし直すたびに溜まっていく。
+  ///
+  /// ⚠ **失敗しても何もしない**（オフライン・サーバー停止・既に失効・取り消しの口が
+  /// 無い古い Misskey）。端末側の削除はもう終わっているので、止める理由が無い。
+  /// ⚠ 例外の中身はログに出さない（型だけ・exception_scrub_guard）。
+  @visibleForTesting
+  static Future<void> revokeTokenOnLogout(Account account) async {
+    final adapter = account.adapter;
+    if (adapter is! TokenRevokeSupport) return;
+    try {
+      await (adapter as TokenRevokeSupport).revokeOwnToken(
+        account.userSecret,
+        clientSecret: account.clientSecret,
+      );
+    } catch (e) {
+      debugPrint('capsicum: logout: token revoke failed: ${e.runtimeType}');
+    }
   }
 
   /// Re-detect mulukhiya on the current account's server and update state.
