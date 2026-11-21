@@ -20,6 +20,7 @@ import 'device_install_id.dart';
 import 'entitlement_token_store.dart';
 import 'fcm_service.dart';
 import 'push_device_type.dart';
+import 'push_disabled_accounts.dart';
 import 'push_key_store.dart';
 import 'push_registration_status.dart';
 import 'push_relay_client.dart';
@@ -380,6 +381,23 @@ class PushRegistrationService {
       // 冪等なので害はない。relay row の作成が済んだ時点で書く。
       await PushKeyStore.saveDeviceToken(deviceToken);
 
+      // 利用者がこのアカウントのプッシュ通知をオフにしている (#1408)。
+      // ⚠⚠ **relay の行は上で登録した。ここで止めるのは SNS 側の購読だけ**
+      // （2026-11-22 pooza 判断・案 A）。relay は「同じ端末にプリセットの行が
+      // あるか」で無償の特例を決める（relay#82）ので、プリセットのアカウントを
+      // オフにしたときに行まで作らないと、端末のトークンが変わった回の掃除
+      // （[_cleanupDeviceRegistration]）のあとで外部のアカウントが有償側に倒れる。
+      // ⚠ relay の ID と端末のトークンは記録したまま（次の掃除で行を消せるように）。
+      // サーバーが送ってこないので、行があっても通知は届かない。
+      if (PushDisabledAccounts.isDisabled(accountKey)) {
+        debugPrint(
+          'capsicum: push.registration: disabled by user '
+          '${sentrySafeAccount(account.key)}',
+        );
+        store.update(accountKey, PushRegistrationState.disabledByUser);
+        return;
+      }
+
       // ECDH 鍵の生成またはロード（既存鍵があれば再利用）
       final keys = await PushKeyStore.getOrCreate(accountKey);
 
@@ -552,7 +570,31 @@ class PushRegistrationService {
     return text.length > 200 ? '${text.substring(0, 200)}…' : text;
   }
 
+  /// このアカウントのプッシュ通知をオン / オフする (#1408)。
+  ///
+  /// - オフ: SNS 側の購読を外し（[unregisterAccount]・relay の行は消さない）、
+  ///   続けて登録し直す。登録は relay の行までで止まり、状態は
+  ///   [PushRegistrationState.disabledByUser] になる
+  /// - オン: 登録し直す（SNS 側の購読まで行う）
+  ///
+  /// ⚠ [eligible] は [registerAccount] と同じ（プリセットを持つか）。
+  static Future<void> setAccountEnabled(
+    Account account, {
+    required bool enabled,
+    required bool eligible,
+  }) async {
+    final accountKey = account.key.toStorageKey();
+    await PushDisabledAccounts.setDisabled(accountKey, !enabled);
+    if (!enabled) await unregisterAccount(account);
+    await registerAccount(account, eligible: eligible);
+  }
+
   /// 単一アカウントのプッシュ通知登録を解除する（ログアウト経路）。
+  ///
+  /// ⚠⚠ **#1408 から、relay の行を残すことは惰性ではなく前提になった。**
+  /// プッシュ通知をオフにする経路（[setAccountEnabled]）がここで SNS 側だけを
+  /// 外し、relay の行をプリセットの特例（relay#82）の根拠として残している。
+  /// 下の「掃除を足すか」を考えるときは、オフにしたアカウントの行を消さないこと。
   ///
   /// **relay row は削除しない**。同一デバイスの全アカウントを掃除したいときは
   /// [collectRelayIds] → [unregisterDevice] を別途呼ぶ（例：token rotation）。

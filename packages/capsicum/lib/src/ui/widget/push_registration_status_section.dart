@@ -72,6 +72,12 @@ import 'section_header.dart';
       theme.colorScheme.outline,
       Icons.remove_circle_outline,
     ),
+    // #1408: 利用者が切った。失敗ではないので「再試行」は出さない。
+    PushRegistrationState.disabledByUser => (
+      'オフにしています',
+      theme.colorScheme.outline,
+      Icons.notifications_off_outlined,
+    ),
   };
 }
 
