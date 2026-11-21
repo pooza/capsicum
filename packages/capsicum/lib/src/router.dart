@@ -57,6 +57,7 @@ import 'ui/screen/login_screen.dart';
 import 'ui/screen/media_catalog_screen.dart';
 import 'ui/screen/media_viewer_screen.dart';
 import 'ui/screen/moderation_list_screen.dart';
+import 'ui/screen/mulukhiya_handlers_screen.dart';
 import 'ui/screen/notification_screen.dart';
 import 'ui/screen/page_view_screen.dart';
 import 'ui/screen/pages_screen.dart';
@@ -534,6 +535,15 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/drafts',
             builder: (context, state) => const DraftsScreen(),
+          ),
+          GoRoute(
+            // 投稿の自動処理（モロヘイヤのハンドラー）の切り替え (#1398)。
+            // 入口はアカウント設定（現在のアカウント）。
+            path: '/mulukhiya/handlers',
+            builder: (context, state) => withExtraProviderScope(
+              state.extra,
+              const MulukhiyaHandlersScreen(),
+            ),
           ),
           GoRoute(
             path: '/templates/manage',

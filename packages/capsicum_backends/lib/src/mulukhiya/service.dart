@@ -560,6 +560,13 @@ class MulukhiyaService {
   /// 出さない。存在ベースの静的フラグなので per-user 評価は不要。
   final bool composeTemplatesEnabled;
 
+  /// `features.user_handler_config` フラグ (capsicum#1398 / mulukhiya#4936)。
+  /// `true` のサーバーは、利用者が自分の投稿に効くハンドラーを切り替える口
+  /// （`handler/list` / `handler/config`・#4195 / #4196）を提供する。旧モロヘイヤ
+  /// （フラグ未提供）は false にフォールバックし、入口を出さない。
+  /// ⚠ フラグの名前はモロヘイヤ側で決まる。変わったらここを合わせる。
+  final bool userHandlerConfigEnabled;
+
   final List<String> adminRoleIds;
   final String? infoBotAcct;
 
@@ -598,6 +605,7 @@ class MulukhiyaService {
     this.spotifyEnabled = false,
     this.spotifyLinked = false,
     this.composeTemplatesEnabled = false,
+    this.userHandlerConfigEnabled = false,
     this.foundedAt,
     this.preopenedAt,
     this.adminRoleIds = const [],
@@ -682,6 +690,7 @@ class MulukhiyaService {
         // 欠落・未連携時はナウプレ挿入導線を出さない (#570)。連携導線は設定画面側。
         spotifyLinked: features?['spotify_linked'] == true,
         composeTemplatesEnabled: features?['compose_templates'] == true,
+        userHandlerConfigEnabled: features?['user_handler_config'] == true,
         foundedAt: _parseIsoDate(config['founded_at']),
         preopenedAt: _parseIsoDate(config['preopened_at']),
         adminRoleIds: adminRoleIds,
@@ -1389,6 +1398,43 @@ class MulukhiyaService {
     );
     final data = response.data;
     return data is Map<String, dynamic> ? data : null;
+  }
+
+  /// 利用者が切り替えられるハンドラーの一覧 (capsicum#1398・mulukhiya#4195)。
+  /// GET /mulukhiya/api/handler/list
+  Future<List<MulukhiyaUserHandler>> getUserHandlers({
+    required String accessToken,
+  }) async {
+    final response = await _dio.get(
+      '$baseUrl/handler/list',
+      options: _bearerOptions(accessToken),
+    );
+    final data = response.data;
+    if (data is! List) return const [];
+    return [
+      for (final e in data)
+        if (e is Map<String, dynamic>) MulukhiyaUserHandler.fromJson(e),
+    ].where((h) => h.name.isNotEmpty).toList();
+  }
+
+  /// 利用者の設定で、1 つのハンドラーを有効 / 無効にする
+  /// (capsicum#1398・mulukhiya#4196)。返すのは切り替えたあとの無効かどうか。
+  /// POST /mulukhiya/api/handler/config
+  ///
+  /// ⚠ `toggleable: false` のものは 422 で断られる（呼ぶ側はスイッチを無効に
+  /// しているので、来たら食い違い）。書き込みのスコープが要る。
+  Future<bool> setUserHandlerDisabled({
+    required String accessToken,
+    required String handler,
+    required bool disabled,
+  }) async {
+    final response = await _dio.post(
+      '$baseUrl/handler/config',
+      data: {'handler': handler, 'disable': disabled},
+      options: _bearerOptions(accessToken),
+    );
+    final data = response.data;
+    return data is Map<String, dynamic> ? data['disabled'] == true : disabled;
   }
 
   /// 投稿テンプレート一覧を取得する (#767)。
