@@ -41,4 +41,13 @@ class PushDisabledAccounts {
         ? sharedPrefsOrThrow.remove(prefsKey)
         : sharedPrefsOrThrow.setStringList(prefsKey, [...current]));
   }
+
+  /// アカウントの削除で印を捨てる。⚠ **投げない**（削除の途中で止めない）。
+  static Future<void> forget(String storageKey) async {
+    try {
+      await setDisabled(storageKey, false);
+    } catch (e) {
+      debugPrint('capsicum: push.disabled: forget failed: ${e.runtimeType}');
+    }
+  }
 }

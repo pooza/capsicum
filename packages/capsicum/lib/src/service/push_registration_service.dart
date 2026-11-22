@@ -578,14 +578,46 @@ class PushRegistrationService {
   /// - オン: 登録し直す（SNS 側の購読まで行う）
   ///
   /// ⚠ [eligible] は [registerAccount] と同じ（プリセットを持つか）。
+  ///
+  /// ⚠⚠ **SNS 側の購読を外せなかったら、オフにしない**（リリース前レビュー・
+  /// 2026-11-22）。外せないまま鍵を消すと、サーバーからは届き続けるのに復号
+  /// できず、オフの表示のまま「通知があります」が出続ける。印を戻して登録し
+  /// 直し（鍵は残っているので元どおりになる）、[PushToggleFailedException] を
+  /// 投げる。
+  ///
+  /// ⚠ **進行中の登録を待ってから始める。**[registerAccount] は進行中の Future を
+  /// 使い回すので、待たないと、オフの判定を通り過ぎた登録が解除のあとで購読を
+  /// 成立させる（オフにした場合）／オフで終わる登録がそのまま返る（オンに
+  /// した場合）。
   static Future<void> setAccountEnabled(
     Account account, {
     required bool enabled,
     required bool eligible,
   }) async {
     final accountKey = account.key.toStorageKey();
-    await PushDisabledAccounts.setDisabled(accountKey, !enabled);
-    if (!enabled) await unregisterAccount(account);
+    final inFlight = _inFlight[accountKey];
+    if (inFlight != null) {
+      try {
+        await inFlight;
+      } catch (_) {
+        // 失敗した登録は、下でやり直すので構わない。
+      }
+    }
+    if (enabled) {
+      await PushDisabledAccounts.setDisabled(accountKey, false);
+      await registerAccount(account, eligible: eligible);
+      return;
+    }
+    // ⚠ 印を先に立てる。解除の間に別の登録（トークンの更新など）が走っても、
+    // オフの判定で止まる。
+    await PushDisabledAccounts.setDisabled(accountKey, true);
+    PushRegistrationStatusStore.instance.remove(accountKey);
+    if (!await _unsubscribeUpstream(account)) {
+      await PushDisabledAccounts.setDisabled(accountKey, false);
+      await registerAccount(account, eligible: eligible);
+      throw const PushToggleFailedException();
+    }
+    await forgetAccountLocally(account.key);
     await registerAccount(account, eligible: eligible);
   }
 
@@ -610,9 +642,17 @@ class PushRegistrationService {
   /// SNS 側サブスクリプションの解除とローカル鍵削除は独立に try。
   /// 上流の段階が失敗しても後続の掃除を止めない。
   static Future<void> unregisterAccount(Account account) async {
-    final accountKey = account.key.toStorageKey();
-    PushRegistrationStatusStore.instance.remove(accountKey);
+    PushRegistrationStatusStore.instance.remove(account.key.toStorageKey());
+    await _unsubscribeUpstream(account);
+    await forgetAccountLocally(account.key);
+  }
 
+  /// SNS 側の購読を外す。外せた（または外すものが無い）なら true。
+  ///
+  /// ⚠ 失敗は記録して false を返す（投げない）。ログアウトでは後続の掃除を
+  /// 止めず、オフにする経路（[setAccountEnabled]）では鍵を残す判断に使う。
+  static Future<bool> _unsubscribeUpstream(Account account) async {
+    final accountKey = account.key.toStorageKey();
     if (account.adapter is PushSubscriptionSupport) {
       try {
         final endpoint = await PushKeyStore.getEndpoint(accountKey);
@@ -663,10 +703,10 @@ class PushRegistrationService {
           e,
         );
         _reportUnregisterFailure(e, st, account.key.host, 'adapter');
+        return false;
       }
     }
-
-    await forgetAccountLocally(account.key);
+    return true;
   }
 
   /// 端末側に残る push の痕跡だけを消す。**上流の購読解除は行わない。**
@@ -1202,4 +1242,13 @@ class PushRegistrationService {
       },
     );
   }
+}
+
+/// プッシュ通知をオフにできなかった (#1408)。SNS 側の購読を外せなかったので、
+/// オンのまま戻した。
+class PushToggleFailedException implements Exception {
+  const PushToggleFailedException();
+
+  @override
+  String toString() => 'PushToggleFailedException';
 }

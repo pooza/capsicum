@@ -66,6 +66,12 @@ void main() {
       offline: 'AnnictDraftStore.clearForAccount(',
     ),
     (
+      // 残すと、入り直したときに何も知らせないままオフで始まる。
+      what: 'プッシュ通知をオフにした印 (#1408)',
+      logout: 'PushDisabledAccounts.forget(',
+      offline: 'PushDisabledAccounts.forget(',
+    ),
+    (
       what: 'Windows の push_labels.json',
       logout: '_syncWindowsPushLabels(',
       offline: '_syncWindowsPushLabels(',

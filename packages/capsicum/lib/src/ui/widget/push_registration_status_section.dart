@@ -72,11 +72,13 @@ import 'section_header.dart';
       theme.colorScheme.outline,
       Icons.remove_circle_outline,
     ),
-    // #1408: 利用者が切った。失敗ではないので「再試行」は出さない。
+    // #1408: 利用者が切った。失敗ではないので「再試行」は出さない。⚠ 表記は
+    // ほかの状態とそろえて名詞・アイコンは権限なし（通知の権限）と分ける
+    // （2026-11-22 pooza）。
     PushRegistrationState.disabledByUser => (
-      'オフにしています',
+      'オフ',
       theme.colorScheme.outline,
-      Icons.notifications_off_outlined,
+      Icons.toggle_off_outlined,
     ),
   };
 }

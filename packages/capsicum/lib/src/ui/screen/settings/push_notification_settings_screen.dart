@@ -409,12 +409,26 @@ class _PushEnabledToggleState extends State<_PushEnabledToggle> {
   bool _busy = false;
 
   Future<void> _toggle(bool enabled) async {
+    final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
     try {
       await PushRegistrationService.setAccountEnabled(
         widget.account,
         enabled: enabled,
         eligible: widget.eligible,
+      );
+    } catch (e) {
+      // ⚠ 失敗したら印は戻っている（スイッチは build で読み直す）。理由だけ知らせる。
+      debugPrint('capsicum: push.toggle failed: ${e.runtimeType}');
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            e is PushToggleFailedException
+                ? 'サーバーにつながらないため、オフにできませんでした。'
+                      'つながるときにもう一度お試しください'
+                : '切り替えに失敗しました',
+          ),
+        ),
       );
     } finally {
       if (mounted) setState(() => _busy = false);

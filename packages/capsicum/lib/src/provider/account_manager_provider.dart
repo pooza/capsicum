@@ -19,6 +19,7 @@ import '../service/annict_draft_store.dart';
 import '../service/background_notification_service.dart';
 import '../service/compose_draft_store.dart';
 import '../service/notification_label_cache.dart';
+import '../service/push_disabled_accounts.dart';
 import '../service/push_registration_service.dart';
 import '../service/secret_service_probe.dart';
 import '../service/secure_storage_health.dart';
@@ -441,10 +442,17 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     // プッシュ通知登録解除（ベストエフォート）。終わったらトークンを取り消す
     // (#1401)。⚠ 順番は「解除 → 取り消し」。解除は同じトークンで叩くので、
     // 先に取り消すと 401 で落ちる。⚠ 削除そのものは待たない（今どおり）。
+    // ⚠⚠ **取り消す直前に、同じアカウントが入り直していないかを見る**（リリース
+    // 前レビュー・2026-11-22）。Mastodon は同じアプリ・同じ利用者・同じスコープ
+    // なら同じトークンを返す（Doorkeeper の `reuse_access_token`）。解除が遅い回
+    // に消してすぐ入れ直すと、遅れて走る取り消しが入れ直したほうを無効にする。
     unawaited(
-      PushRegistrationService.unregisterAccount(
-        account,
-      ).whenComplete(() => revokeTokenOnLogout(account)),
+      PushRegistrationService.unregisterAccount(account).whenComplete(
+        () => revokeTokenOnLogout(
+          account,
+          readded: () => _isSignedIn(account.key),
+        ),
+      ),
     );
     await NotificationLabelCache.remove(_notificationLabelKey(account.key));
 
@@ -459,6 +467,9 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     await ComposeDraftStore.clearForAccount(account.key.toStorageKey());
     // Annict の感想・記録の下書きも同じ理由で捨てる (#1382)。
     await AnnictDraftStore.clearForAccount(account.key.toStorageKey());
+    // プッシュ通知をオフにした印も捨てる (#1408)。残すと、入り直したときに
+    // 何も知らせないままオフで始まる。
+    await PushDisabledAccounts.forget(account.key.toStorageKey());
 
     final remaining = state.accounts
         .where((a) => a.key != account.key)
@@ -479,6 +490,18 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     await _syncWindowsPushLabels();
   }
 
+  /// [key] のアカウントがいま登録されているか（接続中・未接続のどちらでも）。
+  ///
+  /// ⚠ 削除の後始末から遅れて呼ぶので、読めなければ「いない」とみなす。
+  bool _isSignedIn(AccountKey key) {
+    try {
+      return state.accounts.any((a) => a.key == key) ||
+          state.offlineAccounts.any((o) => o.key == key);
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// アカウントの削除で、サーバー側のトークンを取り消す (#1401)。
   ///
   /// 取り消さないと、サーバーの「連携アプリ」に capsicum の承認が残り続け、
@@ -487,10 +510,16 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
   /// ⚠ **失敗しても何もしない**（オフライン・サーバー停止・既に失効・取り消しの口が
   /// 無い古い Misskey）。端末側の削除はもう終わっているので、止める理由が無い。
   /// ⚠ 例外の中身はログに出さない（型だけ・exception_scrub_guard）。
+  ///
+  /// [readded] が true を返したら（同じアカウントが入り直している）取り消さない。
   @visibleForTesting
-  static Future<void> revokeTokenOnLogout(Account account) async {
+  static Future<void> revokeTokenOnLogout(
+    Account account, {
+    bool Function()? readded,
+  }) async {
     final adapter = account.adapter;
     if (adapter is! TokenRevokeSupport) return;
+    if (readded?.call() ?? false) return;
     try {
       await (adapter as TokenRevokeSupport).revokeOwnToken(
         account.userSecret,
@@ -1570,6 +1599,8 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     await ComposeDraftStore.clearForAccount(key.toStorageKey());
     // Annict の感想・記録の下書きも同じ理由で捨てる (#1382)。
     await AnnictDraftStore.clearForAccount(key.toStorageKey());
+    // プッシュ通知をオフにした印も捨てる (#1408・[logout] と同じ)。
+    await PushDisabledAccounts.forget(key.toStorageKey());
     _removeOffline(key);
     await _syncWindowsPushLabels();
   }
