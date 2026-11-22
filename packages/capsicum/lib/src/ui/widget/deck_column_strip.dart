@@ -8,7 +8,6 @@ import '../../provider/list_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../util/deck_close_unlocked.dart';
 import '../util/deck_tabs.dart';
-import 'deck_columns_sheet.dart' show DeckAccountScope;
 import 'home_menu.dart' show deckColumnMenuLabel;
 
 /// 帯の高さ。
@@ -34,6 +33,11 @@ const double kDeckColumnStripItemWidth = 52;
 /// ⚠ ツールチップは**カラムの見出しと同じ「タブ名 · 表示名」**（#1404・
 /// 2026-11-22 pooza）。以前は「カラム N（@user@host）」で、どのカラムかが
 /// アイコンからしか分からなかった。
+///
+/// ⚠⚠ **ラベルはメニューバーの「表示 > カラム」と同じく、ルートのスコープで
+/// 組む**（[deckColumnMenuLabel]・リリース前レビュー 2026-11-22）。コマごとに
+/// アカウントのスコープを作ると、リストのカラムのコマごとに一覧を取りに行く。
+/// 別アカウントのリスト名が引けず id になる割り切りもメニューバーと同じ。
 ///
 /// ⚠ 出すかどうか（狭幅のとき、または広い幅でも出す設定のとき・#1404）は
 /// 呼ぶ側が決める。
@@ -140,98 +144,86 @@ class _DeckColumnStripState extends ConsumerState<DeckColumnStrip> {
     );
   }
 
-  Widget _buildItems(ThemeData theme, Map<String, Color> hostColors) =>
-      ListView.builder(
-        controller: _scrollController,
-        scrollDirection: Axis.horizontal,
-        itemExtent: kDeckColumnStripItemWidth,
-        itemCount: widget.columns.length,
-        itemBuilder: (context, index) {
-          final column = widget.columns[index];
-          final focused = column.id == widget.focusedId;
-          // ⚠ アカウントをまたぐカラムには、特定のアカウントの色を付けない
-          // (#1259)。
-          final spansAccounts = column.tab.spansAccounts;
-          final background = spansAccounts
-              ? theme.colorScheme.surfaceContainerHighest
-              : resolveHostColor(hostColors, column.account.host);
-          final foreground = spansAccounts
-              ? theme.colorScheme.onSurface
-              : foregroundOnHostColor(background);
-          // ⚠ 見出しと同じく、そのカラムのアカウントのスコープでラベルを引く
-          // （リスト名・チャンネル名・呼称の設定がアカウントごとに違う）。
-          return DeckAccountScope(
-            account: column.account,
-            child: Consumer(
-              builder: (context, ref, child) =>
-                  Tooltip(message: _title(ref, column), child: child),
-              child: Semantics(
-                selected: focused,
-                button: true,
-                child: InkWell(
-                  onTap: () => widget.onSelected(column.id),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(4, 6, 4, 3),
-                    child: Column(
-                      children: [
-                        Expanded(
-                          child: Opacity(
-                            // 画面に見えていないカラムは少し沈める（#1404）。
-                            opacity:
-                                focused ||
-                                    (widget.visibleIds?.contains(column.id) ??
-                                        false)
-                                ? 1
-                                : 0.55,
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                color: background,
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Center(
-                                child: Icon(
-                                  deckTabIcon(column.tab),
-                                  size: 20,
-                                  color: foreground,
-                                ),
-                              ),
+  Widget _buildItems(ThemeData theme, Map<String, Color> hostColors) {
+    final accountState = ref.watch(accountManagerProvider);
+    // ⚠ リストのカラムが無ければ一覧を取りに行かない。
+    final lists = widget.columns.any((c) => c.tab is ListTab)
+        ? ref.watch(listsProvider).valueOrNull ?? const <PostList>[]
+        : const <PostList>[];
+    return ListView.builder(
+      controller: _scrollController,
+      scrollDirection: Axis.horizontal,
+      itemExtent: kDeckColumnStripItemWidth,
+      itemCount: widget.columns.length,
+      itemBuilder: (context, index) {
+        final column = widget.columns[index];
+        final focused = column.id == widget.focusedId;
+        // ⚠ アカウントをまたぐカラムには、特定のアカウントの色を付けない
+        // (#1259)。
+        final spansAccounts = column.tab.spansAccounts;
+        final background = spansAccounts
+            ? theme.colorScheme.surfaceContainerHighest
+            : resolveHostColor(hostColors, column.account.host);
+        final foreground = spansAccounts
+            ? theme.colorScheme.onSurface
+            : foregroundOnHostColor(background);
+        // ⚠ 見出しと同じく、そのカラムのアカウントのスコープでラベルを引く
+        // （リスト名・チャンネル名・呼称の設定がアカウントごとに違う）。
+        return Tooltip(
+          message: deckColumnMenuLabel(ref, column, accountState, lists),
+          child: Semantics(
+            selected: focused,
+            button: true,
+            child: InkWell(
+              onTap: () => widget.onSelected(column.id),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(4, 6, 4, 3),
+                child: Column(
+                  children: [
+                    Expanded(
+                      child: Opacity(
+                        // 画面に見えていないカラムは少し沈める（#1404）。
+                        opacity:
+                            focused ||
+                                (widget.visibleIds?.contains(column.id) ??
+                                    false)
+                            ? 1
+                            : 0.55,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: background,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Center(
+                            child: Icon(
+                              deckTabIcon(column.tab),
+                              size: 20,
+                              color: foreground,
                             ),
                           ),
                         ),
-                        const SizedBox(height: 3),
-                        // いま見ているカラムの印。⚠ 色の濃淡だけにしない
-                        // （サーバーの色しだいで見分けが付かなくなる）。
-                        Container(
-                          height: 3,
-                          width: 24,
-                          decoration: BoxDecoration(
-                            color: focused
-                                ? theme.colorScheme.primary
-                                : Colors.transparent,
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: 3),
+                    // いま見ているカラムの印。⚠ 色の濃淡だけにしない
+                    // （サーバーの色しだいで見分けが付かなくなる）。
+                    Container(
+                      height: 3,
+                      width: 24,
+                      decoration: BoxDecoration(
+                        color: focused
+                            ? theme.colorScheme.primary
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
-          );
-        },
-      );
-
-  /// カラムの見出しと同じ文字。
-  static String _title(WidgetRef ref, DeckColumn column) {
-    // ⚠ リスト以外のカラムで一覧の取得を起こさない。
-    final lists = column.tab is ListTab
-        ? ref.watch(listsProvider).valueOrNull ?? const <PostList>[]
-        : const <PostList>[];
-    return deckColumnMenuLabel(
-      ref,
-      column,
-      ref.watch(accountManagerProvider),
-      lists,
+          ),
+        );
+      },
     );
   }
 }
