@@ -32,6 +32,7 @@ void main() {
     test('キーリングが原因でなければ、従来どおりオフラインの説明', () {
       final c = copy();
       expect(c.title, '接続できません');
+      expect(c.heading, '自動で再試行します');
       expect(c.body, contains('端末がオフラインか'));
       expect(copy(anyRetrying: true).heading, '接続中…');
     });
@@ -60,6 +61,7 @@ void main() {
       // ここでは AppBar（title）と見出し（heading）が重ならないことを見る。
       for (final retrying in [false, true]) {
         for (final c in [
+          copy(anyRetrying: retrying),
           copy(keyringUnavailable: true, anyRetrying: retrying),
           copy(keyringUnavailable: true, keyringLocked: true),
           copy(allNeedLogin: true),
