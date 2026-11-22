@@ -20,13 +20,26 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// スワイプするか、カラム編集のシートを開いて選ぶ（2 タップ）しかなかった。
 class _Adapter extends Mock implements DecentralizedBackendAdapter {}
 
+class _Capabilities extends Mock implements AdapterCapabilities {}
+
+/// コマのツールチップ（見出しと同じラベル）が種別の判定に読む。
+_Adapter _adapter() {
+  final capabilities = _Capabilities();
+  when(
+    () => capabilities.supportedTimelines,
+  ).thenReturn({TimelineType.home, TimelineType.local, TimelineType.social});
+  final adapter = _Adapter();
+  when(() => adapter.capabilities).thenReturn(capabilities);
+  return adapter;
+}
+
 final _account = Account(
   key: const AccountKey(
     type: BackendType.misskey,
     host: 'misskey.example',
     username: 'me',
   ),
-  adapter: _Adapter(),
+  adapter: _adapter(),
   user: const User(id: 'me', username: 'me'),
   userSecret: const UserSecret(accessToken: 'token'),
 );
@@ -49,8 +62,9 @@ void main() {
   }) async {
     SharedPreferences.setMockInitialValues({
       'deck_columns': [
-        for (final id in columnIds)
-          '$id|misskey://me@misskey.example|hashtag:$id',
+        // ⚠ タグは並び順で付ける（コマのツールチップ＝見出しで n 本目を引く）。
+        for (final (i, id) in columnIds.indexed)
+          '$id|misskey://me@misskey.example|hashtag:tag${i + 1}',
       ],
       'deck_locked_columns': locked,
       'deck_strip_on_wide': stripOnWide,
@@ -89,7 +103,8 @@ void main() {
   double left(WidgetTester tester, String id) =>
       tester.getTopLeft(find.byKey(ValueKey('stub-$id'))).dx;
 
-  Finder item(int number) => find.byTooltip('カラム $number（@me@misskey.example）');
+  // #1404: ツールチップはカラムの見出しと同じ「タブ名 · 表示名」。
+  Finder item(int number) => find.byTooltip('#tag$number · me');
 
   testWidgets('狭幅では帯が出て、カラムの数だけコマが並ぶ', (tester) async {
     await pumpDeck(tester, size: narrow);
@@ -99,6 +114,14 @@ void main() {
       expect(item(n), findsOneWidget);
     }
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('コマのツールチップは、カラムの見出しと同じ「タブ名 · 表示名」', (tester) async {
+    await pumpDeck(tester, size: narrow);
+
+    expect(find.byTooltip('#tag1 · me'), findsOneWidget);
+    // 以前の「カラム N（@user@host）」の形は使わない。
+    expect(find.byTooltip('カラム 1（@me@misskey.example）'), findsNothing);
   });
 
   testWidgets('⚠⚠ コマを押すと、1 回でそのカラムへ移る', (tester) async {

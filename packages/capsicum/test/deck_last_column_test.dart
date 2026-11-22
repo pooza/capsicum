@@ -19,13 +19,26 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// いても、横スクロールが 0 から始まっていたため。
 class _Adapter extends Mock implements DecentralizedBackendAdapter {}
 
+class _Capabilities extends Mock implements AdapterCapabilities {}
+
+/// 帯のコマのツールチップ（カラムの見出しと同じラベル・#1404）が種別の判定に読む。
+_Adapter _adapter() {
+  final capabilities = _Capabilities();
+  when(
+    () => capabilities.supportedTimelines,
+  ).thenReturn({TimelineType.home, TimelineType.local, TimelineType.social});
+  final adapter = _Adapter();
+  when(() => adapter.capabilities).thenReturn(capabilities);
+  return adapter;
+}
+
 final _account = Account(
   key: const AccountKey(
     type: BackendType.misskey,
     host: 'misskey.example',
     username: 'me',
   ),
-  adapter: _Adapter(),
+  adapter: _adapter(),
   user: const User(id: 'me', username: 'me'),
   userSecret: const UserSecret(accessToken: 'token'),
 );
