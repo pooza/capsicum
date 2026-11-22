@@ -212,6 +212,8 @@ end
 
 > **Fastlane の実行ディレクトリ:**
 > `fastlane beta` / `fastlane internal` / `fastlane release` は **必ず** `packages/capsicum/ios/`、`packages/capsicum/android/`、`packages/capsicum/macos/` のいずれか、Fastfile があるディレクトリから実行する。リポジトリルートや別ディレクトリから実行すると ipa / aab / pkg の相対パスが解決できず「Could not find ipa/aab/pkg file」エラーになり、アップロードが失敗する。v1.11.0 リリース時にこの問題で全アップロードがやり直しになった経緯がある。
+>
+> **`bundle exec fastlane ...` で呼ぶ**（#1376・2026-11-22〜）。fastlane / CocoaPods の版はリポジトリルートの `Gemfile.lock`、Ruby の版は `.ruby-version` で固定してある（Fastfile のディレクトリからでも、bundler と rbenv は親を辿って見つける）。⚠ Ruby を上げたら、最初に `bundle install` を 1 回流す（手順は [dev-environment.md](dev-environment.md) の「Ruby の版」）。
 
 ### 3.4 macOS（`macos/fastlane/Fastfile`）
 
@@ -303,8 +305,8 @@ end
 ⚠⚠ **クローズドテストへは、内部テストに載せた版を昇格して上げる**（2026-10-06 pooza 判断・「内部テストのほうが版が低い」を起こさないため）。AAB を `alpha` へ直接上げると内部テストが取り残されるので、`alpha` レーンは昇格だけをする作りに変えた:
 
 ```sh
-fastlane internal                  # AAB を内部テストへ
-fastlane alpha version_code:<code> # その版をクローズドテストへ昇格（⚠ 審査が入る）
+bundle exec fastlane internal                  # AAB を内部テストへ
+bundle exec fastlane alpha version_code:<code> # その版をクローズドテストへ昇格（⚠ 審査が入る）
 ```
 
 ⚠ **この順で上げた直後、Console はしばらく「内部テスト 193 / クローズドテスト 194」と出る**（2026-10-06・194 の回）。API は直後から両方 194 を返しており、**何も操作しないまま 10〜20 分ほどで Console も 194 になった** ＝ 反映の遅れ。⚠⚠ **アップロード直後に Console が古い版を出していても、すぐ手を打たない**（193 の回は短時間に複数の操作を重ねて、何が効いたか分からなくなった）。⚠ 遅れているのが Console の表示なのか配信なのかは区別できていない。
@@ -314,7 +316,7 @@ fastlane alpha version_code:<code> # その版をクローズドテストへ昇�
 ⚠ **確実なのは「同じ版を両方のトラックに載せれば、どちらが選ばれても同じものが降りる」**。やり方は promote で、⚠⚠ **`deactivate_on_promote` を `false` にする**（既定は `true` で、**元のトラックが無効化されてテスターが締め出される**）:
 
 ```sh
-fastlane supply --package_name net.shrieker.capsicum \
+bundle exec fastlane supply --package_name net.shrieker.capsicum \
   --track alpha --track_promote_to internal --version_code <code> \
   --deactivate_on_promote false \
   --skip_upload_metadata true --skip_upload_images true \

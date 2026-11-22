@@ -99,7 +99,7 @@ flutter build ipa --release \
   --dart-define=SENTRY_ENV=production \
   --dart-define=RELAY_SECRET=$RELAY_SECRET
 cd ios
-fastlane beta
+bundle exec fastlane beta
 cd ..
 
 # Android: ビルド → Play Store 内部テストトラックにアップロード
@@ -108,7 +108,7 @@ flutter build appbundle --release \
   --dart-define=SENTRY_ENV=production \
   --dart-define=RELAY_SECRET=$RELAY_SECRET
 cd android
-fastlane internal
+bundle exec fastlane internal
 cd ..
 
 # macOS: flutter build → xcodebuild archive → exportArchive で .pkg 生成 → TestFlight アップロード
@@ -132,7 +132,7 @@ xcodebuild -exportArchive \
   -allowProvisioningUpdates
 # build/macos/capsicum.pkg が生成される
 cd macos
-fastlane beta
+bundle exec fastlane beta
 cd ..
 ```
 
@@ -144,7 +144,7 @@ cd ..
 > | --- | --- | --- |
 > | `DSYM_UPLOAD=ok` | 上がった（`App.framework.dSYM` が入っていた） | なし |
 > | `DSYM_UPLOAD=incomplete` | 上げたが `App.framework.dSYM` が無かった ＝ Dart のフレームは復元されない | アーカイブの作り方を疑う（`flutter build ipa` / `xcodebuild archive` を通したか） |
-> | `DSYM_UPLOAD=failed` | 上がっていない | アーカイブを消す前に `fastlane upload_dsyms_to_sentry` を単独で回し直す |
+> | `DSYM_UPLOAD=failed` | 上がっていない | アーカイブを消す前に `bundle exec fastlane upload_dsyms_to_sentry` を単独で回し直す |
 > | **どれも出ない** | レーンが走っていない | 同上 |
 >
 > ⚠ 次のビルドでアーカイブが上書きされると取り戻せない。⚠ 以前は失敗が警告 1 行で流れるだけで、

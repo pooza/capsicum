@@ -254,8 +254,10 @@ capsicum-relay の Issue・マイルストーンは、**capsicum 本体と同じ
   ```sh
   gh api repos/ruby/ruby/releases/latest --jq '.tag_name, .published_at'   # 最新の安定版（v4.0.9 の形）
   git -C ~/repos/capsicum-relay show origin/develop:.ruby-version          # relay の版
+  git show origin/develop:.ruby-version                                     # capsicum の版（#1376）
   ```
 
+  - ⚠ **capsicum の `.ruby-version` も同じ版と比べる**（#1376・2026-11-22〜）。fastlane / CocoaPods をリポジトリで固定したので、capsicum も追従の対象になった。違えば報告に載せ、上げ方は [dev-environment.md](../../../docs/dev-environment.md) の「Ruby の版」（`.ruby-version` を書き換えて `bundle install`・Mac で）。⚠ 起票はしない（作業は数分で、relay と違って本番の機が無い）。急ぐかの判断は relay と同じ（リリースノートを読み、道具の経路に効くか）
   - 版が違えば、relay に版上げの Issue があるかを見る: `gh issue list --repo pooza/capsicum-relay --state open --search 'Ruby in:title'`
   - ⚠⚠ **無ければその場で起票する。**書式は relay#98 / relay#108（やること・前提・手順の 3 節）。稼働中の relay の枠に載せ、**同じ作業で capsicum 側 description の `## relay` 節も直す**（step 5）
   - ⚠ 起票の前に、**ステージング・本番の両機の rbenv に新しい版が入っているか**を読み取りで確かめ、前提の節に書く（入れるのは chubo2 側の作業・接続先は chubo2 の `docs/infra-servers.md`）。入っていなければ「chubo2 側が先」と書く

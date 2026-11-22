@@ -128,6 +128,27 @@ ls -la build/app/outputs/bundle/release/app-release.aab   # 終了コードで�
 
 ⚠ 2026-10-25 の時点で、本体（2025.2）と `cmdline-tools`（19.0・23.0 が出ている）は上げていない。次のリリースの直後に上げる候補。
 
+## Ruby の版（fastlane / CocoaPods・#1376）
+
+リリースの道具（fastlane・CocoaPods）と、リリースの確認のスクリプト（`.claude/scripts/asc-status.rb` / `play-status.rb` の `jwt`）は Ruby の gem で、**リポジトリルートの `.ruby-version` と `Gemfile` / `Gemfile.lock` で固定してある**（2026-11-22〜）。以前は `rbenv global` の Ruby に入った gem をそのまま使っていたので、global を上げると `pod` / `fastlane` が見つからなくなりえた。
+
+- fastlane は **`bundle exec fastlane ...`** で呼ぶ。CocoaPods は flutter が `pod` を素で呼ぶので、`bundle install` で `.ruby-version` の Ruby に入っていればよい
+- ⚠ **`.ruby-version` はパッチまで書く**（`4.0.10` の形）。rbenv 1.3 は `4.0` のような粗い指定を受け付けない（2026-11-22 実測）
+- ⚠ **道具の版は Ruby と別に上げる。**CocoaPods を上げると `Podfile.lock` の `COCOAPODS:` が書き換わるので、`bundle update cocoapods` で意図して上げる
+
+### Ruby を上げる（新しい版が出たら・Mac で）
+
+同期の手順（`/sync-procedure` §8）が新しい Ruby の公開を毎回見ていて、capsicum の `.ruby-version` も比べる。上がっていたら:
+
+```sh
+rbenv install <新しい版>            # 未導入なら
+printf '<新しい版>\n' >| .ruby-version
+bundle install                       # 新しい Ruby に Gemfile.lock どおりの gem が入る
+pod --version && bundle exec fastlane --version
+```
+
+⚠ `bundle install` は Gemfile.lock の版を入れるだけで、道具の版は変わらない。⚠ 同じ Ruby に別の版の CocoaPods が入っていると、素の `pod` は新しいほうを使う。`pod --version` が Gemfile.lock の版と違ったら、余分な版を `gem uninstall cocoapods -v <版>` で外す（⚠ `bundle clean` はしない —— 同じ Ruby をほかのリポジトリも使っている）。
+
 ## 同じ Mac に同居する Tsunagal との共有物（#1316）
 
 メインの Mac には、Tsunagal（同じく Flutter）の開発環境が同居している。Claude Code のセッションも別々に動く。⚠⚠ **この節が正本**で、Tsunagal 側の docs はここへリンクするだけにする（2026-10-27 pooza 判断・二重に書かない）。

@@ -31,13 +31,13 @@ App Store は**説明文・キーワード・スクリーンショットをバ�
 cd packages/capsicum
 
 # Android: 内部テスト → 製品版に昇格
-cd android && fastlane release && cd ..
+cd android && bundle exec fastlane release && cd ..
 
 # iOS: App Store 審査提出
-cd ios && fastlane release && cd ..
+cd ios && bundle exec fastlane release && cd ..
 
 # macOS: Mac App Store 審査提出
-cd macos && fastlane release && cd ..
+cd macos && bundle exec fastlane release && cd ..
 ```
 
 #### 「このバージョンの新機能」欄（whatsNew）は定型文で運用する
@@ -134,7 +134,7 @@ Cannot find edit app info... Retrying after 80 seconds (remaining: 4)
 回避: メタデータの段を飛ばして提出する（iOS のレーンに口がある）。
 
 ```sh
-fastlane release skip_metadata:true
+bundle exec fastlane release skip_metadata:true
 ```
 
 ⚠ **飛ばした段は「このバージョンの新機能」欄も埋めていた**ので、そのまま提出すると下の `whatsNew` のエラーで弾かれる。**先に下の手順で定型文を入れてから**提出する（iOS でも起きる）。
