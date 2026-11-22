@@ -30,14 +30,14 @@ class GalleryState {
 
 /// ギャラリーの一覧の種類 (#1053)。
 enum GalleryListKind {
-  /// 注目（`gallery/featured`）。
+  /// 人気（`gallery/featured`）。
   featured,
 
   /// 新着（`gallery/posts`・新しい順）。
   recent,
 }
 
-/// ギャラリーの一覧（ドロワーのメニューから開く画面）。注目と新着を [arg] で分ける。
+/// ギャラリーの一覧（ドロワーのメニューから開く画面）。人気と新着を [arg] で分ける。
 class GalleryPostsNotifier
     extends AutoDisposeFamilyAsyncNotifier<GalleryState, GalleryListKind> {
   static const _pageSize = 20;

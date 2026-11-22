@@ -67,8 +67,8 @@ class GalleryDetailScreen extends StatelessWidget {
                           style: theme.textTheme.titleSmall,
                         ),
                       ),
-                      // いいね (#1053)。押せないとき（自分の投稿・分からない）は
-                      // 数だけを出す。
+                      // いいね (#1053)。⚠ いつも押せる。自分の投稿かは
+                      // サーバーの `YOUR_POST` で知る（手元では見分けない）。
                       _GalleryLikeButton(post: post),
                     ],
                   ),
@@ -239,7 +239,8 @@ class _GalleryLikeButtonState extends ConsumerState<_GalleryLikeButton> {
       icon: Icon(
         _isLiked ? Icons.favorite : Icons.favorite_border,
         size: 18,
-        color: _isLiked ? theme.colorScheme.error : null,
+        // ⚠ 色は Play のいいね（`flash_view_screen.dart`）とそろえる。
+        color: _isLiked ? theme.colorScheme.primary : null,
       ),
       label: Text('$_likedCount'),
       style: TextButton.styleFrom(visualDensity: VisualDensity.compact),

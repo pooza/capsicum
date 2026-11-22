@@ -20,7 +20,10 @@ class GalleryScreen extends ConsumerStatefulWidget {
 class _GalleryScreenState extends ConsumerState<GalleryScreen> {
   final _scrollController = ScrollController();
 
-  /// 注目と新着のどちらを見ているか (#1053)。既定は従来どおり注目。
+  /// 人気と新着のどちらを見ているか (#1053)。既定は従来どおり人気。
+  ///
+  /// ⚠ featured は「人気」と呼ぶ（Play・チャンネル・Pages とそろえる・
+  /// Misskey の Web も「人気の投稿」・2026-11-22 pooza）。
   var _kind = GalleryListKind.featured;
 
   @override
@@ -57,7 +60,7 @@ class _GalleryScreenState extends ConsumerState<GalleryScreen> {
       appBar: AppBar(
         title: const Text('ギャラリー'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // 注目 / 新着 (#1053)。
+        // 人気 / 新着 (#1053)。
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(52),
           child: Padding(
@@ -66,7 +69,7 @@ class _GalleryScreenState extends ConsumerState<GalleryScreen> {
               segments: const [
                 ButtonSegment(
                   value: GalleryListKind.featured,
-                  label: Text('注目'),
+                  label: Text('人気'),
                 ),
                 ButtonSegment(value: GalleryListKind.recent, label: Text('新着')),
               ],

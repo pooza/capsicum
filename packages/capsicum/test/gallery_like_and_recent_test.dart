@@ -112,8 +112,8 @@ void main() {
     });
   });
 
-  group('一覧の注目 / 新着', () {
-    testWidgets('既定は注目。新着に切り替えると gallery/posts を引く', (tester) async {
+  group('一覧の人気 / 新着', () {
+    testWidgets('既定は人気。新着に切り替えると gallery/posts を引く', (tester) async {
       when(
         () => adapter.getGalleryPosts(query: any(named: 'query')),
       ).thenAnswer((_) async => [_post('f1')]);
