@@ -29,6 +29,8 @@
 #   tool/linux/keyring-sandbox.sh stop DIR      片付ける（DIR は残す）
 #
 # 解除の画面が出たときのパスワードは `sandbox`（KEYRING_SANDBOX_PASSWORD で変えられる）。
+# start は capsicum の空の項目を置く。KEYRING_SANDBOX_NO_ITEM=1 を付けると置かない
+# （項目が無いままロックされた形・#1415）。
 # 入力は tool/linux/remote_input.py の `type sandbox` で打てる。
 #
 # ⚠ アプリは私設のバスを見るので、本物の capsicum が動いていても別の窓として起動する
@@ -74,6 +76,10 @@ case $op in
     mkdir -p "$dir/data/keyrings" "$dir/config" "$dir/runtime"
     chmod 700 "$dir" "$dir/runtime" "$dir/data/keyrings"
     dir=$(cd "$dir" && pwd)
+    # ⚠ daemon のソケット（$dir/runtime/keyring/control）は UNIX ソケットの上限
+    # （107 バイト）に収まらないと bind できず、立たない（スクラッチパッドの下で踏んだ）。
+    sock="$dir/runtime/keyring/control"
+    [ ${#sock} -le 100 ] || die "DIR のパスが長すぎる（${#sock} バイト・/tmp/s/kr のような短いパスにする）"
     rm -f "$dir/stop"
     if [ $# -ge 1 ]; then
       mkdir -p "$dir/data/capsicum"
@@ -110,9 +116,12 @@ case $op in
     # （SecretServiceProbe.isLocked・capsicum の項目で見る）が「ロックされていない」を
     # 返し、自動の再試行が読みに行って解除の画面を出す。利用者のキーリングには必ず
     # この項目があるので、置いておくほうが実態に近い（2026-11-22 に踏んだ）。
-    printf '{}' | secret-tool store --label='net.shrieker.capsicum/FlutterSecureStorage' \
-      account net.shrieker.capsicum.secureStorage \
-      xdg:schema net.shrieker.capsicum/FlutterSecureStorage
+    # KEYRING_SANDBOX_NO_ITEM=1 で置かない（項目が無いままロックされた形・#1415）。
+    if [ -z "${KEYRING_SANDBOX_NO_ITEM:-}" ]; then
+      printf '{}' | secret-tool store --label='net.shrieker.capsicum/FlutterSecureStorage' \
+        account net.shrieker.capsicum.secureStorage \
+        xdg:schema net.shrieker.capsicum/FlutterSecureStorage
+    fi
     {
       echo "BUS='$DBUS_SESSION_BUS_ADDRESS'"
       echo "KEYRING_PID=$pid"
