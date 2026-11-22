@@ -1,4 +1,6 @@
 // #1398: 投稿の自動処理（モロヘイヤのハンドラー）を、自分の投稿について切り替える。
+import 'dart:async';
+
 import 'package:capsicum/src/model/account.dart';
 import 'package:capsicum/src/model/account_key.dart';
 import 'package:capsicum/src/provider/account_manager_provider.dart';
@@ -19,6 +21,13 @@ const _tagHandler = MulukhiyaUserHandler(
   label: 'デフォルトタグ',
   description: '投稿にデフォルトのハッシュタグを付与します',
   toggleable: false,
+  disabled: false,
+);
+
+const _spotifyHandler = MulukhiyaUserHandler(
+  name: 'spotify_url',
+  label: 'Spotify の URL',
+  toggleable: true,
   disabled: false,
 );
 
@@ -49,7 +58,7 @@ void main() {
     when(() => mulukhiya.userHandlerConfigEnabled).thenReturn(true);
     when(
       () => mulukhiya.getUserHandlers(accessToken: any(named: 'accessToken')),
-    ).thenAnswer((_) async => [_tagHandler, _urlHandler]);
+    ).thenAnswer((_) async => [_tagHandler, _urlHandler, _spotifyHandler]);
   });
 
   Future<void> pump(WidgetTester tester) async {
@@ -120,6 +129,62 @@ void main() {
 
     expect(tile(tester, 'url_normalize').value, isTrue, reason: '送る前の値へ戻す');
     expect(find.text('切り替えられませんでした'), findsOneWidget);
+  });
+
+  // ⚠ 戻す先は一覧を取った時点の値ではなく、直前に成功した値（リリース前
+  // レビュー・Codex P2）。
+  testWidgets('⚠ 成功のあとの切り替えに失敗したら、成功した値へ戻す', (tester) async {
+    var calls = 0;
+    when(
+      () => mulukhiya.setUserHandlerDisabled(
+        accessToken: any(named: 'accessToken'),
+        handler: any(named: 'handler'),
+        disabled: any(named: 'disabled'),
+      ),
+    ).thenAnswer((_) async {
+      if (++calls == 1) return true;
+      throw StateError('offline');
+    });
+    await pump(tester);
+    final finder = find.byKey(
+      const ValueKey('mulukhiya-handler-url_normalize'),
+    );
+
+    await tester.tap(finder);
+    await tester.pumpAndSettle();
+    expect(tile(tester, 'url_normalize').value, isFalse, reason: '前提: オフにできた');
+
+    await tester.tap(finder);
+    await tester.pumpAndSettle();
+    expect(
+      tile(tester, 'url_normalize').value,
+      isFalse,
+      reason: 'サーバーはオフのまま。一覧の値（オン）へ戻さない',
+    );
+  });
+
+  // ⚠ モロヘイヤは利用者の設定を「読んで足して書く」で保存するので、別々の
+  // 項目でも並べて送ると片方が消える。
+  testWidgets('⚠ 送っている間は、ほかのスイッチも押せない', (tester) async {
+    final pending = Completer<bool>();
+    when(
+      () => mulukhiya.setUserHandlerDisabled(
+        accessToken: any(named: 'accessToken'),
+        handler: any(named: 'handler'),
+        disabled: any(named: 'disabled'),
+      ),
+    ).thenAnswer((_) => pending.future);
+    await pump(tester);
+
+    await tester.tap(
+      find.byKey(const ValueKey('mulukhiya-handler-url_normalize')),
+    );
+    await tester.pump();
+    expect(tile(tester, 'spotify_url').onChanged, isNull);
+
+    pending.complete(true);
+    await tester.pumpAndSettle();
+    expect(tile(tester, 'spotify_url').onChanged, isNotNull);
   });
 
   testWidgets('フラグが無いサーバーでは一覧を取りに行かない', (tester) async {

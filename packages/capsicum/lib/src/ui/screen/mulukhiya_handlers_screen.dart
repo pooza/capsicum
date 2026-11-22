@@ -40,7 +40,10 @@ final mulukhiyaUserHandlersProvider =
 /// する画面 (#1398)。
 ///
 /// - トグルスイッチの一覧。`toggleable: false` のものはスイッチを無効にして並べる
-/// - 切り替えは 1 件ずつ送る。失敗したらスイッチを戻して知らせる
+/// - 切り替えは 1 件ずつ送る。**送っている間は、ほかのスイッチも押せない**
+///   （モロヘイヤは利用者の設定を「読んで足して書く」で保存するので、別々の
+///   項目でも並べて送ると片方が消える・リリース前レビュー 2026-11-22）
+/// - 失敗したら、送る前の値（直前に成功した値）へ戻して知らせる
 /// - サーバー全体の設定は変えない（利用者の設定だけ）
 class MulukhiyaHandlersScreen extends ConsumerStatefulWidget {
   const MulukhiyaHandlersScreen({super.key});
@@ -52,7 +55,7 @@ class MulukhiyaHandlersScreen extends ConsumerStatefulWidget {
 
 class _MulukhiyaHandlersScreenState
     extends ConsumerState<MulukhiyaHandlersScreen> {
-  /// 送っている途中のハンドラー（二重に押させない）。
+  /// 送っている途中のハンドラー。⚠ 1 件でもあれば、全部のスイッチを止める。
   final _busy = <String>{};
 
   /// 切り替えたあとの値（一覧を取り直すまで画面に反映する）。
@@ -61,7 +64,10 @@ class _MulukhiyaHandlersScreenState
   Future<void> _toggle(MulukhiyaUserHandler handler, bool enabled) async {
     final account = ref.read(currentAccountProvider);
     final mulukhiya = account?.mulukhiya;
-    if (account == null || mulukhiya == null) return;
+    if (account == null || mulukhiya == null || _busy.isNotEmpty) return;
+    // ⚠ 戻す先は一覧を取った時点の値ではなく、いま画面に出ている値（直前に
+    // 成功した切り替えを含む）。
+    final before = _overrides[handler.name] ?? handler.disabled;
     setState(() {
       _busy.add(handler.name);
       _overrides[handler.name] = !enabled;
@@ -83,7 +89,7 @@ class _MulukhiyaHandlersScreenState
       );
       if (!mounted) return;
       // 送る前の値へ戻す。
-      setState(() => _overrides[handler.name] = handler.disabled);
+      setState(() => _overrides[handler.name] = before);
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('切り替えられませんでした')));
@@ -122,7 +128,7 @@ class _MulukhiyaHandlersScreenState
                   _HandlerTile(
                     handler: handler,
                     disabled: _overrides[handler.name] ?? handler.disabled,
-                    busy: _busy.contains(handler.name),
+                    busy: _busy.isNotEmpty,
                     onChanged: (enabled) => _toggle(handler, enabled),
                   ),
               ],
