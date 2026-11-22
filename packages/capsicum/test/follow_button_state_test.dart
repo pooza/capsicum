@@ -35,4 +35,12 @@ void main() {
       FollowButtonState.unfollow,
     );
   });
+
+  // #1403: 「リクエスト中」は状態を表すラベルなので、押したときの動きを添える。
+  test('「リクエスト中」にだけ、押すと取り消すことの説明が付く', () {
+    expect(FollowButtonState.requested.tooltip, '押すとフォローリクエストを取り消します');
+    // ほかはラベルが動作そのもの（「フォロー」「フォロー解除」）なので付けない。
+    expect(FollowButtonState.follow.tooltip, isNull);
+    expect(FollowButtonState.unfollow.tooltip, isNull);
+  });
 }
