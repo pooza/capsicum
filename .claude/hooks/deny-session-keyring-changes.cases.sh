@@ -55,6 +55,8 @@ check deny  '環境変数を前置きした Python' "KR_OLD=x python3 -I $T/muta
 
 # 当ててはいけない形
 check allow '⚠⚠ dbus-run-session の中（隔離したキーリング）' "dbus-run-session -- sh -c 'gnome-keyring-daemon --unlock --components=secrets; busctl --user call org.freedesktop.secrets /org/freedesktop/secrets org.freedesktop.Secret.Service Lock ao 0'"
+check allow '⚠⚠ keyring-sandbox.sh を通す（隔離したキーリング）' 'tool/linux/keyring-sandbox.sh run /tmp/s/kr secret-tool store --label=x account y'
+check allow 'keyring-sandbox.sh で lock' 'tool/linux/keyring-sandbox.sh lock /tmp/s/kr'
 check allow '別のバスを指す' 'DBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/s/bus busctl --user call org.freedesktop.secrets /org/freedesktop/secrets org.freedesktop.Secret.Service Lock ao 0'
 check allow '読むだけ: SearchItems' "busctl --user call org.freedesktop.secrets /org/freedesktop/secrets org.freedesktop.Secret.Service SearchItems 'a{ss}' 1 application chrome"
 check allow '読むだけ: Locked の get-property' 'busctl --user get-property org.freedesktop.secrets /org/freedesktop/secrets/collection/login org.freedesktop.Secret.Collection Locked'

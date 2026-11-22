@@ -324,6 +324,8 @@ macOS / iOS 実装は `baseQuery` に **必ず `kSecAttrAccessible` を含める
 
 #### 隔離して実機検証する型（本物のキーリングに触れない）
 
+⚠⚠ **キーリングの検証は、この型でだけ行う。セッションのキーリング（本物）は触らない**（[#1414](https://github.com/pooza/capsicum/issues/1414)）。2026-11-22 に本物をいじって gnome-keyring-daemon を落とし、「ログイン」キーリングがロックされて、pooza が push のためにパスワードを打ち、gh にログインし直すことになった。道具は [`tool/linux/keyring-sandbox.sh`](../tool/linux/keyring-sandbox.sh)（start / run / lock / freeze / thaw / status / stop・使い方はスクリプトの冒頭）で、下の罠は全部入れてある。本物を変える操作は `.claude/hooks/deny-session-keyring-changes.sh` が止める。⚠ **隔離したキーリングにも capsicum の項目を置く**（道具は start で空の項目を置く）。項目が無いと、ロック中かの判定（`SecretServiceProbe.isLocked`・capsicum の項目で見る）が「ロックされていない」を返し、自動の再試行が読みに行って解除の画面を出す（同日に踏んだ）。
+
 ⚠ **LXC は不要。**隔離が要る軸は 2 つだけで、`dbus-run-session`（私設セッションバス＝`org.freedesktop.secrets` の接続先）と `XDG_DATA_HOME` の差し替え（キーリングの実体ファイル）で足りる。⚠ **`XDG_RUNTIME_DIR` も差し替える** — さもないと `discover_other_daemon` が `/run/user/<uid>/keyring` の**本物を見つけて起動を譲る**。⚠ **D-Bus activation の前に `gnome-keyring-daemon --unlock --components=secrets` でキーリングを作っておく**（無いと解錠プロンプト待ちで固まる）。⚠ **`kill -STOP` の対象 PID には安全弁を付ける**（本物の PID / `control-directory=/run/user/<uid>` を弾く。実際に PID 取得に失敗して `/sbin/init` を指した）。
 
 ## ネイティブプッシュ / CI・ビルド

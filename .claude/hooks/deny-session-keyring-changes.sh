@@ -20,8 +20,8 @@
 #   - ~/.local/share/keyrings を rm / mv / cp / tee / truncate / shred / ln する
 #   - libsecret / Secret Service を書き換える Python スクリプト（ファイルの中身を見る）を実行する
 # 通す形:
-#   - `dbus-run-session` の中で動かす / `DBUS_SESSION_BUS_ADDRESS=` で別のバスを指す
-#     （隔離したキーリングでの検証。これが正しいやり方）
+#   - `tool/linux/keyring-sandbox.sh` を通す / `dbus-run-session` の中で動かす /
+#     `DBUS_SESSION_BUS_ADDRESS=` で別のバスを指す（隔離したキーリングでの検証。これが正しいやり方）
 #   - 読むだけの操作（SearchItems・get-property・ReadAlias・secret-tool lookup / search）
 #
 # ⚠ このスクリプトに `set -o pipefail` を足さないこと（deny-shell-loops.sh と同じ理由・
@@ -64,11 +64,12 @@ scrubbed=$(printf '%s\n' "$cmd" | awk '
 ')
 
 # 隔離したバスで動かしているなら、セッションのキーリングには届かない。
-if printf '%s\n' "$scrubbed" | grep -Eq 'dbus-run-session|DBUS_SESSION_BUS_ADDRESS='; then
+# tool/linux/keyring-sandbox.sh は私設のバスを立て、その中で動かす道具（#1414）。
+if printf '%s\n' "$scrubbed" | grep -Eq 'dbus-run-session|DBUS_SESSION_BUS_ADDRESS=|keyring-sandbox\.sh'; then
   exit 0
 fi
 
-reason='セッションのキーリング（gnome-keyring / Secret Service）を変える操作は拒否した（#1414）。2026-11-22 に検証でセッションのキーリングを触り、daemon を落として「ログイン」キーリングをロックさせ、pooza に push のためのパスワード入力と gh のログインし直しをさせた。キーリングの検証は `dbus-run-session` の中に専用の gnome-keyring を立てて行うこと（miki の ~/capsicum-verify/run-isolated.sh と同じ形・`XDG_DATA_HOME` も分ける）。セッションのキーリングの修理がどうしても要るなら、自分では行わず、理由を添えて pooza に頼むこと。⚠ この話を*文章として*書いていて落ちた場合は、本文を heredoc か `--body-file` / `-F` へ移すこと（本文は検査していない）。'
+reason='セッションのキーリング（gnome-keyring / Secret Service）を変える操作は拒否した（#1414）。2026-11-22 に検証でセッションのキーリングを触り、daemon を落として「ログイン」キーリングをロックさせ、pooza に push のためのパスワード入力と gh のログインし直しをさせた。キーリングの検証は `tool/linux/keyring-sandbox.sh`（隔離したバスと専用の gnome-keyring を立て、その中で動かす・使い方はスクリプトの冒頭）で行うこと。セッションのキーリングの修理がどうしても要るなら、自分では行わず、理由を添えて pooza に頼むこと。⚠ この話を*文章として*書いていて落ちた場合は、本文を heredoc か `--body-file` / `-F` へ移すこと（本文は検査していない）。'
 
 # ⚠ ここから下の grep の正規表現では、awk の `\t` / `\047` は使えない（grep では
 #   タブ・引用符にならず、`\` と文字そのものになる）。空白は [[:space:]]、引用符は $q。
