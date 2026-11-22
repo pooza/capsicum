@@ -4,6 +4,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 
 import 'now_playing_artwork_skip.dart';
 import 'now_playing_provider.dart';
+import 'spotify_track_url.dart';
 
 /// iOS / macOS の Apple Music（ミュージック.app）から「現在再生中の曲」を取得する
 /// [NowPlayingProvider] 実装 (#668)。
@@ -135,11 +136,14 @@ NowPlayingInfo? nowPlayingFromAppleMusicMetadata(Map<String, Object?> data) {
 /// `https://open.spotify.com/track/<id>` にする (#1276)。曲以外・形の違うものは null。
 ///
 /// ⚠ AppleScript の `spotify url` は https ではなく URI の形で返る（2026-10-15 実測）。
+///
+/// ⚠ ID の形（22 文字）と URL の組み方は、MPRIS（Linux）と同じものを使う
+/// （`spotify_track_url.dart`・#1403）。以前はここだけ `[A-Za-z0-9]+` で、
+/// 判定がずれていた。
 Uri? spotifyShareUrl(Object? value) {
-  if (value is! String) return null;
-  final match = RegExp(r'^spotify:track:([A-Za-z0-9]+)$').firstMatch(value);
-  if (match == null) return null;
-  return Uri.https('open.spotify.com', '/track/${match.group(1)}');
+  // MPRIS のオブジェクトパスの形（`/com/spotify/track/…`）はここには来ない。
+  if (value is! String || !value.startsWith('spotify:track:')) return null;
+  return spotifyTrackUrlFromRef(value);
 }
 
 /// https の URL だけを通す（ジャケットの取得先・#1276）。
