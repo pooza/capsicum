@@ -1,5 +1,5 @@
 name: fediverse_objects
-description: API response DTOs for Mastodon and Misskey
+description: API response DTOs for Mastodon, Misskey and Akkoma
 publish_to: none
 
 environment:
