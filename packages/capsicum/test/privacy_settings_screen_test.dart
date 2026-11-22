@@ -141,9 +141,10 @@ void main() {
     testWidgets('一覧の公開範囲を選ぶと、その項目だけを渡す', (tester) async {
       await pump(tester, _misskey);
 
-      await tester.tap(find.text('フォロワーのみ'));
+      // 表記は Misskey の Web とそろえてある (#1403)。
+      await tester.tap(find.text('フォロワーだけに公開'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('自分のみ').last);
+      await tester.tap(find.text('非公開').last);
       await tester.pumpAndSettle();
 
       expect(changes.single.followingVisibility, FollowListVisibility.private);
