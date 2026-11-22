@@ -209,8 +209,11 @@ bool HandleWnsRawPayloadImpl(const std::string& raw_payload,
   std::string reblog_label = kDefaultReblogLabel;
   std::string post_label = kDefaultPostLabel;
   ReadPushLabelsFromJson(push_labels_json, account, &reblog_label, &post_label);
-  out->title =
-      ResolveDisplayTitle(parsed.type, parsed.title, reblog_label, post_label);
+  // 複数アカウントなら宛先を添える (#1412)。復号できなかったときの文面は
+  // もともと宛先を含むので、ここ（復号できた経路）だけで足す。
+  out->title = TitleWithRecipient(
+      ResolveDisplayTitle(parsed.type, parsed.title, reblog_label, post_label),
+      account, push_labels_json);
   out->body = parsed.body;
   out->type = parsed.type;
   out->notification_id = parsed.notification_id;
@@ -219,6 +222,15 @@ bool HandleWnsRawPayloadImpl(const std::string& raw_payload,
 }
 
 }  // namespace
+
+std::string TitleWithRecipient(const std::string& title,
+                               const std::string& account,
+                               const std::string& push_labels_json) {
+  if (account.empty() || !ReadPushMultiAccountFromJson(push_labels_json)) {
+    return title;
+  }
+  return title + " (@" + account + ")";
+}
 
 bool HandleWnsRawPayload(const std::string& raw_payload,
                          const std::wstring& dat_file_path, PushDisplay* out,

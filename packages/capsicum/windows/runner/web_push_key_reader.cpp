@@ -252,6 +252,10 @@ void ReadPushLabelsFromJson(const std::string& labels_json,
   if (!ParseJsonStringMap(labels_json, &outer)) {
     return;
   }
+  // 予約キー（複数アカウントの写し・#1412）はアカウントの項目として読まない。
+  if (account == kPushLabelsMultiAccountKey) {
+    return;
+  }
   auto it = outer.find(account);
   if (it == outer.end()) {
     return;
@@ -269,6 +273,18 @@ void ReadPushLabelsFromJson(const std::string& labels_json,
   if (p != fields.end() && !p->second.empty()) {
     *post = p->second;
   }
+}
+
+bool ReadPushMultiAccountFromJson(const std::string& labels_json) {
+  if (labels_json.empty()) {
+    return false;
+  }
+  std::map<std::string, std::string> outer;
+  if (!ParseJsonStringMap(labels_json, &outer)) {
+    return false;
+  }
+  auto it = outer.find(kPushLabelsMultiAccountKey);
+  return it != outer.end() && it->second == "1";
 }
 
 bool ReadPushKeys(const std::wstring& dat_file_path, const std::string& account,

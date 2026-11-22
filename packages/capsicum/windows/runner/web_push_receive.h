@@ -26,6 +26,16 @@ struct PushDisplay {
   std::string user_id;          // chat の遷移先 fromUser.id（chat 以外は空）
 };
 
+// 復号できた通知の見出しに、宛先のアカウントを添える (#1412・#1407 の Windows 分)。
+// [push_labels_json] に複数アカウントの写し（[kPushLabelsMultiAccountKey]）が
+// あるときだけ `見出し (@user@host)` にし、無ければ [title] のまま返す。
+// [account] は relay の `username@host`（空なら添えない）。
+// ⚠ Dart の `titleWithRecipient`（notification_label_cache.dart）・NSE の
+// `NotificationService.titleWithRecipient` と同じ形にすること。
+std::string TitleWithRecipient(const std::string& title,
+                               const std::string& account,
+                               const std::string& push_labels_json);
+
 // relay が WNS raw として送る JSON エンベロープ `{body, encoding, server,
 // account}` を処理する。`body` は base64url（標準 base64 も許容）でエンコード
 // された RFC 8188 暗号文。`dat_file_path` は flutter_secure_storage.dat のパス。

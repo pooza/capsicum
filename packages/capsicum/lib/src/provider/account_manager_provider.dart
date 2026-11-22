@@ -182,6 +182,23 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
           );
         }),
       );
+      // Windows の native 受信は shared_preferences を読めないので、
+      // push_labels.json にも写す (#1412)。アカウントの増減の各所でも書き直して
+      // いるが、オフライン保持の出入りなど値だけが変わる場合もここで拾う。
+      // ⚠ 初回（previous == null）は書かない: 起動直後の空の状態で書くと
+      // push_labels.json が消え、復元が済むまで bg task が既定ラベルに倒れる。
+      // 復元の完了時にも同期しているので、初回の値はそちらで載る。
+      if (previous != null) {
+        unawaited(
+          _syncWindowsPushLabels().catchError((Object e) {
+            // ⚠ 例外の中身は出さない（exception_scrub_guard・型だけ）。
+            debugPrint(
+              'capsicum: push labels multi_account sync failed: '
+              '${e.runtimeType}',
+            );
+          }),
+        );
+      }
     });
     return const AccountManagerState();
   }
@@ -725,8 +742,20 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
         'post': labels.post,
       });
     }
+    // 複数アカウントなら、native が見出しに宛先を添えられるよう予約キーを
+    // 載せる (#1412)。判定は [isMultiAccountForPush]（オフライン保持中も数える）。
+    // false のときは載せない（キー不在＝添えない）。
+    if (isMultiAccountForPush(state)) {
+      map[_pushLabelsMultiAccountKey] = '1';
+    }
     await WnsService.syncPushLabels(jsonEncode(map));
   }
+
+  /// push_labels.json の予約キー (#1412)。アカウントのキーは `user@host` で
+  /// `@` を含むのでぶつからない。
+  /// ⚠ C++ の `kPushLabelsMultiAccountKey`（web_push_key_reader.h）と対。
+  /// 片方だけ変えないこと。
+  static const _pushLabelsMultiAccountKey = '_multi_account';
 
   /// Detect software version via NodeInfo on the given host.
   Future<String?> _detectSoftwareVersion(String host) async {

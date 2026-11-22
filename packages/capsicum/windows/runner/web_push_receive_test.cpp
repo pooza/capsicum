@@ -447,6 +447,30 @@ int main() {
     CheckErr(ok, err, "missing account", "degrade でも account は必須");
   }
 
+  // ---- 見出しに宛先を添える (#1412・#1407 の Windows 分) ----
+  // push_labels.json の予約キー "_multi_account" を Dart が載せたときだけ添える。
+  using capsicum::TitleWithRecipient;
+  const std::string labels_single =
+      "{" + JsonStr(kAccount) + ":" +
+      JsonStr("{\"reblog\":\"RB\",\"post\":\"PO\"}") + "}";
+  const std::string labels_multi =
+      "{" + JsonStr(kAccount) + ":" +
+      JsonStr("{\"reblog\":\"RB\",\"post\":\"PO\"}") + "," +
+      JsonStr("_multi_account") + ":" + JsonStr("1") + "}";
+
+  // 22) 1 アカウント（写しはあるが予約キーが無い）なら添えない。
+  CheckEq(TitleWithRecipient("Title", kAccount, labels_single), "Title",
+          "1 アカウントなら見出しに宛先を添えない");
+
+  // 23) 複数アカウントなら `見出し (@user@host)`。
+  CheckEq(TitleWithRecipient("Title", kAccount, labels_multi),
+          "Title (@" + std::string(kAccount) + ")",
+          "複数アカウントなら見出しに宛先を添える");
+
+  // 24) 写しが無い（push_labels.json 不在 = 空）なら添えない（従来どおり）。
+  CheckEq(TitleWithRecipient("Title", kAccount, ""), "Title",
+          "写しが無ければ見出しに宛先を添えない");
+
   _wremove(dat.c_str());
 
   if (g_failures == 0) {
