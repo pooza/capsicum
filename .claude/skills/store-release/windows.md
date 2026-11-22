@@ -122,6 +122,7 @@ PFX は 5 年有効。**期限切れ・流出疑い・鍵管理ホスト退役�
 1. **Partner Center にログイン**: <https://partner.microsoft.com/dashboard> → アプリ「capsicum」(`identity_name=9AFBB08E.capsicum` / `publisher_display_name=小石達也`)
 2. **新規 Submission を開始**
 3. **Packages**: draft Release に添付された `capsicum.msix` をそのまま upload（`msix_config.store: false` のままで OK、Store 側で再署名される）
+   - ⚠ **upload 後の検証が終わるまで Save を押さない。**2026-11-23（v2.14.0）に検証の途中で押したところ、申請の Packages が緑にならず、パッケージ画面を開き直しても Save が押せなくなった。選び直しや削除を重ねても戻らず、**しばらく画面遷移を繰り返すうちに押せるようになった**（検証の完了待ちだったとみられる）。⚠ 押してしまったら選び直さずに待ち、戻ったら**同じ版の行が 1 つだけ**かを確かめる
 4. **Submission Options > Notes for Certification**: 毎回必須。確定文面・根本原因・Windows 固有の注意は [msstore-review-notes-login.md](../../../docs/msstore-review-notes-login.md) を single source of truth とする（capsicum は OAuth + 外部サーバー前提のため、書かないと Policy 10.3.1 *App Is Testable - Test Account* で差し戻し）
 5. **System Requirements (推奨環境)**: 「イマーシブヘッドセット」項目に **明示的にチェックを入れる**罠あり（実体としては不要だが、UI が空欄を許容せず submission に進めない仕様。2026-05-16 にはまった経緯あり、参考: <https://mstdn.b-shock.org/@pooza/116586587890264199>）
 6. **Submit for certification**: Microsoft 公称の認定期間は最大 1-3 日（初回は 3-7 日）だが、**実績では問題がなければ 1 時間程度で通過することが多い**（Android と同様に速い）。数時間経っても Pending のままなら審査で引っかかっている可能性を疑う。通過後に Store listing が自動で publish される
