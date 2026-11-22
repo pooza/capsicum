@@ -81,6 +81,11 @@ struct PushDiagnostic {
   int64_t at_ms = 0;
   int count = 0;
   std::string host;  // サーバードメインのみ（username は載せない）。無ければ空。
+  // エンベロープの encoding（aes128gcm / aesgcm 等）。暗号化経路でだけ載り、
+  // 無ければ空。「aesgcm でヘッダが欠けている」と「aes128gcm で鍵が合わない」が
+  // どちらも bgtask.decrypt_failed になるのを、iOS / macOS の NSE と同じく
+  // encoding で見分けるため (#1403)。Dart は `push.encoding` タグに載せる。
+  std::string encoding;
 };
 
 // 既存スロット JSON [prev_json]（空可）に新しいイベントを 1 件マージした JSON を
@@ -92,9 +97,11 @@ struct PushDiagnostic {
 //     次回起動の flush で warning が info に飲まれて消えてしまうため。
 //   - したがって「新イベントが正常系 かつ 既存が異常系」のときだけ既存を温存し、
 //     それ以外（異常系の到来・正常系同士・初回）は最新イベントを代表にする。
+//   - [encoding] は代表イベントと一緒に動く（既存を温存するときは既存の encoding）。
 std::string BuildPushDiagnosticJson(const std::string& prev_json,
                                     const std::string& code,
-                                    const std::string& host, int64_t at_ms);
+                                    const std::string& host, int64_t at_ms,
+                                    const std::string& encoding = std::string());
 
 // スロット JSON を解析する。レコードが無い（空 / 不正 / code 不在）なら false。
 bool ParsePushDiagnosticJson(const std::string& json, PushDiagnostic* out);

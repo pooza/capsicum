@@ -72,8 +72,10 @@ std::string ReadLocalStateLabelsJson() {
 // 実体は runner と共有する push_diagnostics_store（#957 で runner 側からも
 // 書くようになったため抽出した）。失敗は黙殺される（観測機構が通知本体を
 // 巻き込まない）。
-void RecordBgDiagnostic(const std::string& code, const std::string& host) {
-  capsicum::RecordPushDiagnostic(code, host);
+// [encoding] は暗号化経路でだけ渡す（aesgcm / aes128gcm の失敗を見分ける・#1403）。
+void RecordBgDiagnostic(const std::string& code, const std::string& host,
+                        const std::string& encoding = std::string()) {
+  capsicum::RecordPushDiagnostic(code, host, encoding);
 }
 
 // TryBuildAnnouncementDisplay の error 文字列を観測コードへ写す (#978)。
@@ -205,15 +207,19 @@ void HandleEncryptedContent(const std::string& content) {
     // (#957)。「bgtask.shown が無ければ未起動」というトリアージ規則を
     // 成立させるため、成功したときだけ shown を記録する。
     RecordBgDiagnostic(shown ? "bgtask.shown" : "bgtask.show_failed",
-                       capsicum::PushDiagnosticHostFromAccount(display.account));
+                       capsicum::PushDiagnosticHostFromAccount(display.account),
+                       display.encoding);
     return;
   }
   // 復号できない通知（鍵不在・レガシー aesgcm 等）は捨てるが、無言だと
   // bg task が動いたかすら分からないため観測コードを残す。account は
   // 復号前にエンベロープから display に載っているので、host を観測へ
-  // 出して発生元サーバーを特定できるようにする (#800)。
+  // 出して発生元サーバーを特定できるようにする (#800)。encoding も同じく
+  // 復号前に載っているので添える。aesgcm（Akkoma・古い Mastodon）のヘッダ欠けと
+  // aes128gcm の鍵不一致は、どちらも bgtask.decrypt_failed になるため (#1403)。
   RecordBgDiagnostic(DiagnosticCodeForError(error),
-                     capsicum::PushDiagnosticHostFromAccount(display.account));
+                     capsicum::PushDiagnosticHostFromAccount(display.account),
+                     display.encoding);
 }
 
 struct PushBackgroundTask

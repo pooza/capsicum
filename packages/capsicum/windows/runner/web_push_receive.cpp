@@ -112,6 +112,20 @@ std::string MapGet(const std::map<std::string, std::string>& m,
   return it == m.end() ? std::string() : it->second;
 }
 
+// エンベロープの encoding を観測に載せられる形にする (#1403)。値はサーバー /
+// relay 由来なので、英数字・`-`・`_` の 32 文字までに限る（観測 JSON の
+// JsonQuote は " と \ しか逃がさない）。外れたら "invalid"、空は空のまま。
+std::string SanitizeEncodingForDiagnostic(const std::string& encoding) {
+  if (encoding.empty()) return std::string();
+  if (encoding.size() > 32) return "invalid";
+  for (char c : encoding) {
+    const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                    (c >= '0' && c <= '9') || c == '-' || c == '_';
+    if (!ok) return "invalid";
+  }
+  return encoding;
+}
+
 }  // namespace
 
 namespace {
@@ -145,6 +159,12 @@ bool HandleWnsRawPayloadImpl(const std::string& raw_payload,
     out->account = account;
   }
   const std::string encoding = MapGet(envelope, "encoding");
+  // encoding も account と同じく復号より前に載せる。aesgcm のヘッダ欠けと
+  // aes128gcm の鍵不一致がどちらも "decryption failed" になるのを、観測で
+  // 見分けるため (#1403)。
+  if (out != nullptr) {
+    out->encoding = SanitizeEncodingForDiagnostic(encoding);
+  }
   const std::string body_b64 = MapGet(envelope, "body");
   // announcement push 等は body / encoding を持たない。暗号化通知だけここで扱い、
   // それ以外は呼び出し側に委ねる。

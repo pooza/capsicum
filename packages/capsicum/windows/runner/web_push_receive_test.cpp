@@ -264,6 +264,29 @@ int main() {
                                   &err);
     CheckErr(ok, err, "decryption failed",
              "aesgcm は復号へ進む（ヘッダが無ければ復号の失敗）");
+    // 復号の失敗でも encoding が観測に載る (#1403)。aes128gcm の鍵不一致（4）と
+    // 同じ "decryption failed" になるので、これが無いと見分けられない。
+    CheckEq(d.encoding, "aesgcm", "aesgcm の復号失敗で encoding が観測に載る");
+  }
+
+  // 8c) aes128gcm の復号失敗にも encoding が載る（8b との対・#1403）。
+  {
+    std::string tampered = kBody;
+    tampered[tampered.size() - 1] = (tampered.back() == 'A') ? 'B' : 'A';
+    PushDisplay d;
+    std::string err;
+    HandleWnsRawPayload(Envelope(kAccount, "aes128gcm", tampered), dat, &d,
+                        &err);
+    CheckEq(d.encoding, "aes128gcm",
+            "aes128gcm の復号失敗で encoding が観測に載る");
+  }
+
+  // 8d) 観測 JSON を壊しうる encoding は "invalid" に丸める (#1403)。
+  {
+    PushDisplay d;
+    std::string err;
+    HandleWnsRawPayload(Envelope(kAccount, "x\"y", kBody), dat, &d, &err);
+    CheckEq(d.encoding, "invalid", "記号を含む encoding は invalid に丸める");
   }
 
   // ---- 無暗号化のお知らせ push (#978) ----

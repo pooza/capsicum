@@ -40,7 +40,8 @@ int64_t NowUnixMs() {
 
 }  // namespace
 
-void RecordPushDiagnostic(const std::string& code, const std::string& host) {
+void RecordPushDiagnostic(const std::string& code, const std::string& host,
+                          const std::string& encoding) {
   std::lock_guard<std::mutex> guard(RecordMutex());
   try {
     // パス組み立てと読み出しは local_state_files.h の共有実装 (#976)。
@@ -48,7 +49,7 @@ void RecordPushDiagnostic(const std::string& code, const std::string& host) {
     if (path.empty()) return;  // 非 MSIX 起動。観測は諦める。
     const std::string prev = ReadFileUtf8(path);
     const std::string next =
-        BuildPushDiagnosticJson(prev, code, host, NowUnixMs());
+        BuildPushDiagnosticJson(prev, code, host, NowUnixMs(), encoding);
     std::ofstream f(path, std::ios::binary | std::ios::trunc);
     if (f) {
       f.write(next.data(), static_cast<std::streamsize>(next.size()));

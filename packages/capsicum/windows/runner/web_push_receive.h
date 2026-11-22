@@ -24,6 +24,10 @@ struct PushDisplay {
   std::string type;             // 通知種別（type→ラベル変換は表示側の責務）
   std::string notification_id;  // SNS 側通知 ID（dedup 用）
   std::string user_id;          // chat の遷移先 fromUser.id（chat 以外は空）
+  // エンベロープの encoding（観測用・#1403）。暗号化経路で、復号より前に載る
+  // （失敗パスでも観測に出せるように）。英数字・`-`・`_` の 32 文字までに限り、
+  // それ以外は "invalid"（観測 JSON を壊さないため）。暗号化経路以外は空。
+  std::string encoding;
 };
 
 // 復号できた通知の見出しに、宛先のアカウントを添える (#1412・#1407 の Windows 分)。
