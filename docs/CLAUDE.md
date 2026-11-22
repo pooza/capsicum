@@ -52,6 +52,7 @@ capsicum はサーバーが提供する API を検出し、利用可能な機能
 | タグ付け | `POST /mulukhiya/api/status/tags` |
 | ユーザー設定 | `GET/POST /mulukhiya/api/config` |
 | ハンドラー一覧 | `GET /mulukhiya/api/admin/handler/list` |
+| 利用者のハンドラーの切り替え（#1398） | `GET /mulukhiya/api/handler/list`, `POST /mulukhiya/api/handler/config` |
 | メディアカタログ | `GET /mulukhiya/api/media` |
 
 ## UI 設計方針 / 対応バージョン方針

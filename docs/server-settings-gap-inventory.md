@@ -168,6 +168,8 @@ capsicum はこのエンドポイントを呼んでいない。中身はハン�
 
 ⚠ **条件付きの結論。**「この投稿にはこのタグが付きます」というプレビューを作るなら、そのときは母数に入る。
 
+⚠ **v2.14 で前提が変わった**（[#1398](https://github.com/pooza/capsicum/issues/1398)）: モロヘイヤ 5.47 の利用者向けの `handler/list` / `handler/config` で、**自分の投稿についてハンドラーを切り替える画面**を作った。拾わないのは引き続きこの `/config`（とプレビュー）で、切り替えはあちらの口を使う。
+
 ### 5-4. 起票
 
 済み（[#1185](https://github.com/pooza/capsicum/issues/1185) / [#1079](https://github.com/pooza/capsicum/issues/1079)・どちらも閉じている）。記録は archive 側。
