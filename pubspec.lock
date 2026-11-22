@@ -762,10 +762,10 @@ packages:
     dependency: transitive
     description:
       name: image_picker_ios
-      sha256: f4e5650a81b268af3886bc789216ff6d56bdfa79934f93f1a5a8a303b8f60f77
+      sha256: a4aeafbe049ad99882059f186862de6fd5296c708c5805277f6f684165268af1
       url: "https://pub.dev"
     source: hosted
-    version: "0.8.13+15"
+    version: "0.8.13+16"
   image_picker_linux:
     dependency: transitive
     description:
@@ -1378,10 +1378,10 @@ packages:
     dependency: transitive
     description:
       name: sentry
-      sha256: "40a247686af64e497df29ab0de1303a20ca55a2e3c7c7e39b989fac47dcadf84"
+      sha256: "79b087ccc713bf7e6d44a4b3b081ee6f2c3e76045e1e2ae2b8c2ccee7ef21a96"
       url: "https://pub.dev"
     source: hosted
-    version: "9.30.1"
+    version: "9.30.2"
   sentry_dart_plugin:
     dependency: transitive
     description:
@@ -1394,10 +1394,10 @@ packages:
     dependency: transitive
     description:
       name: sentry_flutter
-      sha256: bdd8897b38ce31185c42ed910628059c4eccbc0b0641213e8d1c63e2fda3f5a3
+      sha256: b107275224b6fe258c26f3b51ed924d258de395fd4e7a62831afe41181e1495c
       url: "https://pub.dev"
     source: hosted
-    version: "9.30.1"
+    version: "9.30.2"
   share_plus:
     dependency: transitive
     description:
