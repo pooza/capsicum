@@ -17,6 +17,8 @@ import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 
+import 'support/dart_source.dart';
+
 class _Adapter extends Mock implements DecentralizedBackendAdapter {}
 
 AccountKey _key(String name) => AccountKey(
@@ -148,22 +150,58 @@ void main() {
     for (final path in nseFiles) {
       test('$path が同じキーを読み、同じ形で添える', () {
         final source = File(path).readAsStringSync();
-        expect(
-          source,
-          contains(
-            'static let key = "${NotificationLabelCache.multiAccountKey}"',
-          ),
-        );
-        expect(source, contains(r'return "\(title) (@\(account))"'));
-        // 書き換えの経路で実際に使っていること（定義だけで呼ばれていない、を落とす）。
-        expect(
-          RegExp(
-            r'title = NotificationService\.titleWithRecipient\(\s*\S+\.title, '
-            r'account: account, multiAccount: MultiAccountFlag\.read\(\)',
-          ).hasMatch(source),
-          isTrue,
-        );
+        expect(source, contains('MultiAccountFlag'), reason: '前提: 写しがある');
+        expect(nseRecipientViolation(source), isNull);
       });
     }
+
+    // ⚠ 判定は合成ソースでも確かめる（docs/CLAUDE.md「ソース検査ガードの書き方」）。
+    test('判定（合成ソース）', () {
+      final key =
+          'static let key = "${NotificationLabelCache.multiAccountKey}"';
+      const format = r'return "\(title) (@\(account))"';
+      const use =
+          'content.title = NotificationService.titleWithRecipient('
+          'payload.title, account: account, '
+          'multiAccount: MultiAccountFlag.read())';
+      expect(nseRecipientViolation('$key\n$format\n$use'), isNull);
+      expect(
+        nseRecipientViolation('static let key = "old"\n$format\n$use'),
+        isNotNull,
+        reason: 'キーが Dart とずれている',
+      );
+      expect(
+        nseRecipientViolation('$key\nreturn "\\(title) - \\(account)"\n$use'),
+        isNotNull,
+        reason: '形がずれている',
+      );
+      expect(
+        nseRecipientViolation('$key\n$format\n// $use'),
+        isNotNull,
+        reason: '定義だけで、書き換えの経路で使っていない',
+      );
+    });
   });
+}
+
+/// NSE（Swift）の写しが Dart とずれていれば、その理由。揃っていれば null。
+String? nseRecipientViolation(String source) {
+  // ⚠ Swift も `//` の行コメントなので、Dart 用の前処理がそのまま使える。
+  final masked = maskComments(source);
+  if (!masked.contains(
+    'static let key = "${NotificationLabelCache.multiAccountKey}"',
+  )) {
+    return 'キーが Dart とずれている';
+  }
+  if (!masked.contains(r'return "\(title) (@\(account))"')) {
+    return '見出しの形が Dart とずれている';
+  }
+  // 書き換えの経路で実際に使っていること（定義だけで呼ばれていない、を落とす）。
+  if (!RegExp(
+    r'title = NotificationService\.titleWithRecipient\(\s*\S+\.title, '
+    r'account: account, multiAccount: MultiAccountFlag\.read\(\)',
+  ).hasMatch(masked)) {
+    return '書き換えの経路で使っていない';
+  }
+  return null;
 }
