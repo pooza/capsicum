@@ -11,6 +11,10 @@ class GalleryPost {
   final bool isSensitive;
   final int likedCount;
 
+  /// 自分がいいねしているか (#1053)。Misskey は認証付きで引いたときだけ返す。
+  /// 分からなければ null（「いいねしていない」とは読まない）。
+  final bool? isLiked;
+
   const GalleryPost({
     required this.id,
     required this.title,
@@ -20,5 +24,6 @@ class GalleryPost {
     required this.createdAt,
     this.isSensitive = false,
     this.likedCount = 0,
+    this.isLiked,
   });
 }

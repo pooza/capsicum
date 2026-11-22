@@ -1,5 +1,5 @@
 name: capsicum_backends
-description: Mastodon and Misskey API implementations for capsicum
+description: Mastodon, Misskey and Akkoma API implementations for capsicum
 publish_to: none
 
 environment:

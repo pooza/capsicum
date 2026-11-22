@@ -78,6 +78,8 @@ class WnsService {
   /// reblog/post カスタムラベル（リノート / リキュア！等）をここで LocalState へ
   /// 渡す。[labelsJson] は `{ "user@host": "{\"reblog\":..,\"post\":..}" }` 形式
   /// （空 = ログイン中アカウント無し → ネイティブは push_labels.json を削除）。
+  /// 複数アカウントのときだけ予約キー `"_multi_account": "1"` も載り、native は
+  /// 復号できた通知の見出しに宛先を添える (#1412)。
   /// 鍵と違い欠落しても既定ラベルで表示は続くため、失敗はベストエフォートで
   /// 握り潰す。ネイティブは detached スレッドで処理して即 ack する。
   static Future<void> syncPushLabels(String labelsJson) async {

@@ -80,10 +80,26 @@ bool ReadPushKeysFromKeysetJson(const std::string& keyset_map_json,
 // `*post` を上書きするので、呼び出し側は既定ラベル（ブースト/投稿）を入れてから
 // 呼ぶこと。JSON 空・パース不能・account 不在・項目欠落・空文字列のときは何もしない
 // （既定ラベルのまま）。鍵と違い失敗しても通知表示自体は続くので戻り値は持たない。
+//
+// ⚠ 予約キー [kPushLabelsMultiAccountKey] はアカウントの項目ではないので、
+// `account` に何を渡しても読まない（#1412）。
 void ReadPushLabelsFromJson(const std::string& labels_json,
                             const std::string& account,
                             std::string* reblog,
                             std::string* post);
+
+// push_labels.json の予約キー (#1412)。複数のアカウントでログインしているときだけ
+// Dart が `"_multi_account": "1"` を載せる（判定は Dart の
+// `isMultiAccountForPush`）。アカウントのキーは `user@host` で `@` を含むので
+// ぶつからない。
+// ⚠ Dart の `AccountManagerNotifier._syncWindowsPushLabels`
+// （`_pushLabelsMultiAccountKey`）と対。片方だけ変えないこと。
+constexpr char kPushLabelsMultiAccountKey[] = "_multi_account";
+
+// push_labels.json に「複数アカウント」の写しがあるか (#1412)。値が "1" の
+// ときだけ true。JSON 空・パース不能・キー不在・それ以外の値は false（宛先を
+// 添えない＝従来どおり）。
+bool ReadPushMultiAccountFromJson(const std::string& labels_json);
 
 // 既定の保存先 `%APPDATA%\{CompanyName}\{ProductName}\flutter_secure_storage.dat`
 // を返す（path_provider の Windows 実装と同じ解決規則。CompanyName /

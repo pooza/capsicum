@@ -881,6 +881,15 @@ class MisskeyClient {
         .toList();
   }
 
+  /// POST /api/i/revoke-token (#1401)
+  ///
+  /// 自分のトークンを取り消す。MiAuth（サードパーティ）のトークンが取り消せるのは
+  /// 自分自身だけ（他を指すと `PERMISSION_DENIED`）。⚠ Misskey 2026.9.0 から
+  /// （misskey-dev/misskey#17903）。古いサーバーではエラーになる。
+  Future<void> revokeOwnToken(String token) async {
+    await dio.post('/api/i/revoke-token', data: {'i': token, 'token': token});
+  }
+
   /// POST /api/i/pin
   Future<void> pinNote(String noteId) async {
     await dio.post('/api/i/pin', data: createBody({'noteId': noteId}));
@@ -1467,6 +1476,39 @@ class MisskeyClient {
       }),
     );
     return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/gallery/posts (#1053)。新着の一覧（新しい順）。
+  Future<List<Map<String, dynamic>>> getRecentGalleryPosts({
+    String? sinceId,
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/gallery/posts',
+      data: createBody({
+        'sinceId': ?sinceId,
+        'untilId': ?untilId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/gallery/posts/like (#1053)
+  Future<void> likeGalleryPost(String postId) async {
+    await dio.post(
+      '/api/gallery/posts/like',
+      data: createBody({'postId': postId}),
+    );
+  }
+
+  /// POST /api/gallery/posts/unlike (#1053)
+  Future<void> unlikeGalleryPost(String postId) async {
+    await dio.post(
+      '/api/gallery/posts/unlike',
+      data: createBody({'postId': postId}),
+    );
   }
 
   /// POST /api/gallery/posts/show

@@ -272,6 +272,28 @@ int main() {
            "push_labels: 欠け/空項目は既定のまま");
   }
 
+  // 8) 複数アカウントの写し（予約キー "_multi_account"・#1412）。
+  {
+    const std::string inner = "{" + JsonStr("reblog") + ":" + JsonStr("RB") +
+                              "," + JsonStr("post") + ":" + JsonStr("PO") + "}";
+    const std::string multi =
+        OuterJson({{account, inner}, {"_multi_account", "1"}});
+    Expect(capsicum::ReadPushMultiAccountFromJson(multi),
+           "multi_account: \"1\" なら true");
+    Expect(!capsicum::ReadPushMultiAccountFromJson(OuterJson({{account, inner}})),
+           "multi_account: キーが無ければ false");
+    Expect(!capsicum::ReadPushMultiAccountFromJson(""),
+           "multi_account: 空JSONは false");
+    Expect(!capsicum::ReadPushMultiAccountFromJson(
+               OuterJson({{"_multi_account", "0"}})),
+           "multi_account: \"1\" 以外は false");
+    // 予約キーをアカウントの項目として読まない。
+    std::string rb = "def_rb", po = "def_po";
+    capsicum::ReadPushLabelsFromJson(multi, "_multi_account", &rb, &po);
+    Expect(rb == "def_rb" && po == "def_po",
+           "push_labels: 予約キーはアカウントのラベルとして読まない");
+  }
+
   if (g_failures == 0) {
     std::printf("ALL PASS\n");
     return 0;

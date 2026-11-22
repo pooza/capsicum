@@ -53,6 +53,16 @@ void main() {
     );
     keys.addAll(announcementKeys);
 
+    // プッシュ通知をオフにしたアカウント (#1408)。同じくサービス側に置いた。
+    final pushDisabled = File(
+      'lib/src/service/push_disabled_accounts.dart',
+    ).readAsStringSync();
+    final pushDisabledKeys = RegExp(
+      r"static const prefsKey = '([^']+)';",
+    ).allMatches(pushDisabled).map((m) => m.group(1)!).toSet();
+    expect(pushDisabledKeys, hasLength(1), reason: 'オフにした印のキーを拾えていること');
+    keys.addAll(pushDisabledKeys);
+
     final covered = {
       ...exportableSettings.map((s) => s.key),
       ...deviceLocalKeys,

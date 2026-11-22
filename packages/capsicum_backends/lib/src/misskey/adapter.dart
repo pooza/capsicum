@@ -182,7 +182,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         ChatSupport,
         WordMuteSupport,
         // プライバシーとつながりやすさ (#1375)。
-        PrivacySettingsSupport {
+        PrivacySettingsSupport,
+        // アカウントの削除でトークンを取り消す (#1401)。
+        TokenRevokeSupport {
   /// 本線 TL の購読。キーごとに 1 本ずつソケットを張る (#1089)。
   ///
   /// ⚠ 以前は単数で持っており、2 本目の購読が 1 本目を黙って止めていた（B-1）。
@@ -255,6 +257,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     'write:flash-likes',
     // 自分の Play の削除 (#1351)。旧トークンは 403 で、再ログインを案内する。
     'write:flash',
+    // ギャラリーのいいね / 取り消し (#1053)。旧トークンは 403 で、再ログインを
+    // 案内する（Play のいいねと同じ）。
+    'write:gallery-likes',
     'read:reactions',
     'write:reactions',
     'write:report-abuse',
@@ -277,6 +282,16 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   ) {
     client.setAccessToken(userSecret.accessToken);
   }
+
+  // TokenRevokeSupport (#1401)
+
+  /// アカウントを削除したときに、トークンを `/api/i/revoke-token` で取り消す。
+  /// ⚠ 2026.9.0 より前のサーバーではエラーになる（呼ぶ側はベストエフォート）。
+  @override
+  Future<void> revokeOwnToken(
+    UserSecret userSecret, {
+    ClientSecretData? clientSecret,
+  }) => client.revokeOwnToken(userSecret.accessToken);
 
   // PrivacySettingsSupport (#1375)
 
@@ -2080,6 +2095,8 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       ),
       isSensitive: g['isSensitive'] as bool? ?? false,
       likedCount: g['likedCount'] as int? ?? 0,
+      // ⚠ 認証付きで引いたときだけ返る (#1053)。無ければ null のまま。
+      isLiked: g['isLiked'] as bool?,
     );
   }
 
@@ -2092,6 +2109,25 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     );
     return data.map(_mapGalleryPost).toList();
   }
+
+  @override
+  Future<List<GalleryPost>> getRecentGalleryPosts({
+    TimelineQuery? query,
+  }) async {
+    final data = await client.getRecentGalleryPosts(
+      sinceId: query?.sinceId,
+      untilId: query?.maxId,
+      limit: query?.limit,
+    );
+    return data.map(_mapGalleryPost).toList();
+  }
+
+  @override
+  Future<void> likeGalleryPost(String postId) => client.likeGalleryPost(postId);
+
+  @override
+  Future<void> unlikeGalleryPost(String postId) =>
+      client.unlikeGalleryPost(postId);
 
   @override
   Future<List<GalleryPost>> getUserGalleryPosts(

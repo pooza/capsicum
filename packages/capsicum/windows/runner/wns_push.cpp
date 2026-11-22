@@ -419,7 +419,8 @@ void DisplayRawNotification(const std::string& content) {
     // 記録は次回起動時に runner が回収して Sentry へ上げる。
     capsicum::RecordPushDiagnostic(
         "wns.show_failed",
-        capsicum::PushDiagnosticHostFromAccount(display.account));
+        capsicum::PushDiagnosticHostFromAccount(display.account),
+        display.encoding);
   }
 }
 

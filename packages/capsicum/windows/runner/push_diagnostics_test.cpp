@@ -152,6 +152,32 @@ int main() {
           "wns.show_failed も正常系で上書きされない");
   }
 
+  // 9a) encoding を載せる (#1403)。aesgcm と aes128gcm の復号失敗を見分ける。
+  {
+    std::string a = BuildPushDiagnosticJson("", "bgtask.decrypt_failed",
+                                            "a.test", 10, "aesgcm");
+    PushDiagnostic d;
+    Check(ParsePushDiagnosticJson(a, &d) && d.encoding == "aesgcm" &&
+              d.host == "a.test",
+          "encoding を読み戻せる");
+
+    // 異常系を温存するときは、encoding も温存する（後続の encoding で上書きしない）。
+    std::string b =
+        BuildPushDiagnosticJson(a, "bgtask.shown", "b.test", 20, "aes128gcm");
+    PushDiagnostic e;
+    ParsePushDiagnosticJson(b, &e);
+    Check(e.code == "bgtask.decrypt_failed" && e.encoding == "aesgcm",
+          "温存した代表イベントの encoding を保つ");
+
+    // 代表が入れ替わるときは新しい encoding（無ければ載らない）。
+    std::string c = BuildPushDiagnosticJson(a, "bgtask.no_keys", "c.test", 30);
+    PushDiagnostic f;
+    ParsePushDiagnosticJson(c, &f);
+    Check(f.code == "bgtask.no_keys" && f.encoding.empty() &&
+              c.find("encoding") == std::string::npos,
+          "encoding が無ければ JSON に載せない");
+  }
+
   // 9b) お知らせ push の観測コード (#978)。表示成功は正常系（異常系を上書き
   //     しない）、表示失敗・本文欠落は異常系（後続の正常系に飲まれない）。
   {

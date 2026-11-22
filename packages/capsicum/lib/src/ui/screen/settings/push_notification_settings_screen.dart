@@ -8,6 +8,7 @@ import '../../../provider/entitlement_status_provider.dart';
 import '../../../provider/push_registration_status_provider.dart';
 import '../../../provider/supporter_purchase_provider.dart';
 import '../../../service/announcement_subscription_service.dart';
+import '../../../service/push_disabled_accounts.dart';
 import '../../../service/push_registration_service.dart';
 import '../../../service/push_registration_status.dart';
 import '../../widget/push_registration_status_section.dart';
@@ -364,6 +365,12 @@ class _AccountStatusTileState extends ConsumerState<_AccountStatusTile> {
                 )
               : null,
         ),
+        // アカウントごとのオン / オフ (#1408)。⚠ 登録の対象で、サーバーが対応して
+        // いるときだけ出す（対象外・非対応のアカウントに出しても効かない）。
+        if (PushRegistrationService.isPushBackendWired &&
+            eligible &&
+            state != PushRegistrationState.notSupported)
+          _PushEnabledToggle(account: account, eligible: hasPreset),
         switch (announcementRow) {
           AnnouncementRowKind.none => const SizedBox.shrink(),
           AnnouncementRowKind.toggle => _AnnouncementToggle(account: account),
@@ -378,6 +385,84 @@ class _AccountStatusTileState extends ConsumerState<_AccountStatusTile> {
     PushRegistrationService.registerAccount(
       account,
       eligible: widget.hasPreset,
+    );
+  }
+}
+
+/// このアカウントのプッシュ通知を受け取るか (#1408)。
+///
+/// ⚠ オフにしても relay の行は残す（[PushRegistrationService.setAccountEnabled]）。
+/// プリセットのアカウントをオフにしても、ほかのアカウントの無償の特例は外れない。
+class _PushEnabledToggle extends StatefulWidget {
+  const _PushEnabledToggle({required this.account, required this.eligible});
+
+  final Account account;
+
+  /// [PushRegistrationService.registerAccount] の `eligible`（プリセットを持つか）。
+  final bool eligible;
+
+  @override
+  State<_PushEnabledToggle> createState() => _PushEnabledToggleState();
+}
+
+class _PushEnabledToggleState extends State<_PushEnabledToggle> {
+  bool _busy = false;
+
+  Future<void> _toggle(bool enabled) async {
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _busy = true);
+    try {
+      await PushRegistrationService.setAccountEnabled(
+        widget.account,
+        enabled: enabled,
+        eligible: widget.eligible,
+      );
+    } catch (e) {
+      // ⚠ 失敗したら印は戻っている（スイッチは build で読み直す）。理由だけ知らせる。
+      debugPrint('capsicum: push.toggle failed: ${e.runtimeType}');
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            e is PushToggleFailedException
+                ? 'サーバーにつながらないため、オフにできませんでした。'
+                      'つながるときにもう一度お試しください'
+                : '切り替えに失敗しました',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = !PushDisabledAccounts.isDisabled(
+      widget.account.key.toStorageKey(),
+    );
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(56, 0, 16, 4),
+      child: Row(
+        children: [
+          const Expanded(
+            child: Text('プッシュ通知を受け取る', style: TextStyle(fontSize: 14)),
+          ),
+          if (_busy)
+            const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          else
+            Switch(
+              key: ValueKey(
+                'push-enabled-${widget.account.key.toStorageKey()}',
+              ),
+              value: enabled,
+              onChanged: _toggle,
+            ),
+        ],
+      ),
     );
   }
 }

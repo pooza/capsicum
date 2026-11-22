@@ -1,6 +1,7 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../provider/account_manager_provider.dart';
 import '../../../provider/preferences_provider.dart';
@@ -35,6 +36,7 @@ class AccountSettingsScreen extends ConsumerWidget {
           _BackgroundImageTile(ref: ref),
           _TabOrderTile(ref: ref),
           const _SpotifyLinkTile(),
+          const _MulukhiyaHandlersTile(),
         ],
       ),
     );
@@ -198,6 +200,31 @@ class _SpotifyLinkTileState extends ConsumerState<_SpotifyLinkTile> {
           : (linked
                 ? TextButton(onPressed: _unlink, child: const Text('連携解除'))
                 : FilledButton(onPressed: _link, child: const Text('連携する'))),
+    );
+  }
+}
+
+/// 投稿の自動処理（モロヘイヤのハンドラー）の切り替えへの入口 (#1398)。
+///
+/// ⚠ モロヘイヤが切り替える口を持つときだけ出す
+/// （`features.user_handler_config`・mulukhiya#4936）。Spotify 連携と同じく、
+/// そのアカウントの投稿に効くモロヘイヤの設定なので、ここに並べる。
+class _MulukhiyaHandlersTile extends ConsumerWidget {
+  const _MulukhiyaHandlersTile();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final mulukhiya = ref.watch(currentMulukhiyaProvider);
+    if (mulukhiya == null || !mulukhiya.userHandlerConfigEnabled) {
+      return const SizedBox.shrink();
+    }
+    return ListTile(
+      key: const ValueKey('account-settings-mulukhiya-handlers'),
+      leading: const Icon(Icons.auto_fix_high),
+      title: const Text('投稿の自動処理'),
+      subtitle: const Text('投稿にサーバーが自動で行う処理を、項目ごとにオン / オフします'),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => context.push('/mulukhiya/handlers'),
     );
   }
 }

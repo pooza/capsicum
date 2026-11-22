@@ -24,7 +24,21 @@ struct PushDisplay {
   std::string type;             // 通知種別（type→ラベル変換は表示側の責務）
   std::string notification_id;  // SNS 側通知 ID（dedup 用）
   std::string user_id;          // chat の遷移先 fromUser.id（chat 以外は空）
+  // エンベロープの encoding（観測用・#1403）。暗号化経路で、復号より前に載る
+  // （失敗パスでも観測に出せるように）。英数字・`-`・`_` の 32 文字までに限り、
+  // それ以外は "invalid"（観測 JSON を壊さないため）。暗号化経路以外は空。
+  std::string encoding;
 };
+
+// 復号できた通知の見出しに、宛先のアカウントを添える (#1412・#1407 の Windows 分)。
+// [push_labels_json] に複数アカウントの写し（[kPushLabelsMultiAccountKey]）が
+// あるときだけ `見出し (@user@host)` にし、無ければ [title] のまま返す。
+// [account] は relay の `username@host`（空なら添えない）。
+// ⚠ Dart の `titleWithRecipient`（notification_label_cache.dart）・NSE の
+// `NotificationService.titleWithRecipient` と同じ形にすること。
+std::string TitleWithRecipient(const std::string& title,
+                               const std::string& account,
+                               const std::string& push_labels_json);
 
 // relay が WNS raw として送る JSON エンベロープ `{body, encoding, server,
 // account}` を処理する。`body` は base64url（標準 base64 も許容）でエンコード

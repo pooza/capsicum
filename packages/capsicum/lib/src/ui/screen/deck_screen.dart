@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -78,6 +79,12 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
   final Map<AccountKey, Account> _containerAccounts = {};
 
   final _scrollController = ScrollController();
+
+  /// 画面のいちばん左に見えているカラムの位置（広い幅の帯・#1404）。
+  ///
+  /// ⚠ 帯だけを作り直すために分けて持つ（横に流すたびにデッキ全体を
+  /// 作り直さない）。
+  final _firstVisibleColumn = ValueNotifier<int>(0);
 
   /// 簡易投稿バーの打ちかけの控え。フォーカスが移ってバーが作り直されても、
   /// 移った先のバーへ引き継ぐ（[SimplePostBar.draft]・2026-10-22 pooza）。
@@ -203,6 +210,7 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
     // 最後に開いていた側を覚える (#1239)。開き直したとき、前回の側で始める。
     unawaited(writeLastViewMode(LastViewMode.deck));
     _scrollController.addListener(_syncFocusToVisibleColumn);
+    _scrollController.addListener(_syncFirstVisibleColumn);
     // デスクトップメニューへ、デッキだけが持っている操作を渡す (#1170)。
     // ⚠ フレームの後（provider の書き換えなので `_shiftMountedDecks` と同じ理由）。
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -260,7 +268,9 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
       });
     }
     _scrollController.removeListener(_syncFocusToVisibleColumn);
+    _scrollController.removeListener(_syncFirstVisibleColumn);
     _scrollController.dispose();
+    _firstVisibleColumn.dispose();
     for (final container in _containers.values) {
       ProviderScopeLeases.disposeWhenReleased(container);
     }
@@ -292,6 +302,28 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
       if (index < 0 || index >= columns.length) return;
       ref.read(deckFocusProvider.notifier).focus(columns[index].id);
     });
+  }
+
+  /// 横に流した位置から、いちばん左に見えているカラムを数え直す (#1404)。
+  ///
+  /// 数え方は [_reveal] と同じ（位置をカラム幅で割って丸める）。値が変わった
+  /// ときだけ帯が作り直される（[ValueNotifier] は同じ値では知らせない）。
+  void _syncFirstVisibleColumn() {
+    // ⚠ スクロールの通知はレイアウトの途中（幅が変わって位置を直したとき等）
+    // にも来る。そこで帯を作り直すと「ビルド中の markNeedsBuild」で落ちるので、
+    // そのフレームのあいだは次のフレームへ送る。
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _syncFirstVisibleColumn();
+      });
+      return;
+    }
+    final layout = _layout;
+    if (layout == null || !_scrollController.hasClients) return;
+    final first = (_scrollController.position.pixels / layout.columnWidth)
+        .round();
+    _firstVisibleColumn.value = first < 0 ? 0 : first;
   }
 
   /// カラムから開いた投稿・プロフィール等を、元のカラムの右隣に足す (#1148・
@@ -713,25 +745,50 @@ class _DeckScreenState extends ConsumerState<DeckScreen> {
     _disposeUnused(used);
 
     // 見たいカラムへ 1 回で飛べる帯 (#1241・2026-10-09 pooza)。
-    // ⚠⚠ **カラムが 1 本ずつしか見えない幅のときだけ出す。**広幅ではカラムが
-    // 並んで見えているので、縦を使ってまで出す理由が無い。⚠ 1 本しか無いなら
-    // 飛ぶ先も無い。
+    // ⚠⚠ **既定ではカラムが 1 本ずつしか見えない幅のときだけ出す。**広幅では
+    // カラムが並んで見えているので、縦を使ってまで出す理由が無い。⚠ 1 本しか
+    // 無いなら飛ぶ先も無い。
+    // 広い幅でも出す設定（#1404・既定 OFF）を有効にした人には、広幅でも出す。
+    // ⚠ 判定は端末の種類ではなく幅（タブレットを横に置いたときも同じに効く）。
     // ⚠ 幅は画面幅で見る（中身の `LayoutBuilder` と同じ値。デッキ画面は左右に
     // 何も置かないので一致する）。
-    final narrow =
-        computeDeckLayout(
-          availableWidth: MediaQuery.sizeOf(context).width,
-          columnCount: columns.length,
-          minColumnWidth: minColumnWidth,
-        ).visibleColumns ==
-        1;
-    final strip = narrow && columns.length > 1
-        ? DeckColumnStrip(
+    final stripLayout = computeDeckLayout(
+      availableWidth: MediaQuery.sizeOf(context).width,
+      columnCount: columns.length,
+      minColumnWidth: minColumnWidth,
+    );
+    final narrow = stripLayout.visibleColumns == 1;
+    final showStrip =
+        columns.length > 1 && (narrow || ref.watch(deckStripOnWideProvider));
+    final Widget? strip;
+    if (!showStrip) {
+      strip = null;
+    } else if (narrow) {
+      strip = DeckColumnStrip(
+        columns: columns,
+        focusedId: focusedId,
+        onSelected: _revealAndFocus,
+      );
+    } else {
+      // 広い幅では、画面に見えているカラムのコマを沈ませない (#1404)。
+      // 横に流すたびに帯だけを作り直す。
+      strip = ValueListenableBuilder<int>(
+        valueListenable: _firstVisibleColumn,
+        builder: (context, first, _) {
+          final start = first.clamp(0, columns.length - 1);
+          final end = (start + stripLayout.visibleColumns).clamp(
+            0,
+            columns.length,
+          );
+          return DeckColumnStrip(
             columns: columns,
             focusedId: focusedId,
             onSelected: _revealAndFocus,
-          )
-        : null;
+            visibleIds: {for (final c in columns.sublist(start, end)) c.id},
+          );
+        },
+      );
+    }
 
     // ⚠⚠ デスクトップでは引っ張って更新ができなかった (#1157)。マウスと
     // トラックパッドは既定の dragDevices に入っておらず、2 本指スクロールは

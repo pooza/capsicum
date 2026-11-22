@@ -71,6 +71,8 @@ class FlatParser {
         has_code = true;
       } else if (key == "host") {
         if (!ParseString(&out->host)) return false;
+      } else if (key == "encoding") {
+        if (!ParseString(&out->encoding)) return false;
       } else if (key == "at_ms") {
         if (!ParseNumber(&out->at_ms)) return false;
       } else if (key == "count") {
@@ -158,7 +160,8 @@ class FlatParser {
 
 std::string BuildPushDiagnosticJson(const std::string& prev_json,
                                     const std::string& code,
-                                    const std::string& host, int64_t at_ms) {
+                                    const std::string& host, int64_t at_ms,
+                                    const std::string& encoding) {
   int count = 1;
   PushDiagnostic prev;
   const bool has_prev = ParsePushDiagnosticJson(prev_json, &prev);
@@ -169,10 +172,12 @@ std::string BuildPushDiagnosticJson(const std::string& prev_json,
   // 飲まれて消えるのを防ぐ）。それ以外は最新イベントを代表にする。
   std::string rep_code = code;
   std::string rep_host = host;
+  std::string rep_encoding = encoding;
   int64_t rep_at_ms = at_ms;
   if (has_prev && IsBenignCode(code) && !IsBenignCode(prev.code)) {
     rep_code = prev.code;
     rep_host = prev.host;
+    rep_encoding = prev.encoding;
     rep_at_ms = prev.at_ms;
   }
   std::string o = "{";
@@ -181,6 +186,9 @@ std::string BuildPushDiagnosticJson(const std::string& prev_json,
   o += ",\"count\":" + std::to_string(count);
   if (!rep_host.empty()) {
     o += ",\"host\":" + JsonQuote(rep_host);
+  }
+  if (!rep_encoding.empty()) {
+    o += ",\"encoding\":" + JsonQuote(rep_encoding);
   }
   o += "}";
   return o;

@@ -2,6 +2,7 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dbus/dbus.dart';
 
 import 'now_playing_provider.dart';
+import 'spotify_track_url.dart';
 
 /// Linux の MPRIS（`org.mpris.MediaPlayer2.*`, D-Bus セッションバス）から
 /// 「現在再生中の曲」を取得する [NowPlayingProvider] 実装 (#466)。
@@ -159,37 +160,19 @@ NowPlayingInfo? nowPlayingFromMprisMetadata(
 ///
 /// ⚠ 曲以外（広告 `/com/spotify/ad/…`・ポッドキャスト・ローカルファイル
 /// `spotify:local:…`）は null。引き直す先が無い。
+///
+/// ID の形と URL の組み方は `spotify_track_url.dart` に集めてある (#1403)。
 Uri? spotifyTrackUrlFromMpris(Map<String, Object?> metadata) {
   final url = metadata['xesam:url'];
   if (url is String) {
-    final uri = Uri.tryParse(url.trim());
-    if (uri != null &&
-        uri.scheme == 'https' &&
-        uri.host == 'open.spotify.com' &&
-        uri.pathSegments.length == 2 &&
-        uri.pathSegments.first == 'track' &&
-        _spotifyId.hasMatch(uri.pathSegments.last)) {
-      return Uri.https('open.spotify.com', '/track/${uri.pathSegments.last}');
-    }
+    final fromUrl = spotifyTrackUrlFromWebUrl(url);
+    if (fromUrl != null) return fromUrl;
   }
   final trackId = metadata['mpris:trackid'];
   // `o`（オブジェクトパス）は toNative で String になるが、念のため両方受ける。
   final raw = trackId is DBusObjectPath ? trackId.value : trackId;
-  if (raw is String) {
-    final match = _spotifyTrackId.firstMatch(raw.trim());
-    if (match != null) {
-      return Uri.https('open.spotify.com', '/track/${match.group(1)}');
-    }
-  }
-  return null;
+  return raw is String ? spotifyTrackUrlFromRef(raw) : null;
 }
-
-/// Spotify の曲 ID（base62・22 文字）。
-final _spotifyId = RegExp(r'^[0-9A-Za-z]{22}$');
-
-final _spotifyTrackId = RegExp(
-  r'^(?:/com/spotify/track/|spotify:track:)([0-9A-Za-z]{22})$',
-);
 
 String? _trimmedString(Object? value) {
   if (value is! String) return null;

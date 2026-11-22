@@ -23,6 +23,7 @@ export 'src/model/flash.dart';
 export 'src/model/gallery_post.dart';
 export 'src/model/hashtag_spec.dart';
 export 'src/model/instance.dart';
+export 'src/model/mulukhiya_user_handler.dart';
 export 'src/model/notification.dart';
 export 'src/model/notification_query.dart';
 export 'src/model/notification_response.dart';
@@ -93,6 +94,7 @@ export 'src/social/interfaces/search_support.dart';
 export 'src/social/interfaces/stream_support.dart';
 export 'src/social/interfaces/thread_mute_support.dart';
 export 'src/social/interfaces/timeline_cache_support.dart';
+export 'src/social/interfaces/token_revoke_support.dart';
 export 'src/social/interfaces/translation_support.dart';
 export 'src/social/interfaces/word_mute_support.dart';
 // Utilities

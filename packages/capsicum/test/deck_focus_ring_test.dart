@@ -25,13 +25,26 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// アカウントで投稿していた（#1328 の取り違え）。
 class _Adapter extends Mock implements DecentralizedBackendAdapter {}
 
+class _Capabilities extends Mock implements AdapterCapabilities {}
+
+/// 帯のコマのツールチップ（カラムの見出しと同じラベル・#1404）が種別の判定に読む。
+_Adapter _adapter() {
+  final capabilities = _Capabilities();
+  when(
+    () => capabilities.supportedTimelines,
+  ).thenReturn({TimelineType.home, TimelineType.local, TimelineType.social});
+  final adapter = _Adapter();
+  when(() => adapter.capabilities).thenReturn(capabilities);
+  return adapter;
+}
+
 Account _account(String username) => Account(
   key: AccountKey(
     type: BackendType.misskey,
     host: 'misskey.example',
     username: username,
   ),
-  adapter: _Adapter(),
+  adapter: _adapter(),
   user: User(id: username, username: username),
   userSecret: const UserSecret(accessToken: 'token'),
 );

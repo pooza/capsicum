@@ -42,6 +42,46 @@ void main() {
     expect(SecretServiceProbe.accountAttribute, '$id.secureStorage');
   });
 
+  group('ロックの判定（SearchItems の件数から）', () {
+    Future<bool> decide(int unlocked, int locked, bool? defaultLocked) {
+      var asked = false;
+      return SecretServiceProbe.decideLocked(
+        unlocked: unlocked,
+        locked: locked,
+        defaultLocked: () async {
+          asked = true;
+          return defaultLocked;
+        },
+      ).then((v) {
+        // 項目があるときは既定のキーリングを聞かない（余分な往復を増やさない）。
+        if (unlocked > 0 || locked > 0) expect(asked, isFalse);
+        return v;
+      });
+    }
+
+    test('解除済みが 1 件でもあれば false', () async {
+      expect(await decide(1, 1, true), isFalse);
+    });
+
+    test('ロック中だけなら true', () async {
+      expect(await decide(0, 1, false), isTrue);
+    });
+
+    // #1415: プラグインは読むたびに既定のキーリングへ書くので、項目が無くても
+    // 既定がロックされていれば解除の画面が出る。
+    test('⚠⚠ 0 件で既定のキーリングがロックされていれば true (#1415)', () async {
+      expect(await decide(0, 0, true), isTrue);
+    });
+
+    test('0 件で既定のキーリングが解除済みなら false', () async {
+      expect(await decide(0, 0, false), isFalse);
+    });
+
+    test('0 件で既定のキーリングが無ければ false', () async {
+      expect(await decide(0, 0, null), isFalse);
+    });
+  });
+
   group('Secret Service を使わない OS', () {
     test('確かめずに true を返す（相手が居ない）', () async {
       debugSecretServiceOverride = false;

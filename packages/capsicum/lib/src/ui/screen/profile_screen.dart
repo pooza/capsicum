@@ -76,15 +76,22 @@ enum FollowButtonState {
   follow('フォロー', Icons.person_add),
 
   /// 承認待ち。押すとリクエストを取り下げる。
-  requested('リクエスト中', Icons.hourglass_top),
+  ///
+  /// ⚠ ラベルは状態（Misskey の Web の「フォロー許可待ち」と同じ）で、押したら
+  /// 何が起きるかを言っていないので、tooltip で添える (#1403・2026-11-22 pooza)。
+  /// 「フォロー解除」と同じく確認は挟まない（取り下げても申請し直せる）。
+  requested('リクエスト中', Icons.hourglass_top, tooltip: '押すとフォローリクエストを取り消します'),
 
   /// フォロー中。押すとフォローを解除する。
   unfollow('フォロー解除', Icons.person_remove);
 
-  const FollowButtonState(this.label, this.icon);
+  const FollowButtonState(this.label, this.icon, {this.tooltip});
 
   final String label;
   final IconData icon;
+
+  /// ラベルだけでは押したときの動きが分からない状態に添える説明。
+  final String? tooltip;
 }
 
 /// [rel] からボタンの状態を決める。⚠ フォロー中を先に見る（両方立つことは
@@ -1554,34 +1561,39 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     final adapter = ref.read(currentAdapterProvider)! as FollowSupport;
     final boostLabel = ref.read(reblogLabelProvider);
     final messenger = ScaffoldMessenger.of(context);
+    final followState = followButtonStateOf(rel);
+    final followButton = FilledButton.icon(
+      key: const ValueKey('profile-follow-button'),
+      onPressed: _relationshipLoading
+          ? null
+          : () => _performAction(
+              () => switch (followButtonStateOf(rel)) {
+                FollowButtonState.unfollow => adapter.unfollowUser(
+                  widget.user.id,
+                ),
+                FollowButtonState.requested => adapter.cancelFollowRequest(
+                  widget.user.id,
+                ),
+                FollowButtonState.follow => adapter.followUser(widget.user.id),
+              },
+            ),
+      icon: Icon(followState.icon),
+      label: Text(followState.label),
+      style: followState != FollowButtonState.follow
+          ? FilledButton.styleFrom(
+              backgroundColor: Theme.of(
+                context,
+              ).colorScheme.surfaceContainerHighest,
+              foregroundColor: Theme.of(context).colorScheme.onSurface,
+            )
+          : null,
+    );
+    final followTooltip = followState.tooltip;
     return [
-      FilledButton.icon(
-        onPressed: _relationshipLoading
-            ? null
-            : () => _performAction(
-                () => switch (followButtonStateOf(rel)) {
-                  FollowButtonState.unfollow => adapter.unfollowUser(
-                    widget.user.id,
-                  ),
-                  FollowButtonState.requested => adapter.cancelFollowRequest(
-                    widget.user.id,
-                  ),
-                  FollowButtonState.follow => adapter.followUser(
-                    widget.user.id,
-                  ),
-                },
-              ),
-        icon: Icon(followButtonStateOf(rel).icon),
-        label: Text(followButtonStateOf(rel).label),
-        style: followButtonStateOf(rel) != FollowButtonState.follow
-            ? FilledButton.styleFrom(
-                backgroundColor: Theme.of(
-                  context,
-                ).colorScheme.surfaceContainerHighest,
-                foregroundColor: Theme.of(context).colorScheme.onSurface,
-              )
-            : null,
-      ),
+      if (followTooltip != null)
+        Tooltip(message: followTooltip, child: followButton)
+      else
+        followButton,
       PopupMenuButton<String>(
         onSelected: (value) async {
           // 表示中の TL のハンドルを await の前に取る (#887)。ハッシュタグ / リスト

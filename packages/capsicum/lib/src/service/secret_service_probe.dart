@@ -153,8 +153,9 @@ class SecretServiceProbe {
   ///
   /// - 解除済みが 1 件でもあれば false（読める）
   /// - 解除済みが 0 件で、ロック中が 1 件以上なら true
-  /// - ⚠ **どちらも 0 件なら false。**項目がまだ無い（初回）か、消えている。
-  ///   読んでも解除の画面は出ないので止める理由が無い
+  /// - ⚠ **どちらも 0 件なら、既定のキーリングの `Locked` を返す（#1415）。**
+  ///   項目が無くても、プラグインは読むたびに既定のキーリングへ書くので、
+  ///   既定がロックされていれば解除の画面が出る（[decideLocked]）
   /// - ⚠ **確かめられなかったら false。**ここで止めると、確かめる手段が
   ///   壊れているだけで自動の再試行が永久に止まる。従来どおり読みに行く
   ///
@@ -206,7 +207,11 @@ class SecretServiceProbe {
           .timeout(_probeTimeout);
       final unlocked = (reply.values[0] as DBusArray).children;
       final locked = (reply.values[1] as DBusArray).children;
-      return unlocked.isEmpty && locked.isNotEmpty;
+      return await decideLocked(
+        unlocked: unlocked.length,
+        locked: locked.length,
+        defaultLocked: () => _defaultCollectionLocked(client, service),
+      );
     } catch (e) {
       debugLogException('capsicum: secret service lock check could not run', e);
       return false;
@@ -214,6 +219,50 @@ class SecretServiceProbe {
       final client = opened;
       if (client != null) unawaited(client.close().catchError((_) {}));
     }
+  }
+
+  /// `SearchItems` の件数から「ロックされているか」を決める (#1386 / #1415)。
+  ///
+  /// ⚠⚠ **0 件のときは既定のキーリングを見る（#1415）。**以前は「項目が無い
+  /// なら読んでも解除の画面は出ない」として false を返していたが、
+  /// `flutter_secure_storage_linux` は読むたびに `warmupKeyring()` で**既定の
+  /// キーリングへ書く**ので、既定がロックされていれば解除の画面が出る。
+  /// 2026-11-22 に inori の隔離したキーリングで、60 秒ごとに出続けたのを踏んだ。
+  ///
+  /// [defaultLocked] が null を返したら（既定が無い・確かめられない）false。
+  @visibleForTesting
+  static Future<bool> decideLocked({
+    required int unlocked,
+    required int locked,
+    required Future<bool?> Function() defaultLocked,
+  }) async {
+    if (unlocked > 0) return false;
+    if (locked > 0) return true;
+    return await defaultLocked() ?? false;
+  }
+
+  /// 既定のキーリング（`ReadAlias("default")`）の `Locked`。どちらも解除の画面は
+  /// 出さない。既定が無ければ（`/`）null。
+  static Future<bool?> _defaultCollectionLocked(
+    DBusClient client,
+    DBusRemoteObject service,
+  ) async {
+    final alias = await service
+        .callMethod('org.freedesktop.Secret.Service', 'ReadAlias', [
+          const DBusString('default'),
+        ], replySignature: DBusSignature('o'))
+        .timeout(_probeTimeout);
+    final path = alias.values[0] as DBusObjectPath;
+    if (path.value == '/') return null;
+    final collection = DBusRemoteObject(client, name: _busName, path: path);
+    final value = await collection
+        .getProperty(
+          'org.freedesktop.Secret.Collection',
+          'Locked',
+          signature: DBusSignature('b'),
+        )
+        .timeout(_probeTimeout);
+    return (value as DBusBoolean).value;
   }
 
   static Future<bool> _ping() async {

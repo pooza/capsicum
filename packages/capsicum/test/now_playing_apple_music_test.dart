@@ -319,14 +319,23 @@ void main() {
     });
 
     test('spotifyShareUrl は曲の URI だけを通す', () {
+      const id = '4djHqqL4yQbXxDfPjMBWku';
       expect(
-        spotifyShareUrl('spotify:track:abc123'),
-        Uri.parse('https://open.spotify.com/track/abc123'),
+        spotifyShareUrl('spotify:track:$id'),
+        Uri.parse('https://open.spotify.com/track/$id'),
       );
-      expect(spotifyShareUrl('spotify:episode:abc123'), isNull);
+      expect(spotifyShareUrl('spotify:episode:$id'), isNull);
       expect(spotifyShareUrl('spotify:track:abc/../x'), isNull);
-      expect(spotifyShareUrl('https://open.spotify.com/track/abc'), isNull);
+      expect(spotifyShareUrl('https://open.spotify.com/track/$id'), isNull);
+      // MPRIS のオブジェクトパスの形は、ミュージック / Spotify の経路では受けない。
+      expect(spotifyShareUrl('/com/spotify/track/$id'), isNull);
       expect(spotifyShareUrl(null), isNull);
+    });
+
+    test('⚠ 曲 ID の形は MPRIS と同じ（22 文字・#1403）', () {
+      // 以前はここだけ `[A-Za-z0-9]+` で、MPRIS（22 文字固定）とずれていた。
+      expect(spotifyShareUrl('spotify:track:abc123'), isNull);
+      expect(spotifyShareUrl('spotify:track:${'a' * 23}'), isNull);
     });
 
     group('プロバイダ', () {

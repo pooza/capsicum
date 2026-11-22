@@ -643,6 +643,7 @@ Future<void> _flushWnsPushDiagnostics() async {
     final count = decoded['count'];
     final countStr = count is int ? count.toString() : '?';
     final host = decoded['host'];
+    final encoding = decoded['encoding'];
     final atMs = decoded['at_ms'];
 
     // 正常系（表示成功・dedup による抑止・暗号化通知でない・raw 以外で起動）は
@@ -665,6 +666,12 @@ Future<void> _flushWnsPushDiagnostics() async {
           scope.fingerprint = ['push.wns_bgtask', code];
           if (host is String && host.isNotEmpty) {
             scope.setTag('push.host', host);
+          }
+          // 暗号化経路でだけ載る (#1403)。aesgcm のヘッダ欠けと aes128gcm の
+          // 鍵不一致はどちらも bgtask.decrypt_failed なので、iOS / macOS の
+          // NSE（_flushPushFailureRecord）と同じタグ名で見分ける。
+          if (encoding is String && encoding.isNotEmpty) {
+            scope.setTag('push.encoding', encoding);
           }
           // count は基数が際限なく増えるため tag にしない（検索・集計を汚す）。
           // メッセージ本文と push context に載せて観測する。
@@ -1266,6 +1273,16 @@ String _resolveReblogLabelForAccount(String accountString) =>
 String _resolvePostLabelForAccount(String accountString) =>
     postLabelFor(_lookupAccount(accountString));
 
+/// 複数のアカウントでログインしているか (#1407)。フォアグラウンドではコンテナから
+/// 直に読む。コンテナが未確立なら、バックグラウンドと同じく写しを読む。
+FutureOr<bool> _resolveMultiAccountForPush() {
+  final context = rootNavigatorKey.currentContext;
+  if (context == null) return NotificationLabelCache.readMultiAccount();
+  return isMultiAccountForPush(
+    ProviderScope.containerOf(context).read(accountManagerProvider),
+  );
+}
+
 /// Riverpod コンテナから accountManagerProvider を読んで該当アカウントを返す。
 /// コンテナが未確立（ごく初期）の場合は null。
 Account? _lookupAccount(String accountString) {
@@ -1328,6 +1345,7 @@ Future<void> _firebaseBackgroundMessageHandler(RemoteMessage message) async {
       message,
       reblogLabelResolver: NotificationLabelCache.readReblog,
       postLabelResolver: NotificationLabelCache.readPost,
+      multiAccountResolver: NotificationLabelCache.readMultiAccount,
     );
   } catch (e, st) {
     // Sentry はバックグラウンド isolate では init されていないため、
@@ -1398,6 +1416,7 @@ Future<void> _initFirebase() async {
           message,
           reblogLabelResolver: _resolveReblogLabelForAccount,
           postLabelResolver: _resolvePostLabelForAccount,
+          multiAccountResolver: _resolveMultiAccountForPush,
         ),
       );
     });

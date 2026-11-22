@@ -264,6 +264,29 @@ int main() {
                                   &err);
     CheckErr(ok, err, "decryption failed",
              "aesgcm は復号へ進む（ヘッダが無ければ復号の失敗）");
+    // 復号の失敗でも encoding が観測に載る (#1403)。aes128gcm の鍵不一致（4）と
+    // 同じ "decryption failed" になるので、これが無いと見分けられない。
+    CheckEq(d.encoding, "aesgcm", "aesgcm の復号失敗で encoding が観測に載る");
+  }
+
+  // 8c) aes128gcm の復号失敗にも encoding が載る（8b との対・#1403）。
+  {
+    std::string tampered = kBody;
+    tampered[tampered.size() - 1] = (tampered.back() == 'A') ? 'B' : 'A';
+    PushDisplay d;
+    std::string err;
+    HandleWnsRawPayload(Envelope(kAccount, "aes128gcm", tampered), dat, &d,
+                        &err);
+    CheckEq(d.encoding, "aes128gcm",
+            "aes128gcm の復号失敗で encoding が観測に載る");
+  }
+
+  // 8d) 観測 JSON を壊しうる encoding は "invalid" に丸める (#1403)。
+  {
+    PushDisplay d;
+    std::string err;
+    HandleWnsRawPayload(Envelope(kAccount, "x\"y", kBody), dat, &d, &err);
+    CheckEq(d.encoding, "invalid", "記号を含む encoding は invalid に丸める");
   }
 
   // ---- 無暗号化のお知らせ push (#978) ----
@@ -446,6 +469,30 @@ int main() {
         "{" + JsonStr("degraded") + ":" + JsonStr("1") + "}", &d, &err);
     CheckErr(ok, err, "missing account", "degrade でも account は必須");
   }
+
+  // ---- 見出しに宛先を添える (#1412・#1407 の Windows 分) ----
+  // push_labels.json の予約キー "_multi_account" を Dart が載せたときだけ添える。
+  using capsicum::TitleWithRecipient;
+  const std::string labels_single =
+      "{" + JsonStr(kAccount) + ":" +
+      JsonStr("{\"reblog\":\"RB\",\"post\":\"PO\"}") + "}";
+  const std::string labels_multi =
+      "{" + JsonStr(kAccount) + ":" +
+      JsonStr("{\"reblog\":\"RB\",\"post\":\"PO\"}") + "," +
+      JsonStr("_multi_account") + ":" + JsonStr("1") + "}";
+
+  // 22) 1 アカウント（写しはあるが予約キーが無い）なら添えない。
+  CheckEq(TitleWithRecipient("Title", kAccount, labels_single), "Title",
+          "1 アカウントなら見出しに宛先を添えない");
+
+  // 23) 複数アカウントなら `見出し (@user@host)`。
+  CheckEq(TitleWithRecipient("Title", kAccount, labels_multi),
+          "Title (@" + std::string(kAccount) + ")",
+          "複数アカウントなら見出しに宛先を添える");
+
+  // 24) 写しが無い（push_labels.json 不在 = 空）なら添えない（従来どおり）。
+  CheckEq(TitleWithRecipient("Title", kAccount, ""), "Title",
+          "写しが無ければ見出しに宛先を添えない");
 
   _wremove(dat.c_str());
 

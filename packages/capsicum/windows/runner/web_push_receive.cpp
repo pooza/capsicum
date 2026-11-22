@@ -112,6 +112,20 @@ std::string MapGet(const std::map<std::string, std::string>& m,
   return it == m.end() ? std::string() : it->second;
 }
 
+// エンベロープの encoding を観測に載せられる形にする (#1403)。値はサーバー /
+// relay 由来なので、英数字・`-`・`_` の 32 文字までに限る（観測 JSON の
+// JsonQuote は " と \ しか逃がさない）。外れたら "invalid"、空は空のまま。
+std::string SanitizeEncodingForDiagnostic(const std::string& encoding) {
+  if (encoding.empty()) return std::string();
+  if (encoding.size() > 32) return "invalid";
+  for (char c : encoding) {
+    const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                    (c >= '0' && c <= '9') || c == '-' || c == '_';
+    if (!ok) return "invalid";
+  }
+  return encoding;
+}
+
 }  // namespace
 
 namespace {
@@ -145,6 +159,12 @@ bool HandleWnsRawPayloadImpl(const std::string& raw_payload,
     out->account = account;
   }
   const std::string encoding = MapGet(envelope, "encoding");
+  // encoding も account と同じく復号より前に載せる。aesgcm のヘッダ欠けと
+  // aes128gcm の鍵不一致がどちらも "decryption failed" になるのを、観測で
+  // 見分けるため (#1403)。
+  if (out != nullptr) {
+    out->encoding = SanitizeEncodingForDiagnostic(encoding);
+  }
   const std::string body_b64 = MapGet(envelope, "body");
   // announcement push 等は body / encoding を持たない。暗号化通知だけここで扱い、
   // それ以外は呼び出し側に委ねる。
@@ -209,8 +229,11 @@ bool HandleWnsRawPayloadImpl(const std::string& raw_payload,
   std::string reblog_label = kDefaultReblogLabel;
   std::string post_label = kDefaultPostLabel;
   ReadPushLabelsFromJson(push_labels_json, account, &reblog_label, &post_label);
-  out->title =
-      ResolveDisplayTitle(parsed.type, parsed.title, reblog_label, post_label);
+  // 複数アカウントなら宛先を添える (#1412)。復号できなかったときの文面は
+  // もともと宛先を含むので、ここ（復号できた経路）だけで足す。
+  out->title = TitleWithRecipient(
+      ResolveDisplayTitle(parsed.type, parsed.title, reblog_label, post_label),
+      account, push_labels_json);
   out->body = parsed.body;
   out->type = parsed.type;
   out->notification_id = parsed.notification_id;
@@ -219,6 +242,15 @@ bool HandleWnsRawPayloadImpl(const std::string& raw_payload,
 }
 
 }  // namespace
+
+std::string TitleWithRecipient(const std::string& title,
+                               const std::string& account,
+                               const std::string& push_labels_json) {
+  if (account.empty() || !ReadPushMultiAccountFromJson(push_labels_json)) {
+    return title;
+  }
+  return title + " (@" + account + ")";
+}
 
 bool HandleWnsRawPayload(const std::string& raw_payload,
                          const std::wstring& dat_file_path, PushDisplay* out,

@@ -19,7 +19,9 @@ namespace capsicum {
 // [host]（サーバードメインのみ。不明なら空文字列）を単一スロットへ 1 件マージ
 // して書き込む。失敗（LocalFolder 解決不可・I/O エラー・例外）は黙殺する
 // ——観測機構が通知本体を巻き込まないため。プロセス内の同時記録は直列化する。
-void RecordPushDiagnostic(const std::string& code, const std::string& host);
+// [encoding] はエンベロープの encoding（暗号化経路だけ・不明なら空・#1403）。
+void RecordPushDiagnostic(const std::string& code, const std::string& host,
+                          const std::string& encoding = std::string());
 
 }  // namespace capsicum
 

@@ -19,6 +19,7 @@ import '../service/annict_draft_store.dart';
 import '../service/background_notification_service.dart';
 import '../service/compose_draft_store.dart';
 import '../service/notification_label_cache.dart';
+import '../service/push_disabled_accounts.dart';
 import '../service/push_registration_service.dart';
 import '../service/secret_service_probe.dart';
 import '../service/secure_storage_health.dart';
@@ -151,10 +152,55 @@ List<Account> withAccountAtFront(List<Account> accounts, Account newcomer) => [
   ...accounts.where((a) => a.key != newcomer.key),
 ];
 
+/// プッシュの宛先を見出しに添えるべき「複数アカウント」か (#1407)。
+///
+/// ⚠ **オフライン保持中のアカウントも数える。**まだ復元できていなくても
+/// relay の購読は生きていて、プッシュは届く。同じキーは 1 つに数える。
+bool isMultiAccountForPush(AccountManagerState state) {
+  final keys = <AccountKey>{
+    for (final a in state.accounts) a.key,
+    for (final o in state.offlineAccounts) o.key,
+  };
+  return keys.length > 1;
+}
+
 class AccountManagerNotifier extends Notifier<AccountManagerState> {
   @override
   AccountManagerState build() {
     ref.onDispose(() => _disposed = true);
+    // 複数アカウントかどうかを、バックグラウンドのプッシュ表示へ写す (#1407)。
+    // ⚠ 一覧を書き換える箇所は 10 か所を超えるので、1 か所ずつ足さずここで受ける。
+    // 起動時の復元は 1 件ずつ埋まるので、値が変わったときだけ書く。
+    listenSelf((previous, next) {
+      final multi = isMultiAccountForPush(next);
+      if (previous != null && isMultiAccountForPush(previous) == multi) return;
+      unawaited(
+        NotificationLabelCache.saveMultiAccount(multi).catchError((Object e) {
+          // 写しが書けなくても、見出しに宛先が付かないだけ（従来どおり）。
+          // ⚠ 例外の中身は出さない（exception_scrub_guard・型だけ）。
+          debugPrint(
+            'capsicum: notif multi_account save failed: ${e.runtimeType}',
+          );
+        }),
+      );
+      // Windows の native 受信は shared_preferences を読めないので、
+      // push_labels.json にも写す (#1412)。アカウントの増減の各所でも書き直して
+      // いるが、オフライン保持の出入りなど値だけが変わる場合もここで拾う。
+      // ⚠ 初回（previous == null）は書かない: 起動直後の空の状態で書くと
+      // push_labels.json が消え、復元が済むまで bg task が既定ラベルに倒れる。
+      // 復元の完了時にも同期しているので、初回の値はそちらで載る。
+      if (previous != null) {
+        unawaited(
+          _syncWindowsPushLabels().catchError((Object e) {
+            // ⚠ 例外の中身は出さない（exception_scrub_guard・型だけ）。
+            debugPrint(
+              'capsicum: push labels multi_account sync failed: '
+              '${e.runtimeType}',
+            );
+          }),
+        );
+      }
+    });
     return const AccountManagerState();
   }
 
@@ -393,8 +439,21 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
   }
 
   Future<void> logout(Account account) async {
-    // プッシュ通知登録解除（ベストエフォート）。
-    PushRegistrationService.unregisterAccount(account);
+    // プッシュ通知登録解除（ベストエフォート）。終わったらトークンを取り消す
+    // (#1401)。⚠ 順番は「解除 → 取り消し」。解除は同じトークンで叩くので、
+    // 先に取り消すと 401 で落ちる。⚠ 削除そのものは待たない（今どおり）。
+    // ⚠⚠ **取り消す直前に、同じアカウントが入り直していないかを見る**（リリース
+    // 前レビュー・2026-11-22）。Mastodon は同じアプリ・同じ利用者・同じスコープ
+    // なら同じトークンを返す（Doorkeeper の `reuse_access_token`）。解除が遅い回
+    // に消してすぐ入れ直すと、遅れて走る取り消しが入れ直したほうを無効にする。
+    unawaited(
+      PushRegistrationService.unregisterAccount(account).whenComplete(
+        () => revokeTokenOnLogout(
+          account,
+          readded: () => _isSignedIn(account.key),
+        ),
+      ),
+    );
     await NotificationLabelCache.remove(_notificationLabelKey(account.key));
 
     final storage = ref.read(accountStorageProvider);
@@ -408,6 +467,9 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     await ComposeDraftStore.clearForAccount(account.key.toStorageKey());
     // Annict の感想・記録の下書きも同じ理由で捨てる (#1382)。
     await AnnictDraftStore.clearForAccount(account.key.toStorageKey());
+    // プッシュ通知をオフにした印も捨てる (#1408)。残すと、入り直したときに
+    // 何も知らせないままオフで始まる。
+    await PushDisabledAccounts.forget(account.key.toStorageKey());
 
     final remaining = state.accounts
         .where((a) => a.key != account.key)
@@ -426,6 +488,46 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     );
     // 残ったアカウントのラベルで push_labels.json を更新（削除分を落とす、#770）。
     await _syncWindowsPushLabels();
+  }
+
+  /// [key] のアカウントがいま登録されているか（接続中・未接続のどちらでも）。
+  ///
+  /// ⚠ 削除の後始末から遅れて呼ぶので、読めなければ「いない」とみなす。
+  bool _isSignedIn(AccountKey key) {
+    try {
+      return state.accounts.any((a) => a.key == key) ||
+          state.offlineAccounts.any((o) => o.key == key);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// アカウントの削除で、サーバー側のトークンを取り消す (#1401)。
+  ///
+  /// 取り消さないと、サーバーの「連携アプリ」に capsicum の承認が残り続け、
+  /// ログインし直すたびに溜まっていく。
+  ///
+  /// ⚠ **失敗しても何もしない**（オフライン・サーバー停止・既に失効・取り消しの口が
+  /// 無い古い Misskey）。端末側の削除はもう終わっているので、止める理由が無い。
+  /// ⚠ 例外の中身はログに出さない（型だけ・exception_scrub_guard）。
+  ///
+  /// [readded] が true を返したら（同じアカウントが入り直している）取り消さない。
+  @visibleForTesting
+  static Future<void> revokeTokenOnLogout(
+    Account account, {
+    bool Function()? readded,
+  }) async {
+    final adapter = account.adapter;
+    if (adapter is! TokenRevokeSupport) return;
+    if (readded?.call() ?? false) return;
+    try {
+      await (adapter as TokenRevokeSupport).revokeOwnToken(
+        account.userSecret,
+        clientSecret: account.clientSecret,
+      );
+    } catch (e) {
+      debugPrint('capsicum: logout: token revoke failed: ${e.runtimeType}');
+    }
   }
 
   /// Re-detect mulukhiya on the current account's server and update state.
@@ -669,8 +771,20 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
         'post': labels.post,
       });
     }
+    // 複数アカウントなら、native が見出しに宛先を添えられるよう予約キーを
+    // 載せる (#1412)。判定は [isMultiAccountForPush]（オフライン保持中も数える）。
+    // false のときは載せない（キー不在＝添えない）。
+    if (isMultiAccountForPush(state)) {
+      map[_pushLabelsMultiAccountKey] = '1';
+    }
     await WnsService.syncPushLabels(jsonEncode(map));
   }
+
+  /// push_labels.json の予約キー (#1412)。アカウントのキーは `user@host` で
+  /// `@` を含むのでぶつからない。
+  /// ⚠ C++ の `kPushLabelsMultiAccountKey`（web_push_key_reader.h）と対。
+  /// 片方だけ変えないこと。
+  static const _pushLabelsMultiAccountKey = '_multi_account';
 
   /// Detect software version via NodeInfo on the given host.
   Future<String?> _detectSoftwareVersion(String host) async {
@@ -1485,6 +1599,8 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     await ComposeDraftStore.clearForAccount(key.toStorageKey());
     // Annict の感想・記録の下書きも同じ理由で捨てる (#1382)。
     await AnnictDraftStore.clearForAccount(key.toStorageKey());
+    // プッシュ通知をオフにした印も捨てる (#1408・[logout] と同じ)。
+    await PushDisabledAccounts.forget(key.toStorageKey());
     _removeOffline(key);
     await _syncWindowsPushLabels();
   }

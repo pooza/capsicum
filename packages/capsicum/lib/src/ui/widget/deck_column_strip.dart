@@ -1,9 +1,14 @@
+import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../model/deck_column.dart';
+import '../../provider/account_manager_provider.dart';
+import '../../provider/list_provider.dart';
 import '../../provider/server_config_provider.dart';
+import '../util/deck_close_unlocked.dart';
 import '../util/deck_tabs.dart';
+import 'home_menu.dart' show deckColumnMenuLabel;
 
 /// 帯の高さ。
 const double kDeckColumnStripHeight = 48;
@@ -25,13 +30,24 @@ const double kDeckColumnStripItemWidth = 52;
 /// ⚠ **色だけで区別しない。**同じサーバーの別アカウントは同じ色になるので、
 /// 並び順と印が位置を、ツールチップがアカウントを伝える。
 ///
-/// ⚠ 出すかどうか（狭幅のときだけ）は呼ぶ側が決める。
+/// ⚠ ツールチップは**カラムの見出しと同じ「タブ名 · 表示名」**（#1404・
+/// 2026-11-22 pooza）。以前は「カラム N（@user@host）」で、どのカラムかが
+/// アイコンからしか分からなかった。
+///
+/// ⚠⚠ **ラベルはメニューバーの「表示 > カラム」と同じく、ルートのスコープで
+/// 組む**（[deckColumnMenuLabel]・リリース前レビュー 2026-11-22）。コマごとに
+/// アカウントのスコープを作ると、リストのカラムのコマごとに一覧を取りに行く。
+/// 別アカウントのリスト名が引けず id になる割り切りもメニューバーと同じ。
+///
+/// ⚠ 出すかどうか（狭幅のとき、または広い幅でも出す設定のとき・#1404）は
+/// 呼ぶ側が決める。
 class DeckColumnStrip extends ConsumerStatefulWidget {
   const DeckColumnStrip({
     super.key,
     required this.columns,
     required this.focusedId,
     required this.onSelected,
+    this.visibleIds,
   });
 
   final List<DeckColumn> columns;
@@ -41,6 +57,14 @@ class DeckColumnStrip extends ConsumerStatefulWidget {
 
   /// コマを押した。引数は [DeckColumn.id]。
   final void Function(String id) onSelected;
+
+  /// 画面に見えているカラムの [DeckColumn.id]（広い幅のときだけ・#1404）。
+  ///
+  /// 渡されたら、見えているカラムのコマは沈ませない（帯を見れば、どこまでが
+  /// 画面に入っているかが分かる）。⚠ 下線（いま見ているカラムの印）は
+  /// フォーカス中のカラムにだけ付ける。null（狭い幅）なら、見えているのは
+  /// フォーカス中の 1 本だけなので、それ以外を沈める。
+  final Set<String>? visibleIds;
 
   @override
   ConsumerState<DeckColumnStrip> createState() => _DeckColumnStripState();
@@ -96,82 +120,132 @@ class _DeckColumnStripState extends ConsumerState<DeckColumnStrip> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final hostColors = ref.watch(hostThemeColorProvider);
+    final canCloseUnlocked = canCloseUnlockedDeckColumns(ref);
     return Material(
       color: theme.colorScheme.surfaceContainer,
       child: SizedBox(
         height: kDeckColumnStripHeight,
-        child: ListView.builder(
-          controller: _scrollController,
-          scrollDirection: Axis.horizontal,
-          itemExtent: kDeckColumnStripItemWidth,
-          itemCount: widget.columns.length,
-          itemBuilder: (context, index) {
-            final column = widget.columns[index];
-            final focused = column.id == widget.focusedId;
-            // ⚠ アカウントをまたぐカラムには、特定のアカウントの色を付けない
-            // (#1259)。
-            final spansAccounts = column.tab.spansAccounts;
-            final background = spansAccounts
-                ? theme.colorScheme.surfaceContainerHighest
-                : resolveHostColor(hostColors, column.account.host);
-            final foreground = spansAccounts
-                ? theme.colorScheme.onSurface
-                : foregroundOnHostColor(background);
-            final account = column.account;
-            return Tooltip(
-              message: spansAccounts
-                  ? 'カラム ${index + 1}（すべてのアカウント）'
-                  : 'カラム ${index + 1}（${account.handle}）',
-              child: Semantics(
-                selected: focused,
-                button: true,
-                child: InkWell(
-                  onTap: () => widget.onSelected(column.id),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(4, 6, 4, 3),
-                    child: Column(
-                      children: [
-                        Expanded(
-                          child: Opacity(
-                            // いま見ているカラム以外は少し沈める。
-                            opacity: focused ? 1 : 0.55,
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                color: background,
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Center(
-                                child: Icon(
-                                  deckTabIcon(column.tab),
-                                  size: 20,
-                                  color: foreground,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 3),
-                        // いま見ているカラムの印。⚠ 色の濃淡だけにしない
-                        // （サーバーの色しだいで見分けが付かなくなる）。
-                        Container(
-                          height: 3,
-                          width: 24,
-                          decoration: BoxDecoration(
-                            color: focused
-                                ? theme.colorScheme.primary
-                                : Colors.transparent,
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            );
-          },
+        child: Row(
+          children: [
+            // ⚠ コマの列は Expanded に入れる。右端のボタンのぶん幅が縮むが、
+            // [_revealFocused] は ListView の実際の幅（viewportDimension）で
+            // 寄せる位置を計算するので、そのまま正しく扱える (#1405)。
+            Expanded(child: _buildItems(theme, hostColors)),
+            // 右端に固定する (#1405・2026-11-19 pooza)。コマと一緒に流すと、
+            // カラムが多い（＝閉じたい）ときほど見えなくなる。#1307 は確認も
+            // 「元に戻す」も挟まないので、区切り線と余白でコマから離す。
+            const VerticalDivider(width: 1, indent: 10, endIndent: 10),
+            const SizedBox(width: 4),
+            _CloseUnlockedButton(enabled: canCloseUnlocked),
+            const SizedBox(width: 4),
+          ],
         ),
       ),
     );
   }
+
+  Widget _buildItems(ThemeData theme, Map<String, Color> hostColors) {
+    final accountState = ref.watch(accountManagerProvider);
+    // ⚠ リストのカラムが無ければ一覧を取りに行かない。
+    final lists = widget.columns.any((c) => c.tab is ListTab)
+        ? ref.watch(listsProvider).valueOrNull ?? const <PostList>[]
+        : const <PostList>[];
+    return ListView.builder(
+      controller: _scrollController,
+      scrollDirection: Axis.horizontal,
+      itemExtent: kDeckColumnStripItemWidth,
+      itemCount: widget.columns.length,
+      itemBuilder: (context, index) {
+        final column = widget.columns[index];
+        final focused = column.id == widget.focusedId;
+        // ⚠ アカウントをまたぐカラムには、特定のアカウントの色を付けない
+        // (#1259)。
+        final spansAccounts = column.tab.spansAccounts;
+        final background = spansAccounts
+            ? theme.colorScheme.surfaceContainerHighest
+            : resolveHostColor(hostColors, column.account.host);
+        final foreground = spansAccounts
+            ? theme.colorScheme.onSurface
+            : foregroundOnHostColor(background);
+        // ⚠ 見出しと同じく、そのカラムのアカウントのスコープでラベルを引く
+        // （リスト名・チャンネル名・呼称の設定がアカウントごとに違う）。
+        return Tooltip(
+          message: deckColumnMenuLabel(ref, column, accountState, lists),
+          child: Semantics(
+            selected: focused,
+            button: true,
+            child: InkWell(
+              onTap: () => widget.onSelected(column.id),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(4, 6, 4, 3),
+                child: Column(
+                  children: [
+                    Expanded(
+                      child: Opacity(
+                        // 画面に見えていないカラムは少し沈める（#1404）。
+                        opacity:
+                            focused ||
+                                (widget.visibleIds?.contains(column.id) ??
+                                    false)
+                            ? 1
+                            : 0.55,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: background,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Center(
+                            child: Icon(
+                              deckTabIcon(column.tab),
+                              size: 20,
+                              color: foreground,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    // いま見ているカラムの印。⚠ 色の濃淡だけにしない
+                    // （サーバーの色しだいで見分けが付かなくなる）。
+                    Container(
+                      height: 3,
+                      width: 24,
+                      decoration: BoxDecoration(
+                        color: focused
+                            ? theme.colorScheme.primary
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// 帯の右端の「ロックしていないカラムを閉じる」(#1405)。
+///
+/// 押したときの動き（閉じる対象・閉じたあとのフォーカス）は、カラム編集の
+/// シートやメニューバーと同じ [closeUnlockedDeckColumns] に任せる。⚠ **押せない
+/// ときは隠さず、押せなくする**（#1307 の規則）。名前はシートの項目名と揃える。
+class _CloseUnlockedButton extends ConsumerWidget {
+  const _CloseUnlockedButton({required this.enabled});
+
+  final bool enabled;
+
+  static const label = 'ロックしていないカラムを閉じる';
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => IconButton(
+    key: const ValueKey('deck-strip-close-unlocked'),
+    icon: const Icon(Icons.close_fullscreen),
+    // 押せないときは、シートの項目と同じ理由を添える。
+    tooltip: enabled ? label : '$label（ロックしたカラムがあると使えます）',
+    onPressed: enabled ? () => closeUnlockedDeckColumns(ref) : null,
+  );
 }

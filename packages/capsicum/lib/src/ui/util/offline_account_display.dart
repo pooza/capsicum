@@ -24,7 +24,9 @@ String reconnectRouteFor(AccountKey key) =>
     Uri(path: '/server', queryParameters: {'host': key.host}).toString();
 
 /// オフラインホーム (#792) の見出しと本文。
-typedef OfflineHomeCopy = ({String title, String heading, String body});
+///
+/// [body] が null なら本文を出さない（言うことが赤い枠にすべてある・#1403）。
+typedef OfflineHomeCopy = ({String title, String heading, String? body});
 
 /// オフラインホームの見出しと本文を、オフラインになった理由で出し分ける。
 ///
@@ -41,6 +43,13 @@ typedef OfflineHomeCopy = ({String title, String heading, String body});
 ///
 /// ⚠ 原因と次の一手の詳しい説明は、下に出る赤い枠（`_SecretServiceNotice`）が
 /// 持つ。ここで同じ文を繰り返さない。
+///
+/// ⚠⚠ **見出しも繰り返さない (#1403)。**以前はキーリングが原因のとき、
+/// `title`・`heading`・赤い枠の見出しの 3 か所が同じ文字列だった。役割を分ける:
+/// - `title`（AppBar）: 原因
+/// - `heading`: 次の一手（全件が未接続のときの「接続し直してください」と同じ形）
+/// - `body`: 赤い枠に無いことだけ。無ければ null
+/// - 赤い枠: 原因がキーリングのときは見出しの行を出さない（`title` と重なる）
 OfflineHomeCopy offlineHomeCopy({
   required bool allNeedLogin,
   required bool anyRetrying,
@@ -62,32 +71,35 @@ OfflineHomeCopy offlineHomeCopy({
   if (keyringUnavailable && keyringLocked) {
     return (
       title: 'キーリングがロックされています',
-      heading: 'キーリングがロックされています',
       // ⚠ 自動の再試行はロックされたキーリングを読まない (#1386)。
       // 「自動で戻ります」と書くと、解除するまで待たせることになる。
-      body: 'アカウントは保持しています。キーリングを解除すると、タイムラインへ戻ります。',
+      heading: 'キーリングを解除してください',
+      // アカウントが残っていること・解除すれば戻ること・「今すぐ再試行」で
+      // 解除の画面を出せることは、赤い枠がすべて言う (#1403)。
+      body: null,
     );
   }
   if (keyringUnavailable) {
     return (
       title: 'ログイン情報を読み出せません',
-      heading: anyRetrying ? '読み出し中…' : 'ログイン情報を読み出せません',
-      body:
-          'アカウントは保持したまま、ログイン情報の読み出しを自動で再試行'
-          'します。読み出せれば、タイムラインへ戻ります。',
+      heading: anyRetrying ? '読み出し中…' : '自動で再試行します',
+      // 「アカウント情報は消えていません」は赤い枠が言う (#1403)。
+      body: 'ログイン情報を読み出せれば、タイムラインへ戻ります。',
     );
   }
   return (
     title: '接続できません',
-    heading: anyRetrying ? '接続中…' : '接続できません',
+    // ⚠ AppBar と同じ「接続できません」にしない（#1403 と同じ重なり）。
+    // ⚠ **「自動で再試行」は #938 で実装と一致した。**再び上限を入れるなら
+    // ここも戻すこと。
+    heading: anyRetrying ? '接続中…' : '自動で再試行します',
     // 原因を「サーバー側」と断定しない (#917)。この画面は機内モード等で
     // 端末がオフラインなときにも出る（到達不能の理由はここでは区別できない）。
-    // ⚠ **「自動で再試行を続ける」は #938 で実装と一致した。**再び上限を
-    // 入れるならここも戻すこと。
+    // 「自動で再試行」は見出しが言うので、本文では繰り返さない。
     body:
         '端末がオフラインか、ログイン中のサーバーが停止 / 再構築中の'
-        '可能性があります。アカウントは保持したまま自動で再試行を'
-        '続けるので、接続が回復すればタイムラインへ戻ります。',
+        '可能性があります。アカウントは保持しているので、接続が回復すれば'
+        'タイムラインへ戻ります。',
   );
 }
 

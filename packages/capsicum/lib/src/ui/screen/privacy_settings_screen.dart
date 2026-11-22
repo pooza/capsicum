@@ -318,10 +318,15 @@ List<Widget> privacySettingsTiles(
 }
 
 /// フォロー・フォロワーの一覧の公開範囲の表示名。
+///
+/// ⚠ Misskey の Web（日本語・`_ffVisibility`）とそろえる（#1403・2026-11-22
+/// pooza）。Web と行き来しても同じ設定だと分かるように。⚠ 投稿の公開範囲の
+/// 表記（「フォロワー」・`post_scope_display.dart`）とは別の画面・別の設定なので、
+/// こちらだけ直す。
 String followListVisibilityLabel(FollowListVisibility v) => switch (v) {
   FollowListVisibility.public => '公開',
-  FollowListVisibility.followers => 'フォロワーのみ',
-  FollowListVisibility.private => '自分のみ',
+  FollowListVisibility.followers => 'フォロワーだけに公開',
+  FollowListVisibility.private => '非公開',
 };
 
 class _Header extends StatelessWidget {
