@@ -1757,14 +1757,18 @@ class _OfflineHomeScaffold extends ConsumerWidget {
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
-                const SizedBox(height: 8),
-                Text(copy.body, textAlign: TextAlign.center),
+                if (copy.body case final body?) ...[
+                  const SizedBox(height: 8),
+                  Text(body, textAlign: TextAlign.center),
+                ],
                 // ⚠⚠ **キーリングが死んでいると、ここまでの文言は全部嘘になる**
                 // (#1085)。secure storage が応答しないとログイン情報を読めず、
                 // 到達不能と区別がつかないまま「サーバーが停止中かも」「自動で
                 // 再試行します」と言うことになる。**待っても直らない**ので、
                 // 原因と次の一手を名指しする。
-                const _SecretServiceNotice(),
+                // ⚠ 原因がキーリングと分かっているときは、枠の見出しが AppBar と
+                // 同じ文字列になるので出さない (#1403)。
+                _SecretServiceNotice(showHeading: !keyringCause),
                 const SizedBox(height: 24),
                 for (final o in offline)
                   Card(
@@ -1873,7 +1877,14 @@ class _OfflineHomeScaffold extends ConsumerWidget {
 /// [SecureStorageHealth] は `ref` を持たない storage 層から立てる旗なので、
 /// riverpod ではなく `ValueListenableBuilder` で見る。
 class _SecretServiceNotice extends StatelessWidget {
-  const _SecretServiceNotice();
+  const _SecretServiceNotice({required this.showHeading});
+
+  /// 枠の見出しの行（鍵のアイコンと原因）を出すか (#1403)。
+  ///
+  /// 原因がキーリングと分かっているときは、AppBar と上の大きな鍵のアイコンが
+  /// 同じことを言っているので出さない。全件が未接続のときは AppBar が
+  /// 「未接続のアカウント」なので出す。
+  final bool showHeading;
 
   @override
   Widget build(BuildContext context) {
@@ -1898,23 +1909,25 @@ class _SecretServiceNotice extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.key_off_outlined,
-                        color: scheme.onErrorContainer,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          locked ? 'キーリングがロックされています' : 'ログイン情報を読み出せません',
-                          style: Theme.of(context).textTheme.titleSmall
-                              ?.copyWith(color: scheme.onErrorContainer),
+                  if (showHeading) ...[
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.key_off_outlined,
+                          color: scheme.onErrorContainer,
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            locked ? 'キーリングがロックされています' : 'ログイン情報を読み出せません',
+                            style: Theme.of(context).textTheme.titleSmall
+                                ?.copyWith(color: scheme.onErrorContainer),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                  ],
                   if (locked)
                     Text(
                       'この端末のパスワード保管庫（キーリング）がロックされて'

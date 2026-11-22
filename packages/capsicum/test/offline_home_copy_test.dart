@@ -21,7 +21,7 @@ void main() {
 
   /// オフライン / サーバーを疑わせる言い方が混じっていないか。
   void expectNoNetworkBlame(OfflineHomeCopy c) {
-    for (final text in [c.title, c.heading, c.body]) {
+    for (final text in [c.title, c.heading, ?c.body]) {
       expect(text, isNot(contains('オフライン')), reason: text);
       expect(text, isNot(contains('サーバー')), reason: text);
       expect(text, isNot(contains('接続')), reason: text);
@@ -40,7 +40,8 @@ void main() {
       final c = copy(keyringUnavailable: true);
       expectNoNetworkBlame(c);
       expect(c.title, contains('ログイン情報を読み出せません'));
-      expect(c.body, contains('自動で再試行'));
+      expect(c.heading, contains('自動で再試行'));
+      expect(c.body, contains('タイムラインへ戻ります'));
       expectNoNetworkBlame(copy(keyringUnavailable: true, anyRetrying: true));
     });
 
@@ -48,8 +49,25 @@ void main() {
       final c = copy(keyringUnavailable: true, keyringLocked: true);
       expectNoNetworkBlame(c);
       expect(c.title, contains('ロック'));
-      expect(c.body, contains('解除すると'));
-      expect(c.body, isNot(contains('自動')));
+      expect(c.heading, contains('解除'));
+      expect(c.heading, isNot(contains('自動')));
+      // 戻し方は赤い枠が言う（#1403・本文で繰り返さない）。
+      expect(c.body, isNull);
+    });
+
+    test('⚠⚠ 見出しは AppBar と同じ文字列にしない (#1403)', () {
+      // 赤い枠の見出しは、キーリングが原因のとき出さない（home_screen 側）。
+      // ここでは AppBar（title）と見出し（heading）が重ならないことを見る。
+      for (final retrying in [false, true]) {
+        for (final c in [
+          copy(keyringUnavailable: true, anyRetrying: retrying),
+          copy(keyringUnavailable: true, keyringLocked: true),
+          copy(allNeedLogin: true),
+        ]) {
+          expect(c.heading, isNot(c.title), reason: c.title);
+          expect(c.body, isNot(c.heading), reason: c.title);
+        }
+      }
     });
 
     test('⚠ ロックの旗だけ残っていても、読めているならキーリングのせいにしない', () {
