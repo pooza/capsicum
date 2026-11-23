@@ -47,6 +47,54 @@ void main() {
       expect(scrubException(e).toString(), contains('/api/v1/timelines/home'));
     });
 
+    group('⚠ 絶対 URL の authority から、利用者が打ったものを落とす (#1424)', () {
+      String scrubPath(String path) => scrubException(
+        DioException(
+          requestOptions: RequestOptions(path: path),
+          type: DioExceptionType.unknown,
+        ),
+      ).toString();
+
+      test('半角のメールアドレスは @ より前を落とす', () {
+        final scrubbed = scrubPath(
+          'https://someone+test@example.com/api/v1/instance',
+        );
+        expect(scrubbed, isNot(contains('someone')));
+        expect(scrubbed, contains('https://example.com/api/v1/instance'));
+      });
+
+      test('全角のまま打たれたメールアドレスは <invalid> にする（CAPSICUM-7C の形）', () {
+        final scrubbed = scrubPath(
+          'https://ｓｏｍｅおね＋てｓｔ＠ｅｘあｍｐｌｅ．ｃｏｍ/api/v1/instance',
+        );
+        expect(scrubbed, isNot(contains('ｓｏｍｅ')));
+        expect(scrubbed, isNot(contains('ｅｘ')));
+        expect(scrubbed, contains('https://<invalid>/api/v1/instance'));
+      });
+
+      test('普通のホスト・IDN・ポート付きはそのまま残す', () {
+        expect(
+          scrubPath('https://mstdn.b-shock.org/api/v1/instance'),
+          contains('https://mstdn.b-shock.org/api/v1/instance'),
+        );
+        expect(
+          scrubPath('https://日本語.jp/nodeinfo/2.0'),
+          contains('https://日本語.jp/nodeinfo/2.0'),
+        );
+        expect(
+          scrubPath('https://example.com:8443/api/meta'),
+          contains('https://example.com:8443/api/meta'),
+        );
+      });
+
+      test('相対パスには当たらない（@ を含んでも）', () {
+        expect(
+          scrubPath('/api/v1/accounts/lookup/@someone'),
+          contains('/api/v1/accounts/lookup/@someone'),
+        );
+      });
+    });
+
     test('URL の機密クエリ値をマスクする', () {
       final e = StateError(
         'WebSocketException: wss://example.com/streaming?i=SECRET_TOKEN',
