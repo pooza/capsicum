@@ -538,6 +538,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   }
 
   Future<void> _loadRelationship() async {
+    // ⚠ 操作の await 中に画面を閉じると、ここへは dispose 後に来る（#1423）。
+    // `_isOwnProfile` も `ref` を読むので、その前に降りる。`_performAction` の
+    // catch から呼ぶ 2 回目は try の外なので、投げると fatal になる。
+    if (!mounted) return;
     if (_isOwnProfile) return;
     final adapter = ref.read(currentAdapterProvider);
     if (adapter == null || adapter is! FollowSupport) return;
