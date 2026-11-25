@@ -15,6 +15,7 @@ import '../../provider/is_cat_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/supporter_status_provider.dart';
+import '../../service/info_bot_follow_keeper.dart';
 import '../../service/server_version_checker.dart';
 import '../../service/tco_resolver.dart';
 import '../../url_helper.dart';
@@ -555,6 +556,19 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     }
   }
 
+  /// 開いているのが、自分のサーバーのお知らせボットか (#1402)。
+  bool get _isOwnInfoBot {
+    final host = ref.read(currentAccountProvider)?.key.host;
+    if (host == null) return false;
+    return InfoBotFollowKeeper.isOwnInfoBot(
+      user: widget.user,
+      infoBotAcct: ref.read(currentMulukhiyaProvider)?.infoBotAcct,
+      localHost: host,
+    );
+  }
+
+  static const _infoBotLockReason = 'お知らせボットのフォローは外せません';
+
   Future<bool> _performAction(Future<void> Function() action) async {
     if (_relationshipLoading) return false;
     setState(() => _relationshipLoading = true);
@@ -564,9 +578,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       return true;
     } catch (e) {
       if (mounted) {
+        // サーバーが解除・ブロックを拒んだ (#1402) ならその理由を出す。
+        final refusal = InfoBotFollowKeeper.refusalMessage(e);
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('操作に失敗しました')));
+        ).showSnackBar(SnackBar(content: Text(refusal ?? '操作に失敗しました')));
       }
       debugLogException('User action error', e);
       // ⚠ 失敗したときも関係を取り直す（v2.13 のリリース前レビュー）。開いている
@@ -1566,9 +1582,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     final boostLabel = ref.read(reblogLabelProvider);
     final messenger = ScaffoldMessenger.of(context);
     final followState = followButtonStateOf(rel);
+    // 自分のサーバーのお知らせボットは、フォローを外させない・ブロックさせない
+    // (#1402)。⚠ フォローしていないときは「フォロー」を押せるようにする。
+    final isInfoBot = _isOwnInfoBot;
+    final lockFollow = isInfoBot && followState == FollowButtonState.unfollow;
     final followButton = FilledButton.icon(
       key: const ValueKey('profile-follow-button'),
-      onPressed: _relationshipLoading
+      onPressed: _relationshipLoading || lockFollow
           ? null
           : () => _performAction(
               () => switch (followButtonStateOf(rel)) {
@@ -1581,8 +1601,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                 FollowButtonState.follow => adapter.followUser(widget.user.id),
               },
             ),
-      icon: Icon(followState.icon),
-      label: Text(followState.label),
+      icon: Icon(lockFollow ? Icons.lock_outline : followState.icon),
+      label: Text(lockFollow ? 'フォロー中' : followState.label),
       style: followState != FollowButtonState.follow
           ? FilledButton.styleFrom(
               backgroundColor: Theme.of(
@@ -1592,10 +1612,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             )
           : null,
     );
-    final followTooltip = followState.tooltip;
+    final followTooltip = lockFollow ? _infoBotLockReason : followState.tooltip;
     return [
       if (followTooltip != null)
-        Tooltip(message: followTooltip, child: followButton)
+        Tooltip(
+          message: followTooltip,
+          // ⚠ 押せないボタン (#1402) は、軽く押しただけで理由を出す。長押しの
+          // ままだと、スマホでは押せない理由に辿り着けない。
+          triggerMode: lockFollow ? TooltipTriggerMode.tap : null,
+          child: followButton,
+        )
       else
         followButton,
       PopupMenuButton<String>(
@@ -1733,7 +1759,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             ),
           if (rel.blocking)
             const PopupMenuItem(value: 'unblock', child: Text('ブロック解除'))
-          else
+          // お知らせボットはブロックさせない (#1402)。ブロックするとフォローが
+          // 外れる。⚠ すでにブロックしているなら解除は出す（上の分岐）。
+          else if (!isInfoBot)
             const PopupMenuItem(value: 'block', child: Text('ブロック')),
           // 通報はミュート / ブロックと同じ「相手への対処」なので隣に置く。
           // 投稿の長押しメニューにしか無く、プロフィールから辿れなかった (#998)。

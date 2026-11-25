@@ -18,6 +18,7 @@ import '../service/account_storage.dart';
 import '../service/annict_draft_store.dart';
 import '../service/background_notification_service.dart';
 import '../service/compose_draft_store.dart';
+import '../service/info_bot_follow_keeper.dart';
 import '../service/notification_label_cache.dart';
 import '../service/push_disabled_accounts.dart';
 import '../service/push_registration_service.dart';
@@ -347,6 +348,10 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
       account.key.host,
       preferMisskey: account.adapter is ReactionSupport,
     );
+
+    // ログインしたときに、外れていたお知らせボットのフォローを戻す (#1402)。
+    // ⚠ 待たない（ログインを遅らせない）。
+    unawaited(InfoBotFollowKeeper.ensureFor(enriched));
 
     // 通知ラベル（ブースト/投稿）を FCM バックグラウンド isolate 用に焼く。
     // registerAccount より先に完了させる: 登録直後に届く最初のプッシュが
@@ -1161,7 +1166,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     }
     final softwareVersion = await softwareVersionFuture;
 
-    return Account(
+    final account = Account(
       key: accountKey,
       adapter: adapter,
       user: user,
@@ -1170,6 +1175,10 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
       mulukhiya: mulukhiya,
       softwareVersion: softwareVersion,
     );
+    // 起動したときに、外れていたお知らせボットのフォローを戻す (#1402)。
+    // ⚠ 待たない（復元を遅らせない・失敗しても復元は続ける）。
+    unawaited(InfoBotFollowKeeper.ensureFor(account));
+    return account;
   }
 
   /// 1 アカウントを probe して、成功したら state へ追加する。
