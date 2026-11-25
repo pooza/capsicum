@@ -10,6 +10,7 @@ import '../ui/util/notification_type_display.dart';
 import '../util/chat_attachment_label.dart';
 import '../util/exception_scrub.dart';
 import '../util/sentry_tag_hash.dart';
+import 'mastodon_push_refetch.dart';
 import 'notification_init.dart';
 import 'notification_label_cache.dart';
 import 'push_failure_recorder.dart';
@@ -90,6 +91,12 @@ class PushMessageDispatcher {
 
     final decrypted = await _tryDecrypt(account, data);
     if (decrypted != null) {
+      // 出した通知の id を控える (#1426)。古い鍵の 1 通を引き直したときに、
+      // 復号できて出した通知と二重にならないように。
+      final notificationId = decrypted.notificationId;
+      if (notificationId != null) {
+        await MastodonPushRefetch.noteShown(notificationId, account);
+      }
       // 用語統一: Mastodon サーバー生成 title の「返信」等は UI と表記揺れ
       // するので、notification_type から capsicum 規定のラベルを作る。
       // type が取れないケースのみサーバー title を fallback に使う。
@@ -289,7 +296,13 @@ class PushMessageDispatcher {
         elapsedMs: elapsed(),
         decryptError: e.runtimeType.toString(),
       );
-      return null;
+      // 上流に古い購読が残っていると、古い鍵の 1 通が relay の重複の抑止を
+      // 通り抜けて届く (#1426)。最新の通知を API で引き直して中身を出す。
+      // ⚠ 鍵が無い・base64 が壊れている経路では引き直さない（鍵が合わない
+      // 1 通だけが、別の購読から来た同じ通知である見込みが高い）。
+      final refetched = await MastodonPushRefetch.fetchLatest(account);
+      _trace('refetch ${refetched != null ? 'ok' : 'unused'}');
+      return refetched;
     }
   }
 
