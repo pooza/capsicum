@@ -29,6 +29,7 @@ import '../../url_helper.dart';
 import '../../util/startup_trace.dart';
 import '../util/deck_navigation.dart';
 import '../util/deck_notification_fallback.dart';
+import '../util/deck_tabs.dart';
 import '../util/keyboard_list_navigation.dart';
 import '../util/mouse_drag_scroll_behavior.dart';
 import '../util/offline_account_display.dart';

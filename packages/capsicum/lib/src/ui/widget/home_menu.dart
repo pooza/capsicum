@@ -10,9 +10,7 @@ import 'package:window_manager/window_manager.dart';
 import '../../model/account.dart';
 import '../../model/deck_column.dart';
 import '../../provider/account_manager_provider.dart';
-import '../../provider/channel_provider.dart';
 import '../../provider/deck_provider.dart';
-import '../../provider/hashtag_provider.dart';
 import '../../provider/list_provider.dart';
 import '../../provider/platform_providers.dart';
 import '../../provider/preferences_provider.dart';
@@ -28,7 +26,6 @@ import '../util/deck_close_unlocked.dart';
 import '../util/deck_navigation.dart';
 import '../util/deck_tabs.dart';
 import '../util/provider_scope_carrier.dart';
-import '../util/timeline_type_label.dart';
 import 'desktop_menu_model.dart';
 import 'notification_filter_button.dart';
 
@@ -69,31 +66,6 @@ class HomeNavItem {
   });
 }
 
-String tabLabel(
-  WidgetRef ref,
-  TabType tab,
-  bool isMastodon,
-  DecentralizedBackendAdapter? adapter,
-  List<PostList> allLists,
-) {
-  return switch (tab) {
-    TimelineTab(:final type) => timelineTypeLabel(
-      ref,
-      type,
-      isMastodon: isMastodon,
-      adapter: adapter,
-    ),
-    ListTab(:final id, :final name) =>
-      name ?? allLists.where((l) => l.id == id).firstOrNull?.title ?? id,
-    HashtagTab(:final tag) => hashtagSpecLabel(tag),
-    ChannelTab(:final id, :final name) => channelTabLabel(ref, id, name),
-    NotificationsTab() => '通知',
-    AnnouncementsTab() => 'お知らせ',
-    MessagesTab() => 'メッセージ',
-    final DeckOnlyTab t => deckOnlyTabLabel(ref, t, adapter),
-  };
-}
-
 /// 「表示 > カラム」に出す 1 行 (#1170・`docs/deck-ui-plan.md` 決定済み事項 11)。
 ///
 /// **カラムの見出しと同じ「タブ名 · 表示名」**にする（#1152）。デッキはアカウントを
@@ -117,11 +89,8 @@ String deckColumnMenuLabel(
   final account = accountState.accounts
       .where((a) => a.key == column.account)
       .firstOrNull;
-  final adapter = account?.adapter;
-  final isMastodon =
-      adapter != null &&
-      !adapter.capabilities.supportedTimelines.contains(TimelineType.social);
-  final label = tabLabel(ref, column.tab, isMastodon, adapter, allLists);
+  // ⚠ 種別のラベルは見出し・シートと同じ芯を通す（#1420）。
+  final label = columnTabLabel(ref, column.tab, account?.adapter, allLists);
   // ⚠ アカウントをまたぐカラムには、アカウント名を添えない (#1259)。
   if (column.tab.spansAccounts) return label;
   final who =

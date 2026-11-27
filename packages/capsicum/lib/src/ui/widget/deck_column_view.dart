@@ -33,7 +33,6 @@ import '../util/scroll_thresholds.dart';
 import '../util/stream_connection_display.dart';
 import 'emoji_text.dart';
 import 'filter_scope.dart';
-import 'home_menu.dart' show tabLabel;
 import 'notification_filter_button.dart';
 import 'post_tile.dart';
 import 'retry_error_view.dart';
@@ -263,15 +262,8 @@ class _DeckColumnHeader extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final adapter = ref.watch(currentAdapterProvider);
-    final isMastodon =
-        adapter != null &&
-        !adapter.capabilities.supportedTimelines.contains(TimelineType.social);
-    // リスト名はキーに持たない（決定済み事項 4）ので、実行時に一覧から引く。
-    // ⚠ リスト以外のカラムで一覧の取得を起こさない。
-    final lists = column.tab is ListTab
-        ? ref.watch(listsProvider).valueOrNull ?? const <PostList>[]
-        : const <PostList>[];
-    final label = tabLabel(ref, column.tab, isMastodon, adapter, lists);
+    // ⚠ 種別のラベルはシートと同じものを使う（#1420）。
+    final label = columnTabLabelInScope(ref, column.tab);
     final account = column.account;
     final acct = account.handle;
     // カラムのスコープの中なので、別アカウントのカラムでもここはそのカラムの

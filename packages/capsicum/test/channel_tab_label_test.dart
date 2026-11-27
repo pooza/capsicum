@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:capsicum/src/provider/channel_provider.dart';
-import 'package:capsicum/src/ui/widget/home_menu.dart';
+import 'package:capsicum/src/ui/util/deck_tabs.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

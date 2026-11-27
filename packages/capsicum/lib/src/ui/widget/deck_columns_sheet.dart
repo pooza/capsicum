@@ -13,7 +13,6 @@ import '../util/deck_close_unlocked.dart';
 import '../util/deck_tabs.dart';
 import 'emoji_text.dart';
 import 'hashtag_condition_dialog.dart';
-import 'home_menu.dart' show tabLabel;
 import 'user_avatar.dart';
 
 /// デッキのカラムを追加・並べ替え・削除するシート (#1093)。
@@ -352,20 +351,6 @@ class _DeckSheetSectionHeader extends StatelessWidget {
   }
 }
 
-/// 周りのスコープのアカウントで [tab] のラベルを出す。
-String _labelInScope(WidgetRef ref, TabType tab) {
-  final adapter = ref.watch(currentAdapterProvider);
-  final isMastodon =
-      adapter != null &&
-      !adapter.capabilities.supportedTimelines.contains(TimelineType.social);
-  // リスト名はキーに持たない（決定済み事項 4）ので、実行時に一覧から引く。
-  // ⚠ リスト以外で一覧の取得を起こさない。
-  final lists = tab is ListTab && adapter is ListSupport
-      ? ref.watch(listsProvider).valueOrNull ?? const <PostList>[]
-      : const <PostList>[];
-  return tabLabel(ref, tab, isMastodon, adapter, lists);
-}
-
 class _TabTitle extends ConsumerWidget {
   const _TabTitle({required this.tab});
 
@@ -376,7 +361,7 @@ class _TabTitle extends ConsumerWidget {
     children: [
       Icon(deckTabIcon(tab), size: 18),
       const SizedBox(width: 8),
-      Expanded(child: Text(_labelInScope(ref, tab))),
+      Expanded(child: Text(columnTabLabelInScope(ref, tab))),
     ],
   );
 }
@@ -552,7 +537,7 @@ class _DeckColumnCandidatesState extends ConsumerState<_DeckColumnCandidates> {
   Widget _candidateTile(TabType tab) => ListTile(
     key: ValueKey('candidate-${tab.toIdentityKey()}'),
     leading: Icon(deckTabIcon(tab)),
-    title: Text(_labelInScope(ref, tab)),
+    title: Text(columnTabLabelInScope(ref, tab)),
     trailing: const Icon(Icons.add),
     onTap: () => _add(tab),
   );
