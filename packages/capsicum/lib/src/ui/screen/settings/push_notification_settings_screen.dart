@@ -335,6 +335,9 @@ class _AccountStatusTileState extends ConsumerState<_AccountStatusTile> {
       state,
       eligible,
       snapshot?.reason,
+      disabledByUser: PushDisabledAccounts.isDisabled(
+        account.key.toStorageKey(),
+      ),
     );
 
     // お知らせ通知 (#477 / #919)。判断は [resolveAnnouncementRow] に集約する。
