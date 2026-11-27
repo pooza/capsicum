@@ -540,9 +540,38 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
         account.userSecret,
         clientSecret: account.clientSecret,
       );
-    } catch (e) {
+    } catch (e, st) {
       debugPrint('capsicum: logout: token revoke failed: ${e.runtimeType}');
+      if (shouldReportRevokeFailure(adapter, e)) {
+        reportOpFailure(
+          tagKey: 'logout.op',
+          operation: 'revoke',
+          error: e,
+          stackTrace: st,
+          account: account,
+        );
+      }
     }
+  }
+
+  /// 取り消しの失敗を Sentry へ送るか (#1420)。
+  ///
+  /// debugPrint だけでは、Mastodon の `/oauth/revoke` が仕組みとして通っているかを
+  /// 現場で確かめられない（v2.14 のリリース前レビュー）。送るのは **Mastodon 系の、
+  /// サーバーが応答した失敗**だけ。
+  ///
+  /// - 401 は送らない（もう失効している＝取り消したかった状態になっている）
+  /// - 回線の失敗（[isConnectionLevelFailure]）は送らない（端末側の事象・#1246）
+  /// - ⚠ Misskey は今のまま送らない。取り消しの口が無い古い版のエラーは
+  ///   想定どおりで、送ると版の差を数えるだけになる
+  @visibleForTesting
+  static bool shouldReportRevokeFailure(Object adapter, Object error) {
+    if (adapter is! MastodonAdapter) return false;
+    if (isConnectionLevelFailure(error)) return false;
+    if (error is DioException && error.response?.statusCode == 401) {
+      return false;
+    }
+    return true;
   }
 
   /// Re-detect mulukhiya on the current account's server and update state.
