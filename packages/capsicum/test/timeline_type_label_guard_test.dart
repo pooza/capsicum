@@ -55,9 +55,11 @@ void main() {
     expect(offenders, isEmpty);
   });
 
+  // ⚠ タブの見出し（`tabLabel`）は #1420 で home_menu.dart から deck_tabs.dart へ
+  // 移した。上の「修正前」は当時の置き場のままでよい（git の過去の版を見る）。
   test('2 画面とも正本へ委譲している', () {
     for (final path in [
-      'lib/src/ui/widget/home_menu.dart',
+      'lib/src/ui/util/deck_tabs.dart',
       'lib/src/ui/widget/tab_management_sheet.dart',
     ]) {
       expect(
