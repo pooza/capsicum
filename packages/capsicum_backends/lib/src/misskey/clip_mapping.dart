@@ -3,13 +3,28 @@ import 'package:capsicum_core/capsicum_core.dart';
 /// `clips/list` などの 1 件を [NoteClip] にする (#1050)。
 ///
 /// ⚠ 欠けている項目は既定で埋める（古い版のサーバー・フォーク）。
-NoteClip misskeyClipFromJson(Map<String, dynamic> json) => NoteClip(
-  id: json['id'] as String,
-  name: json['name'] as String? ?? '',
-  description: json['description'] as String?,
-  isPublic: json['isPublic'] as bool? ?? false,
-  userId: json['userId'] as String?,
-);
+NoteClip misskeyClipFromJson(Map<String, dynamic> json) {
+  // 持ち主（UserLite）。表示名が空なら username で代える (#1377)。
+  final user = json['user'];
+  String? ownerName;
+  if (user is Map<String, dynamic>) {
+    final name = user['name'];
+    final username = user['username'];
+    ownerName = name is String && name.isNotEmpty
+        ? name
+        : (username is String && username.isNotEmpty ? username : null);
+  }
+  final isFavorited = json['isFavorited'];
+  return NoteClip(
+    id: json['id'] as String,
+    name: json['name'] as String? ?? '',
+    description: json['description'] as String?,
+    isPublic: json['isPublic'] as bool? ?? false,
+    userId: json['userId'] as String?,
+    ownerName: ownerName,
+    isFavorited: isFavorited is bool ? isFavorited : null,
+  );
+}
 
 /// `clips/create` / `clips/update` の引数 (#1050)。
 ///

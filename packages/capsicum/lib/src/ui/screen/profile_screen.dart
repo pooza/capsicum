@@ -45,7 +45,7 @@ import '../widget/user_avatar.dart';
 /// プロフィール画面のタブ種別。表示するタブ集合は adapter のケーパビリティと
 /// Mastodon 4.6 の show_media 設定（#732）で動的に決まるため、位置インデックスの
 /// 直書きをやめ、この列挙で意味付けする。
-enum _ProfileTab { posts, media, gallery, pages }
+enum _ProfileTab { posts, media, gallery, pages, clips }
 
 /// 相手が、開いているアカウント（[accountHost]）と同じサーバーの人か。
 /// host が無い（空も含む）相手は同じサーバーとして扱い、host は大文字小文字を
@@ -153,8 +153,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   bool _hasMorePages = true;
   bool _pagesTabLoaded = false;
 
+  // その人の公開のクリップ (#1377)。
+  List<NoteClip> _clips = [];
+  bool _loadingClips = true;
+  bool _loadingMoreClips = false;
+  bool _hasMoreClips = true;
+  bool _clipsTabLoaded = false;
+
   bool get _hasGalleryTab => ref.read(currentAdapterProvider) is GallerySupport;
   bool get _hasPagesTab => ref.read(currentAdapterProvider) is PagesSupport;
+  bool get _hasClipsTab =>
+      ref.read(currentAdapterProvider) is ClipFavoriteSupport;
 
   /// 表示するタブの順序付きリスト。adapter のケーパビリティに加え、Mastodon 4.6
   /// の show_media 設定（#732）でメディアタブの有無が決まる。show_media が未対応
@@ -164,6 +173,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     if (_user.showMedia != false) _ProfileTab.media,
     if (_hasGalleryTab) _ProfileTab.gallery,
     if (_hasPagesTab) _ProfileTab.pages,
+    if (_hasClipsTab) _ProfileTab.clips,
   ];
 
   static const _tabLabels = <_ProfileTab, String>{
@@ -171,6 +181,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     _ProfileTab.media: 'メディア',
     _ProfileTab.gallery: 'ギャラリー',
     _ProfileTab.pages: 'ページ',
+    _ProfileTab.clips: 'クリップ',
   };
 
   UserRelationship? _relationship;
@@ -246,6 +257,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
         if (!_galleryTabLoaded) _loadGalleryPosts();
       case _ProfileTab.pages:
         if (!_pagesTabLoaded) _loadPages();
+      case _ProfileTab.clips:
+        if (!_clipsTabLoaded) _loadClips();
       case _ProfileTab.posts:
         break;
     }
@@ -277,6 +290,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           _loadMoreGalleryPosts();
         case _ProfileTab.pages:
           _loadMorePages();
+        case _ProfileTab.clips:
+          _loadMoreClips();
       }
     }
   }
@@ -535,6 +550,52 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       }
     } catch (e) {
       if (mounted) setState(() => _loadingMorePages = false);
+    }
+  }
+
+  Future<void> _loadClips() async {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! ClipFavoriteSupport) return;
+
+    _clipsTabLoaded = true;
+    try {
+      final clips = await (adapter as ClipFavoriteSupport).getUserClips(
+        widget.user.id,
+        query: const TimelineQuery(limit: 20),
+      );
+      if (mounted) {
+        setState(() {
+          _clips = clips;
+          _loadingClips = false;
+          _hasMoreClips = clips.length >= 20;
+        });
+      }
+    } catch (e) {
+      _clipsTabLoaded = false;
+      if (mounted) setState(() => _loadingClips = false);
+    }
+  }
+
+  Future<void> _loadMoreClips() async {
+    if (_loadingMoreClips || !_hasMoreClips || _clips.isEmpty) return;
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! ClipFavoriteSupport) return;
+
+    setState(() => _loadingMoreClips = true);
+    try {
+      final older = await (adapter as ClipFavoriteSupport).getUserClips(
+        widget.user.id,
+        query: TimelineQuery(maxId: _clips.last.id, limit: 20),
+      );
+      if (mounted) {
+        setState(() {
+          _clips = [..._clips, ...older];
+          _loadingMoreClips = false;
+          _hasMoreClips = older.length >= 20;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _loadingMoreClips = false);
     }
   }
 
@@ -799,6 +860,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
         return _buildGalleryTab();
       case _ProfileTab.pages:
         return _buildPagesTab();
+      case _ProfileTab.clips:
+        return _buildClipsTab();
     }
   }
 
@@ -1059,6 +1122,56 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             return PageCard(page: _pages[index]);
           }, childCount: _pages.length + (_loadingMorePages ? 1 : 0)),
         ),
+      ),
+    ];
+  }
+
+  /// その人の公開のクリップ (#1377)。開くと既存のクリップの画面。
+  ///
+  /// ⚠⚠ **開く側のスコープを運ぶ**（`extraWithProviderScope`）。デッキの別アカウントの
+  /// カラムから開いても、クリップの id をそのアカウントのサーバーで引く
+  /// （クリップのカラム種別は無いので全画面で開く）。
+  List<Widget> _buildClipsTab() {
+    if (_loadingClips) {
+      return [
+        const SliverFillRemaining(
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      ];
+    }
+    if (_clips.isEmpty) {
+      return [
+        const SliverFillRemaining(child: Center(child: Text('クリップはありません'))),
+      ];
+    }
+    return [
+      SliverList(
+        delegate: SliverChildBuilderDelegate((context, index) {
+          if (index >= _clips.length) {
+            return const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(child: CircularProgressIndicator()),
+            );
+          }
+          final clip = _clips[index];
+          final description = clip.description;
+          return ListTile(
+            key: ValueKey('profile-clip-${clip.id}'),
+            leading: const Icon(Icons.content_paste),
+            title: Text(clip.name),
+            subtitle: description == null || description.isEmpty
+                ? null
+                : Text(
+                    description,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+            onTap: () => context.push(
+              '/clip/${clip.id}',
+              extra: extraWithProviderScope(context, {'clip': clip}),
+            ),
+          );
+        }, childCount: _clips.length + (_loadingMoreClips ? 1 : 0)),
       ),
     ];
   }

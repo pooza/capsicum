@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../provider/clip_provider.dart';
+import '../../service/sentry_op_failure.dart';
+import '../../util/oauth_scope_error.dart';
 import '../util/scroll_thresholds.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/clip_actions_sheet.dart';
@@ -61,6 +63,8 @@ class _ClipNotesScreenState extends ConsumerState<ClipNotesScreen> {
         title: Text(clip?.name ?? widget.clipName ?? 'クリップ'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
+          // ほかの人のクリップなら、お気に入りに入れる / 外す (#1377)。
+          if (clip == null) _ClipFavoriteButton(clipId: widget.clipId),
           if (canManage && clip != null)
             IconButton(
               icon: const Icon(Icons.more_horiz),
@@ -103,6 +107,92 @@ class _ClipNotesScreenState extends ConsumerState<ClipNotesScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// ほかの人のクリップを、お気に入りに入れる / 外す (#1377)。
+///
+/// - 自分のクリップ・状態が読めないとき（[clipDetailProvider] が null か失敗）は
+///   出さない
+/// - 押したらすぐ見た目を変え（楽観更新）、失敗したら戻す（ギャラリーのいいねと
+///   同じ形）。既に入っていた / もう外れていたは、アダプターが成功にする
+/// - 旧トークン（`write:clip-favorite` が無い）の 403 は、再ログインを案内する
+class _ClipFavoriteButton extends ConsumerStatefulWidget {
+  const _ClipFavoriteButton({required this.clipId});
+
+  final String clipId;
+
+  @override
+  ConsumerState<_ClipFavoriteButton> createState() =>
+      _ClipFavoriteButtonState();
+}
+
+class _ClipFavoriteButtonState extends ConsumerState<_ClipFavoriteButton> {
+  /// 押したあとの値。null なら [clipDetailProvider] の値を出す。
+  bool? _favorited;
+  bool _busy = false;
+
+  Future<void> _toggle(bool wasFavorited) async {
+    if (_busy) return;
+    final raw = ref.read(currentAdapterProvider);
+    if (raw is! ClipFavoriteSupport) return;
+    final support = raw as ClipFavoriteSupport;
+    final account = ref.accountForReport;
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() {
+      _busy = true;
+      _favorited = !wasFavorited;
+    });
+    try {
+      if (wasFavorited) {
+        await support.unfavoriteClip(widget.clipId);
+      } else {
+        await support.favoriteClip(widget.clipId);
+      }
+      // お気に入りの一覧を取り直させる（次に開いたとき揃うように）。
+      ref.invalidate(favoriteClipsProvider);
+    } catch (e, st) {
+      if (mounted) setState(() => _favorited = wasFavorited);
+      if (e is ClipNotFound) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('このクリップはもう見られません')),
+        );
+      } else if (isOAuthScopeError(e)) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text(oauthScopeErrorMessage)),
+        );
+      } else {
+        reportOpFailure(
+          tagKey: 'clip.op',
+          operation: wasFavorited ? 'unfavorite' : 'favorite',
+          error: e,
+          stackTrace: st,
+          account: account,
+        );
+        messenger.showSnackBar(
+          const SnackBar(content: Text('お気に入りを更新できませんでした')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final detail = ref.watch(clipDetailProvider(widget.clipId)).valueOrNull;
+    final me = ref.watch(currentAccountProvider)?.user.id;
+    // ⚠ 自分のクリップには出さない（一覧に無くても、持ち主が自分なら自分のもの）。
+    if (detail == null || detail.userId == null || detail.userId == me) {
+      return const SizedBox.shrink();
+    }
+    final favorited = _favorited ?? detail.isFavorited ?? false;
+    return IconButton(
+      key: const ValueKey('clip-favorite'),
+      icon: Icon(favorited ? Icons.star : Icons.star_border),
+      tooltip: favorited ? 'お気に入りから外す' : 'お気に入りに入れる',
+      onPressed: _busy ? null : () => _toggle(favorited),
     );
   }
 }

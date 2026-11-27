@@ -1073,7 +1073,10 @@ Future<void> showClipList(BuildContext context, WidgetRef ref) async {
   // ⚠ 管理できるなら 0 件でも開く。ここが新しいクリップへの唯一の入口
   // （#1050・アンテナの #1052 と同じ型）。
   final canManage = adapter is ClipManagementSupport;
-  if (clips.isEmpty && !canManage) {
+  // お気に入りのクリップの入口 (#1377)。⚠ 自分のクリップが 0 件でも開く
+  // （お気に入りだけ使う人がいる）。
+  final canFavorite = adapter is ClipFavoriteSupport;
+  if (clips.isEmpty && !canManage && !canFavorite) {
     if (context.mounted) {
       ScaffoldMessenger.of(
         context,
@@ -1112,6 +1115,17 @@ Future<void> showClipList(BuildContext context, WidgetRef ref) async {
             ),
           if (clips.isEmpty)
             const ListTile(dense: true, title: Text('クリップはありません')),
+          if (canFavorite)
+            ListTile(
+              key: const ValueKey('clip-chooser-favorites'),
+              leading: const Icon(Icons.star_outline, size: 20),
+              title: const Text('お気に入りのクリップ'),
+              dense: true,
+              onTap: () {
+                Navigator.pop(context);
+                context.push('/clips/favorites');
+              },
+            ),
           if (canManage)
             ListTile(
               leading: const Icon(Icons.settings, size: 20),

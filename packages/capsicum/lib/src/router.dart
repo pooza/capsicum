@@ -29,6 +29,7 @@ import 'ui/screen/chat_room_timeline_screen.dart';
 import 'ui/screen/chat_thread_list_screen.dart';
 import 'ui/screen/chat_thread_screen.dart';
 import 'ui/screen/clip_edit_screen.dart';
+import 'ui/screen/clip_favorites_screen.dart';
 import 'ui/screen/clip_management_screen.dart';
 import 'ui/screen/clip_notes_screen.dart';
 import 'ui/screen/collection_detail_screen.dart';
@@ -421,6 +422,11 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/clips/manage',
             builder: (context, state) => const ClipManagementScreen(),
           ),
+          // お気に入りに入れたクリップ (#1377)。クイックチューザの奥から開く。
+          GoRoute(
+            path: '/clips/favorites',
+            builder: (context, state) => const ClipFavoritesScreen(),
+          ),
           // ⚠⚠ 開いた側（デッキのカラム）のスコープで動かす。運ばないと、別
           // アカウントのカラムの投稿から「新しいクリップ」を開いたとき、ルートで
           // 選ばれているアカウントにクリップを作る。
@@ -705,12 +711,20 @@ final routerProvider = Provider<GoRouter>((ref) {
               final id = state.pathParameters['id']!;
               // 管理画面からはクリップそのもの、クイックチューザからは名前が来る
               // (#1050)。
+              // ⚠ プロフィールのクリップの一覧からは `{'clip': NoteClip}` に開く側の
+              // スコープを載せて来る (#1377)。デッキの別アカウントのカラムから
+              // 開いたとき、クリップの id をそのアカウントのサーバーで引くため。
               final extra = state.extra;
-              return ClipNotesScreen(
-                clipId: id,
-                clipName: extra is NoteClip
-                    ? extra.name
-                    : (extra is String ? extra : null),
+              final carried = extra is Map ? extra['clip'] : null;
+              final named = carried ?? extra;
+              return withExtraProviderScope(
+                extra,
+                ClipNotesScreen(
+                  clipId: id,
+                  clipName: named is NoteClip
+                      ? named.name
+                      : (named is String ? named : null),
+                ),
               );
             },
           ),

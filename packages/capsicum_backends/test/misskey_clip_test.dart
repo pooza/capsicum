@@ -230,4 +230,100 @@ void main() {
       expect(server.calls['/api/notes/clips'], containsPair('noteId', 'n1'));
     });
   });
+
+  // #1377: ほかの人のクリップを見る・お気に入りに入れる。
+  group('ほかの人のクリップ', () {
+    test('users/clips は userId を送り、持ち主の名前とお気に入りの状態を読む', () async {
+      final server = await install(
+        _Server(
+          responses: {
+            '/api/users/clips': [
+              {
+                'id': 'c1',
+                'name': '名場面',
+                'userId': 'u1',
+                'isPublic': true,
+                'isFavorited': true,
+                'user': {'username': 'alice', 'name': 'アリス'},
+              },
+              {
+                'id': 'c2',
+                'name': '名前の無い人',
+                'user': {'username': 'bob', 'name': ''},
+              },
+            ],
+          },
+        ),
+      );
+
+      final clips = await adapter.getUserClips(
+        'u1',
+        query: const TimelineQuery(limit: 20, maxId: 'c0'),
+      );
+
+      expect(server.calls['/api/users/clips'], containsPair('userId', 'u1'));
+      expect(server.calls['/api/users/clips'], containsPair('untilId', 'c0'));
+      expect(clips.first.ownerName, 'アリス');
+      expect(clips.first.isFavorited, isTrue);
+      expect(clips.last.ownerName, 'bob', reason: '表示名が空なら username');
+      expect(clips.last.isFavorited, isNull, reason: '分からなければ null');
+    });
+
+    test('お気に入りに入れる・外すは clipId を送る', () async {
+      final server = await install(_Server());
+
+      await adapter.favoriteClip('c1');
+      await adapter.unfavoriteClip('c1');
+
+      expect(server.calls['/api/clips/favorite'], containsPair('clipId', 'c1'));
+      expect(
+        server.calls['/api/clips/unfavorite'],
+        containsPair('clipId', 'c1'),
+      );
+    });
+
+    test('⚠ 既に入っていた / もう外れていたは成功として扱う', () async {
+      await install(
+        _Server(
+          errors: {
+            '/api/clips/favorite': 'ALREADY_FAVORITED',
+            '/api/clips/unfavorite': 'NOT_FAVORITED',
+          },
+        ),
+      );
+
+      await adapter.favoriteClip('c1');
+      await adapter.unfavoriteClip('c1');
+    });
+
+    test('消えたクリップ（NO_SUCH_CLIP）は ClipNotFound', () async {
+      await install(
+        _Server(
+          errors: {
+            '/api/clips/favorite': 'NO_SUCH_CLIP',
+            '/api/clips/show': 'NO_SUCH_CLIP',
+          },
+        ),
+      );
+
+      expect(adapter.favoriteClip('gone'), throwsA(isA<ClipNotFound>()));
+      expect(adapter.getClip('gone'), throwsA(isA<ClipNotFound>()));
+    });
+
+    test('お気に入りの一覧を引く', () async {
+      await install(
+        _Server(
+          responses: {
+            '/api/clips/my-favorites': [
+              {'id': 'c9', 'name': 'お気に入り', 'userId': 'u2'},
+            ],
+          },
+        ),
+      );
+
+      final clips = await adapter.getFavoriteClips();
+
+      expect(clips.single.id, 'c9');
+    });
+  });
 }

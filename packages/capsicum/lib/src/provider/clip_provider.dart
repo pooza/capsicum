@@ -78,3 +78,24 @@ final clipNotesProvider = AsyncNotifierProvider.autoDispose
       ClipNotesNotifier.new,
       dependencies: [currentAdapterProvider],
     );
+
+/// クリップ 1 つ (#1377)。お気に入りの状態と持ち主を見るのに使う。
+///
+/// ⚠ ほかの人のクリップを見る口が無いアダプターでは null（ボタンを出さない）。
+final clipDetailProvider = FutureProvider.autoDispose.family<NoteClip?, String>(
+  (ref, clipId) async {
+    final adapter = ref.watch(currentAdapterProvider);
+    if (adapter is! ClipFavoriteSupport) return null;
+    return (adapter as ClipFavoriteSupport).getClip(clipId);
+  },
+  dependencies: [currentAdapterProvider],
+);
+
+/// お気に入りに入れたクリップ (#1377)。
+final favoriteClipsProvider = FutureProvider.autoDispose<List<NoteClip>>((
+  ref,
+) async {
+  final adapter = ref.watch(currentAdapterProvider);
+  if (adapter is! ClipFavoriteSupport) return const [];
+  return (adapter as ClipFavoriteSupport).getFavoriteClips();
+}, dependencies: [currentAdapterProvider]);
