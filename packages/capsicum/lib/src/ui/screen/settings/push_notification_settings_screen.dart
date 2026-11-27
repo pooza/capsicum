@@ -1,3 +1,7 @@
+import 'dart:async';
+
+import 'package:capsicum_core/capsicum_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -9,8 +13,10 @@ import '../../../provider/push_registration_status_provider.dart';
 import '../../../provider/supporter_purchase_provider.dart';
 import '../../../service/announcement_subscription_service.dart';
 import '../../../service/push_disabled_accounts.dart';
+import '../../../service/push_muted_alerts.dart';
 import '../../../service/push_registration_service.dart';
 import '../../../service/push_registration_status.dart';
+import '../../util/notification_type_display.dart';
 import '../../widget/push_registration_status_section.dart';
 import '../../widget/relay_entitlement_purchase_section.dart';
 import '../../widget/section_header.dart';
@@ -374,6 +380,16 @@ class _AccountStatusTileState extends ConsumerState<_AccountStatusTile> {
             eligible &&
             state != PushRegistrationState.notSupported)
           _PushEnabledToggle(account: account, eligible: hasPreset),
+        // 受け取る通知の種類 (#1411)。⚠ サーバー側で絞れるアカウントだけ
+        // （Mastodon 系）。オフにしているアカウントには出さない（効かない）。
+        if (PushRegistrationService.isPushBackendWired &&
+            eligible &&
+            state != PushRegistrationState.notSupported &&
+            account.adapter is PushSubscriptionSupport &&
+            (account.adapter as PushSubscriptionSupport)
+                .supportsPushAlertFilter &&
+            !PushDisabledAccounts.isDisabled(account.key.toStorageKey()))
+          _PushAlertTypesTile(account: account, eligible: hasPreset),
         switch (announcementRow) {
           AnnouncementRowKind.none => const SizedBox.shrink(),
           AnnouncementRowKind.toggle => _AnnouncementToggle(account: account),
@@ -388,6 +404,136 @@ class _AccountStatusTileState extends ConsumerState<_AccountStatusTile> {
     PushRegistrationService.registerAccount(
       account,
       eligible: widget.hasPreset,
+    );
+  }
+}
+
+/// 受け取る通知の種類 (#1411)。押すとシートで種類ごとに切り替える。
+///
+/// ⚠ 切り替えは閉じたときにまとめて送る（購読し直す）。1 つ切り替えるたびに
+/// 送ると、続けて押したときに購読が何度も作り直される。
+class _PushAlertTypesTile extends StatefulWidget {
+  const _PushAlertTypesTile({required this.account, required this.eligible});
+
+  final Account account;
+
+  /// [PushRegistrationService.registerAccount] の `eligible`。
+  final bool eligible;
+
+  @override
+  State<_PushAlertTypesTile> createState() => _PushAlertTypesTileState();
+}
+
+class _PushAlertTypesTileState extends State<_PushAlertTypesTile> {
+  String get _storageKey => widget.account.key.toStorageKey();
+
+  Future<void> _open() async {
+    final before = PushMutedAlerts.mutedFor(_storageKey);
+    final messenger = ScaffoldMessenger.of(context);
+    final after = await showModalBottomSheet<Set<PushAlertCategory>>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (_) => PushAlertTypesSheet(initialMuted: before),
+    );
+    if (after == null || setEquals(after, before)) return;
+    try {
+      await PushMutedAlerts.setMuted(_storageKey, after);
+    } catch (e) {
+      debugPrint('capsicum: push.muted: save failed: ${e.runtimeType}');
+      messenger.showSnackBar(const SnackBar(content: Text('保存できませんでした')));
+      return;
+    }
+    if (mounted) setState(() {});
+    // サーバー側の絞りを新しい値で張り直す。⚠ 待たない（登録の状況は行に出る）。
+    unawaited(
+      PushRegistrationService.registerAccount(
+        widget.account,
+        eligible: widget.eligible,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final muted = PushMutedAlerts.mutedFor(_storageKey);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(40, 0, 0, 4),
+      child: ListTile(
+        key: ValueKey('push-alert-types-$_storageKey'),
+        dense: true,
+        title: const Text('受け取る通知の種類', style: TextStyle(fontSize: 14)),
+        subtitle: Text(
+          muted.isEmpty
+              ? 'すべて'
+              : '${PushAlertCategory.values.length - muted.length} / '
+                    '${PushAlertCategory.values.length} 種類',
+        ),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: _open,
+      ),
+    );
+  }
+}
+
+/// 通知の種類ごとのスイッチ (#1411)。閉じるとき（「完了」）に受け取らない分類を
+/// 返す。⚠ 引っ張って閉じたときは null（変えない）。
+@visibleForTesting
+class PushAlertTypesSheet extends StatefulWidget {
+  const PushAlertTypesSheet({super.key, required this.initialMuted});
+
+  final Set<PushAlertCategory> initialMuted;
+
+  @override
+  State<PushAlertTypesSheet> createState() => _PushAlertTypesSheetState();
+}
+
+class _PushAlertTypesSheetState extends State<PushAlertTypesSheet> {
+  late final Set<PushAlertCategory> _muted = {...widget.initialMuted};
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+              child: Text(
+                '受け取る通知の種類',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text(
+                'オフにした種類は、サーバーがプッシュ通知を送らなくなります。'
+                'アプリの通知の一覧には、これまでどおり出ます。',
+                style: TextStyle(fontSize: 13),
+              ),
+            ),
+            for (final category in PushAlertCategory.values)
+              SwitchListTile(
+                key: ValueKey('push-alert-${category.name}'),
+                title: Text(pushAlertCategoryLabel(category)),
+                value: !_muted.contains(category),
+                onChanged: (on) => setState(
+                  () => on ? _muted.remove(category) : _muted.add(category),
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              child: FilledButton(
+                key: const ValueKey('push-alert-types-done'),
+                onPressed: () => Navigator.pop(context, {..._muted}),
+                child: const Text('完了'),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -21,6 +21,7 @@ import '../service/compose_draft_store.dart';
 import '../service/info_bot_follow_keeper.dart';
 import '../service/notification_label_cache.dart';
 import '../service/push_disabled_accounts.dart';
+import '../service/push_muted_alerts.dart';
 import '../service/push_registration_service.dart';
 import '../service/secret_service_probe.dart';
 import '../service/secure_storage_health.dart';
@@ -485,6 +486,8 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     // プッシュ通知をオフにした印も捨てる (#1408)。残すと、入り直したときに
     // 何も知らせないままオフで始まる。
     await PushDisabledAccounts.forget(account.key.toStorageKey());
+    // 受け取らない通知の分類も捨てる (#1411・同じ理由)。
+    await PushMutedAlerts.forget(account.key.toStorageKey());
 
     final remaining = state.accounts
         .where((a) => a.key != account.key)
@@ -1654,6 +1657,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     await AnnictDraftStore.clearForAccount(key.toStorageKey());
     // プッシュ通知をオフにした印も捨てる (#1408・[logout] と同じ)。
     await PushDisabledAccounts.forget(key.toStorageKey());
+    await PushMutedAlerts.forget(key.toStorageKey());
     _removeOffline(key);
     await _syncWindowsPushLabels();
   }

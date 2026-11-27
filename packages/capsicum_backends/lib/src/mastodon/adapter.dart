@@ -2301,9 +2301,23 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     required String endpoint,
     required String p256dh,
     required String auth,
+    Set<PushAlertCategory> mutedCategories = const {},
   }) async {
-    return client.subscribePush(endpoint: endpoint, p256dh: p256dh, auth: auth);
+    return client.subscribePush(
+      endpoint: endpoint,
+      p256dh: p256dh,
+      auth: auth,
+      mutedTypes: mastodonMutedAlertTypes(mutedCategories),
+    );
   }
+
+  /// `data[alerts]` で絞れる (#1411)。
+  ///
+  /// ⚠ Akkoma も同じアダプターで通るが、`data[alerts]` を Mastodon と同じに読むかは
+  /// **未確認**（手元にソースが無い・#1411 の着手時）。読まなければ絞りが効かない
+  /// だけで、今どおり全部届く（壊れはしない）。
+  @override
+  bool get supportsPushAlertFilter => true;
 
   @override
   Future<void> unsubscribePush({

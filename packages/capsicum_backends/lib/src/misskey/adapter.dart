@@ -2937,6 +2937,8 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     required String endpoint,
     required String p256dh,
     required String auth,
+    // ⚠ Misskey には種類で絞る口が無い（[supportsPushAlertFilter] は false）。
+    Set<PushAlertCategory> mutedCategories = const {},
   }) async {
     try {
       return await client.subscribePush(

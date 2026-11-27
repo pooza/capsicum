@@ -22,6 +22,7 @@ import 'fcm_service.dart';
 import 'push_device_type.dart';
 import 'push_disabled_accounts.dart';
 import 'push_key_store.dart';
+import 'push_muted_alerts.dart';
 import 'push_registration_status.dart';
 import 'push_relay_client.dart';
 import 'wns_service.dart';
@@ -434,6 +435,8 @@ class PushRegistrationService {
           endpoint: endpoint,
           p256dh: keys.p256dh,
           auth: keys.auth,
+          // 利用者が切った通知の分類 (#1411)。絞れないサーバーは無視する。
+          mutedCategories: PushMutedAlerts.mutedFor(accountKey),
         );
       }
 

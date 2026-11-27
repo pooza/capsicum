@@ -159,6 +159,27 @@ const pushAlertTypes = <String>[
   'collection_update',
 ];
 
+/// 利用者の分類 → Mastodon の `data[alerts]` の種別 (#1411)。
+///
+/// ⚠ ここに無い種別（[pushAlertTypes] の残り）は絞らず、常に受け取る。
+/// ⚠⚠ **ここの値はすべて [pushAlertTypes] に含まれていること**（表に無い種別を
+/// 絞っても、購読の本文に載らないので効かない）。テストで固定している。
+const mastodonAlertTypesByCategory = <PushAlertCategory, List<String>>{
+  PushAlertCategory.mention: ['mention'],
+  PushAlertCategory.favourite: ['favourite'],
+  PushAlertCategory.reblog: ['reblog'],
+  PushAlertCategory.follow: ['follow', 'follow_request'],
+  PushAlertCategory.poll: ['poll'],
+  PushAlertCategory.status: ['status'],
+  PushAlertCategory.update: ['update', 'quoted_update'],
+  PushAlertCategory.quote: ['quote'],
+};
+
+/// [muted] の分類を、送らなくさせる Mastodon の種別にする (#1411)。
+Set<String> mastodonMutedAlertTypes(Set<PushAlertCategory> muted) => {
+  for (final category in muted) ...?mastodonAlertTypesByCategory[category],
+};
+
 class MastodonClient {
   final Dio dio;
   final String host;
@@ -1875,10 +1896,15 @@ class MastodonClient {
   /// これらヘッダを転送していないため、legacy 経路ではクライアント側復号
   /// （#336）が不可能。modern 経路ならペイロード本体に salt / keyid が
   /// 含まれるので Base64 の body 単体で復号できる。
+  ///
+  /// [mutedTypes] は送らなくさせる種別 (#1411・[mastodonMutedAlertTypes])。
+  /// ⚠ **`false` を明示して送る。**省くとサーバーの既定（`false`）と同じだが、
+  /// 送る種別の表が 1 本のままになるので、どれを絞ったかが本文で読める。
   Future<Map<String, dynamic>> subscribePush({
     required String endpoint,
     required String p256dh,
     required String auth,
+    Set<String> mutedTypes = const {},
   }) async {
     final response = await dio.post(
       '/api/v1/push/subscription',
@@ -1887,7 +1913,8 @@ class MastodonClient {
         'subscription[standard]': 'true',
         'subscription[keys][p256dh]': p256dh,
         'subscription[keys][auth]': auth,
-        for (final type in pushAlertTypes) 'data[alerts][$type]': 'true',
+        for (final type in pushAlertTypes)
+          'data[alerts][$type]': mutedTypes.contains(type) ? 'false' : 'true',
       }),
     );
     return response.data as Map<String, dynamic>;
