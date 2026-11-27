@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../../provider/gallery_provider.dart';
 import '../../service/sentry_op_failure.dart';
 import '../../util/misskey_api_error.dart';
 import '../../util/oauth_scope_error.dart';
@@ -170,8 +171,12 @@ class _GalleryLikeButton extends ConsumerStatefulWidget {
 }
 
 class _GalleryLikeButtonState extends ConsumerState<_GalleryLikeButton> {
-  late bool _isLiked = widget.post.isLiked ?? false;
-  late int _likedCount = widget.post.likedCount;
+  // ⚠ 前に詳細で変えていれば、その写しを使う（#1420・一覧の投稿は取得時のまま）。
+  late final GalleryLike? _remembered = ref.read(
+    galleryLikeOverridesProvider,
+  )[widget.post.id];
+  late bool _isLiked = _remembered?.isLiked ?? widget.post.isLiked ?? false;
+  late int _likedCount = _remembered?.likedCount ?? widget.post.likedCount;
   bool _toggling = false;
 
   Future<void> _toggle() async {
@@ -180,6 +185,12 @@ class _GalleryLikeButtonState extends ConsumerState<_GalleryLikeButton> {
     if (raw is! GallerySupport) return;
     final gallery = raw as GallerySupport;
     final account = ref.accountForReport;
+    // ⚠ 写しの書き先は先に取っておく。応答の前に詳細を閉じると `ref` が
+    // 使えなくなるが、そこで書けないと「押してすぐ戻る」がまさに取りこぼす。
+    final overrides = ref.read(galleryLikeOverridesProvider.notifier);
+    void remember(bool isLiked, int likedCount) => overrides.update(
+      (m) => {...m, widget.post.id: (isLiked: isLiked, likedCount: likedCount)},
+    );
 
     final wasLiked = _isLiked;
     setState(() {
@@ -187,16 +198,25 @@ class _GalleryLikeButtonState extends ConsumerState<_GalleryLikeButton> {
       _isLiked = !wasLiked;
       _likedCount += wasLiked ? -1 : 1;
     });
+    // 押したあとの見た目（楽観更新の値）。成功したら写しへ残す。
+    final likedAfter = !wasLiked;
+    final countAfter = _likedCount;
     try {
       if (wasLiked) {
         await gallery.unlikeGalleryPost(widget.post.id);
       } else {
         await gallery.likeGalleryPost(widget.post.id);
       }
+      remember(likedAfter, countAfter);
     } catch (e, st) {
       final code = misskeyApiErrorCode(e);
       if ((!wasLiked && code == 'ALREADY_LIKED') ||
           (wasLiked && code == 'NOT_LIKED')) {
+        // サーバーの状態と揃っただけ。⚠ 件数は数え直せないので、押す前の値に
+        // 戻す（もともとその状態だった＝件数にはもう含まれている）。
+        final settled = wasLiked ? countAfter + 1 : countAfter - 1;
+        remember(likedAfter, settled);
+        if (mounted) setState(() => _likedCount = settled);
         return;
       }
       if (!mounted) return;
