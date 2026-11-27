@@ -867,7 +867,7 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
               // 判断)。⚠ 押せないとき（ロック中が無い・ロックしていないカラムが
               // 無い）も隠さず、無効にして出す。確認は挟まない。
               MenuActionEntry(
-                label: 'ロックしていないカラムを閉じる',
+                label: kCloseUnlockedDeckColumnsLabel,
                 icon: Icons.close_fullscreen,
                 shortcut: const MenuShortcut(
                   LogicalKeyboardKey.keyW,

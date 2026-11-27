@@ -27,6 +27,28 @@ void main() {
     });
   });
 
+  // #1420: 押せない理由は 2 つあり、入口ごとに書かない。
+  group('押せない理由', () {
+    test('押せるときは null', () {
+      expect(closeUnlockedDisabledReason(columns, {'b'}), isNull);
+    });
+
+    test('ロック中が無ければ「ロックしたカラムがあると使えます」', () {
+      expect(closeUnlockedDisabledReason(columns, {}), 'ロックしたカラムがあると使えます');
+    });
+
+    test('⚠ 列に居ない id のロックしか無ければ、ロック中が無いのと同じ', () {
+      expect(closeUnlockedDisabledReason(columns, {'z'}), 'ロックしたカラムがあると使えます');
+    });
+
+    test('⚠⚠ 全部ロック中なら、ロックを勧める理由を出さない', () {
+      expect(
+        closeUnlockedDisabledReason(columns, columns.toSet()),
+        'すべてのカラムがロックされています',
+      );
+    });
+  });
+
   group('閉じたあとのフォーカス', () {
     test('フォーカス中がロック中ならそのまま', () {
       expect(deckFocusAfterClosingUnlocked(columns, {'b', 'd'}, 'd'), 'd');

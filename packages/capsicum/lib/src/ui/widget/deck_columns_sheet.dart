@@ -64,7 +64,7 @@ class _DeckColumnsSheetState extends ConsumerState<DeckColumnsSheet> {
     final columns = ref.watch(deckColumnsProvider);
     final locked = ref.watch(deckLockedColumnsProvider);
     // ⚠ メニューと同じ入口で判定する（決定済み事項 17）。
-    final canCloseUnlocked = canCloseUnlockedDeckColumns(ref);
+    final closeUnlockedDisabled = closeUnlockedDeckColumnsDisabledReason(ref);
     final accounts = ref.watch(accountManagerProvider).accounts;
     final currentKey = ref.watch(currentAccountKeyProvider);
     final selected = accounts.any((a) => a.key == _selectedAccount)
@@ -206,11 +206,11 @@ class _DeckColumnsSheetState extends ConsumerState<DeckColumnsSheet> {
                     ListTile(
                       key: const ValueKey('deck-close-unlocked'),
                       leading: const Icon(Icons.close_fullscreen),
-                      title: const Text('ロックしていないカラムを閉じる'),
-                      subtitle: canCloseUnlocked
+                      title: const Text(kCloseUnlockedDeckColumnsLabel),
+                      subtitle: closeUnlockedDisabled == null
                           ? null
-                          : const Text('ロックしたカラムがあると使えます'),
-                      enabled: canCloseUnlocked,
+                          : Text(closeUnlockedDisabled),
+                      enabled: closeUnlockedDisabled == null,
                       onTap: () => closeUnlockedDeckColumns(ref),
                     ),
                   _sectionHeader(theme, 'カラムを追加'),

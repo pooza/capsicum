@@ -10,9 +10,11 @@ import '../../provider/preferences_provider.dart';
 // 使い捨てのカラム（スレッド・プロフィール・検索など）を 1 回で片付ける。
 //
 // - 入口はカラム編集のシートと、メニューバーの「表示 > カラム」
-//   （Cmd / Ctrl + Shift + W）
+//   （Cmd / Ctrl + Shift + W）と、デッキの帯の右端（#1405）
 // - ロック中が 1 本以上、かつロックしていないカラムが 1 本以上のときだけ
 //   押せる。条件を満たさないときは隠さず、押せなくする
+// - 項目名は [kCloseUnlockedDeckColumnsLabel]、押せない理由は
+//   [closeUnlockedDisabledReason]。⚠ 入口ごとに文字列を書かない（#1420）
 // - 確認も「元に戻す」も挟まない。閉じるのは使い捨てのカラムだけで、
 //   失っても開き直せる
 // - 閉じたあとのフォーカスは deckFocusAfterClosingUnlocked
@@ -53,11 +55,35 @@ String? deckFocusAfterClosingUnlocked(
   return null;
 }
 
+/// 項目名。シート・メニューバー・帯で揃える（#1420）。
+const kCloseUnlockedDeckColumnsLabel = 'ロックしていないカラムを閉じる';
+
+/// 押せない理由。押せるときは null（#1420）。
+///
+/// ⚠ **理由は 2 つある。**ロック中が 1 本も無いときと、全部のカラムがロック
+/// されていて閉じるものが無いとき。後者に「ロックしたカラムがあると使えます」を
+/// 出すと、ロックしてあるのに押せない理由として噛み合わない（v2.14 のリリース前
+/// レビュー）。
+String? closeUnlockedDisabledReason(
+  List<String> columnIds,
+  Set<String> locked,
+) {
+  if (unlockedDeckColumnIdsToClose(columnIds, locked).isNotEmpty) return null;
+  if (columnIds.isNotEmpty && columnIds.every(locked.contains)) {
+    return 'すべてのカラムがロックされています';
+  }
+  return 'ロックしたカラムがあると使えます';
+}
+
+/// いまの列で押せない理由。押せるときは null。
+String? closeUnlockedDeckColumnsDisabledReason(WidgetRef ref) =>
+    closeUnlockedDisabledReason([
+      for (final c in ref.watch(deckColumnsProvider)) c.id,
+    ], ref.watch(deckLockedColumnsProvider));
+
 /// いまの列で押せるか。
-bool canCloseUnlockedDeckColumns(WidgetRef ref) => unlockedDeckColumnIdsToClose(
-  [for (final c in ref.watch(deckColumnsProvider)) c.id],
-  ref.watch(deckLockedColumnsProvider),
-).isNotEmpty;
+bool canCloseUnlockedDeckColumns(WidgetRef ref) =>
+    closeUnlockedDeckColumnsDisabledReason(ref) == null;
 
 /// ロックしていないカラムを閉じる。押せないときは何もしない。
 ///
