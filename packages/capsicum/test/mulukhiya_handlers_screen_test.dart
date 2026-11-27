@@ -196,4 +196,60 @@ void main() {
     );
     expect(find.text('切り替えられる処理はありません。'), findsOneWidget);
   });
+
+  // #1420: 上書きはハンドラー名だけをキーにしていたので、画面を開いたまま
+  // アカウントを切り替えると、前のアカウントの上書きが残っていた。
+  testWidgets('⚠⚠ アカウントを切り替えると、前のアカウントの上書きを持ち込まない', (tester) async {
+    when(
+      () => mulukhiya.setUserHandlerDisabled(
+        accessToken: any(named: 'accessToken'),
+        handler: any(named: 'handler'),
+        disabled: any(named: 'disabled'),
+      ),
+    ).thenAnswer((_) async => true);
+    final other = _Mulukhiya();
+    when(() => other.userHandlerConfigEnabled).thenReturn(true);
+    when(
+      () => other.getUserHandlers(accessToken: any(named: 'accessToken')),
+    ).thenAnswer((_) async => [_tagHandler, _urlHandler, _spotifyHandler]);
+    final otherAccount = Account(
+      key: const AccountKey(
+        type: BackendType.mastodon,
+        host: 'other.example',
+        username: 'me',
+      ),
+      adapter: _Adapter(),
+      user: const User(id: '2', username: 'me'),
+      userSecret: const UserSecret(accessToken: 'tok2'),
+      mulukhiya: other,
+    );
+    final holder = StateProvider<Account>((_) => _account(mulukhiya));
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          currentAccountProvider.overrideWith((ref) => ref.watch(holder)),
+        ],
+        child: const MaterialApp(home: MulukhiyaHandlersScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('mulukhiya-handler-url_normalize')),
+    );
+    await tester.pumpAndSettle();
+    expect(tile(tester, 'url_normalize').value, isFalse);
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MulukhiyaHandlersScreen)),
+    );
+    container.read(holder.notifier).state = otherAccount;
+    await tester.pumpAndSettle();
+
+    expect(
+      tile(tester, 'url_normalize').value,
+      isTrue,
+      reason: '切り替え先のサーバーの値（オン）で出る',
+    );
+  });
 }
