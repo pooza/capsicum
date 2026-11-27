@@ -1437,6 +1437,47 @@ class MulukhiyaService {
     return data is Map<String, dynamic> ? data['disabled'] == true : disabled;
   }
 
+  /// 実況のために付けたアイコンデコの状態 (capsicum#1409・mulukhiya#4912)。
+  /// GET /mulukhiya/api/decoration/live
+  ///
+  /// ⚠ **404 は null**（「出さない」）。デコに対応していない SNS（Misskey 以外）と、
+  /// この口を持たない 5.48.0 より前のモロヘイヤの両方が 404 を返す。`features` に
+  /// 印は無いので、見分けは 404 で行う（着手時の判断・#1409）。
+  Future<MulukhiyaLiveDecoration?> getLiveDecoration({
+    required String accessToken,
+  }) async {
+    try {
+      final response = await _dio.get(
+        '$baseUrl/decoration/live',
+        options: _bearerOptions(accessToken),
+      );
+      final data = response.data;
+      return data is Map<String, dynamic>
+          ? MulukhiyaLiveDecoration.fromJson(data)
+          : null;
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) return null;
+      rethrow;
+    }
+  }
+
+  /// 実況のために付けたデコを、番組の終わりを待たずに外す
+  /// (capsicum#1409・mulukhiya#4912)。POST /mulukhiya/api/decoration/restore
+  ///
+  /// 外すのは付けた 1 つだけ。通知は送られない（利用者が自分で戻したため）。
+  /// ⚠ 実況中でなければ 404（もう外れている）—— 呼ぶ側は成功と同じに扱ってよい。
+  Future<void> restoreLiveDecoration({required String accessToken}) async {
+    try {
+      await _dio.post(
+        '$baseUrl/decoration/restore',
+        options: _bearerOptions(accessToken),
+      );
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) return;
+      rethrow;
+    }
+  }
+
   /// 投稿テンプレート一覧を取得する (#767)。
   /// GET /mulukhiya/api/compose/templates
   Future<List<ComposeTemplate>> getComposeTemplates({

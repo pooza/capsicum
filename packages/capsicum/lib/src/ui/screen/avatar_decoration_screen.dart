@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/list_fetch.dart';
 import '../../service/sentry_op_failure.dart';
+import '../../util/exception_scrub.dart';
 import '../../util/misskey_api_error.dart';
 import '../../util/oauth_scope_error.dart';
 import '../util/op_error.dart';
@@ -40,6 +41,53 @@ final avatarDecorationLimitProvider = FutureProvider.autoDispose<int?>((
     return null;
   }
 }, dependencies: [currentAdapterProvider, currentAccountProvider]);
+
+/// 実況のためにモロヘイヤが付けたデコ (#1409)。実況中でなければ null。
+///
+/// ⚠ **読めなければ null（何も出さない）。**モロヘイヤが無い・5.48.0 より前・
+/// 一過性の失敗のどれでも、デコの画面そのものは使える。⚠ 404（口が無い）は
+/// サービスが null にするので、ここに来る例外は一過性のものだけ。
+final liveDecorationProvider =
+    FutureProvider.autoDispose<MulukhiyaLiveDecoration?>((ref) async {
+      final adapter = ref.watch(currentAdapterProvider);
+      final account = ref.watch(currentAccountProvider);
+      final mulukhiya = account?.mulukhiya;
+      if (adapter is! AvatarDecorationSupport ||
+          account == null ||
+          mulukhiya == null) {
+        return null;
+      }
+      try {
+        final status = await mulukhiya.getLiveDecoration(
+          accessToken: account.userSecret.accessToken,
+        );
+        return status != null && status.live ? status : null;
+      } catch (e) {
+        debugLogException('live decoration fetch failed', e);
+        return null;
+      }
+    }, dependencies: [currentAdapterProvider, currentAccountProvider]);
+
+/// 実況中のデコの帯の文面 (#1409)。
+///
+/// 「実況のために付いています」と、分かれば番組名・外れる予定の時刻を添える。
+/// ⚠ 外れる時刻は端末の時刻帯で出す（サーバーは +09:00 で返す）。
+String liveDecorationBannerText(MulukhiyaLiveDecoration live) {
+  final name = live.name;
+  final program = live.program;
+  final restoreAt = live.restoreAt?.toLocal();
+  final head = name == null ? '実況中のデコが付いています' : '「$name」は実況中のデコです';
+  final parts = [
+    head,
+    if (program != null) '（$program）',
+    if (restoreAt != null)
+      '。${restoreAt.hour}:${restoreAt.minute.toString().padLeft(2, '0')}'
+          'ごろ、番組の終わりに外れます。'
+    else
+      '。番組の終わりに外れます。',
+  ];
+  return parts.join();
+}
 
 /// 一覧の上に出す、あといくつ付けられるか (#1359)。上限が読めなければ null。
 ///
@@ -172,6 +220,51 @@ class _AvatarDecorationScreenState
     }
   }
 
+  /// 実況のために付いたデコを、番組の終わりを待たずに外す (#1409)。
+  ///
+  /// 外したあとはサーバー側でデコが変わっているので、自分のユーザーを引き
+  /// 直して手元とアカウントへ反映する（[_run] と同じ書き戻し先）。
+  bool _restoringLive = false;
+
+  Future<void> _restoreLive() async {
+    if (_restoringLive || _savingId != null) return;
+    final account = ref.read(currentAccountProvider);
+    final mulukhiya = account?.mulukhiya;
+    if (account == null || mulukhiya == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final accounts = ref.read(accountManagerProvider.notifier);
+    setState(() => _restoringLive = true);
+    try {
+      await mulukhiya.restoreLiveDecoration(
+        accessToken: account.userSecret.accessToken,
+      );
+      if (!mounted) return;
+      ref.invalidate(liveDecorationProvider);
+      // ⚠ 外すのは済んでいる。引き直しの失敗を「外せませんでした」にしない
+      // （次に開いたとき・アカウントの再取得で揃う）。
+      try {
+        final user = await account.adapter.getMyself();
+        accounts.updateUserOf(account.key, user);
+        if (mounted) setState(() => _localUser = user);
+      } catch (e) {
+        debugLogException('refetch after live decoration restore failed', e);
+      }
+    } catch (e, st) {
+      reportOpFailure(
+        tagKey: 'avatar_decoration.op',
+        operation: 'restore_live',
+        error: e,
+        stackTrace: st,
+        account: account,
+      );
+      messenger.showSnackBar(
+        SnackBar(content: Text('外せませんでした\n${summarizeOpError(e)}')),
+      );
+    } finally {
+      if (mounted) setState(() => _restoringLive = false);
+    }
+  }
+
   Future<void> _toggle(AvatarDecorationOption option, bool attached) => _run(
     option,
     attached
@@ -225,6 +318,8 @@ class _AvatarDecorationScreenState
       attached: attachedById.length,
       limit: limit,
     );
+    // 実況のために付いたデコ (#1409)。⚠ 読めなければ null で、帯を出さない。
+    final live = ref.watch(liveDecorationProvider).valueOrNull;
     return Scaffold(
       appBar: AppBar(title: const Text('アイコンデコレーション')),
       body: BottomSafeArea(
@@ -234,6 +329,12 @@ class _AvatarDecorationScreenState
               Padding(
                 padding: const EdgeInsets.all(24),
                 child: UserAvatar(user: user, size: 96),
+              ),
+            if (live != null)
+              _LiveDecorationBanner(
+                live: live,
+                restoring: _restoringLive,
+                onRestore: _savingId != null ? null : _restoreLive,
               ),
             if (remaining != null)
               Padding(
@@ -262,7 +363,13 @@ class _AvatarDecorationScreenState
                       final option = list[index];
                       final decoration = attachedById[option.id];
                       final attached = decoration != null;
-                      final description = option.description;
+                      // ⚠ 実況のために付いたものは行でも示す（どれが外れるかが
+                      // 一覧で分かるように・#1409）。
+                      final isLive =
+                          attached && live?.id != null && live!.id == option.id;
+                      final description = isLive
+                          ? '実況中（番組の終わりに外れます）'
+                          : option.description;
                       return ListTile(
                         leading: Image.network(
                           option.url,
@@ -320,6 +427,64 @@ class _AvatarDecorationScreenState
                 },
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 実況のために付いたデコの帯 (#1409)。外れる予定と、待たずに外す操作。
+///
+/// ⚠ 外す相手が分からない（実況を始める前から同じデコを付けていた）ときは
+/// 「外す」を出さない（[MulukhiyaLiveDecoration.restorable]）。
+class _LiveDecorationBanner extends StatelessWidget {
+  const _LiveDecorationBanner({
+    required this.live,
+    required this.restoring,
+    required this.onRestore,
+  });
+
+  final MulukhiyaLiveDecoration live;
+  final bool restoring;
+  final VoidCallback? onRestore;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      key: const ValueKey('live-decoration-banner'),
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      color: theme.colorScheme.secondaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+        child: Row(
+          children: [
+            Icon(Icons.live_tv, color: theme.colorScheme.onSecondaryContainer),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                liveDecorationBannerText(live),
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSecondaryContainer,
+                ),
+              ),
+            ),
+            if (live.restorable)
+              restoring
+                  ? const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  : TextButton(
+                      key: const ValueKey('live-decoration-restore'),
+                      onPressed: onRestore,
+                      child: const Text('いま外す'),
+                    ),
           ],
         ),
       ),
