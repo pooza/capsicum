@@ -1722,6 +1722,54 @@ class MisskeyClient {
     );
   }
 
+  /// POST /api/users/clips (#1377)。その人の公開のクリップ。
+  Future<List<Map<String, dynamic>>> getUserClips(
+    String userId, {
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/users/clips',
+      data: createBody({
+        'userId': userId,
+        'untilId': ?untilId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/clips/show (#1377)
+  Future<Map<String, dynamic>> showClip(String clipId) async {
+    final response = await dio.post(
+      '/api/clips/show',
+      data: createBody({'clipId': clipId}),
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// POST /api/clips/my-favorites (#1377)
+  Future<List<Map<String, dynamic>>> getFavoriteClips() async {
+    final response = await dio.post(
+      '/api/clips/my-favorites',
+      data: createBody({}),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/clips/favorite (#1377)
+  Future<void> favoriteClip(String clipId) async {
+    await dio.post('/api/clips/favorite', data: createBody({'clipId': clipId}));
+  }
+
+  /// POST /api/clips/unfavorite (#1377)
+  Future<void> unfavoriteClip(String clipId) async {
+    await dio.post(
+      '/api/clips/unfavorite',
+      data: createBody({'clipId': clipId}),
+    );
+  }
+
   /// POST /api/notes/clips (#1050)。⚠ 公開のクリップしか返らない（ほかの人の
   /// ものも含む）。
   Future<List<Map<String, dynamic>>> getClipsContainingNote(

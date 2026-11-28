@@ -23,6 +23,7 @@ import '../util/sentry_tag_hash.dart';
 import 'bounded_key_set.dart';
 import 'delivered_push_cleaner.dart';
 import 'notification_dedup_channel.dart';
+import 'notification_label_cache.dart' show titleWithRecipient;
 import 'notification_tag.dart';
 import 'stream_connect_failure_reporter.dart';
 
@@ -359,9 +360,14 @@ class DesktopNotificationDispatcher {
     }
     final subsystem = _ref.read(notificationSubsystemProvider);
     final display = notificationTypeDisplay(n.type);
-    // 複数アカウントがログインしているときだけ宛先を明示する (単一垢では冗長)。
-    final multiAccount = _ref.read(accountManagerProvider).accounts.length > 1;
-    final title = _title(n, display, multiAccount ? account.key : null);
+    // 複数アカウントのときだけ宛先を明示する (単一垢では冗長)。
+    // ⚠ 判定はプッシュの経路と同じ [isMultiAccountForPush]（#1420）。オフライン
+    // 保持中のアカウントも数える —— オンライン 1 件 + オフライン 1 件の端末で、
+    // プッシュの見出しには宛先が付き、こちらには付かない、を起こさない。
+    final multiAccount = isMultiAccountForPush(
+      _ref.read(accountManagerProvider),
+    );
+    final title = _title(n, display, account.key, multiAccount: multiAccount);
     final body = _body(n, localHost: account.key.host);
     // 本文（ユーザーコンテンツ）はログに残さない。account/id/type と有無のみ。
     debugPrint(
@@ -504,16 +510,20 @@ class DesktopNotificationDispatcher {
     );
   }
 
+  /// 見出し。複数アカウントなら宛先を末尾に添える（#1407）。
+  ///
+  /// ⚠ **添え方はプッシュの経路と同じ [titleWithRecipient] を通す**（#1420）。
+  /// 自前で組んでいた間は、形を揃えるのがコメント頼みだった。
   String _title(
     Notification n,
     NotificationTypeDisplay display,
-    AccountKey? recipient,
-  ) {
-    final base = _baseTitle(n, display);
-    if (recipient == null) return base;
-    // 宛先アカウントを末尾に添える (複数垢の区別用)。
-    return '$base (${recipient.handle})';
-  }
+    AccountKey recipient, {
+    required bool multiAccount,
+  }) => titleWithRecipient(
+    _baseTitle(n, display),
+    '${recipient.username}@${recipient.host}',
+    multiAccount: multiAccount,
+  );
 
   String _baseTitle(Notification n, NotificationTypeDisplay display) {
     if (n.type == NotificationType.announcement) {

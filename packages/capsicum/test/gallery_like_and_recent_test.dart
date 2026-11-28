@@ -95,6 +95,39 @@ void main() {
 
       expect(find.byIcon(Icons.favorite), findsOneWidget);
       expect(find.byType(SnackBar), findsNothing);
+      // ⚠ もともといいね済みだった＝件数には含まれている。足さない（#1420）。
+      expect(find.text('2'), findsOneWidget);
+    });
+
+    // #1420: 一覧の投稿は取得した時点のまま。詳細で変えたものを開き直しで失わない。
+    testWidgets('⚠⚠ いいねして閉じ、同じ（古い）投稿で開き直しても、いいね済みで出る', (tester) async {
+      when(() => adapter.likeGalleryPost(any())).thenAnswer((_) async {});
+      final stale = _post('p1', isLiked: false);
+      final open = ValueNotifier(true);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [currentAdapterProvider.overrideWithValue(adapter)],
+          child: MaterialApp(
+            home: ValueListenableBuilder<bool>(
+              valueListenable: open,
+              builder: (_, isOpen, _) => isOpen
+                  ? GalleryDetailScreen(key: UniqueKey(), post: stale)
+                  : const SizedBox(),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(like);
+      await tester.pumpAndSettle();
+      open.value = false;
+      await tester.pumpAndSettle();
+      open.value = true;
+      await tester.pumpAndSettle();
+
+      expect(find.byIcon(Icons.favorite), findsOneWidget);
+      expect(find.text('3'), findsOneWidget);
     });
 
     testWidgets('自分の投稿（YOUR_POST）は戻して専用の文言', (tester) async {

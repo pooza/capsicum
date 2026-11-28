@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:capsicum_backends/capsicum_backends.dart';
+import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
 import 'package:test/test.dart';
 
@@ -149,6 +150,68 @@ void main() {
       );
 
       expect(capture.fields.containsKey('data[policy]'), isFalse);
+    });
+  });
+
+  // #1411: 通知の種類ごとにプッシュ通知をオン / オフする。
+  group('通知の分類で絞る (#1411)', () {
+    test('⚠⚠ 分類が指す種別は、すべて送っている種別に含まれる', () {
+      // 表に無い種別を絞っても、購読の本文に載らないので効かない。
+      for (final types in mastodonAlertTypesByCategory.values) {
+        for (final type in types) {
+          expect(pushAlertTypes, contains(type));
+        }
+      }
+    });
+
+    test('すべての分類に行き先がある', () {
+      expect(
+        mastodonAlertTypesByCategory.keys.toSet(),
+        PushAlertCategory.values.toSet(),
+      );
+    });
+
+    test('⚠ 分類に入らない種別（警告・通報など）は絞れない', () {
+      final filterable = mastodonMutedAlertTypes(
+        PushAlertCategory.values.toSet(),
+      );
+      expect(filterable, isNot(contains('moderation_warning')));
+      expect(filterable, isNot(contains('admin.report')));
+      expect(filterable, isNot(contains('severed_relationships')));
+    });
+
+    test('切った分類だけ false で送り、ほかは true のまま', () async {
+      final adapter = await MastodonAdapter.create('mastodon.example');
+      final capture = _CapturingAdapter();
+      adapter.client.dio.httpClientAdapter = capture;
+
+      await adapter.subscribePush(
+        endpoint: 'https://relay.example/push/abc',
+        p256dh: 'p256dh-dummy',
+        auth: 'auth-dummy',
+        mutedCategories: {
+          PushAlertCategory.favourite,
+          PushAlertCategory.follow,
+        },
+      );
+
+      expect(capture.fields['data[alerts][favourite]'], 'false');
+      expect(capture.fields['data[alerts][follow]'], 'false');
+      expect(capture.fields['data[alerts][follow_request]'], 'false');
+      expect(capture.fields['data[alerts][mention]'], 'true');
+      expect(capture.fields['data[alerts][reblog]'], 'true');
+      expect(capture.fields['data[alerts][moderation_warning]'], 'true');
+    });
+
+    test('Mastodon は絞れる・Misskey は絞れない', () async {
+      expect(
+        (await MastodonAdapter.create('m.example')).supportsPushAlertFilter,
+        isTrue,
+      );
+      expect(
+        (await MisskeyAdapter.create('k.example')).supportsPushAlertFilter,
+        isFalse,
+      );
     });
   });
 }

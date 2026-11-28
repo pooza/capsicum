@@ -6,12 +6,15 @@ import 'package:capsicum/src/model/account_key.dart';
 import 'package:capsicum/src/provider/account_manager_provider.dart';
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
 import 'support/dart_source.dart';
 
 class _PlainAdapter extends Mock implements DecentralizedBackendAdapter {}
+
+class _MastodonAdapter extends Mock implements MastodonAdapter {}
 
 class _RevokingAdapter extends Mock
     implements DecentralizedBackendAdapter, TokenRevokeSupport {}
@@ -115,6 +118,71 @@ void main() {
       await expectLater(
         AccountManagerNotifier.revokeTokenOnLogout(_account(_PlainAdapter())),
         completes,
+      );
+    });
+  });
+
+  // #1420: 取り消しが仕組みとして通っているかを現場で見られるようにする。
+  group('取り消しの失敗を Sentry へ送るか', () {
+    DioException response(int status) {
+      final options = RequestOptions(path: '/oauth/revoke');
+      return DioException(
+        requestOptions: options,
+        response: Response(requestOptions: options, statusCode: status),
+        type: DioExceptionType.badResponse,
+      );
+    }
+
+    final mastodon = _MastodonAdapter();
+    final misskey = _RevokingAdapter();
+
+    test('⚠⚠ Mastodon 系でサーバーが応答した失敗は送る', () {
+      expect(
+        AccountManagerNotifier.shouldReportRevokeFailure(
+          mastodon,
+          response(403),
+        ),
+        isTrue,
+      );
+      expect(
+        AccountManagerNotifier.shouldReportRevokeFailure(
+          mastodon,
+          response(500),
+        ),
+        isTrue,
+      );
+    });
+
+    test('401（もう失効している）は送らない', () {
+      expect(
+        AccountManagerNotifier.shouldReportRevokeFailure(
+          mastodon,
+          response(401),
+        ),
+        isFalse,
+      );
+    });
+
+    test('回線の失敗は送らない', () {
+      expect(
+        AccountManagerNotifier.shouldReportRevokeFailure(
+          mastodon,
+          DioException(
+            requestOptions: RequestOptions(path: '/oauth/revoke'),
+            type: DioExceptionType.connectionError,
+          ),
+        ),
+        isFalse,
+      );
+    });
+
+    test('Mastodon 系でなければ送らない（古い Misskey のエラーは今のまま）', () {
+      expect(
+        AccountManagerNotifier.shouldReportRevokeFailure(
+          misskey,
+          response(404),
+        ),
+        isFalse,
       );
     });
   });

@@ -72,6 +72,12 @@ void main() {
       offline: 'PushDisabledAccounts.forget(',
     ),
     (
+      // 同じ理由。残すと、入り直したときに一部の種類が黙って届かない。
+      what: '受け取らない通知の分類 (#1411)',
+      logout: 'PushMutedAlerts.forget(',
+      offline: 'PushMutedAlerts.forget(',
+    ),
+    (
       what: 'Windows の push_labels.json',
       logout: '_syncWindowsPushLabels(',
       offline: '_syncWindowsPushLabels(',

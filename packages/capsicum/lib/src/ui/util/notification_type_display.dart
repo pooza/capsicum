@@ -258,3 +258,24 @@ NotificationType notificationTypeFromString(String? raw) {
       return NotificationType.other;
   }
 }
+
+/// プッシュ通知の種類ごとのオン / オフ (#1411) で出す名前。
+///
+/// ⚠ **通知の一覧と同じ名前にする**（[notificationTypeDisplay] から引く）。分類が
+/// 2 つの種類を束ねるもの（フォロー・編集）は、両方の名前を並べる。
+/// 絞れるのは Mastodon 系だけなので、ブースト・投稿は既定の呼び名でよい。
+String pushAlertCategoryLabel(PushAlertCategory category) {
+  String of(NotificationType type) => notificationTypeDisplay(type).label;
+  return switch (category) {
+    PushAlertCategory.mention => of(NotificationType.mention),
+    PushAlertCategory.favourite => of(NotificationType.favourite),
+    PushAlertCategory.reblog => of(NotificationType.reblog),
+    PushAlertCategory.follow =>
+      '${of(NotificationType.follow)}・${of(NotificationType.followRequest)}',
+    PushAlertCategory.poll => of(NotificationType.poll),
+    PushAlertCategory.status => of(NotificationType.newPost),
+    PushAlertCategory.update =>
+      '${of(NotificationType.update)}・${of(NotificationType.quotedUpdate)}',
+    PushAlertCategory.quote => of(NotificationType.quote),
+  };
+}

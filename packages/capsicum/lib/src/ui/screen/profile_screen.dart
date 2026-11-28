@@ -15,6 +15,7 @@ import '../../provider/is_cat_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/supporter_status_provider.dart';
+import '../../service/info_bot_follow_keeper.dart';
 import '../../service/server_version_checker.dart';
 import '../../service/tco_resolver.dart';
 import '../../url_helper.dart';
@@ -44,7 +45,7 @@ import '../widget/user_avatar.dart';
 /// プロフィール画面のタブ種別。表示するタブ集合は adapter のケーパビリティと
 /// Mastodon 4.6 の show_media 設定（#732）で動的に決まるため、位置インデックスの
 /// 直書きをやめ、この列挙で意味付けする。
-enum _ProfileTab { posts, media, gallery, pages }
+enum _ProfileTab { posts, media, gallery, pages, clips }
 
 /// 相手が、開いているアカウント（[accountHost]）と同じサーバーの人か。
 /// host が無い（空も含む）相手は同じサーバーとして扱い、host は大文字小文字を
@@ -152,8 +153,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   bool _hasMorePages = true;
   bool _pagesTabLoaded = false;
 
+  // その人の公開のクリップ (#1377)。
+  List<NoteClip> _clips = [];
+  bool _loadingClips = true;
+  bool _loadingMoreClips = false;
+  bool _hasMoreClips = true;
+  bool _clipsTabLoaded = false;
+
   bool get _hasGalleryTab => ref.read(currentAdapterProvider) is GallerySupport;
   bool get _hasPagesTab => ref.read(currentAdapterProvider) is PagesSupport;
+  bool get _hasClipsTab =>
+      ref.read(currentAdapterProvider) is ClipFavoriteSupport;
 
   /// 表示するタブの順序付きリスト。adapter のケーパビリティに加え、Mastodon 4.6
   /// の show_media 設定（#732）でメディアタブの有無が決まる。show_media が未対応
@@ -163,6 +173,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     if (_user.showMedia != false) _ProfileTab.media,
     if (_hasGalleryTab) _ProfileTab.gallery,
     if (_hasPagesTab) _ProfileTab.pages,
+    if (_hasClipsTab) _ProfileTab.clips,
   ];
 
   static const _tabLabels = <_ProfileTab, String>{
@@ -170,6 +181,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     _ProfileTab.media: 'メディア',
     _ProfileTab.gallery: 'ギャラリー',
     _ProfileTab.pages: 'ページ',
+    _ProfileTab.clips: 'クリップ',
   };
 
   UserRelationship? _relationship;
@@ -245,6 +257,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
         if (!_galleryTabLoaded) _loadGalleryPosts();
       case _ProfileTab.pages:
         if (!_pagesTabLoaded) _loadPages();
+      case _ProfileTab.clips:
+        if (!_clipsTabLoaded) _loadClips();
       case _ProfileTab.posts:
         break;
     }
@@ -276,6 +290,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           _loadMoreGalleryPosts();
         case _ProfileTab.pages:
           _loadMorePages();
+        case _ProfileTab.clips:
+          _loadMoreClips();
       }
     }
   }
@@ -537,7 +553,57 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     }
   }
 
+  Future<void> _loadClips() async {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! ClipFavoriteSupport) return;
+
+    _clipsTabLoaded = true;
+    try {
+      final clips = await (adapter as ClipFavoriteSupport).getUserClips(
+        widget.user.id,
+        query: const TimelineQuery(limit: 20),
+      );
+      if (mounted) {
+        setState(() {
+          _clips = clips;
+          _loadingClips = false;
+          _hasMoreClips = clips.length >= 20;
+        });
+      }
+    } catch (e) {
+      _clipsTabLoaded = false;
+      if (mounted) setState(() => _loadingClips = false);
+    }
+  }
+
+  Future<void> _loadMoreClips() async {
+    if (_loadingMoreClips || !_hasMoreClips || _clips.isEmpty) return;
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! ClipFavoriteSupport) return;
+
+    setState(() => _loadingMoreClips = true);
+    try {
+      final older = await (adapter as ClipFavoriteSupport).getUserClips(
+        widget.user.id,
+        query: TimelineQuery(maxId: _clips.last.id, limit: 20),
+      );
+      if (mounted) {
+        setState(() {
+          _clips = [..._clips, ...older];
+          _loadingMoreClips = false;
+          _hasMoreClips = older.length >= 20;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _loadingMoreClips = false);
+    }
+  }
+
   Future<void> _loadRelationship() async {
+    // ⚠ 操作の await 中に画面を閉じると、ここへは dispose 後に来る（#1423）。
+    // `_isOwnProfile` も `ref` を読むので、その前に降りる。`_performAction` の
+    // catch から呼ぶ 2 回目は try の外なので、投げると fatal になる。
+    if (!mounted) return;
     if (_isOwnProfile) return;
     final adapter = ref.read(currentAdapterProvider);
     if (adapter == null || adapter is! FollowSupport) return;
@@ -551,6 +617,19 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     }
   }
 
+  /// 開いているのが、自分のサーバーのお知らせボットか (#1402)。
+  bool get _isOwnInfoBot {
+    final host = ref.read(currentAccountProvider)?.key.host;
+    if (host == null) return false;
+    return InfoBotFollowKeeper.isOwnInfoBot(
+      user: widget.user,
+      infoBotAcct: ref.read(currentMulukhiyaProvider)?.infoBotAcct,
+      localHost: host,
+    );
+  }
+
+  static const _infoBotLockReason = 'お知らせボットのフォローは解除できません';
+
   Future<bool> _performAction(Future<void> Function() action) async {
     if (_relationshipLoading) return false;
     setState(() => _relationshipLoading = true);
@@ -560,9 +639,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       return true;
     } catch (e) {
       if (mounted) {
+        // サーバーが解除・ブロックを拒んだ (#1402) ならその理由を出す。
+        final refusal = InfoBotFollowKeeper.refusalMessage(e);
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('操作に失敗しました')));
+        ).showSnackBar(SnackBar(content: Text(refusal ?? '操作に失敗しました')));
       }
       debugLogException('User action error', e);
       // ⚠ 失敗したときも関係を取り直す（v2.13 のリリース前レビュー）。開いている
@@ -779,6 +860,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
         return _buildGalleryTab();
       case _ProfileTab.pages:
         return _buildPagesTab();
+      case _ProfileTab.clips:
+        return _buildClipsTab();
     }
   }
 
@@ -1039,6 +1122,56 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             return PageCard(page: _pages[index]);
           }, childCount: _pages.length + (_loadingMorePages ? 1 : 0)),
         ),
+      ),
+    ];
+  }
+
+  /// その人の公開のクリップ (#1377)。開くと既存のクリップの画面。
+  ///
+  /// ⚠⚠ **開く側のスコープを運ぶ**（`extraWithProviderScope`）。デッキの別アカウントの
+  /// カラムから開いても、クリップの id をそのアカウントのサーバーで引く
+  /// （クリップのカラム種別は無いので全画面で開く）。
+  List<Widget> _buildClipsTab() {
+    if (_loadingClips) {
+      return [
+        const SliverFillRemaining(
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      ];
+    }
+    if (_clips.isEmpty) {
+      return [
+        const SliverFillRemaining(child: Center(child: Text('クリップはありません'))),
+      ];
+    }
+    return [
+      SliverList(
+        delegate: SliverChildBuilderDelegate((context, index) {
+          if (index >= _clips.length) {
+            return const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(child: CircularProgressIndicator()),
+            );
+          }
+          final clip = _clips[index];
+          final description = clip.description;
+          return ListTile(
+            key: ValueKey('profile-clip-${clip.id}'),
+            leading: const Icon(Icons.content_paste),
+            title: Text(clip.name),
+            subtitle: description == null || description.isEmpty
+                ? null
+                : Text(
+                    description,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+            onTap: () => context.push(
+              '/clip/${clip.id}',
+              extra: extraWithProviderScope(context, {'clip': clip}),
+            ),
+          );
+        }, childCount: _clips.length + (_loadingMoreClips ? 1 : 0)),
       ),
     ];
   }
@@ -1562,9 +1695,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     final boostLabel = ref.read(reblogLabelProvider);
     final messenger = ScaffoldMessenger.of(context);
     final followState = followButtonStateOf(rel);
+    // 自分のサーバーのお知らせボットは、フォローを外させない・ブロックさせない
+    // (#1402)。⚠ フォローしていないときは「フォロー」を押せるようにする。
+    final isInfoBot = _isOwnInfoBot;
+    final lockFollow = isInfoBot && followState == FollowButtonState.unfollow;
     final followButton = FilledButton.icon(
       key: const ValueKey('profile-follow-button'),
-      onPressed: _relationshipLoading
+      onPressed: _relationshipLoading || lockFollow
           ? null
           : () => _performAction(
               () => switch (followButtonStateOf(rel)) {
@@ -1577,8 +1714,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                 FollowButtonState.follow => adapter.followUser(widget.user.id),
               },
             ),
-      icon: Icon(followState.icon),
-      label: Text(followState.label),
+      icon: Icon(lockFollow ? Icons.lock_outline : followState.icon),
+      label: Text(lockFollow ? 'フォロー中' : followState.label),
       style: followState != FollowButtonState.follow
           ? FilledButton.styleFrom(
               backgroundColor: Theme.of(
@@ -1588,10 +1725,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             )
           : null,
     );
-    final followTooltip = followState.tooltip;
+    final followTooltip = lockFollow ? _infoBotLockReason : followState.tooltip;
     return [
       if (followTooltip != null)
-        Tooltip(message: followTooltip, child: followButton)
+        Tooltip(
+          message: followTooltip,
+          // ⚠ 押せないボタン (#1402) は、軽く押しただけで理由を出す。長押しの
+          // ままだと、スマホでは押せない理由に辿り着けない。
+          triggerMode: lockFollow ? TooltipTriggerMode.tap : null,
+          child: followButton,
+        )
       else
         followButton,
       PopupMenuButton<String>(
@@ -1729,7 +1872,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             ),
           if (rel.blocking)
             const PopupMenuItem(value: 'unblock', child: Text('ブロック解除'))
-          else
+          // お知らせボットはブロックさせない (#1402)。ブロックするとフォローが
+          // 外れる。⚠ すでにブロックしているなら解除は出す（上の分岐）。
+          else if (!isInfoBot)
             const PopupMenuItem(value: 'block', child: Text('ブロック')),
           // 通報はミュート / ブロックと同じ「相手への対処」なので隣に置く。
           // 投稿の長押しメニューにしか無く、プロフィールから辿れなかった (#998)。

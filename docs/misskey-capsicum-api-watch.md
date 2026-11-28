@@ -139,6 +139,21 @@ daisskey（ダイスキー本番のフォーク本体）への**本番適用**�
 
 ## トリアージ履歴
 
+### 前倒し: 上流タグ `2026.11.0..2026.11.1`（2026-11-26 記録）
+
+⚠ **fork（`daisskey`）が 2026.11.1 を取り込む前の前倒し**で、上流のタグどうしで差分した（49 commits・重大な脆弱性の修正を含む）。`daisskey` は `d8dfeedd12`（2026.11.0+0）。ダイスキー本番・ステージングとも **2026.11.0+0**、きゅあすきーは **2026.9.1**（いずれも `/api/meta` で実測）。
+
+✅ **actionable なし。**
+
+- ① `autogen/`・② `models/json-schema/`・新規 / 削除 endpoint・endpoint の `required` / `limit` / `requireCredential` / `kind`・④ `router.definition.ts` はいずれも 0 件
+- **passive**: `/api/*` の受け口が GET / POST だけになった（misskey-dev/misskey#18190・それ以外のメソッドは未知のパスと同じ扱い）。capsicum の Misskey 実装は POST（と allowGet の GET）しか使っていない
+- **passive**: `hashtag` チャンネルの `q` に上限が入った（グループ 32・1 グループ 32 タグ・1〜128 文字・空文字は拒否）。capsicum は `HashtagQuery.orOfAnds` で空のタグを作らない。OR が 33 個以上の条件だけがストリームを張れなくなる（REST の読み込みは残る）
+- **passive**: `drive/files/create` に `NO_SUCH_FOLDER` が増えた（消えたフォルダへのアップロード）。`upstream_error_message.dart` に無いので汎用の文言に倒れる
+- **passive**: `userList` チャンネルが内部のイベントを流さなくなり、所属の読み直しを 5 秒ごとの poll からイベント駆動へ変えた。クライアントへ転送するのは `note` / `userAdded` / `userRemoved` だけ。リストの削除後は `note` を送らない
+- **none**: HTML の解析を `parseUntrustedHtml` へ寄せた（`i/update` のリンク認証・OAuth のクライアント情報）/ 管理者によるアイコン・バナーの解除の配信 / チャットの履歴 / IPv6 のプロキシ / フォロー解除の連合 / 管理コマンド
+- **③ `@syuilo/aiscript` は 1.2.1 で据え置き**。2026.11.0 の宿題だった Flash 互換ハーネスは daisskey が 2026.11.0 になっているのでこの回に回した: **6 / 6 pass**（ダイスキー 4・きゅあすきー 2）
+- ⚠⚠ **フォークの取り込み（capsicum の外・pooza/misskey）**: `git merge-tree` で、毎回の CI 定義・`package.json` に加えて **`AccountMoveService.ts` と `UserBlockingService.ts` が中身で衝突**する（どちらも依存の注入の並びで、#467 の `AutoFollowService` と上流の `UserListService` を両方残せば解ける）。🔴 **上流はアカウント移行時のリスト引き継ぎを `UserListService.copyMemberships` へ移し、そこにプロキシのフォロー（`createFollowJob`）を持ってきた。**フォークが #344 / #468 で止めていたのは旧い場所なので、**衝突しないまま新しい場所で復活する**（結果ツリーの 240 行目）。取り込むときに同じ形で止める必要がある
+
 ### 前倒し: 上流タグ `2026.10.1..2026.11.0`（2026-11-12 記録）
 
 ⚠ **fork（`daisskey`）が 2026.11.0 を取り込む前の前倒し**で、上流のタグどうしで差分した（64 commits）。`daisskey` は `481883ac2a`（2026.10.1+0）のまま。ダイスキー本番・ステージングとも **2026.10.1+0**、きゅあすきーは **2026.9.1**（いずれも `/api/meta` で実測）。

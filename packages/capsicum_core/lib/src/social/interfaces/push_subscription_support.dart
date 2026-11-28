@@ -16,6 +16,23 @@ class PushRegistrationNotSupportedException implements Exception {
   String toString() => 'PushRegistrationNotSupportedException: $message';
 }
 
+/// 利用者が種類ごとにプッシュ通知をオン / オフできる通知の分類 (#1411)。
+///
+/// ⚠ サーバーの通知の種類そのものではなく、**利用者に見せる分類**。Mastodon の
+/// `data[alerts][<type>]` へはアダプターが写す（例: [follow] は `follow` と
+/// `follow_request`、[update] は `update` と `quoted_update`）。ここに無い種類
+/// （管理者からの警告・関係が失われた・新規登録・通報など）は常に受け取る。
+enum PushAlertCategory {
+  mention,
+  favourite,
+  reblog,
+  follow,
+  poll,
+  status,
+  update,
+  quote,
+}
+
 /// Web Push サブスクリプションの登録・解除を行う Feature インターフェース。
 ///
 /// Mastodon: POST /api/v1/push/subscription, DELETE /api/v1/push/subscription
@@ -34,11 +51,24 @@ abstract mixin class PushSubscriptionSupport {
   /// [auth] 認証シークレット（Base64URL エンコード）
   ///
   /// 戻り値: サーバーから返されたサブスクリプション情報（サーバー依存）。
+  ///
+  /// [mutedCategories] 利用者が切った通知の分類 (#1411)。サーバー側で送らなく
+  /// させる。⚠ **絞る口を持たないサーバー（Misskey）は無視する**
+  /// （[supportsPushAlertFilter] が false）。
   Future<Map<String, dynamic>> subscribePush({
     required String endpoint,
     required String p256dh,
     required String auth,
+    Set<PushAlertCategory> mutedCategories = const {},
   });
+
+  /// 通知の種類ごとに、サーバー側で送る / 送らないを絞れるか (#1411)。
+  ///
+  /// ⚠ Misskey の `sw/register` には絞る口が無く、payload は暗号化されていて
+  /// relay も種類を見られない。端末で捨てるには iOS の NSE に特別な entitlement
+  /// （`com.apple.developer.usernotifications.filtering`）が要るので、Misskey は
+  /// 対象外にした（#1411 の着手時の判断）。
+  bool get supportsPushAlertFilter => false;
 
   /// Web Push サブスクリプションを解除する。
   ///

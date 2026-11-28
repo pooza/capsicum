@@ -64,6 +64,35 @@ void main() {
   });
 
   group('登録状況の表示', () {
+    // #1420: オフにする途中で relay への登録が落ちた回。
+    test('⚠⚠ オフの印があって失敗なら「オフ」を先に言い、再試行は残す', () {
+      final (text, _, _) = describePushRegistrationStatus(
+        ThemeData(),
+        PushRegistrationState.failed,
+        true,
+        null,
+        disabledByUser: true,
+      );
+      expect(text, startsWith('オフ'));
+      expect(
+        isPushRegistrationRetryable(
+          PushRegistrationState.failed,
+          eligible: true,
+        ),
+        isTrue,
+      );
+    });
+
+    test('オフの印が無ければ、失敗は失敗のまま', () {
+      final (text, _, _) = describePushRegistrationStatus(
+        ThemeData(),
+        PushRegistrationState.failed,
+        true,
+        null,
+      );
+      expect(text, '登録に失敗しました');
+    });
+
     test('「オフ」と出し、再試行は出さない（失敗ではない）', () {
       final (text, _, _) = describePushRegistrationStatus(
         ThemeData(),

@@ -23,6 +23,7 @@ export 'src/model/flash.dart';
 export 'src/model/gallery_post.dart';
 export 'src/model/hashtag_spec.dart';
 export 'src/model/instance.dart';
+export 'src/model/mulukhiya_live_decoration.dart';
 export 'src/model/mulukhiya_user_handler.dart';
 export 'src/model/notification.dart';
 export 'src/model/notification_query.dart';

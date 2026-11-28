@@ -3,10 +3,78 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../provider/account_manager_provider.dart';
+import '../../provider/channel_provider.dart';
+import '../../provider/hashtag_provider.dart';
+import '../../provider/list_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../util/action_labels.dart';
 import '../screen/post_list_screen.dart';
 import '../screen/user_list_screen.dart';
+import 'timeline_type_label.dart';
+
+/// タブ / カラムの種別のラベル。[adapter] はそのタブのアカウントのもの。
+///
+/// ⚠ カラムのラベルは [columnTabLabel] / [columnTabLabelInScope] から呼ぶ。
+/// これを直に呼ぶのは、`isMastodon` を自前で持っているタブ UI だけ。
+String tabLabel(
+  WidgetRef ref,
+  TabType tab,
+  bool isMastodon,
+  DecentralizedBackendAdapter? adapter,
+  List<PostList> allLists,
+) {
+  return switch (tab) {
+    TimelineTab(:final type) => timelineTypeLabel(
+      ref,
+      type,
+      isMastodon: isMastodon,
+      adapter: adapter,
+    ),
+    ListTab(:final id, :final name) =>
+      name ?? allLists.where((l) => l.id == id).firstOrNull?.title ?? id,
+    HashtagTab(:final tag) => hashtagSpecLabel(tag),
+    ChannelTab(:final id, :final name) => channelTabLabel(ref, id, name),
+    NotificationsTab() => '通知',
+    AnnouncementsTab() => 'お知らせ',
+    MessagesTab() => 'メッセージ',
+    final DeckOnlyTab t => deckOnlyTabLabel(ref, t, adapter),
+  };
+}
+
+/// カラムの種別のラベルを、[adapter] のアカウントで組む（#1420）。
+///
+/// ⚠⚠ **カラムのラベルはここを通す。**見出し（`deck_column_view.dart`）・
+/// カラム編集のシート（`deck_columns_sheet.dart`）・メニューバーと帯
+/// （`home_menu.dart` の `deckColumnMenuLabel`）の 3 か所が、それぞれ
+/// `isMastodon` とリストの引き方を写して持っていた（v2.14 のリリース前レビュー）。
+/// 写しは片方だけ直されてずれる —— 実際にリストを引く条件がシートだけ違っていた。
+String columnTabLabel(
+  WidgetRef ref,
+  TabType tab,
+  DecentralizedBackendAdapter? adapter,
+  List<PostList> lists,
+) {
+  final isMastodon =
+      adapter != null &&
+      !adapter.capabilities.supportedTimelines.contains(TimelineType.social);
+  return tabLabel(ref, tab, isMastodon, adapter, lists);
+}
+
+/// 周りのスコープ（カラムのアカウント）で [tab] のラベルを出す（#1420）。
+///
+/// 見出しとカラム編集のシートが使う。ルートのスコープで組むメニューバーと帯は
+/// `deckColumnMenuLabel` が [columnTabLabel] を直に呼ぶ。
+///
+/// リスト名はキーに持たない（決定済み事項 4）ので、実行時に一覧から引く。
+/// ⚠ リスト以外のカラム・リストに対応しないアカウントで、一覧の取得を起こさない。
+String columnTabLabelInScope(WidgetRef ref, TabType tab) {
+  final adapter = ref.watch(currentAdapterProvider);
+  final lists = tab is ListTab && adapter is ListSupport
+      ? ref.watch(listsProvider).valueOrNull ?? const <PostList>[]
+      : const <PostList>[];
+  return columnTabLabel(ref, tab, adapter, lists);
+}
 
 /// デッキ専用のカラム種別（[DeckOnlyTab]）の見出し・アイコン・取得 (#1148 / #1150)。
 ///

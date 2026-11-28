@@ -18,8 +18,10 @@ import '../service/account_storage.dart';
 import '../service/annict_draft_store.dart';
 import '../service/background_notification_service.dart';
 import '../service/compose_draft_store.dart';
+import '../service/info_bot_follow_keeper.dart';
 import '../service/notification_label_cache.dart';
 import '../service/push_disabled_accounts.dart';
+import '../service/push_muted_alerts.dart';
 import '../service/push_registration_service.dart';
 import '../service/secret_service_probe.dart';
 import '../service/secure_storage_health.dart';
@@ -171,37 +173,47 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     // 複数アカウントかどうかを、バックグラウンドのプッシュ表示へ写す (#1407)。
     // ⚠ 一覧を書き換える箇所は 10 か所を超えるので、1 か所ずつ足さずここで受ける。
     // 起動時の復元は 1 件ずつ埋まるので、値が変わったときだけ書く。
+    //
+    // ⚠⚠ **初回（previous == null）は書かない**（#1420・Windows 側と揃えた）。
+    // 起動直後の空の状態で書くと、前回「複数」だった写しを「単数」で上書きし、
+    // 復元が済むまでに届いたバックグラウンドのプッシュに宛先が付かない。
+    // 初回の値は、復元の完了時の [_saveMultiAccountFlag] で載る。
     listenSelf((previous, next) {
+      if (previous == null) return;
       final multi = isMultiAccountForPush(next);
-      if (previous != null && isMultiAccountForPush(previous) == multi) return;
-      unawaited(
-        NotificationLabelCache.saveMultiAccount(multi).catchError((Object e) {
-          // 写しが書けなくても、見出しに宛先が付かないだけ（従来どおり）。
-          // ⚠ 例外の中身は出さない（exception_scrub_guard・型だけ）。
-          debugPrint(
-            'capsicum: notif multi_account save failed: ${e.runtimeType}',
-          );
-        }),
-      );
+      if (isMultiAccountForPush(previous) == multi) return;
+      _saveMultiAccountFlag(multi);
       // Windows の native 受信は shared_preferences を読めないので、
       // push_labels.json にも写す (#1412)。アカウントの増減の各所でも書き直して
       // いるが、オフライン保持の出入りなど値だけが変わる場合もここで拾う。
-      // ⚠ 初回（previous == null）は書かない: 起動直後の空の状態で書くと
-      // push_labels.json が消え、復元が済むまで bg task が既定ラベルに倒れる。
-      // 復元の完了時にも同期しているので、初回の値はそちらで載る。
-      if (previous != null) {
-        unawaited(
-          _syncWindowsPushLabels().catchError((Object e) {
-            // ⚠ 例外の中身は出さない（exception_scrub_guard・型だけ）。
-            debugPrint(
-              'capsicum: push labels multi_account sync failed: '
-              '${e.runtimeType}',
-            );
-          }),
-        );
-      }
+      // ⚠ 初回は上で返している: 起動直後の空の状態で書くと push_labels.json が
+      // 消え、復元が済むまで bg task が既定ラベルに倒れる。復元の完了時にも
+      // 同期しているので、初回の値はそちらで載る。
+      unawaited(
+        _syncWindowsPushLabels().catchError((Object e) {
+          // ⚠ 例外の中身は出さない（exception_scrub_guard・型だけ）。
+          debugPrint(
+            'capsicum: push labels multi_account sync failed: '
+            '${e.runtimeType}',
+          );
+        }),
+      );
     });
     return const AccountManagerState();
+  }
+
+  /// 複数アカウントかどうかの写しを書く (#1407)。待たない。
+  ///
+  /// 写しが書けなくても、見出しに宛先が付かないだけ（従来どおり）。
+  void _saveMultiAccountFlag(bool multi) {
+    unawaited(
+      NotificationLabelCache.saveMultiAccount(multi).catchError((Object e) {
+        // ⚠ 例外の中身は出さない（exception_scrub_guard・型だけ）。
+        debugPrint(
+          'capsicum: notif multi_account save failed: ${e.runtimeType}',
+        );
+      }),
+    );
   }
 
   /// provider が破棄されたか。背景再試行ループ ([_runOfflineRetryLoop]) は
@@ -348,6 +360,10 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
       preferMisskey: account.adapter is ReactionSupport,
     );
 
+    // ログインしたときに、外れていたお知らせボットのフォローを戻す (#1402)。
+    // ⚠ 待たない（ログインを遅らせない）。
+    unawaited(InfoBotFollowKeeper.ensureFor(enriched));
+
     // 通知ラベル（ブースト/投稿）を FCM バックグラウンド isolate 用に焼く。
     // registerAccount より先に完了させる: 登録直後に届く最初のプッシュが
     // ラベル未保存のまま既定値（ブースト/投稿）に化けないように。
@@ -470,6 +486,8 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     // プッシュ通知をオフにした印も捨てる (#1408)。残すと、入り直したときに
     // 何も知らせないままオフで始まる。
     await PushDisabledAccounts.forget(account.key.toStorageKey());
+    // 受け取らない通知の分類も捨てる (#1411・同じ理由)。
+    await PushMutedAlerts.forget(account.key.toStorageKey());
 
     final remaining = state.accounts
         .where((a) => a.key != account.key)
@@ -525,9 +543,38 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
         account.userSecret,
         clientSecret: account.clientSecret,
       );
-    } catch (e) {
+    } catch (e, st) {
       debugPrint('capsicum: logout: token revoke failed: ${e.runtimeType}');
+      if (shouldReportRevokeFailure(adapter, e)) {
+        reportOpFailure(
+          tagKey: 'logout.op',
+          operation: 'revoke',
+          error: e,
+          stackTrace: st,
+          account: account,
+        );
+      }
     }
+  }
+
+  /// 取り消しの失敗を Sentry へ送るか (#1420)。
+  ///
+  /// debugPrint だけでは、Mastodon の `/oauth/revoke` が仕組みとして通っているかを
+  /// 現場で確かめられない（v2.14 のリリース前レビュー）。送るのは **Mastodon 系の、
+  /// サーバーが応答した失敗**だけ。
+  ///
+  /// - 401 は送らない（もう失効している＝取り消したかった状態になっている）
+  /// - 回線の失敗（[isConnectionLevelFailure]）は送らない（端末側の事象・#1246）
+  /// - ⚠ Misskey は今のまま送らない。取り消しの口が無い古い版のエラーは
+  ///   想定どおりで、送ると版の差を数えるだけになる
+  @visibleForTesting
+  static bool shouldReportRevokeFailure(Object adapter, Object error) {
+    if (adapter is! MastodonAdapter) return false;
+    if (isConnectionLevelFailure(error)) return false;
+    if (error is DioException && error.response?.statusCode == 401) {
+      return false;
+    }
+    return true;
   }
 
   /// Re-detect mulukhiya on the current account's server and update state.
@@ -1012,6 +1059,11 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
         );
       }
     }
+    // 複数アカウントかどうかの写しを、復元の結果で書き直す (#1420)。
+    // ⚠ 一覧の変化を待つ listenSelf は初回を書かないので、**値が変わらない
+    // 起動（復元しても単数のまま）では誰も書かない**。前の起動から残った写しを
+    // ここで必ず正す。
+    _saveMultiAccountFlag(isMultiAccountForPush(state));
 
     // ⚠ **起動条件は `offline` 全体**であって `retriableFailures` ではない
     // (#974)。probe に失敗した分（secret は読めた）と、secret 自体が一過性で
@@ -1161,7 +1213,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     }
     final softwareVersion = await softwareVersionFuture;
 
-    return Account(
+    final account = Account(
       key: accountKey,
       adapter: adapter,
       user: user,
@@ -1170,6 +1222,10 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
       mulukhiya: mulukhiya,
       softwareVersion: softwareVersion,
     );
+    // 起動したときに、外れていたお知らせボットのフォローを戻す (#1402)。
+    // ⚠ 待たない（復元を遅らせない・失敗しても復元は続ける）。
+    unawaited(InfoBotFollowKeeper.ensureFor(account));
+    return account;
   }
 
   /// 1 アカウントを probe して、成功したら state へ追加する。
@@ -1601,6 +1657,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     await AnnictDraftStore.clearForAccount(key.toStorageKey());
     // プッシュ通知をオフにした印も捨てる (#1408・[logout] と同じ)。
     await PushDisabledAccounts.forget(key.toStorageKey());
+    await PushMutedAlerts.forget(key.toStorageKey());
     _removeOffline(key);
     await _syncWindowsPushLabels();
   }

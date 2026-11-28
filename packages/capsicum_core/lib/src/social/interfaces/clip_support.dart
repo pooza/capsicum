@@ -29,6 +29,30 @@ abstract mixin class ClipManagementSupport {
   Future<Set<String>> getPublicClipIdsContaining(String noteId);
 }
 
+/// ほかの人のクリップを見る・お気に入りに入れる (#1377)。
+///
+/// ⚠ お気に入りに入れられるのは**ほかの人の公開のクリップ**と自分のクリップ
+/// （Misskey の `clips/favorite` は非公開のほかの人のものを `NO_SUCH_CLIP` で断る）。
+/// 画面が出すのはほかの人のクリップだけ。
+abstract mixin class ClipFavoriteSupport {
+  /// [userId] の公開のクリップ（Misskey の `users/clips`）。
+  Future<List<NoteClip>> getUserClips(String userId, {TimelineQuery? query});
+
+  /// クリップ 1 つ（`clips/show`）。お気に入りの状態と持ち主を見るのに使う。
+  /// 消えていたら [ClipNotFound]。
+  Future<NoteClip> getClip(String clipId);
+
+  /// お気に入りに入れたクリップ（`clips/my-favorites`）。
+  Future<List<NoteClip>> getFavoriteClips();
+
+  /// お気に入りに入れる。⚠ 既に入っていても成功として扱う（目的は果たしている）。
+  /// 消えていたら [ClipNotFound]。
+  Future<void> favoriteClip(String clipId);
+
+  /// お気に入りから外す。⚠ もう外れていても成功として扱う。
+  Future<void> unfavoriteClip(String clipId);
+}
+
 /// これ以上クリップを作れない (#1050)。ロールの `clipLimit` に当たった。
 class ClipLimitReached implements Exception {
   const ClipLimitReached();

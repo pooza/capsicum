@@ -12,6 +12,7 @@ import 'package:capsicum/src/provider/account_manager_provider.dart';
 import 'package:capsicum/src/service/notification_label_cache.dart';
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
@@ -130,6 +131,19 @@ void main() {
       expect(await NotificationLabelCache.readMultiAccount(), isTrue);
       await NotificationLabelCache.saveMultiAccount(false);
       expect(await NotificationLabelCache.readMultiAccount(), isFalse);
+    });
+
+    // #1420: 起動直後の空の状態で「単数」を書くと、復元が済むまでに届いた
+    // バックグラウンドのプッシュに宛先が付かない。
+    test('⚠⚠ 最初の build（空の状態）では、前回の写しを上書きしない', () async {
+      await NotificationLabelCache.saveMultiAccount(true);
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+
+      expect(container.read(accountManagerProvider).accounts, isEmpty);
+      await pumpEventQueue();
+
+      expect(await NotificationLabelCache.readMultiAccount(), isTrue);
     });
 
     test('プラットフォームが無くても同期で投げない（呼び出し側の catchError で受けられる）', () async {

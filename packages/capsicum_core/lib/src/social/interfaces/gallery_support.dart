@@ -22,8 +22,12 @@ abstract mixin class GallerySupport {
   /// いいねする (#1053)。`write:gallery-likes` スコープが要る（旧トークンは
   /// 再ログインまで 403）。自分の投稿は `YOUR_POST`、いいね済みは
   /// `ALREADY_LIKED` で断られる。
-  Future<void> likeGalleryPost(String postId) async {}
+  ///
+  /// ⚠ **既定の実装を持たせない**（#1420）。空の既定があると、`GallerySupport` を
+  /// 名乗った新しいアダプターが上書きを忘れても通り、画面の楽観更新だけが
+  /// 成功に見える。
+  Future<void> likeGalleryPost(String postId);
 
   /// いいねを取り消す (#1053)。いいねしていなければ `NOT_LIKED`。
-  Future<void> unlikeGalleryPost(String postId) async {}
+  Future<void> unlikeGalleryPost(String postId);
 }

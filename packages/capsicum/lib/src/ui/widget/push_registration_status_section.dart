@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/entitlement_status_provider.dart';
 import '../../provider/push_registration_status_provider.dart';
+import '../../service/push_disabled_accounts.dart';
 import '../../service/push_registration_service.dart';
 import '../../service/push_registration_status.dart';
 import 'section_header.dart';
@@ -11,12 +12,28 @@ import 'section_header.dart';
 /// プッシュ通知登録状態の表示文言・色・アイコンを返す共通ロジック。
 /// 設定 → プッシュ通知画面とサーバー情報 / プロフィールの
 /// [PushRegistrationStatusSection] が同一の判定を使うために抽出してある。
+///
+/// [disabledByUser] は利用者がこのアカウントのプッシュ通知をオフにしているか
+/// （`PushDisabledAccounts`・#1408）。
 (String, Color, IconData) describePushRegistrationStatus(
   ThemeData theme,
   PushRegistrationState state,
   bool eligible,
-  PushRegistrationFailureReason? reason,
-) {
+  PushRegistrationFailureReason? reason, {
+  bool disabledByUser = false,
+}) {
+  // ⚠ オフにする途中で relay への登録が落ちると、状態は「失敗」のまま残る
+  // （#1420）。スイッチはオフなので「登録に失敗しました」だけでは食い違う。
+  // オフであることを先に言い、止まっていることを添える。⚠ 再試行は残す
+  // （[isPushRegistrationRetryable]）—— relay の行はプリセットの特例の根拠で、
+  // 再試行すれば行を作ってから「オフ」に落ち着く。
+  if (eligible && disabledByUser && state == PushRegistrationState.failed) {
+    return (
+      'オフ（プッシュ通知リレーへの登録が途中で止まっています）',
+      theme.colorScheme.outline,
+      Icons.toggle_off_outlined,
+    );
+  }
   if (!eligible) {
     return (
       // ⚠ **買えば使えることが分かる文面にする (#1218)。**以前は
@@ -158,6 +175,9 @@ class PushRegistrationStatusSection extends ConsumerWidget {
       state,
       eligible,
       snapshot?.reason,
+      disabledByUser: PushDisabledAccounts.isDisabled(
+        account.key.toStorageKey(),
+      ),
     );
 
     final retryable = isPushRegistrationRetryable(state, eligible: eligible);

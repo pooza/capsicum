@@ -2301,9 +2301,26 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     required String endpoint,
     required String p256dh,
     required String auth,
+    Set<PushAlertCategory> mutedCategories = const {},
   }) async {
-    return client.subscribePush(endpoint: endpoint, p256dh: p256dh, auth: auth);
+    return client.subscribePush(
+      endpoint: endpoint,
+      p256dh: p256dh,
+      auth: auth,
+      mutedTypes: mastodonMutedAlertTypes(mutedCategories),
+    );
   }
+
+  /// `data[alerts]` で絞れる (#1411)。
+  ///
+  /// Akkoma も同じアダプターで通り、`data[alerts]` を読む（2026-11-28 に上流の
+  /// `lib/pleroma/web/push/subscription.ex` で確認・`3e9ad30`）。⚠ ただし Akkoma が
+  /// 受けるのは `follow` / `favourite` / `mention` / `reblog` / `poll` /
+  /// `pleroma:emoji_reaction` だけで（`@supported_alert_types`）、`follow_request` は
+  /// `follow` の値に従う。投稿・編集・引用の分類は Akkoma では切り替えても変わらない
+  /// （もともとプッシュされない）。`'false'` の文字列は `BooleanLike` で偽になる。
+  @override
+  bool get supportsPushAlertFilter => true;
 
   @override
   Future<void> unsubscribePush({

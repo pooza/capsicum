@@ -120,7 +120,7 @@ class _DeckColumnStripState extends ConsumerState<DeckColumnStrip> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final hostColors = ref.watch(hostThemeColorProvider);
-    final canCloseUnlocked = canCloseUnlockedDeckColumns(ref);
+    final closeUnlockedDisabled = closeUnlockedDeckColumnsDisabledReason(ref);
     return Material(
       color: theme.colorScheme.surfaceContainer,
       child: SizedBox(
@@ -136,7 +136,7 @@ class _DeckColumnStripState extends ConsumerState<DeckColumnStrip> {
             // 「元に戻す」も挟まないので、区切り線と余白でコマから離す。
             const VerticalDivider(width: 1, indent: 10, endIndent: 10),
             const SizedBox(width: 4),
-            _CloseUnlockedButton(enabled: canCloseUnlocked),
+            _CloseUnlockedButton(disabledReason: closeUnlockedDisabled),
             const SizedBox(width: 4),
           ],
         ),
@@ -234,18 +234,22 @@ class _DeckColumnStripState extends ConsumerState<DeckColumnStrip> {
 /// シートやメニューバーと同じ [closeUnlockedDeckColumns] に任せる。⚠ **押せない
 /// ときは隠さず、押せなくする**（#1307 の規則）。名前はシートの項目名と揃える。
 class _CloseUnlockedButton extends ConsumerWidget {
-  const _CloseUnlockedButton({required this.enabled});
+  const _CloseUnlockedButton({required this.disabledReason});
 
-  final bool enabled;
-
-  static const label = 'ロックしていないカラムを閉じる';
+  /// 押せない理由。押せるときは null（[closeUnlockedDisabledReason]）。
+  final String? disabledReason;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) => IconButton(
-    key: const ValueKey('deck-strip-close-unlocked'),
-    icon: const Icon(Icons.close_fullscreen),
-    // 押せないときは、シートの項目と同じ理由を添える。
-    tooltip: enabled ? label : '$label（ロックしたカラムがあると使えます）',
-    onPressed: enabled ? () => closeUnlockedDeckColumns(ref) : null,
-  );
+  Widget build(BuildContext context, WidgetRef ref) {
+    final reason = disabledReason;
+    return IconButton(
+      key: const ValueKey('deck-strip-close-unlocked'),
+      icon: const Icon(Icons.close_fullscreen),
+      // 押せないときは、シートの項目と同じ理由を添える。
+      tooltip: reason == null
+          ? kCloseUnlockedDeckColumnsLabel
+          : '$kCloseUnlockedDeckColumnsLabel（$reason）',
+      onPressed: reason == null ? () => closeUnlockedDeckColumns(ref) : null,
+    );
+  }
 }

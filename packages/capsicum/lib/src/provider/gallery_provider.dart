@@ -176,3 +176,23 @@ final userGalleryPostsProvider = AsyncNotifierProvider.autoDispose
       UserGalleryPostsNotifier.new,
       dependencies: [currentAdapterProvider],
     );
+
+/// ギャラリーの投稿 1 つのいいねの状態 (#1420)。
+typedef GalleryLike = ({bool isLiked, int likedCount});
+
+/// 詳細で変えたいいねの、画面をまたいだ写し (#1420)。キーは投稿の id。
+///
+/// 一覧（人気・新着・プロフィール・デッキのカラム）が持つ [GalleryPost] は
+/// 取得した時点のままなので、詳細でいいね → 戻る → 開き直すと「未いいね」で
+/// 出ていた（押すと `ALREADY_LIKED` で揃うが、件数が 1 多く見える）。
+/// 一覧を取り直すとスクロール位置を失うので、詳細はこの写しを初期値に使う。
+///
+/// ⚠ **アカウントごと**（[currentAdapterProvider] を見る）。いいねは自分の
+/// 状態なので、別のアカウントの写しを出さない。⚠ autoDispose にしない ——
+/// 詳細を閉じたあと誰も見ていない間に消えると、開き直したときに使えない。
+final galleryLikeOverridesProvider = StateProvider<Map<String, GalleryLike>>((
+  ref,
+) {
+  ref.watch(currentAdapterProvider);
+  return const {};
+}, dependencies: [currentAdapterProvider]);

@@ -1,7 +1,7 @@
 name: capsicum
 description: Flutter-based Mastodon / Misskey / Akkoma client
 publish_to: none
-version: 2.14.0+223
+version: 2.15.0+225
 
 environment:
   sdk: ^3.11.0

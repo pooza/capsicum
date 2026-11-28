@@ -165,6 +165,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         ChannelManagementSupport,
         ClipSupport,
         ClipManagementSupport,
+        ClipFavoriteSupport,
         FlashSupport,
         GallerySupport,
         AntennaSupport,
@@ -260,6 +261,10 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     // ギャラリーのいいね / 取り消し (#1053)。旧トークンは 403 で、再ログインを
     // 案内する（Play のいいねと同じ）。
     'write:gallery-likes',
+    // ほかの人のクリップのお気に入りと、その一覧 (#1377)。旧トークンは 403 で、
+    // 再ログインを案内する（ギャラリーのいいねと同じ）。
+    'read:clip-favorite',
+    'write:clip-favorite',
     'read:reactions',
     'write:reactions',
     'write:report-abuse',
@@ -2481,6 +2486,52 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   Future<void> removeNoteFromClip(String clipId, String noteId) =>
       _clipWrite(() => client.removeNoteFromClip(clipId, noteId));
 
+  // ClipFavoriteSupport (#1377)
+
+  @override
+  Future<List<NoteClip>> getUserClips(
+    String userId, {
+    TimelineQuery? query,
+  }) async {
+    final data = await client.getUserClips(
+      userId,
+      untilId: query?.maxId,
+      limit: query?.limit,
+    );
+    return data.map(misskeyClipFromJson).toList();
+  }
+
+  @override
+  Future<NoteClip> getClip(String clipId) => _clipWrite(
+    () async => misskeyClipFromJson(await client.showClip(clipId)),
+  );
+
+  @override
+  Future<List<NoteClip>> getFavoriteClips() async {
+    final data = await client.getFavoriteClips();
+    return data.map(misskeyClipFromJson).toList();
+  }
+
+  @override
+  Future<void> favoriteClip(String clipId) async {
+    try {
+      await _clipWrite(() => client.favoriteClip(clipId));
+    } on DioException catch (e) {
+      // 既に入っていた（Web など）。入れるという目的は果たしている。
+      if (!_hasErrorCode(e, 'ALREADY_FAVORITED')) rethrow;
+    }
+  }
+
+  @override
+  Future<void> unfavoriteClip(String clipId) async {
+    try {
+      await _clipWrite(() => client.unfavoriteClip(clipId));
+    } on DioException catch (e) {
+      // もう外れていた。外すという目的は果たしている。
+      if (!_hasErrorCode(e, 'NOT_FAVORITED')) rethrow;
+    }
+  }
+
   @override
   Future<Set<String>> getPublicClipIdsContaining(String noteId) async {
     final data = await client.getClipsContainingNote(noteId);
@@ -2886,6 +2937,8 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     required String endpoint,
     required String p256dh,
     required String auth,
+    // ⚠ Misskey には種類で絞る口が無い（[supportsPushAlertFilter] は false）。
+    Set<PushAlertCategory> mutedCategories = const {},
   }) async {
     try {
       return await client.subscribePush(

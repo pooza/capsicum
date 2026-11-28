@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:capsicum/src/model/account.dart';
 import 'package:capsicum/src/model/account_key.dart';
+import 'package:capsicum/src/model/offline_account.dart';
 import 'package:capsicum/src/platform/notification_subsystem/notification_subsystem.dart';
 import 'package:capsicum/src/provider/account_manager_provider.dart';
 import 'package:capsicum/src/provider/announcement_provider.dart';
@@ -29,10 +30,14 @@ class _TestAccountNotifier extends AccountManagerNotifier {
   @override
   AccountManagerState build() => const AccountManagerState();
 
-  void setAccounts(List<Account> accounts) {
+  void setAccounts(
+    List<Account> accounts, {
+    List<OfflineAccount> offline = const [],
+  }) {
     state = AccountManagerState(
       accounts: accounts,
       current: accounts.isEmpty ? null : accounts.first,
+      offlineAccounts: offline,
     );
   }
 }
@@ -242,6 +247,32 @@ void main() {
     await _settle();
 
     expect(subsystem.shown.single.title, contains('(@bob@h2)'));
+  });
+
+  // #1420: プッシュの経路（isMultiAccountForPush）と同じ判定にする。
+  test('⚠⚠ オンライン 1 件 + オフライン 1 件でも、宛先を添える', () async {
+    final a = _makeAccount('alice', 'h1');
+    notifier.setAccounts(
+      [a.account],
+      offline: [
+        OfflineAccount(
+          key: AccountKey(
+            type: BackendType.mastodon,
+            host: 'h2',
+            username: 'bob',
+          ),
+        ),
+      ],
+    );
+    await _settle();
+
+    final user = _MockUser();
+    when(() => user.displayName).thenReturn('送信者');
+    when(() => user.username).thenReturn('sender');
+    a.controller.add(_mention('a1', user: user));
+    await _settle();
+
+    expect(subsystem.shown.single.title, endsWith(' (@alice@h1)'));
   });
 
   test('単一垢のときは title に宛先を添えない', () async {

@@ -10,6 +10,7 @@ import '../ui/util/notification_type_display.dart';
 import '../util/chat_attachment_label.dart';
 import '../util/exception_scrub.dart';
 import '../util/sentry_tag_hash.dart';
+import 'mastodon_push_refetch.dart';
 import 'notification_init.dart';
 import 'notification_label_cache.dart';
 import 'push_failure_recorder.dart';
@@ -89,7 +90,17 @@ class PushMessageDispatcher {
     var body = '$account に通知があります';
 
     final decrypted = await _tryDecrypt(account, data);
+    if (decrypted != null && decrypted.suppressed) {
+      _trace('suppressed');
+      return;
+    }
     if (decrypted != null) {
+      // 出した通知の id を控える (#1426)。古い鍵の 1 通を引き直したときに、
+      // 復号できて出した通知と二重にならないように。
+      final notificationId = decrypted.notificationId;
+      if (notificationId != null) {
+        await MastodonPushRefetch.noteShown(notificationId, account);
+      }
       // 用語統一: Mastodon サーバー生成 title の「返信」等は UI と表記揺れ
       // するので、notification_type から capsicum 規定のラベルを作る。
       // type が取れないケースのみサーバー title を fallback に使う。
@@ -289,7 +300,27 @@ class PushMessageDispatcher {
         elapsedMs: elapsed(),
         decryptError: e.runtimeType.toString(),
       );
-      return null;
+      // 上流に古い購読が残っていると、古い鍵の 1 通が relay の重複の抑止を
+      // 通り抜けて届く (#1426)。最新の通知を API で引き直して中身を出す。
+      // ⚠ 鍵が無い・base64 が壊れている経路では引き直さない（鍵が合わない
+      // 1 通だけが、別の購読から来た同じ通知である見込みが高い）。
+      String? refetchFailure;
+      final refetched = await MastodonPushRefetch.fetchLatest(
+        account,
+        onFailure: (kind) => refetchFailure = kind,
+      );
+      final refetchResult =
+          refetchFailure ?? (refetched != null ? 'ok' : 'unused');
+      _trace('refetch $refetchResult');
+      // ⚠ 上の復号の失敗の記録に書き足す（record し直すと decryptError が消える）。
+      await PushFailureRecorder.annotateRefetch(refetchResult);
+      // 引いた最新の 1 件が受け取らない種類・もう出した通知なら、汎用の文面も
+      // 出さない（Codex P2・v2.15）。⚠ 引けなかった・古い・0 件は今どおり汎用の
+      // 文面で出す（届いた 1 通が何だったか分からないので、黙らせない）。
+      if (MastodonPushRefetch.suppressingKinds.contains(refetchFailure)) {
+        return DecryptedPushContent.suppress;
+      }
+      return refetched;
     }
   }
 
@@ -527,11 +558,20 @@ class DecryptedPushContent {
   /// 取れない形式では null。
   final String? notificationId;
 
+  /// 通知を出さない（#1411・#1426）。復号できなかった 1 通を引き直したら、
+  /// 受け取らない種類か、もう出した通知だったとき。⚠ 汎用の文面も出さない
+  /// （切った種類が「通知があります」で鳴り続ける／二重に出るのを避ける）。
+  final bool suppressed;
+
   const DecryptedPushContent({
     this.title,
     this.body,
     this.type,
     this.userId,
     this.notificationId,
+    this.suppressed = false,
   });
+
+  /// [suppressed] の 1 件。
+  static const suppress = DecryptedPushContent(suppressed: true);
 }

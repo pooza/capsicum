@@ -2,6 +2,7 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../model/account_key.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../service/sentry_op_failure.dart';
 import '../widget/bottom_safe_area.dart';
@@ -59,12 +60,32 @@ class _MulukhiyaHandlersScreenState
   final _busy = <String>{};
 
   /// 切り替えたあとの値（一覧を取り直すまで画面に反映する）。
+  ///
+  /// ⚠ **[_overridesAccount] のアカウントのもの**（#1420）。キーはハンドラー名
+  /// だけなので、画面を開いたままアカウントを切り替えると、前のアカウントの
+  /// 上書きが新しいアカウントの一覧に乗っていた。
   final _overrides = <String, bool>{};
+  AccountKey? _overridesAccount;
+
+  /// [_overrides] を [key] のアカウントのものにする。変わったら捨てる。
+  void _adoptAccount(AccountKey? key) {
+    if (key == _overridesAccount) return;
+    _overrides.clear();
+    _overridesAccount = key;
+  }
+
+  /// [key] のアカウントの上書きとして書く。⚠ 応答が届く前にアカウントが
+  /// 切り替わっていたら書かない（新しいアカウントの一覧に乗せない）。
+  void _setOverride(AccountKey key, String handler, bool disabled) {
+    if (!mounted || key != _overridesAccount) return;
+    setState(() => _overrides[handler] = disabled);
+  }
 
   Future<void> _toggle(MulukhiyaUserHandler handler, bool enabled) async {
     final account = ref.read(currentAccountProvider);
     final mulukhiya = account?.mulukhiya;
     if (account == null || mulukhiya == null || _busy.isNotEmpty) return;
+    _adoptAccount(account.key);
     // ⚠ 戻す先は一覧を取った時点の値ではなく、いま画面に出ている値（直前に
     // 成功した切り替えを含む）。
     final before = _overrides[handler.name] ?? handler.disabled;
@@ -78,7 +99,7 @@ class _MulukhiyaHandlersScreenState
         handler: handler.name,
         disabled: !enabled,
       );
-      if (mounted) setState(() => _overrides[handler.name] = disabled);
+      _setOverride(account.key, handler.name, disabled);
     } catch (e, st) {
       reportOpFailure(
         tagKey: 'handler.op',
@@ -89,7 +110,7 @@ class _MulukhiyaHandlersScreenState
       );
       if (!mounted) return;
       // 送る前の値へ戻す。
-      setState(() => _overrides[handler.name] = before);
+      _setOverride(account.key, handler.name, before);
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('切り替えられませんでした')));
@@ -100,6 +121,8 @@ class _MulukhiyaHandlersScreenState
 
   @override
   Widget build(BuildContext context) {
+    // ⚠ アカウントが替わっていたら、前のアカウントの上書きを捨てる（#1420）。
+    _adoptAccount(ref.watch(currentAccountProvider)?.key);
     final handlersAsync = ref.watch(mulukhiyaUserHandlersProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('投稿の自動処理')),
