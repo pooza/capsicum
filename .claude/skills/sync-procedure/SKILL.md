@@ -276,6 +276,7 @@ capsicum-relay の Issue・マイルストーンは、**capsicum 本体と同じ
 - **Mastodon / Misskey の現行バージョン確認**: 自前サーバーのソフトウェアは pooza フォークがリリース追従しているため、ローカルの fork を pull すれば現行バージョンを正確に確認できる（推測しない）。
   - Mastodon: `git -C ~/repos/mastodon pull --ff-only` → `lib/mastodon/version.rb` の major/minor/patch（または `git -C ~/repos/mastodon tag --sort=-creatordate | head` で `vX.Y.Z-bshockdon`）
   - Misskey: `git -C ~/repos/misskey pull --ff-only` → `package.json` の `version`（`jq -r .version ~/repos/misskey/package.json`）
+  - **Akkoma: `git -C ~/repos/akkoma pull --ff-only`**（2026-11-28 pooza）。⚠ こちらは**フォークではなく上流**（`akkoma.dev/AkkomaGang/akkoma` の `develop` を `--depth 1` でクローン）で、自前サーバーの版ではない。**挙動を確かめるときに grep で読むための写し**なので、版の報告は要らない（pull できたかだけ見る）。⚠ akkoma.dev は自動取得を弾くので、Web で読もうとせずここを読む
   - ⚠⚠ **Mastodon の上流のプレリリース（beta / RC）も見る**（2026-10-28 pooza）。フォークが追うのは正式リリースだけなので、**RC はフォークのタグに出てこない**:
 
     ```sh
