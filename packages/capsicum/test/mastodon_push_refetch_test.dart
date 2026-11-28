@@ -37,7 +37,7 @@ void main() {
   });
 
   group('受け取らない分類（#1411）', () {
-    test('切った種類は exclude_types[] で除いて引く', () async {
+    test('⚠ exclude_types[] で除いて引かない（届いた 1 通でない通知を引くため）', () async {
       final adapter = _Adapter(200, jsonEncode([_mention()]));
       MastodonPushRefetch.dioFactory = () => Dio()..httpClientAdapter = adapter;
       MastodonPushRefetch.tokenReader = (_) async => 'tok';
@@ -52,15 +52,15 @@ void main() {
         now: () => _now,
       );
       expect(readKey, 'mastodon://konchie@fedibird.com');
-      expect(adapter.lastUri!.queryParametersAll['exclude_types[]'], [
-        'favourite',
-        'follow',
-        'follow_request',
-      ]);
+      expect(
+        adapter.lastUri.toString(),
+        'https://fedibird.com/api/v1/notifications?limit=1',
+      );
+      // 切っていない種類（メンション）は出す。
       expect(result, isNotNull);
     });
 
-    test('除かずに返すサーバーでも、切った種類は出さない', () async {
+    test('最新の 1 件が切った種類なら出さず、muted と伝える', () async {
       final favourite = {..._mention(), 'type': 'favourite'};
       final adapter = _Adapter(200, jsonEncode([favourite]));
       MastodonPushRefetch.dioFactory = () => Dio()..httpClientAdapter = adapter;
@@ -68,27 +68,15 @@ void main() {
       MastodonPushRefetch.mutedReader = (_) async => {
         PushAlertCategory.favourite,
       };
+      final kinds = <String>[];
 
       final result = await MastodonPushRefetch.fetchLatest(
         'konchie@fedibird.com',
         now: () => _now,
+        onFailure: kinds.add,
       );
       expect(result, isNull);
-    });
-
-    test('何も切っていなければ exclude_types[] を付けない', () async {
-      final adapter = _Adapter(200, jsonEncode([_mention()]));
-      MastodonPushRefetch.dioFactory = () => Dio()..httpClientAdapter = adapter;
-      MastodonPushRefetch.tokenReader = (_) async => 'tok';
-
-      await MastodonPushRefetch.fetchLatest(
-        'konchie@fedibird.com',
-        now: () => _now,
-      );
-      expect(
-        adapter.lastUri!.queryParametersAll.containsKey('exclude_types[]'),
-        isFalse,
-      );
+      expect(kinds, ['muted']);
     });
   });
 

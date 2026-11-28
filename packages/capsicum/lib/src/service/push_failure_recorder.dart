@@ -238,7 +238,8 @@ class PushFailureRecord {
   });
 
   /// `dispatch.decrypt_failed` のあとに API で引き直した結果（#1426）。
-  /// `ok`（中身を出した）/ `unused`（引けたが使わなかった）/ 失敗の種類
-  /// （`network` / `http_401` など）。引き直さない経路では null。
+  /// `ok`（中身を出した）/ `muted`（最新の 1 件が受け取らない種類・#1411）/
+  /// `unused`（古い・出した控えにある・0 件など）/ 失敗の種類（`network` /
+  /// `http_401` など）。引き直さない経路では null。
   final String? refetch;
 }

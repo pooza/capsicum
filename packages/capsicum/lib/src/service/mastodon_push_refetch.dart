@@ -69,16 +69,18 @@ class MastodonPushRefetch {
   /// [account]（`username@host`）の最新の通知を引き、使えるなら中身を返す。
   /// 使えない・引けないときは null（呼び出し側は汎用の文面のまま出す）。
   ///
-  /// 引けなかったときは [onFailure] に失敗の種類（`network` / `http_401` など）を
-  /// 渡す。⚠ **ここでは失敗を記録しない。**呼び出し側が直前に書いた復号の失敗の
-  /// 記録（[PushFailureRecorder] は 1 枠）を上書きして、#1426 で見たい
-  /// `decryptError` を消してしまうため。呼び出し側が
+  /// 引けなかった・使わなかったときは [onFailure] に種類（`network` / `http_401` /
+  /// `muted` など）を渡す。⚠ **ここでは失敗を記録しない。**呼び出し側が直前に
+  /// 書いた復号の失敗の記録（[PushFailureRecorder] は 1 枠）を上書きして、#1426
+  /// で見たい `decryptError` を消してしまうため。呼び出し側が
   /// [PushFailureRecorder.annotateRefetch] で書き足す。
   ///
-  /// ⚠ **受け取らない分類（#1411）は引かない・出さない。**古い購読は全種類を
+  /// ⚠ **受け取らない分類（#1411）の通知は出さない**（`muted`）。古い購読は全種類を
   /// 送ってくるので、切った種類の 1 通が復号できずに届くことがある。
-  /// `exclude_types[]` で除いて引き、それを読まないサーバーのために、引いた
-  /// 種類でも捨てる。
+  /// ⚠⚠ **`exclude_types[]` で除いて引かない**（2 巡目のレビュー・v2.15）。除くと、
+  /// 届いた 1 通（切った種類）ではなく 1 つ前の受け取る通知が返り、鮮度と控えを
+  /// すり抜けたときに関係のない通知を新着として出す。除かずに最新の 1 件を引き、
+  /// 種類を見て捨てる。
   static Future<DecryptedPushContent?> fetchLatest(
     String account, {
     DateTime Function() now = DateTime.now,
@@ -106,11 +108,7 @@ class MastodonPushRefetch {
     try {
       final response = await dioFactory().get<Object?>(
         'https://$host/api/v1/notifications',
-        queryParameters: {
-          'limit': 1,
-          if (mutedTypes.isNotEmpty)
-            'exclude_types[]': (mutedTypes.toList()..sort()),
-        },
+        queryParameters: {'limit': 1},
         options: Options(headers: {'Authorization': 'Bearer $token'}),
       );
       data = response.data;
@@ -132,6 +130,12 @@ class MastodonPushRefetch {
     final latest = data.first;
     if (latest is! Map<String, dynamic>) {
       _fail('parse', onFailure);
+      return null;
+    }
+    final type = latest['type'];
+    if (type is String && mutedTypes.contains(type)) {
+      // 失敗ではないが、Sentry で「使わなかった」の内訳を分けて見るために渡す。
+      _fail('muted', onFailure);
       return null;
     }
     return accept(latest, account: account, now: now(), mutedTypes: mutedTypes);
