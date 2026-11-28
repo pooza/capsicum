@@ -80,6 +80,44 @@ void main() {
     });
   });
 
+  group('出さない（suppressingKinds・Codex P2）', () {
+    test('もう出した通知なら shown と伝える', () async {
+      await MastodonPushRefetch.noteShown('100', 'konchie@fedibird.com');
+      final kinds = <String>[];
+      final result = await MastodonPushRefetch.accept(
+        _mention(),
+        account: 'konchie@fedibird.com',
+        now: _now,
+        onFailure: kinds.add,
+      );
+      expect(result, isNull);
+      expect(kinds, ['shown']);
+      expect(MastodonPushRefetch.suppressingKinds, containsAll(kinds));
+    });
+
+    test('⚠ 古い 1 件は切った種類でも muted にしない（汎用の文面で出す）', () async {
+      final kinds = <String>[];
+      final result = await MastodonPushRefetch.accept(
+        {
+          ..._mention(createdAt: _now.subtract(const Duration(minutes: 5))),
+          'type': 'favourite',
+        },
+        account: 'konchie@fedibird.com',
+        now: _now,
+        mutedTypes: {'favourite'},
+        onFailure: kinds.add,
+      );
+      expect(result, isNull);
+      expect(kinds, isEmpty);
+    });
+
+    test('引けなかった種類では出さないことにしない', () {
+      for (final kind in ['network', 'http_401', 'parse', 'token']) {
+        expect(MastodonPushRefetch.suppressingKinds, isNot(contains(kind)));
+      }
+    });
+  });
+
   test('引けなかった種類は onFailure に渡す（記録は呼び出し側）', () async {
     MastodonPushRefetch.tokenReader = (_) async => 'tok';
     final kinds = <String>[];

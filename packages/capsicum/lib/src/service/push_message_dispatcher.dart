@@ -90,6 +90,10 @@ class PushMessageDispatcher {
     var body = '$account に通知があります';
 
     final decrypted = await _tryDecrypt(account, data);
+    if (decrypted != null && decrypted.suppressed) {
+      _trace('suppressed');
+      return;
+    }
     if (decrypted != null) {
       // 出した通知の id を控える (#1426)。古い鍵の 1 通を引き直したときに、
       // 復号できて出した通知と二重にならないように。
@@ -310,6 +314,12 @@ class PushMessageDispatcher {
       _trace('refetch $refetchResult');
       // ⚠ 上の復号の失敗の記録に書き足す（record し直すと decryptError が消える）。
       await PushFailureRecorder.annotateRefetch(refetchResult);
+      // 引いた最新の 1 件が受け取らない種類・もう出した通知なら、汎用の文面も
+      // 出さない（Codex P2・v2.15）。⚠ 引けなかった・古い・0 件は今どおり汎用の
+      // 文面で出す（届いた 1 通が何だったか分からないので、黙らせない）。
+      if (MastodonPushRefetch.suppressingKinds.contains(refetchFailure)) {
+        return DecryptedPushContent.suppress;
+      }
       return refetched;
     }
   }
@@ -548,11 +558,20 @@ class DecryptedPushContent {
   /// 取れない形式では null。
   final String? notificationId;
 
+  /// 通知を出さない（#1411・#1426）。復号できなかった 1 通を引き直したら、
+  /// 受け取らない種類か、もう出した通知だったとき。⚠ 汎用の文面も出さない
+  /// （切った種類が「通知があります」で鳴り続ける／二重に出るのを避ける）。
+  final bool suppressed;
+
   const DecryptedPushContent({
     this.title,
     this.body,
     this.type,
     this.userId,
     this.notificationId,
+    this.suppressed = false,
   });
+
+  /// [suppressed] の 1 件。
+  static const suppress = DecryptedPushContent(suppressed: true);
 }

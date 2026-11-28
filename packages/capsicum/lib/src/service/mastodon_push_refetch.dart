@@ -132,14 +132,24 @@ class MastodonPushRefetch {
       _fail('parse', onFailure);
       return null;
     }
-    final type = latest['type'];
-    if (type is String && mutedTypes.contains(type)) {
-      // 失敗ではないが、Sentry で「使わなかった」の内訳を分けて見るために渡す。
-      _fail('muted', onFailure);
-      return null;
-    }
-    return accept(latest, account: account, now: now(), mutedTypes: mutedTypes);
+    return accept(
+      latest,
+      account: account,
+      now: now(),
+      mutedTypes: mutedTypes,
+      onFailure: onFailure,
+    );
   }
+
+  /// [fetchLatest] が [onFailure] に渡す種類のうち、呼び出し側が通知を**出さない**
+  /// もの（汎用の文面も出さない）。
+  ///
+  /// - `muted`: 最新の 1 件が受け取らない種類（#1411）＝届いた 1 通は切った種類
+  /// - `shown`: 最新の 1 件はもう出した ＝ 届いた 1 通は同じ通知の写し
+  ///
+  /// ⚠ 引けなかった・古い・0 件はここに入れない（届いた 1 通が何だったか
+  /// 分からないので、汎用の文面で知らせる）。
+  static const suppressingKinds = {'muted', 'shown'};
 
   /// 引いた通知を使ってよいかを決め、使うなら中身を返す（控えにも足す）。
   ///
@@ -150,13 +160,24 @@ class MastodonPushRefetch {
     required String account,
     required DateTime now,
     Set<String> mutedTypes = const {},
+    void Function(String kind)? onFailure,
   }) async {
     final id = notification['id'];
     if (id is! String || id.isEmpty) return null;
-    final type = notification['type'];
-    if (type is String && mutedTypes.contains(type)) return null;
+    // ⚠ 鮮度を先に見る。古い 1 件は届いた 1 通とは別の通知なので、種類で
+    // 黙らせない（汎用の文面のまま出す）。
     if (!isFresh(notification, now)) return null;
-    if (await _wasShown(id, account)) return null;
+    // 失敗ではないが、呼び出し側が出さないと決めるのと、Sentry で「使わな
+    // かった」の内訳を分けて見るために渡す（[suppressingKinds]）。
+    final type = notification['type'];
+    if (type is String && mutedTypes.contains(type)) {
+      _fail('muted', onFailure);
+      return null;
+    }
+    if (await _wasShown(id, account)) {
+      _fail('shown', onFailure);
+      return null;
+    }
     await noteShown(id, account);
     return contentFromNotification(notification);
   }
