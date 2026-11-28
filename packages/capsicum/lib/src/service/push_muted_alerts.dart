@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../util/shared_preferences_cache.dart';
 
@@ -19,8 +20,7 @@ class PushMutedAlerts {
   /// ⚠ `settings_backup_coverage_test.dart` がこの形で拾う。名前を変えない。
   static const prefsKey = 'push_muted_alert_categories';
 
-  static Map<String, List<String>> _readAll() {
-    final raw = sharedPrefsOrThrow.getString(prefsKey);
+  static Map<String, List<String>> _decode(String? raw) {
     if (raw == null) return {};
     final decoded = jsonDecode(raw);
     if (decoded is! Map) return {};
@@ -34,14 +34,37 @@ class PushMutedAlerts {
     };
   }
 
+  static Map<String, List<String>> _readAll() =>
+      _decode(sharedPrefsOrThrow.getString(prefsKey));
+
+  static Set<PushAlertCategory> _categoriesOf(List<String> names) => {
+    for (final c in PushAlertCategory.values)
+      if (names.contains(c.name)) c,
+  };
+
   /// [storageKey] で受け取らない分類。読めなければ空（＝今どおり全部受ける）。
   static Set<PushAlertCategory> mutedFor(String storageKey) {
     try {
-      final names = _readAll()[storageKey] ?? const [];
-      return {
-        for (final c in PushAlertCategory.values)
-          if (names.contains(c.name)) c,
-      };
+      return _categoriesOf(_readAll()[storageKey] ?? const []);
+    } catch (e) {
+      debugPrint('capsicum: push.muted: read failed: ${e.runtimeType}');
+      return const {};
+    }
+  }
+
+  /// [mutedFor] の、バックグラウンドの isolate から読める版（プッシュの引き直し・
+  /// #1426）。
+  ///
+  /// ⚠ バックグラウンドの isolate では main() の pre-warm（[sharedPrefsOrThrow]）が
+  /// 無く、`SharedPreferences` の写しも isolate ごとなので、`reload` してから読む
+  /// （本体で変えた直後の値を拾う）。読めなければ空。
+  static Future<Set<PushAlertCategory>> readMutedFor(String storageKey) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.reload();
+      return _categoriesOf(
+        _decode(prefs.getString(prefsKey))[storageKey] ?? const [],
+      );
     } catch (e) {
       debugPrint('capsicum: push.muted: read failed: ${e.runtimeType}');
       return const {};

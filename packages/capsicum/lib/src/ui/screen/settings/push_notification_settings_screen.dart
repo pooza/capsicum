@@ -446,8 +446,10 @@ class _PushAlertTypesTileState extends State<_PushAlertTypesTile> {
     }
     if (mounted) setState(() {});
     // サーバー側の絞りを新しい値で張り直す。⚠ 待たない（登録の状況は行に出る）。
+    // ⚠ registerAccount ではなく reregisterAccount（進行中の登録に束ねられて、
+    // 新しい値が届かないことがある）。
     unawaited(
-      PushRegistrationService.registerAccount(
+      PushRegistrationService.reregisterAccount(
         widget.account,
         eligible: widget.eligible,
       ),

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:capsicum/src/service/mastodon_push_refetch.dart';
+import 'package:capsicum_core/capsicum_core.dart' show PushAlertCategory;
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -32,6 +33,80 @@ void main() {
   tearDown(() {
     MastodonPushRefetch.dioFactory = Dio.new;
     MastodonPushRefetch.tokenReader = (_) async => null;
+    MastodonPushRefetch.mutedReader = (_) async => const {};
+  });
+
+  group('受け取らない分類（#1411）', () {
+    test('切った種類は exclude_types[] で除いて引く', () async {
+      final adapter = _Adapter(200, jsonEncode([_mention()]));
+      MastodonPushRefetch.dioFactory = () => Dio()..httpClientAdapter = adapter;
+      MastodonPushRefetch.tokenReader = (_) async => 'tok';
+      String? readKey;
+      MastodonPushRefetch.mutedReader = (key) async {
+        readKey = key;
+        return {PushAlertCategory.favourite, PushAlertCategory.follow};
+      };
+
+      final result = await MastodonPushRefetch.fetchLatest(
+        'konchie@fedibird.com',
+        now: () => _now,
+      );
+      expect(readKey, 'mastodon://konchie@fedibird.com');
+      expect(adapter.lastUri!.queryParametersAll['exclude_types[]'], [
+        'favourite',
+        'follow',
+        'follow_request',
+      ]);
+      expect(result, isNotNull);
+    });
+
+    test('除かずに返すサーバーでも、切った種類は出さない', () async {
+      final favourite = {..._mention(), 'type': 'favourite'};
+      final adapter = _Adapter(200, jsonEncode([favourite]));
+      MastodonPushRefetch.dioFactory = () => Dio()..httpClientAdapter = adapter;
+      MastodonPushRefetch.tokenReader = (_) async => 'tok';
+      MastodonPushRefetch.mutedReader = (_) async => {
+        PushAlertCategory.favourite,
+      };
+
+      final result = await MastodonPushRefetch.fetchLatest(
+        'konchie@fedibird.com',
+        now: () => _now,
+      );
+      expect(result, isNull);
+    });
+
+    test('何も切っていなければ exclude_types[] を付けない', () async {
+      final adapter = _Adapter(200, jsonEncode([_mention()]));
+      MastodonPushRefetch.dioFactory = () => Dio()..httpClientAdapter = adapter;
+      MastodonPushRefetch.tokenReader = (_) async => 'tok';
+
+      await MastodonPushRefetch.fetchLatest(
+        'konchie@fedibird.com',
+        now: () => _now,
+      );
+      expect(
+        adapter.lastUri!.queryParametersAll.containsKey('exclude_types[]'),
+        isFalse,
+      );
+    });
+  });
+
+  test('引けなかった種類は onFailure に渡す（記録は呼び出し側）', () async {
+    MastodonPushRefetch.tokenReader = (_) async => 'tok';
+    final kinds = <String>[];
+    for (final adapter in [
+      _Adapter(401, '{"error":"x"}'),
+      _Adapter(200, '{"not":"a list"}'),
+    ]) {
+      MastodonPushRefetch.dioFactory = () => Dio()..httpClientAdapter = adapter;
+      await MastodonPushRefetch.fetchLatest(
+        'konchie@fedibird.com',
+        now: () => _now,
+        onFailure: kinds.add,
+      );
+    }
+    expect(kinds, ['http_401', 'parse']);
   });
 
   group('contentFromNotification', () {

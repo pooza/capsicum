@@ -2313,9 +2313,12 @@ class MastodonAdapter extends DecentralizedBackendAdapter
 
   /// `data[alerts]` で絞れる (#1411)。
   ///
-  /// ⚠ Akkoma も同じアダプターで通るが、`data[alerts]` を Mastodon と同じに読むかは
-  /// **未確認**（手元にソースが無い・#1411 の着手時）。読まなければ絞りが効かない
-  /// だけで、今どおり全部届く（壊れはしない）。
+  /// Akkoma も同じアダプターで通り、`data[alerts]` を読む（2026-11-28 に上流の
+  /// `lib/pleroma/web/push/subscription.ex` で確認・`3e9ad30`）。⚠ ただし Akkoma が
+  /// 受けるのは `follow` / `favourite` / `mention` / `reblog` / `poll` /
+  /// `pleroma:emoji_reaction` だけで（`@supported_alert_types`）、`follow_request` は
+  /// `follow` の値に従う。投稿・編集・引用の分類は Akkoma では切り替えても変わらない
+  /// （もともとプッシュされない）。`'false'` の文字列は `BooleanLike` で偽になる。
   @override
   bool get supportsPushAlertFilter => true;
 

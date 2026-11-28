@@ -599,6 +599,10 @@ Future<void> _flushPushFailureRecord() async {
             final kind = _classifyDecryptErrorKind(record.decryptError!);
             scope.setTag('push.decrypt.kind', kind);
           }
+          // #1426: 復号できなかった Mastodon 系のプッシュを引き直した結果。
+          if (record.refetch != null) {
+            scope.setTag('push.refetch', record.refetch!);
+          }
         },
       );
     }
@@ -609,7 +613,7 @@ Future<void> _flushPushFailureRecord() async {
       'elapsedMs=${record.elapsedMs}, '
       'keychainStatus=${record.keychainStatus}, '
       'triedPrefixes=${record.triedPrefixes}, '
-      'decryptError=${record.decryptError})',
+      'decryptError=${record.decryptError}, refetch=${record.refetch})',
     );
   } catch (_) {
     // ignore

@@ -148,6 +148,11 @@ class _AvatarDecorationScreenState
   /// 保存中のデコレーション。連打で順番が入れ替わらないよう、1 つずつ送る。
   String? _savingId;
 
+  /// 保存中か、実況のデコを外している最中（[_restoreLive]）。⚠ 外している間に
+  /// 一覧から保存すると、外したあとの引き直しと保存の応答の着く順で、古い状態に
+  /// 戻ることがある（リリース前レビュー・v2.15）。
+  bool get _busy => _savingId != null || _restoringLive;
+
   /// 開いた画面のアカウントへ書き戻す。⚠ 「現在のアカウント」へ書き戻す形
   /// （#1361 で消した）は、別アカウントのカラムから来たときに別の人を書き換える。
   User? _localUser;
@@ -158,7 +163,7 @@ class _AvatarDecorationScreenState
     AvatarDecorationOperation operation,
     Future<User> Function(AvatarDecorationSupport support) save,
   ) async {
-    if (_savingId != null) return;
+    if (_busy) return;
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! AvatarDecorationSupport) return;
     final support = adapter as AvatarDecorationSupport;
@@ -233,13 +238,15 @@ class _AvatarDecorationScreenState
     if (account == null || mulukhiya == null) return;
     final messenger = ScaffoldMessenger.of(context);
     final accounts = ref.read(accountManagerProvider.notifier);
+    // ⚠ await の前に取る。外した直後に閉じても、アカウントのユーザーは引き直して
+    // 書き戻す（[_run] と同じ・閉じたらアイコンにデコが残る、を避ける）。
+    final container = ProviderScope.containerOf(context, listen: false);
     setState(() => _restoringLive = true);
     try {
       await mulukhiya.restoreLiveDecoration(
         accessToken: account.userSecret.accessToken,
       );
-      if (!mounted) return;
-      ref.invalidate(liveDecorationProvider);
+      container.invalidate(liveDecorationProvider);
       // ⚠ 外すのは済んでいる。引き直しの失敗を「外せませんでした」にしない
       // （次に開いたとき・アカウントの再取得で揃う）。
       try {
@@ -401,7 +408,7 @@ class _AvatarDecorationScreenState
                                     IconButton(
                                       icon: const Icon(Icons.tune),
                                       tooltip: '位置と角度を調整',
-                                      onPressed: _savingId != null
+                                      onPressed: _busy
                                           ? null
                                           : () => _adjust(
                                               option,

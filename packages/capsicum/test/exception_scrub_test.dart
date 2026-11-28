@@ -87,6 +87,17 @@ void main() {
         );
       });
 
+      test('⚠ https:// を付けて打たれた入力（scheme が重なる）も落とす', () {
+        final scrubbed = scrubPath(
+          'https://https://someone@example.com/api/v1/instance',
+        );
+        expect(scrubbed, isNot(contains('someone')));
+        expect(
+          scrubbed,
+          contains('https://<invalid>//example.com/api/v1/instance'),
+        );
+      });
+
       test('相対パスには当たらない（@ を含んでも）', () {
         expect(
           scrubPath('/api/v1/accounts/lookup/@someone'),

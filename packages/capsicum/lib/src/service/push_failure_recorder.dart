@@ -20,7 +20,10 @@ enum PushFailureKey {
   triedPrefixes('capsicum_push_failure_last_tried_prefixes'),
   // #436: nse.decrypt_failed の切り分け用。WebPushDecryptor / CryptoKit が
   // 投げた error の type + case 名。
-  decryptError('capsicum_push_failure_last_decrypt_error');
+  decryptError('capsicum_push_failure_last_decrypt_error'),
+  // #1426: dispatch.decrypt_failed のあとに API で引き直した結果（`ok` /
+  // `unused` / `network` / `http_401` など）。Android だけが書く（NSE は書かない）。
+  refetch('capsicum_push_failure_last_refetch');
 
   const PushFailureKey(this.storageKey);
 
@@ -112,6 +115,18 @@ class PushFailureRecorder {
         PushFailureKey.decryptError,
         decryptError,
       );
+      // 前の記録の引き直しの結果を持ち越さない（書き足すのは annotateRefetch）。
+      await prefs.remove(PushFailureKey.refetch.storageKey);
+    } catch (_) {
+      // ignore: 観測機構の失敗で本体を落とさない
+    }
+  }
+
+  /// 直前の [record] に、引き直しの結果を書き足す (#1426)。⚠ code・件数・ほかの
+  /// 項目には触れない（復号の失敗の記録を上書きしないため）。例外は握りつぶす。
+  static Future<void> annotateRefetch(String result) async {
+    try {
+      await _prefs().setString(PushFailureKey.refetch.storageKey, result);
     } catch (_) {
       // ignore: 観測機構の失敗で本体を落とさない
     }
@@ -164,6 +179,7 @@ class PushFailureRecorder {
       final decryptError = await prefs.getString(
         PushFailureKey.decryptError.storageKey,
       );
+      final refetch = await prefs.getString(PushFailureKey.refetch.storageKey);
       for (final key in PushFailureKey.values) {
         await prefs.remove(key.storageKey);
       }
@@ -179,6 +195,7 @@ class PushFailureRecorder {
         keychainStatus: keychainStatus,
         triedPrefixes: triedPrefixes,
         decryptError: decryptError,
+        refetch: refetch,
       );
     } catch (_) {
       return null;
@@ -217,5 +234,11 @@ class PushFailureRecord {
     this.keychainStatus,
     this.triedPrefixes,
     this.decryptError,
+    this.refetch,
   });
+
+  /// `dispatch.decrypt_failed` のあとに API で引き直した結果（#1426）。
+  /// `ok`（中身を出した）/ `unused`（引けたが使わなかった）/ 失敗の種類
+  /// （`network` / `http_401` など）。引き直さない経路では null。
+  final String? refetch;
 }

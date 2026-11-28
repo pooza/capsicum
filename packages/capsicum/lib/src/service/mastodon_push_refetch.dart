@@ -1,3 +1,6 @@
+import 'package:capsicum_backends/capsicum_backends.dart'
+    show mastodonMutedAlertTypes;
+import 'package:capsicum_core/capsicum_core.dart' show PushAlertCategory;
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -6,6 +9,7 @@ import '../ui/widget/content_parser.dart' show stripHtml;
 import 'account_storage.dart';
 import 'push_failure_recorder.dart';
 import 'push_message_dispatcher.dart' show DecryptedPushContent;
+import 'push_muted_alerts.dart';
 
 /// 復号できなかった Mastodon 系のプッシュを、API で最新の通知を引き直して
 /// 中身つきで出す（Android・#1426）。
@@ -39,9 +43,6 @@ class MastodonPushRefetch {
 
   static const _shownIdsPrefix = 'capsicum_push_shown_ids_';
 
-  /// 失敗の記録のコード。末尾に失敗の種類が付く（`.network` など）。
-  static const failureCode = 'dispatch.refetch_failed';
-
   /// テストで差し替える。
   @visibleForTesting
   static Dio Function() dioFactory = () => Dio(
@@ -60,67 +61,96 @@ class MastodonPushRefetch {
     return secrets?['access_token'];
   }
 
+  /// テストで差し替える。`mastodon://username@host` の、受け取らない分類（#1411）。
+  @visibleForTesting
+  static Future<Set<PushAlertCategory>> Function(String storageKey)
+  mutedReader = PushMutedAlerts.readMutedFor;
+
   /// [account]（`username@host`）の最新の通知を引き、使えるなら中身を返す。
   /// 使えない・引けないときは null（呼び出し側は汎用の文面のまま出す）。
+  ///
+  /// 引けなかったときは [onFailure] に失敗の種類（`network` / `http_401` など）を
+  /// 渡す。⚠ **ここでは失敗を記録しない。**呼び出し側が直前に書いた復号の失敗の
+  /// 記録（[PushFailureRecorder] は 1 枠）を上書きして、#1426 で見たい
+  /// `decryptError` を消してしまうため。呼び出し側が
+  /// [PushFailureRecorder.annotateRefetch] で書き足す。
+  ///
+  /// ⚠ **受け取らない分類（#1411）は引かない・出さない。**古い購読は全種類を
+  /// 送ってくるので、切った種類の 1 通が復号できずに届くことがある。
+  /// `exclude_types[]` で除いて引き、それを読まないサーバーのために、引いた
+  /// 種類でも捨てる。
   static Future<DecryptedPushContent?> fetchLatest(
     String account, {
     DateTime Function() now = DateTime.now,
+    void Function(String kind)? onFailure,
   }) async {
     final at = account.lastIndexOf('@');
     if (at <= 0 || at == account.length - 1) return null;
     final host = account.substring(at + 1);
+    final storageKey = 'mastodon://$account';
 
     final String? token;
     try {
-      token = await tokenReader('mastodon://$account');
+      token = await tokenReader(storageKey);
     } catch (_) {
-      await _fail('token', host);
+      _fail('token', onFailure);
       return null;
     }
     // Mastodon 系のアカウントでない（Misskey など）か、ログインしていない。
     // ⚠ 失敗として記録しない —— 対象外なだけ。
     if (token == null || token.isEmpty) return null;
 
+    final mutedTypes = mastodonMutedAlertTypes(await mutedReader(storageKey));
+
     final Object? data;
     try {
       final response = await dioFactory().get<Object?>(
         'https://$host/api/v1/notifications',
-        queryParameters: {'limit': 1},
+        queryParameters: {
+          'limit': 1,
+          if (mutedTypes.isNotEmpty)
+            'exclude_types[]': (mutedTypes.toList()..sort()),
+        },
         options: Options(headers: {'Authorization': 'Bearer $token'}),
       );
       data = response.data;
     } on DioException catch (e) {
       final status = e.response?.statusCode;
-      await _fail(status != null ? 'http_$status' : 'network', host);
+      _fail(status != null ? 'http_$status' : 'network', onFailure);
       return null;
     } catch (_) {
-      await _fail('network', host);
+      _fail('network', onFailure);
       return null;
     }
 
     if (data is! List) {
-      await _fail('parse', host);
+      _fail('parse', onFailure);
       return null;
     }
     // 0 件は失敗ではない（通知を消した直後など）。汎用の文面のまま。
     if (data.isEmpty) return null;
     final latest = data.first;
     if (latest is! Map<String, dynamic>) {
-      await _fail('parse', host);
+      _fail('parse', onFailure);
       return null;
     }
-    return accept(latest, account: account, now: now());
+    return accept(latest, account: account, now: now(), mutedTypes: mutedTypes);
   }
 
   /// 引いた通知を使ってよいかを決め、使うなら中身を返す（控えにも足す）。
+  ///
+  /// [mutedTypes] は受け取らない Mastodon の種別（`favourite` など・#1411）。
   @visibleForTesting
   static Future<DecryptedPushContent?> accept(
     Map<String, dynamic> notification, {
     required String account,
     required DateTime now,
+    Set<String> mutedTypes = const {},
   }) async {
     final id = notification['id'];
     if (id is! String || id.isEmpty) return null;
+    final type = notification['type'];
+    if (type is String && mutedTypes.contains(type)) return null;
     if (!isFresh(notification, now)) return null;
     if (await _wasShown(id, account)) return null;
     await noteShown(id, account);
@@ -207,8 +237,8 @@ class MastodonPushRefetch {
     }
   }
 
-  static Future<void> _fail(String kind, String host) async {
+  static void _fail(String kind, void Function(String kind)? onFailure) {
     debugPrint('capsicum: push.refetch: failed ($kind)');
-    await PushFailureRecorder.record('$failureCode.$kind', host: host);
+    onFailure?.call(kind);
   }
 }

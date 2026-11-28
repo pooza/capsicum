@@ -628,7 +628,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     );
   }
 
-  static const _infoBotLockReason = 'お知らせボットのフォローは外せません';
+  static const _infoBotLockReason = 'お知らせボットのフォローは解除できません';
 
   Future<bool> _performAction(Future<void> Function() action) async {
     if (_relationshipLoading) return false;

@@ -229,6 +229,29 @@ class PushRegistrationService {
     return future.whenComplete(() => _inFlight.remove(key));
   }
 
+  /// 設定を変えたあとに、**今の設定で**登録し直す（通知の種類・#1411）。
+  ///
+  /// ⚠ [registerAccount] は進行中の登録を使い回すので、変える前の値を読み終えた
+  /// 登録がそのまま返り、新しい値がサーバーに届かない。進行中のものが無くなる
+  /// まで待ってから始める（[setAccountEnabled] と同じ理由）。
+  static Future<void> reregisterAccount(
+    Account account, {
+    required bool eligible,
+  }) async {
+    final key = account.key.toStorageKey();
+    for (var inFlight = _inFlight[key]; inFlight != null;) {
+      try {
+        await inFlight;
+      } catch (_) {
+        // 失敗した登録は、下でやり直すので構わない。
+      }
+      // 待つ間に別の呼び出しが新しい登録を始めていれば、それも待つ。
+      final next = _inFlight[key];
+      inFlight = identical(next, inFlight) ? null : next;
+    }
+    await registerAccount(account, eligible: eligible);
+  }
+
   static Future<void> _registerAccountImpl(
     Account account, {
     required bool eligible,

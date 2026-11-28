@@ -300,8 +300,16 @@ class PushMessageDispatcher {
       // 通り抜けて届く (#1426)。最新の通知を API で引き直して中身を出す。
       // ⚠ 鍵が無い・base64 が壊れている経路では引き直さない（鍵が合わない
       // 1 通だけが、別の購読から来た同じ通知である見込みが高い）。
-      final refetched = await MastodonPushRefetch.fetchLatest(account);
-      _trace('refetch ${refetched != null ? 'ok' : 'unused'}');
+      String? refetchFailure;
+      final refetched = await MastodonPushRefetch.fetchLatest(
+        account,
+        onFailure: (kind) => refetchFailure = kind,
+      );
+      final refetchResult =
+          refetchFailure ?? (refetched != null ? 'ok' : 'unused');
+      _trace('refetch $refetchResult');
+      // ⚠ 上の復号の失敗の記録に書き足す（record し直すと decryptError が消える）。
+      await PushFailureRecorder.annotateRefetch(refetchResult);
       return refetched;
     }
   }

@@ -140,6 +140,10 @@ class _ClipFavoriteButtonState extends ConsumerState<_ClipFavoriteButton> {
     final support = raw as ClipFavoriteSupport;
     final account = ref.accountForReport;
     final messenger = ScaffoldMessenger.of(context);
+    // ⚠ await の前に取る。応答の前に画面を閉じると、破棄した State の ref は
+    // StateError を投げ、成功したのに「更新できませんでした」と出てしまう
+    // （リリース前レビュー・v2.15）。デッキのカラムのスコープもここで決まる。
+    final container = ProviderScope.containerOf(context, listen: false);
     setState(() {
       _busy = true;
       _favorited = !wasFavorited;
@@ -151,7 +155,7 @@ class _ClipFavoriteButtonState extends ConsumerState<_ClipFavoriteButton> {
         await support.favoriteClip(widget.clipId);
       }
       // お気に入りの一覧を取り直させる（次に開いたとき揃うように）。
-      ref.invalidate(favoriteClipsProvider);
+      container.invalidate(favoriteClipsProvider);
     } catch (e, st) {
       if (mounted) setState(() => _favorited = wasFavorited);
       if (e is ClipNotFound) {
@@ -170,8 +174,13 @@ class _ClipFavoriteButtonState extends ConsumerState<_ClipFavoriteButton> {
           stackTrace: st,
           account: account,
         );
+        // 言い回しはチャンネルのお気に入り（channel_actions_sheet.dart）に揃える。
         messenger.showSnackBar(
-          const SnackBar(content: Text('お気に入りを更新できませんでした')),
+          SnackBar(
+            content: Text(
+              wasFavorited ? 'お気に入りから外せませんでした' : 'お気に入りに追加できませんでした',
+            ),
+          ),
         );
       }
     } finally {
@@ -191,7 +200,7 @@ class _ClipFavoriteButtonState extends ConsumerState<_ClipFavoriteButton> {
     return IconButton(
       key: const ValueKey('clip-favorite'),
       icon: Icon(favorited ? Icons.star : Icons.star_border),
-      tooltip: favorited ? 'お気に入りから外す' : 'お気に入りに入れる',
+      tooltip: favorited ? 'お気に入りから外す' : 'お気に入りに追加',
       onPressed: _busy ? null : () => _toggle(favorited),
     );
   }
