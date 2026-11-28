@@ -6,7 +6,7 @@
 
 [#1139](https://github.com/pooza/capsicum/issues/1139) の件名は「スキルへ移す」だったが、**docs の 1 本にした**。理由は #1139 の本文が挙げていた懸念がそのまま当たるため。
 
-⚠⚠ **この手順は記録側を読まないと始まらない。**棚卸しの母数・層の取り方・「当たりではなかった」記録は [api-gap-inventory.md](api-gap-inventory.md) / [webui-gap-inventory.md](webui-gap-inventory.md) / [server-settings-gap-inventory.md](server-settings-gap-inventory.md) にあり、設計書の型は [deck-ui-plan.md](deck-ui-plan.md) / [paid-relay-plan.md](paid-relay-plan.md) が実例。**スキルにすると SKILL.md を読んでから docs を読むことになり、読む量は減らず往復だけ増える** —— [#1114](https://github.com/pooza/capsicum/issues/1114) で `*-api-watch.md` をスキルにしないと決めたのと同じ理由。
+⚠⚠ **この手順は記録側を読まないと始まらない。**⚠ **棚卸しは、まず下の「次の棚卸しの入口」から読む**（3 本に共通する基準をまとめた）。棚卸しの母数・層の取り方・「当たりではなかった」記録は [api-gap-inventory.md](api-gap-inventory.md) / [webui-gap-inventory.md](webui-gap-inventory.md) / [server-settings-gap-inventory.md](server-settings-gap-inventory.md) にあり、設計書の型は [deck-ui-plan.md](deck-ui-plan.md) / [paid-relay-plan.md](paid-relay-plan.md) が実例。**スキルにすると SKILL.md を読んでから docs を読むことになり、読む量は減らず往復だけ増える** —— [#1114](https://github.com/pooza/capsicum/issues/1114) で `*-api-watch.md` をスキルにしないと決めたのと同じ理由。
 
 ⚠ **移した動機はスキル化ではなく CLAUDE.md の大きさだった**（2026-10-03・#1184）。CLAUDE.md が 56,165B（閾値 60,000 まで 3,835B）まで戻り、この節が 6,847B ＝ 全体の 12% を占めていた。**セッション開始時に全文読む CLAUDE.md から、必要な回だけ読むものを降ろす**のが目的。
 
@@ -57,6 +57,31 @@ v2.0 の大玉 3 本（デッキ・有償リレー・画像レイヤ）を、設
 - ⚠ **Mastodon のフォークの `main` は本家を追跡している。**うっかり `main` を見ると本家を読むことになる。⚠ **調査でブランチを切り替えたら元へ戻す**（戻し忘れた実績がある）
 - ⚠ **Mastodon 側に「フォーク固有の API」は無かった**（2026-08-25 実測）。「フォーク固有か」の列は空振りする前提で時間を配ってよい
 - ⚠ **サーバー側の設定の棚卸しは、見た目の設定を先に切る。**優先は「投稿の挙動を決める設定」→「読み方を決める設定」で、クライアント固有の見た目は対象外。Mastodon は Web UI の表示設定までサーバーに保存するので、切らないと母数が膨らむ
+- **Akkoma の母数**（[#1410](https://github.com/pooza/capsicum/issues/1410)）: 上流の `akkoma.dev/AkkomaGang/akkoma` をクローンして読む。ルーティングは `lib/pleroma/web/router.ex`、API の受け口は `lib/pleroma/web/api_spec/operations/`。⚠ **akkoma.dev は自動取得を弾く**（raw の URL が無関係なページを返す）ので、Web で読もうとしない
+
+## 次の棚卸しの入口（3 本に共通する基準）
+
+⚠⚠ **次の棚卸し（#1410 など）は、ここから読み始める。**3 本の記録を全部読み直さなくても、母数から落とすもの・拾わないもの・測り方の罠がここで揃う（2026-11-28 にまとめた）。詳細と理由は各棚卸しの節にあり、**番号はそちらが正本**。
+
+**落とす基準**（列挙の前に確定する・正本は [api-gap §2](api-gap-inventory.md) と [webui-gap §2](webui-gap-inventory.md)）:
+
+- 管理人・サーバー運営者向け（`admin/*`・連合の可視化・webhook・統計）
+- 認証・アカウントの生死（OAuth・2FA・パスワード・アカウント削除や引っ越しの操作）。⚠ **クライアントが持つと、事故時の責任範囲が広がる**
+- WebUI 内部専用・別名ルート・オンボーディング
+- クライアント設定・見た目（capsicum には capsicum の設定画面がある。⚠ サーバーに保存されていて capsicum が従うべき値は [server-settings-gap](server-settings-gap-inventory.md) の領分）
+- 開発者向け・ゲーム
+- 既存の方針で採らないもの（投稿の更新・英語対応・Fedibird 固有・サーバー個別の対応）
+
+**拾わない**（「今は要らない」ではなく「capsicum の役割ではない」もの・理由ごと残してある）: [api-gap §5](api-gap-inventory.md) / [webui-gap §5](webui-gap-inventory.md) / [webui-gap §8-6](webui-gap-inventory.md) の「拾わない」3 件。⚠ **次の棚卸しで再浮上させない**ために、同じ項目が出たらまずここを引く。
+
+**測り方の罠**:
+
+- ⚠⚠ **版追従の表の `none` を、棚卸しの判定として読まない**（[api-gap §13-7](api-gap-inventory.md)）。「その版で変わったか」の判定であって、**「呼んでいない」は落とす理由ではなく見る理由**
+- ⚠⚠ **層③ はモデルのフィールド一覧で測らない。**backends 配下で実際に参照している JSON キーの集合で測る（[api-gap §1](api-gap-inventory.md)「層③ の測り方」にコマンドがある）
+- ⚠ **層① の「全数」でも取りこぼす。**層② の目で経路の中身を読んで初めて気付いた経路があった（[webui-gap §8-5](webui-gap-inventory.md)）
+- ⚠ **「薄い」と見立てた範囲を最後に回すと、いちばん多く出ることがある**（Mastodon ② は ★ 8 件で最多だった）
+- ⚠ **画面を見ないと出ない当たりがある。**API のパラメータ表からは出ない欠けを、画面の突き合わせで拾った
+- ⚠ **API 基準と画面基準は、同じ回に回しても数え方を 2 通り維持する**（母数の取り方が違い、片方でしか出ない項目が実際にあった）
 
 ## 設計書の型
 
