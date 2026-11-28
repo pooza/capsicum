@@ -131,6 +131,17 @@ claude plugin install ginseng@ginseng-style
 
 ⚠ **追加コミットではレビューは発火しない。**`@codex review` を PR コメントに書いた時だけ走る（初回は PR 作成 / ready 化で自動）。**rebase / force-push で SHA が変わったときも打ち直す**。
 
+⚠⚠ **終わったかは、Codex のまとめのコメントで見る**（2026-11-28・v2.15.0 で見誤った）。指摘が無いと**レビュー（`pulls/<番号>/reviews`）も line comment も増えず**、依頼のコメントの 👀 も 👍 に変わらないことがある。見るのは issue comment の 2 つ:
+
+- `codex-pull-request-review-summary` のコメント（書き換えられる）の `codex-review-state` で、`commit_sha` が依頼した SHA になり `"status":"completed"` になったか
+- `codex-review-receipt` のコメントが新しく付いたか（指摘なしなら「Didn't find any major issues」）
+
+```sh
+gh api repos/pooza/capsicum/issues/<番号>/comments --jq '.[] | select(.user.login=="chatgpt-codex-connector[bot]") | "\(.updated_at) \(.body | gsub("\n";" ") | .[0:200])"'
+```
+
+⚠ `gh event listen`（PR のイベント待ち）はこのアカウントでは使えない（`Event subscriptions are not enabled`・終了コード 1 で即座に抜ける）。
+
 巡回は次の形で止める（2026-08-23 決定）:
 
 | | 対応 |
